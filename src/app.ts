@@ -20,6 +20,7 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
+import { registerSessionsApi } from './api/sessions.js';
 import { registerIngestRoute } from './ingest/route.js';
 import { SchemaRegistry } from './schema-registry.js';
 
@@ -114,6 +115,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   // The ingest pipeline: `POST /i/:uuid` (all methods registered so non-POST
   // returns 405, not Fastify's default 404). DESIGN.md §6.
   registerIngestRoute(app);
+
+  // The sessions API: `POST /api/sessions` mints a session and returns its
+  // capability paths (DESIGN.md §5).
+  registerSessionsApi(app);
 
   // Log the blessed registry provenance at startup.
   app.ready(() => {
