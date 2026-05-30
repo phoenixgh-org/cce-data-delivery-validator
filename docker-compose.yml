@@ -12,13 +12,13 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-cce_validator}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cce_validator}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
       # First-boot ordered SQL lands here (dpp.4). Empty dir is fine for now.
       - ./db/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -41,7 +41,7 @@ services:
       PGUSER: ${POSTGRES_USER:-cce_validator}
       PGPASSWORD: ${POSTGRES_PASSWORD:-cce_validator}
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - '${APP_PORT:-3000}:3000'
     depends_on:
       postgres:
         condition: service_healthy
