@@ -6,8 +6,7 @@
  *  1. STAGE-UNIT tests — call a stage's `run()` against a hand-built
  *     {@link PipelineContext}, asserting its outcome + findings. These need no
  *     DB and no HTTP, so they ALWAYS run. They prove the stage logic in
- *     isolation, including the two paths the full HTTP flow can't yet exercise
- *     (see the COORDINATION notes below).
+ *     isolation.
  *
  *  2. FULL-FLOW tests — drive the real route via `app.inject` so the stages run
  *     in order and the terminal persist records the outcome. Cases that assert
@@ -18,16 +17,15 @@
  *       DATABASE_URL=postgresql://cce_validator:cce_validator@localhost:5432/cce_validator \
  *         npm test
  *
- * COORDINATION (filed as beads bugs, fixes are NOT in a body stage):
- *   - cce-…-6y3: Fastify's default bodyLimit (1MB == the §1.4 cap) rejects an
- *     over-cap body with its OWN 413 before the size stage runs, so the size
- *     stage's 413 + 1.4 finding can't be exercised end-to-end yet. Covered here
- *     by a STAGE-UNIT test at exactly 1_048_577 bytes.
- *   - cce-…-do5: gzip/binary wire bytes contain NUL, and route.ts persists
- *     raw_body as `ctx.rawBody.toString('utf8')`; Postgres text rejects 0x00, so
- *     ANY gzip request 500s in persist regardless of the stage's (correct)
- *     outcome. The gzip happy-path + double-encoding are therefore covered by
- *     STAGE-UNIT tests, not full-flow.
+ * Two app/route-layer bugs that once blocked the size-413 and real-gzip paths
+ * end-to-end are now FIXED and have full-flow coverage below:
+ *   - 6y3: Fastify's default bodyLimit (1MB == the §1.4 cap) used to reject an
+ *     over-cap body with its OWN 413 before the size stage ran. app.ts now sets
+ *     bodyLimit ABOVE the cap, so an oversized-but-bounded body reaches the size
+ *     stage → our 413 + 1.4 finding + persisted row.
+ *   - do5: route.ts used to persist raw_body as `ctx.rawBody.toString('utf8')`;
+ *     the NUL bytes in gzip/binary bodies made Postgres `text` reject the insert
+ *     (500). route.ts now stores the decoded (gzip) text, NUL-stripped.
  */
 
 import { test } from 'node:test';
@@ -81,8 +79,8 @@ async function runStage(
 // ── stage-unit: size (stage 3) ──────────────────────────────────────────────
 
 test('size: body over the 1MB cap → halt 413 with a 1.4 fail finding', async () => {
-  // 1MB cap is 1_048_576 bytes; one byte over trips §1.4. (Full-flow blocked by
-  // Fastify's own bodyLimit — see cce-…-6y3; this proves the STAGE logic.)
+  // 1MB cap is 1_048_576 bytes; one byte over trips §1.4. This proves the STAGE
+  // logic; the end-to-end 413 path is covered by a full-flow test below (6y3).
   const ctx = makeCtx({ rawBody: Buffer.alloc(1_048_577) });
   const outcome = await runStage(sizeStage(), ctx);
 
@@ -319,9 +317,9 @@ test(
   'full-flow: Content-Encoding gzip on non-gzip bytes → 400 with a 1.6 finding',
   { skip },
   async () => {
-    // Plain JSON (no NUL) labelled gzip: won't gunzip → §1.6 fail + 400. This path
-    // persists fine because the raw body is text — see cce-…-do5 for why a REAL
-    // gzip body 500s in persist instead.
+    // Plain JSON (no NUL) labelled gzip: won't gunzip → §1.6 fail + 400. The
+    // REAL-gzip happy path (which used to 500 in persist, do5) is covered by its
+    // own full-flow test below.
     const notGzip = Buffer.from('{"meta":{}}', 'utf8');
     let sessionUuid: string | undefined;
     try {
@@ -366,6 +364,110 @@ test(
       assert.equal(rows[0]?.raw_body, malformed.toString('utf8'), 'exact wire bytes retained');
 
       assert.ok(hasFinding(await findingsFor(sessionUuid), '1.1', 'fail'), '1.1 fail recorded');
+    } finally {
+      if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
+    }
+  },
+);
+
+test(
+  'full-flow: oversized body (> 1MB) → our 413 + 1.4 finding + persisted row (6y3)',
+  { skip },
+  async () => {
+    // One byte over the §1.4 cap, but UNDER Fastify's raised bodyLimit (2 MiB),
+    // so it REACHES the size stage instead of getting Fastify's generic 413. The
+    // body content is irrelevant — the size stage (stage 3) halts before parse.
+    const oversized = Buffer.alloc(1_048_577, 0x61); // 'a' * (1MB + 1)
+    let sessionUuid: string | undefined;
+    try {
+      const out = await postToSession(oversized, { 'content-type': JSON_UTF8 });
+      sessionUuid = out.sessionUuid;
+
+      assert.equal(out.statusCode, 413, 'our teaching 413, not Fastify generic');
+      // Our response body shape (not Fastify's {statusCode,code,error,message}).
+      assert.match(out.body.transmissionId ?? '', /^[0-9a-f-]{36}$/, 'row persisted on 413');
+
+      const { rows } = await getPool().query<{ http_status: number; wire_bytes: string }>(
+        `SELECT http_status, wire_bytes FROM transmission WHERE session_uuid = $1`,
+        [sessionUuid],
+      );
+      assert.equal(rows.length, 1, 'exactly one row recorded');
+      assert.equal(rows[0]?.http_status, 413);
+      assert.equal(rows[0]?.wire_bytes, String(oversized.length), 'wire bytes measured pre-decode');
+      assert.ok(hasFinding(await findingsFor(sessionUuid), '1.4', 'fail'), '1.4 fail recorded');
+    } finally {
+      if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
+    }
+  },
+);
+
+test(
+  'full-flow: real gzip body → 200, decoded text persisted in raw_body, no 500 (do5)',
+  { skip },
+  async () => {
+    // A schema-valid 0.8.0 payload, gzipped on the wire. The NUL bytes in the gzip
+    // stream once made the raw_body text insert 500; route.ts now stores the
+    // DECODED, NUL-stripped text. Whole flow must reach 200 with schema_ok=true.
+    const json = JSON.stringify({
+      meta: {
+        schemaVersion: '0.8.0',
+        transferType: 'rtm',
+        transferId: 'T-gz-flow',
+        transferSrc: 'com.example',
+        transferredAt: '2024-01-15T04:05:54Z',
+      },
+      data: [
+        {
+          AMID: 'appliance-1',
+          CID: 'US',
+          EDOP: '2021-06-01',
+          EMFR: 'EMD_Name',
+          EMOD: 'EMD-ModelNo',
+          EPQS: 'E006/999',
+          ESER: 'EMD-SerialNum',
+          EMSV: 'v01.02.123',
+          DLST: { TVC: { SID: 'sensor-1', SMFR: 'SensMfr', SMOD: 'SensMod' } },
+          records: [{ ABST: '20200115T040554Z', ALRM: 'HEAT', BEMD: 14.3, EERR: 'none', TVC: 3.2 }],
+        },
+      ],
+    });
+    const gzipped = gzipSync(Buffer.from(json, 'utf8'));
+    let sessionUuid: string | undefined;
+    try {
+      const out = await postToSession(gzipped, {
+        'content-type': JSON_UTF8,
+        'content-encoding': 'gzip',
+      });
+      sessionUuid = out.sessionUuid;
+
+      assert.equal(out.statusCode, 200, 'valid gzip happy path reaches 200, not 500');
+      assert.match(out.body.transmissionId ?? '', /^[0-9a-f-]{36}$/, 'row persisted');
+
+      const { rows } = await getPool().query<{
+        http_status: number;
+        content_encoding: string | null;
+        wire_bytes: string;
+        raw_body: string | null;
+        schema_ok: boolean | null;
+      }>(
+        `SELECT http_status, content_encoding, wire_bytes, raw_body, schema_ok
+         FROM transmission WHERE session_uuid = $1`,
+        [sessionUuid],
+      );
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.http_status, 200);
+      assert.equal(rows[0]?.content_encoding, 'gzip', 'wire encoding recorded');
+      assert.equal(rows[0]?.wire_bytes, String(gzipped.length), 'wire bytes = compressed length');
+      assert.equal(rows[0]?.schema_ok, true, 'decoded body validated clean');
+      // raw_body is the DECODED, NUL-free JSON text (drill-down view), not gzip.
+      assert.equal(rows[0]?.raw_body, json, 'raw_body holds decoded JSON text');
+      assert.equal(
+        rows[0]?.raw_body?.includes(String.fromCharCode(0)),
+        false,
+        'no NUL bytes stored',
+      );
+
+      assert.ok(hasFinding(await findingsFor(sessionUuid), '1.6', 'pass'), '1.6 pass recorded');
     } finally {
       if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
     }

@@ -30,6 +30,7 @@ import {
   type Stage,
 } from './pipeline.js';
 import { contentTypeStage } from './stages/content-type.js';
+import { getDecodedBody } from './stages/decoded-body.js';
 import { encodingStage } from './stages/encoding.js';
 import { methodStage } from './stages/method.js';
 import { parseStage } from './stages/parse.js';
@@ -103,6 +104,28 @@ function buildContext(
 }
 
 /**
+ * Build the NUL-safe text stored in `transmission.raw_body` (a `text` column).
+ *
+ * Two adjustments to the exact wire bytes, both for drill-down usefulness/safety
+ * (DESIGN.md §8 — raw_body is a size-bounded drill-down view, not the
+ * authoritative artifact; `content_hash` + `wire_bytes` + `content_encoding`
+ * preserve the wire facts for §1.4/§1.8):
+ *
+ *   - When stage 5 decoded a `Content-Encoding` (gzip), store the DECODED text —
+ *     the readable payload a human drills into — instead of the binary gzip
+ *     bytes. Falls back to the raw wire bytes when nothing was decoded.
+ *   - Strip NUL (0x00): Postgres `text` rejects 0x00 ("invalid byte sequence for
+ *     encoding UTF8: 0x00"), so a binary/gzip body would otherwise throw and turn
+ *     the whole insert — hence the ingest response — into a 500 (bug do5).
+ */
+function storedRawBody(ctx: PipelineContext): string {
+  const bytes = getDecodedBody(ctx) ?? ctx.rawBody;
+  // toString('utf8') maps invalid byte sequences to U+FFFD; NUL is valid UTF-8
+  // but illegal in a Postgres text column, so strip it explicitly.
+  return bytes.toString('utf8').replaceAll(String.fromCharCode(0), '');
+}
+
+/**
  * Persist one transmission + its findings in a single transaction. Returns the
  * new transmission id. Maps `ctx` → columns per `InsertTransmissionInput`,
  * reading whatever the (stub-or-real) stages set so B/C light up automatically.
@@ -135,8 +158,10 @@ async function persistTransmission(
         schemaVersion: normalizedSchemaVersion,
         // Parsed payload (null until the parse stage sets it).
         body: ctx.parsedBody ?? null,
-        // Size-bounded original, kept ESPECIALLY when parse fails (DESIGN.md §8).
-        rawBody: ctx.rawBody.toString('utf8'),
+        // Drill-down text, kept ESPECIALLY when parse fails (DESIGN.md §8).
+        // Decoded (gzip) text when an encoding was applied, NUL-stripped so the
+        // `text` column never rejects a binary body — see storedRawBody / do5.
+        rawBody: storedRawBody(ctx),
         parseOk: ctx.parseOk,
         schemaOk: ctx.schemaOk,
       },
