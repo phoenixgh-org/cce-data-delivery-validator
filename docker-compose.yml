@@ -1,0 +1,51 @@
+# Local/dev bring-up: Postgres + app, healthcheck-gated (mirrors ../tremble).
+# The app only starts once Postgres reports healthy. DB connection info is wired
+# through env now so the pg layer (dpp.4) can consume it without compose changes;
+# the app does not read DATABASE_URL yet.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cce-validator-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cce_validator}
+      POSTGRES_USER: ${POSTGRES_USER:-cce_validator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cce_validator}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # First-boot ordered SQL lands here (dpp.4). Empty dir is fine for now.
+      - ./db/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cce-validator-app:local
+    container_name: cce-validator-app
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      # Wired for dpp.4 (pg layer); not consumed yet.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cce_validator}:${POSTGRES_PASSWORD:-cce_validator}@postgres:5432/${POSTGRES_DB:-cce_validator}
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-cce_validator}
+      PGUSER: ${POSTGRES_USER:-cce_validator}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-cce_validator}
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
