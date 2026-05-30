@@ -13,4 +13,16 @@ export default tseslint.config(
       sourceType: 'module',
     },
   },
+  {
+    // Build/tooling scripts run in Node (not bundled), so expose Node globals.
+    files: ['scripts/**/*.mjs', 'eslint.config.js'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+      },
+    },
+  },
 );
