@@ -99,7 +99,36 @@ test('POST to a valid session → 200, persists a transmission row', { skip }, a
     const session = await createSession();
     sessionUuid = session.uuid;
 
-    const payload = Buffer.from('{"meta":{"transferId":"T-9"},"data":[]}');
+    // A genuinely schema-valid 0.8.0 RTM transmission so the request reaches the
+    // happy-path 200 now that stages 6 (parse) and 7 (schema) are live — the old
+    // stub-era body (`data:[]`, no schemaVersion) now correctly 422s.
+    const payload = Buffer.from(
+      JSON.stringify({
+        meta: {
+          schemaVersion: '0.8.0',
+          transferType: 'rtm',
+          transferId: 'T-9',
+          transferSrc: 'com.example',
+          transferredAt: '2024-01-15T04:05:54Z',
+        },
+        data: [
+          {
+            AMID: 'appliance-1',
+            CID: 'US',
+            EDOP: '2021-06-01',
+            EMFR: 'EMD_Name',
+            EMOD: 'EMD-ModelNo',
+            EPQS: 'E006/999',
+            ESER: 'EMD-SerialNum',
+            EMSV: 'v01.02.123',
+            DLST: { TVC: { SID: 'sensor-1', SMFR: 'SensMfr', SMOD: 'SensMod' } },
+            records: [
+              { ABST: '20200115T040554Z', ALRM: 'HEAT', BEMD: 14.3, EERR: 'none', TVC: 3.2 },
+            ],
+          },
+        ],
+      }),
+    );
     const res = await app.inject({
       method: 'POST',
       url: `/i/${session.uuid}`,

@@ -266,9 +266,38 @@ test(
   'full-flow: wrong Content-Type → proceeds past stage 4 (not halted), 1.2 finding recorded',
   { skip },
   async () => {
-    // text/plain mismatches §1.2 but must NOT halt — the valid JSON body still
-    // parses and the request reaches downstream success (200).
-    const payload = Buffer.from('{"meta":{"transferId":"T-ct"},"data":[]}', 'utf8');
+    // text/plain mismatches §1.2 but must NOT halt — the schema-valid JSON body
+    // still parses, validates, and reaches downstream success (200). The body must
+    // be genuinely valid now that stage 7 is live, else it would 422 on schema, not
+    // on content-type, defeating what this test proves.
+    const payload = Buffer.from(
+      JSON.stringify({
+        meta: {
+          schemaVersion: '0.8.0',
+          transferType: 'rtm',
+          transferId: 'T-ct',
+          transferSrc: 'com.example',
+          transferredAt: '2024-01-15T04:05:54Z',
+        },
+        data: [
+          {
+            AMID: 'appliance-1',
+            CID: 'US',
+            EDOP: '2021-06-01',
+            EMFR: 'EMD_Name',
+            EMOD: 'EMD-ModelNo',
+            EPQS: 'E006/999',
+            ESER: 'EMD-SerialNum',
+            EMSV: 'v01.02.123',
+            DLST: { TVC: { SID: 'sensor-1', SMFR: 'SensMfr', SMOD: 'SensMod' } },
+            records: [
+              { ABST: '20200115T040554Z', ALRM: 'HEAT', BEMD: 14.3, EERR: 'none', TVC: 3.2 },
+            ],
+          },
+        ],
+      }),
+      'utf8',
+    );
     let sessionUuid: string | undefined;
     try {
       const out = await postToSession(payload, { 'content-type': 'text/plain' });
