@@ -12,7 +12,7 @@ import type { Pool, PoolClient } from 'pg';
 import { getPool } from './pool.js';
 
 /** Anything we can run a query against: the pool or a checked-out client. */
-type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
+export type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
 /** The §1.3 opt-in auth method (DESIGN.md §8). */
 export type AuthMethod = 'header' | 'basic';
@@ -57,6 +57,30 @@ export interface InsertTransmissionInput {
   rawBody?: string | null;
   parseOk?: boolean | null;
   schemaOk?: boolean | null;
+}
+
+/** The §7 row-level honesty class carried by a finding. */
+export type Severity = 'pass' | 'fail' | 'info';
+
+/** Fields recorded for one `finding` row (DESIGN.md §8, db/initdb/30-finding.sql). */
+export interface InsertFindingInput {
+  /** Requirement id this finding speaks to, e.g. '1.4'. */
+  requirement: string;
+  severity: Severity;
+  /** Human-readable explanation for the dashboard. */
+  detail?: string | null;
+  /** JSON Pointer into the payload, or null when not path-tied. */
+  pointer?: string | null;
+}
+
+/** A `finding` row (DESIGN.md §8). */
+export interface FindingRow {
+  id: string;
+  transmission_id: string;
+  requirement: string;
+  severity: Severity;
+  detail: string | null;
+  pointer: string | null;
 }
 
 /** A `transmission` row (DESIGN.md §8). */
@@ -164,4 +188,73 @@ export async function insertTransmission(
     ],
   );
   return rows[0]!;
+}
+
+/**
+ * Stamp `session.last_post_at = now()` for a successful ingest (DESIGN.md §11:
+ * the 30-day inactivity sweep keys off the most recent POST). Returns the new
+ * timestamp, or null if the uuid does not exist.
+ */
+export async function bumpLastPostAt(
+  uuid: string,
+  db: Queryable = getPool(),
+): Promise<Date | null> {
+  const { rows } = await db.query<{ last_post_at: Date }>(
+    `UPDATE session SET last_post_at = now() WHERE uuid = $1 RETURNING last_post_at`,
+    [uuid],
+  );
+  return rows[0]?.last_post_at ?? null;
+}
+
+/** Insert one finding against a transmission and return the inserted row. */
+export async function insertFinding(
+  transmissionId: string,
+  input: InsertFindingInput,
+  db: Queryable = getPool(),
+): Promise<FindingRow> {
+  const { rows } = await db.query<FindingRow>(
+    `INSERT INTO finding (transmission_id, requirement, severity, detail, pointer)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, transmission_id, requirement, severity, detail, pointer`,
+    [
+      transmissionId,
+      input.requirement,
+      input.severity,
+      input.detail ?? null,
+      input.pointer ?? null,
+    ],
+  );
+  return rows[0]!;
+}
+
+/**
+ * Insert many findings for one transmission in a single multi-row INSERT.
+ * Returns the inserted rows (empty array when `findings` is empty — no SQL run).
+ */
+export async function insertFindings(
+  transmissionId: string,
+  findings: readonly InsertFindingInput[],
+  db: Queryable = getPool(),
+): Promise<FindingRow[]> {
+  if (findings.length === 0) return [];
+
+  const values: unknown[] = [];
+  const tuples = findings.map((f, i) => {
+    const base = i * 4;
+    values.push(f.requirement, f.severity, f.detail ?? null, f.pointer ?? null);
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+  });
+  // transmission_id is bound once as the trailing param and reused per row.
+  const txParam = `$${findings.length * 4 + 1}`;
+  values.push(transmissionId);
+
+  const { rows } = await db.query<FindingRow>(
+    `INSERT INTO finding (requirement, severity, detail, pointer, transmission_id)
+     SELECT v.requirement, v.severity, v.detail, v.pointer, ${txParam}
+     FROM (VALUES ${tuples.join(', ')})
+       AS v(requirement, severity, detail, pointer)
+     RETURNING id, transmission_id, requirement, severity, detail, pointer`,
+    values,
+  );
+  return rows;
 }

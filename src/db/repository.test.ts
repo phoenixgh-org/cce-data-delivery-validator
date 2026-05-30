@@ -20,7 +20,14 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { getPool, closePool } from './pool.js';
-import { createSession, getSession, insertTransmission } from './repository.js';
+import {
+  bumpLastPostAt,
+  createSession,
+  getSession,
+  insertFinding,
+  insertFindings,
+  insertTransmission,
+} from './repository.js';
 
 /** Probe the DB once; if unreachable, the whole suite is skipped. */
 async function dbReachable(): Promise<boolean> {
@@ -114,6 +121,54 @@ test(
     await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
   },
 );
+
+test('bumpLastPostAt stamps last_post_at; null for an unknown uuid', { skip }, async () => {
+  const session = await createSession();
+  assert.equal(session.last_post_at, null, 'null until first POST');
+
+  const stamped = await bumpLastPostAt(session.uuid);
+  assert.ok(stamped instanceof Date, 'returns the new timestamp');
+
+  const fetched = await getSession(session.uuid);
+  assert.ok(fetched?.last_post_at, 'last_post_at is now set');
+  assert.equal(fetched!.last_post_at!.getTime(), stamped!.getTime());
+
+  assert.equal(await bumpLastPostAt(randomUUID()), null, 'null for unknown uuid');
+
+  await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+});
+
+test('insertFinding / insertFindings record rows against a transmission', { skip }, async () => {
+  const session = await createSession();
+  const tx = await insertTransmission({ sessionUuid: session.uuid });
+
+  const single = await insertFinding(tx.id, {
+    requirement: '1.4',
+    severity: 'fail',
+    detail: 'too big',
+  });
+  assert.match(single.id, /^[0-9a-f-]{36}$/);
+  assert.equal(single.transmission_id, tx.id);
+  assert.equal(single.severity, 'fail');
+
+  const many = await insertFindings(tx.id, [
+    { requirement: '1.2', severity: 'pass' },
+    { requirement: '3.2', severity: 'info', detail: 'd', pointer: '/data/0' },
+  ]);
+  assert.equal(many.length, 2);
+  assert.equal(many[1]?.pointer, '/data/0');
+
+  // Empty array short-circuits without running SQL.
+  assert.deepEqual(await insertFindings(tx.id, []), []);
+
+  const { rows } = await getPool().query<{ n: string }>(
+    'SELECT count(*) AS n FROM finding WHERE transmission_id = $1',
+    [tx.id],
+  );
+  assert.equal(rows[0]?.n, '3', 'all three findings recorded');
+
+  await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+});
 
 test.after(async () => {
   await closePool().catch(() => {});

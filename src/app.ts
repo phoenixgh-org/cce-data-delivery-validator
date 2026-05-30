@@ -20,6 +20,7 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
+import { registerIngestRoute } from './ingest/route.js';
 import { SchemaRegistry } from './schema-registry.js';
 
 /** Default trusted proxy address for local dev (loopback). */
@@ -85,6 +86,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.get('/health', async () => {
     return { status: 'ok' };
   });
+
+  // The ingest pipeline: `POST /i/:uuid` (all methods registered so non-POST
+  // returns 405, not Fastify's default 404). DESIGN.md §6.
+  registerIngestRoute(app);
 
   // Log the blessed registry provenance at startup.
   app.ready(() => {
