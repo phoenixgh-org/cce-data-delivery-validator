@@ -144,6 +144,51 @@ export async function getSession(
 }
 
 /**
+ * List a session's transmissions in REVERSE-CHRONOLOGICAL order (newest first),
+ * for the dashboard's reverse-chron list (DESIGN.md §10). Uses the
+ * `(session_uuid, received_at DESC)` index (DESIGN.md §8). Selects the full
+ * transmission columns (mirrors `insertTransmission`'s RETURNING list).
+ */
+export async function listTransmissions(
+  sessionUuid: string,
+  db: Queryable = getPool(),
+): Promise<TransmissionRow[]> {
+  const { rows } = await db.query<TransmissionRow>(
+    `SELECT id, session_uuid, received_at, content_hash, wire_bytes,
+            content_type, content_encoding, http_status, transfer_id,
+            transfer_src, transfer_type, schema_version, body, raw_body,
+            parse_ok, schema_ok
+     FROM transmission
+     WHERE session_uuid = $1
+     ORDER BY received_at DESC`,
+    [sessionUuid],
+  );
+  return rows;
+}
+
+/**
+ * List all `finding` rows for a session by joining finding → transmission on
+ * transmission_id (DESIGN.md §8). The caller groups these by transmission_id
+ * for per-tx drill-down AND aggregates them by requirement+severity for the §7
+ * compliance summary. Order is stable (transmission newest-first, then finding
+ * id) so grouping is deterministic.
+ */
+export async function listFindingsForSession(
+  sessionUuid: string,
+  db: Queryable = getPool(),
+): Promise<FindingRow[]> {
+  const { rows } = await db.query<FindingRow>(
+    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer
+     FROM finding f
+     JOIN transmission t ON t.id = f.transmission_id
+     WHERE t.session_uuid = $1
+     ORDER BY t.received_at DESC, f.id`,
+    [sessionUuid],
+  );
+  return rows;
+}
+
+/**
  * Insert a transmission for a session and return the full inserted row.
  *
  * `content_hash` is intentionally NON-UNIQUE (DESIGN.md §8): every POST is

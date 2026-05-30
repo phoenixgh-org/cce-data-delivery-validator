@@ -8,9 +8,13 @@ export {
   createSession,
   getSession,
   insertTransmission,
+  listTransmissions,
+  listFindingsForSession,
   type AuthMethod,
   type SessionRow,
   type CreateSessionInput,
   type TransmissionRow,
   type InsertTransmissionInput,
+  type FindingRow,
+  type Severity,
 } from './repository.js';
