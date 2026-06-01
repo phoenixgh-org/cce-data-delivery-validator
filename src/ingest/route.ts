@@ -20,8 +20,14 @@ import { createHash } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { getPool } from '../db/pool.js';
-import { insertFindings, insertTransmission, type Queryable } from '../db/repository.js';
+import {
+  findPriorTransmissions,
+  insertFindings,
+  insertTransmission,
+  type Queryable,
+} from '../db/repository.js';
 import { normalizeVersion, type SchemaRegistry } from '../schema-registry.js';
+import { enterSession, leaveSession } from './concurrency-tracker.js';
 import {
   buildResponseBody,
   runPipeline,
@@ -35,6 +41,7 @@ import { encodingStage } from './stages/encoding.js';
 import { methodStage } from './stages/method.js';
 import { parseStage } from './stages/parse.js';
 import { schemaStage } from './stages/schema.js';
+import { semanticStage, type SemanticDeps } from './stages/semantic.js';
 import { sessionStage } from './stages/session.js';
 import { sizeStage } from './stages/size.js';
 
@@ -59,8 +66,15 @@ function preBodyStages(db?: Queryable): Stage[] {
   ];
 }
 
-/** Stages that run AFTER the persistence boundary — a halt here STILL writes a row. */
-function bodyStages(): Stage[] {
+/**
+ * Stages that run AFTER the persistence boundary — a halt here STILL writes a row.
+ *
+ * Takes the semantic stage's {@link SemanticDeps} (concurrency snapshot +
+ * prior-transmission lookup) and threads them into `semanticStage(deps)` at the
+ * stage-8 insertion point. The deps ride in the stage closure so the frozen
+ * `PipelineContext` type is never widened.
+ */
+function bodyStages(semanticDeps: SemanticDeps): Stage[] {
   return [
     // Stage 3 — size (413 + finding).
     sizeStage(),
@@ -72,9 +86,10 @@ function bodyStages(): Stage[] {
     parseStage(),
     // Stage 7 — schema validate (422 + per-error findings).
     schemaStage(),
-    // INSERTION POINT — Stage 8: Semantic checks (§1.8/§2.1/§3.x, M5).
-    //   Insert the semantic stage here (after schema, before persist); it emits
-    //   findings and accepts the data (2xx), so it belongs on the body side.
+    // INSERTION POINT — Stage 8: Semantic checks (§1.8/§2.1/§3.x, M5). Emits
+    // findings and accepts the data (2xx), so it belongs on the body side and
+    // never halts.
+    semanticStage(semanticDeps),
   ];
 }
 
@@ -198,14 +213,24 @@ export function registerIngestRoute(app: FastifyInstance): void {
         return reply.code(pre.status).send(buildResponseBody(pre.status, pre.findings, null));
       }
 
-      // Body stages (3–7[, 8]): reached with a valid session + POST, so a row is
-      // persisted regardless of whether a body stage short-circuits.
-      const post = await runPipeline(ctx, bodyStages());
-      const status = post.status;
+      // The request reached the body stages with a valid session + POST. Mark it
+      // in flight and capture the §2.1 concurrency snapshot (includes self), then
+      // release it in a `finally` so the count is freed even if persistence throws.
+      const concurrentAtEntry = enterSession(uuid);
+      try {
+        const semanticDeps: SemanticDeps = { concurrentAtEntry, findPriorTransmissions };
 
-      const transmissionId = await persistTransmission(ctx, status, ctx.findings);
+        // Body stages (3–7[, 8]): reached with a valid session + POST, so a row is
+        // persisted regardless of whether a body stage short-circuits.
+        const post = await runPipeline(ctx, bodyStages(semanticDeps));
+        const status = post.status;
 
-      return reply.code(status).send(buildResponseBody(status, ctx.findings, transmissionId));
+        const transmissionId = await persistTransmission(ctx, status, ctx.findings);
+
+        return reply.code(status).send(buildResponseBody(status, ctx.findings, transmissionId));
+      } finally {
+        leaveSession(uuid);
+      }
     },
   });
 }

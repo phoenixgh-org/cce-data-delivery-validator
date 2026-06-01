@@ -189,6 +189,58 @@ export async function listFindingsForSession(
 }
 
 /**
+ * A prior transmission matched by §1.8 duplicate detection — the small subset of
+ * `transmission` columns the semantic duplicate check needs to GRADE a repeat
+ * (same-transferId or exact-replay) against an earlier POST in the same session.
+ */
+export interface PriorTransmission {
+  id: string;
+  transfer_id: string | null;
+  content_hash: Buffer | null;
+  received_at: Date;
+}
+
+/**
+ * Find prior transmissions in the SAME session that match the current request by
+ * `transfer_id` OR `content_hash` (DESIGN.md §1.8 duplicate detection). This is
+ * called BEFORE the current transmission is persisted, so it only ever returns
+ * EARLIER rows — exactly the prior occurrences a repeat is graded against.
+ *
+ *   - A `transferId` match flags a duplicate transfer id (re-sent under the same
+ *     id), regardless of whether the bytes changed.
+ *   - A `contentHash` match flags an exact replay (identical wire bytes).
+ *
+ * Both lean on the session-scoped §8 indexes `transmission_session_transfer_id`
+ * and `transmission_session_content_hash`. With neither selector provided (both
+ * null/absent) there is nothing to match, so it short-circuits to `[]` with no
+ * SQL run. Results are newest-first.
+ */
+export async function findPriorTransmissions(
+  sessionUuid: string,
+  opts: { transferId?: string | null; contentHash?: Buffer | null },
+  db: Queryable = getPool(),
+): Promise<PriorTransmission[]> {
+  const transferId = opts.transferId ?? null;
+  const contentHash = opts.contentHash ?? null;
+
+  // Nothing to match on → no prior occurrence by definition (skip the query).
+  if (transferId === null && contentHash === null) return [];
+
+  const { rows } = await db.query<PriorTransmission>(
+    `SELECT id, transfer_id, content_hash, received_at
+     FROM transmission
+     WHERE session_uuid = $1
+       AND (
+         ($2::text IS NOT NULL AND transfer_id = $2)
+         OR ($3::bytea IS NOT NULL AND content_hash = $3)
+       )
+     ORDER BY received_at DESC`,
+    [sessionUuid, transferId, contentHash],
+  );
+  return rows;
+}
+
+/**
  * Insert a transmission for a session and return the full inserted row.
  *
  * `content_hash` is intentionally NON-UNIQUE (DESIGN.md §8): every POST is

@@ -23,6 +23,7 @@ import { getPool, closePool } from './pool.js';
 import {
   bumpLastPostAt,
   createSession,
+  findPriorTransmissions,
   getSession,
   insertFinding,
   insertFindings,
@@ -169,6 +170,59 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
 
   await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
 });
+
+test(
+  'findPriorTransmissions matches prior rows by transferId OR contentHash (§1.8)',
+  { skip },
+  async () => {
+    const session = await createSession();
+    const hashA = createHash('sha256').update('bytes-A').digest();
+    const hashB = createHash('sha256').update('bytes-B').digest();
+
+    // Two earlier rows: one carrying transferId T-1, one carrying hashA.
+    const byTransfer = await insertTransmission({
+      sessionUuid: session.uuid,
+      transferId: 'T-1',
+      contentHash: hashB,
+    });
+    const byHash = await insertTransmission({
+      sessionUuid: session.uuid,
+      transferId: 'T-other',
+      contentHash: hashA,
+    });
+
+    // Match by transferId only.
+    const tMatch = await findPriorTransmissions(session.uuid, { transferId: 'T-1' });
+    assert.deepEqual(
+      tMatch.map((r) => r.id),
+      [byTransfer.id],
+      'transferId match returns the T-1 row',
+    );
+
+    // Match by contentHash only.
+    const hMatch = await findPriorTransmissions(session.uuid, { contentHash: hashA });
+    assert.deepEqual(
+      hMatch.map((r) => r.id),
+      [byHash.id],
+      'contentHash match returns the hashA row',
+    );
+
+    // transferId OR contentHash → both rows (newest-first), deduped by row.
+    const both = await findPriorTransmissions(session.uuid, {
+      transferId: 'T-1',
+      contentHash: hashA,
+    });
+    assert.equal(both.length, 2, 'OR matches both prior rows');
+    assert.deepEqual(new Set(both.map((r) => r.id)), new Set([byTransfer.id, byHash.id]));
+
+    // No selectors → empty (no SQL run).
+    assert.deepEqual(await findPriorTransmissions(session.uuid, {}), []);
+    // No match → empty.
+    assert.deepEqual(await findPriorTransmissions(session.uuid, { transferId: 'nope' }), []);
+
+    await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+  },
+);
 
 test.after(async () => {
   await closePool().catch(() => {});
