@@ -144,6 +144,74 @@ export async function getSession(
 }
 
 /**
+ * The auth fields written when enabling §1.3 opt-in auth on an existing session.
+ * `authSecretHash` is the salted KDF output from src/auth/credential.ts — NEVER a
+ * plaintext secret. Disabling clears all three to null (see {@link disableAuth}).
+ */
+export interface SetAuthInput {
+  authMethod: AuthMethod;
+  authHeaderName: string;
+  authSecretHash: string;
+}
+
+/**
+ * Public view of a session's auth state — exactly what the dashboard may see.
+ * Deliberately OMITS `auth_secret_hash`: the hash is never returned to callers
+ * (DESIGN.md §12). The enable/disable helpers return this shape.
+ */
+export interface SessionAuthView {
+  uuid: string;
+  auth_enabled: boolean;
+  auth_method: AuthMethod | null;
+  auth_header_name: string | null;
+}
+
+/**
+ * Enable §1.3 opt-in auth on an existing session: flip `auth_enabled` true and
+ * write the method/header-name/hash (DESIGN.md §3, §12). Returns the public auth
+ * view (NEVER the hash), or null if the uuid does not exist.
+ */
+export async function enableAuth(
+  uuid: string,
+  input: SetAuthInput,
+  db: Queryable = getPool(),
+): Promise<SessionAuthView | null> {
+  const { rows } = await db.query<SessionAuthView>(
+    `UPDATE session
+        SET auth_enabled = true,
+            auth_method = $2,
+            auth_header_name = $3,
+            auth_secret_hash = $4
+      WHERE uuid = $1
+      RETURNING uuid, auth_enabled, auth_method, auth_header_name`,
+    [uuid, input.authMethod, input.authHeaderName, input.authSecretHash],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Disable §1.3 auth on an existing session: clear `auth_enabled` and wipe the
+ * stored method/header-name/hash. Returns the public auth view (NEVER the hash),
+ * or null if the uuid does not exist.
+ */
+export async function disableAuth(
+  uuid: string,
+  db: Queryable = getPool(),
+): Promise<SessionAuthView | null> {
+  const { rows } = await db.query<SessionAuthView>(
+    `UPDATE session
+        SET auth_enabled = false,
+            auth_method = null,
+            auth_header_name = null,
+            auth_secret_hash = null
+      WHERE uuid = $1
+      RETURNING uuid, auth_enabled, auth_method, auth_header_name`,
+    [uuid],
+  );
+  return rows[0] ?? null;
+}
+
+/**
  * List a session's transmissions in REVERSE-CHRONOLOGICAL order (newest first),
  * for the dashboard's reverse-chron list (DESIGN.md §10). Uses the
  * `(session_uuid, received_at DESC)` index (DESIGN.md §8). Selects the full

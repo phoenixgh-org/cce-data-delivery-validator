@@ -23,13 +23,16 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { computeComplianceSummary } from './compliance-matrix.js';
 import type { FindingCountsByRequirement } from './compliance-matrix.js';
+import { generateCredential } from '../auth/credential.js';
 import {
   createSession,
+  disableAuth,
+  enableAuth,
   getSession,
   listFindingsForSession,
   listTransmissions,
 } from '../db/repository.js';
-import type { FindingRow, Severity } from '../db/repository.js';
+import type { AuthMethod, FindingRow, Severity } from '../db/repository.js';
 
 /** 30-day inactivity retention window (DESIGN.md §11). */
 const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -55,6 +58,82 @@ export function registerSessionsApi(app: FastifyInstance): void {
       dashboardUrl: `/d/${session.uuid}`,
     });
   });
+
+  // §1.3 opt-in auth toggle (DESIGN.md §3, §10, §12). The dashboard generates the
+  // credential; the service stores ONLY its salted hash and echoes the plaintext
+  // exactly ONCE here. Enabling is idempotent in effect — re-POSTing rotates the
+  // credential (a fresh secret is minted each time).
+  //
+  // The app keeps raw bytes for ingest (§1.4) and registers no JSON parser, so the
+  // body arrives as a Buffer; parse it here. An absent/empty body defaults to the
+  // `header` method (zero-config opt-in).
+  app.post(
+    '/api/sessions/:uuid/auth',
+    async (request: FastifyRequest<{ Params: { uuid: string } }>, reply: FastifyReply) => {
+      const { uuid } = request.params;
+
+      let body: { method?: unknown; headerName?: unknown; username?: unknown } = {};
+      if (Buffer.isBuffer(request.body) && request.body.length > 0) {
+        try {
+          const parsed = JSON.parse(request.body.toString('utf8'));
+          if (parsed && typeof parsed === 'object') body = parsed as typeof body;
+        } catch {
+          return reply.code(400).send({ error: 'invalid_json' });
+        }
+      }
+
+      const method: AuthMethod = body.method === 'basic' ? 'basic' : 'header';
+      const headerName = typeof body.headerName === 'string' ? body.headerName : undefined;
+      const username = typeof body.username === 'string' ? body.username : undefined;
+
+      const credential = generateCredential(method, { headerName, username });
+      const view = await enableAuth(uuid, {
+        authMethod: credential.store.auth_method,
+        authHeaderName: credential.store.auth_header_name,
+        authSecretHash: credential.store.auth_secret_hash,
+      });
+      if (!view) {
+        return reply.code(404).send({ error: 'not_found', uuid });
+      }
+
+      // Echo the plaintext credential EXACTLY ONCE (§12) plus the config it
+      // implies. The salted hash is never returned. `header` → token + header
+      // name; `basic` → username + password.
+      if (method === 'header') {
+        return reply.code(201).send({
+          uuid: view.uuid,
+          auth_enabled: view.auth_enabled,
+          auth_method: view.auth_method,
+          auth_header_name: view.auth_header_name,
+          token: credential.plaintext,
+        });
+      }
+      return reply.code(201).send({
+        uuid: view.uuid,
+        auth_enabled: view.auth_enabled,
+        auth_method: view.auth_method,
+        username: view.auth_header_name,
+        password: credential.plaintext,
+      });
+    },
+  );
+
+  // Disable §1.3 auth: clears the stored credential and flips auth_enabled off.
+  app.delete(
+    '/api/sessions/:uuid/auth',
+    async (request: FastifyRequest<{ Params: { uuid: string } }>, reply: FastifyReply) => {
+      const { uuid } = request.params;
+      const view = await disableAuth(uuid);
+      if (!view) {
+        return reply.code(404).send({ error: 'not_found', uuid });
+      }
+      return reply.send({
+        uuid: view.uuid,
+        auth_enabled: view.auth_enabled,
+        auth_method: view.auth_method,
+      });
+    },
+  );
 
   app.get(
     '/api/sessions/:uuid',
