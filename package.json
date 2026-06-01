@@ -8,8 +8,9 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-schemas.mjs && vite build",
-    "build:web": "vite build",
+    "build": "tsc -p tsconfig.json && node scripts/copy-schemas.mjs && npm run typecheck:web && vite build",
+    "build:web": "npm run typecheck:web && vite build",
+    "typecheck:web": "tsc -p tsconfig.web.json",
     "dev": "tsx watch src/index.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "lint": "eslint . && prettier --check .",
