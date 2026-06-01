@@ -35,6 +35,7 @@ import {
   type PipelineContext,
   type Stage,
 } from './pipeline.js';
+import { authStage } from './stages/auth.js';
 import { contentTypeStage } from './stages/content-type.js';
 import { getDecodedBody } from './stages/decoded-body.js';
 import { encodingStage } from './stages/encoding.js';
@@ -60,9 +61,10 @@ function preBodyStages(db?: Queryable): Stage[] {
     methodStage(),
     // Stage 0 — session lookup (404, no row).
     sessionStage(db),
-    // INSERTION POINT — Stage 2: Auth (opt-in, §1.3, M6/ct4.2). 401, no row.
-    //   Insert the auth stage here (after session, before the body stages) when
-    //   M6 lands; it short-circuits 401 like 404/405 with no transmission row.
+    // Stage 2 — Auth (opt-in, §1.3, M6/ct4.2). When the session has opted in,
+    //   a missing/incorrect credential short-circuits 401 like 404/405 with no
+    //   transmission row; the zero-friction default (auth disabled) is a no-op.
+    authStage(db),
   ];
 }
 
