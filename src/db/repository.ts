@@ -14,6 +14,14 @@ import { getPool } from './pool.js';
 /** Anything we can run a query against: the pool or a checked-out client. */
 export type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
+/**
+ * 30-day inactivity retention window (DESIGN.md §11), in milliseconds. SHARED so
+ * the dashboard's expiry display (src/api/sessions.ts) and the purge predicate
+ * ({@link purgeExpiredSessions}) cannot drift: the same number drives both the
+ * "expires at" clock and the deletion cutoff.
+ */
+export const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
 /** The §1.3 opt-in auth method (DESIGN.md §8). */
 export type AuthMethod = 'header' | 'basic';
 
@@ -422,4 +430,31 @@ export async function insertFindings(
     values,
   );
   return rows;
+}
+
+/**
+ * Retention sweep (DESIGN.md §11): hard-delete every session whose last activity
+ * — `COALESCE(last_post_at, created_at)` — is older than the {@link RETENTION_MS}
+ * window. The predicate mirrors the dashboard's expiry base + window EXACTLY
+ * (src/api/sessions.ts: base = `last_post_at ?? created_at`, expiry = base +
+ * RETENTION_MS), keyed off the same shared constant so display and purge cannot
+ * drift.
+ *
+ * A SINGLE `DELETE FROM session` is sufficient: transmissions and findings
+ * cascade automatically via the pre-wired `ON DELETE CASCADE` FKs (db/initdb),
+ * so there are deliberately NO per-table deletes here. Returns the number of
+ * sessions purged.
+ *
+ * The cutoff is `now() - (RETENTION_MS milliseconds)`, computed in the DB with
+ * `make_interval` so the window comes from the shared JS constant rather than a
+ * hard-coded SQL literal.
+ */
+export async function purgeExpiredSessions(db: Queryable = getPool()): Promise<number> {
+  const { rowCount } = await db.query(
+    `DELETE FROM session
+      WHERE COALESCE(last_post_at, created_at)
+            < now() - make_interval(secs => $1)`,
+    [RETENTION_MS / 1000],
+  );
+  return rowCount ?? 0;
 }

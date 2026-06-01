@@ -28,6 +28,7 @@ import {
   insertFinding,
   insertFindings,
   insertTransmission,
+  purgeExpiredSessions,
 } from './repository.js';
 
 /** Probe the DB once; if unreachable, the whole suite is skipped. */
@@ -221,6 +222,74 @@ test(
     assert.deepEqual(await findPriorTransmissions(session.uuid, { transferId: 'nope' }), []);
 
     await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+  },
+);
+
+test(
+  'purgeExpiredSessions deletes sessions inactive >30 days and cascades; recent survives (§11)',
+  { skip },
+  async () => {
+    // OLD session: created_at and last_post_at both >30 days ago. Force the
+    // timestamps into the past directly (createSession defaults them to now()).
+    const oldSession = await createSession();
+    await getPool().query(
+      `UPDATE session
+          SET created_at = now() - interval '40 days',
+              last_post_at = now() - interval '31 days'
+        WHERE uuid = $1`,
+      [oldSession.uuid],
+    );
+    const oldTx = await insertTransmission({ sessionUuid: oldSession.uuid });
+    await insertFinding(oldTx.id, { requirement: '1.4', severity: 'info' });
+
+    // OLD session with NO posts: last_post_at NULL, created_at >30 days ago.
+    // Exercises the COALESCE fallback to created_at.
+    const oldNoPosts = await createSession();
+    await getPool().query(
+      `UPDATE session SET created_at = now() - interval '45 days' WHERE uuid = $1`,
+      [oldNoPosts.uuid],
+    );
+
+    // RECENT session: a post 29 days ago (inside the 30-day window) — survives.
+    const recentSession = await createSession();
+    await getPool().query(
+      `UPDATE session
+          SET created_at = now() - interval '60 days',
+              last_post_at = now() - interval '29 days'
+        WHERE uuid = $1`,
+      [recentSession.uuid],
+    );
+    const recentTx = await insertTransmission({ sessionUuid: recentSession.uuid });
+
+    const purged = await purgeExpiredSessions();
+    assert.ok(purged >= 2, 'both expired sessions counted as purged');
+
+    // Old sessions gone.
+    assert.equal(await getSession(oldSession.uuid), null, 'old (posted) session purged');
+    assert.equal(await getSession(oldNoPosts.uuid), null, 'old (no-posts) session purged');
+
+    // Cascade: the old session's transmission and finding are gone too.
+    const txRows = await getPool().query<{ n: string }>(
+      'SELECT count(*) AS n FROM transmission WHERE id = $1',
+      [oldTx.id],
+    );
+    assert.equal(txRows.rows[0]?.n, '0', 'transmission cascade-deleted');
+    const fRows = await getPool().query<{ n: string }>(
+      'SELECT count(*) AS n FROM finding WHERE transmission_id = $1',
+      [oldTx.id],
+    );
+    assert.equal(fRows.rows[0]?.n, '0', 'finding cascade-deleted');
+
+    // Recent session (and its transmission) untouched.
+    const recent = await getSession(recentSession.uuid);
+    assert.ok(recent, 'recent session survives the sweep');
+    const recentTxRows = await getPool().query<{ n: string }>(
+      'SELECT count(*) AS n FROM transmission WHERE id = $1',
+      [recentTx.id],
+    );
+    assert.equal(recentTxRows.rows[0]?.n, '1', 'recent transmission untouched');
+
+    await getPool().query('DELETE FROM session WHERE uuid = $1', [recentSession.uuid]);
   },
 );
 

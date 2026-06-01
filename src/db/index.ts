@@ -5,11 +5,13 @@
 
 export { getPool, closePool } from './pool.js';
 export {
+  RETENTION_MS,
   createSession,
   getSession,
   insertTransmission,
   listTransmissions,
   listFindingsForSession,
+  purgeExpiredSessions,
   type AuthMethod,
   type SessionRow,
   type CreateSessionInput,

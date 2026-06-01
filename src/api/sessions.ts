@@ -25,6 +25,7 @@ import { computeComplianceSummary } from './compliance-matrix.js';
 import type { FindingCountsByRequirement } from './compliance-matrix.js';
 import { generateCredential } from '../auth/credential.js';
 import {
+  RETENTION_MS,
   createSession,
   disableAuth,
   enableAuth,
@@ -33,9 +34,6 @@ import {
   listTransmissions,
 } from '../db/repository.js';
 import type { AuthMethod, FindingRow, Severity } from '../db/repository.js';
-
-/** 30-day inactivity retention window (DESIGN.md §11). */
-const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Findings as surfaced per-transmission on the dashboard (drill-down detail). */
 function toFindingView(f: FindingRow) {
