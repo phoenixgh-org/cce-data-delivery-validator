@@ -152,7 +152,7 @@ function TransmissionRow({ tx }: { tx: TransmissionView }) {
               margin: 0,
             }}
           >
-            {tx.body === undefined ? '(no parsed body)' : JSON.stringify(tx.body, null, 2)}
+            {tx.body == null ? '(no parsed body)' : JSON.stringify(tx.body, null, 2)}
           </pre>
 
           <h4 style={{ margin: '1rem 0 0.25rem' }}>Raw body</h4>
