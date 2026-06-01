@@ -18,6 +18,10 @@
  *     a client spoof the scheme. The trusted proxy address is env-configurable.
  */
 
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import { registerSessionsApi } from './api/sessions.js';
@@ -26,6 +30,24 @@ import { SchemaRegistry } from './schema-registry.js';
 
 /** Default trusted proxy address for local dev (loopback). */
 const DEFAULT_TRUSTED_PROXY = '127.0.0.1';
+
+/**
+ * Default directory of the built React SPA (Vite's `outDir` in vite.config.ts).
+ * Resolved relative to the compiled module: `dist/app.js` → `dist/web`.
+ */
+const DEFAULT_WEB_DIST = fileURLToPath(new URL('./web', import.meta.url));
+
+/**
+ * Path prefixes owned by the backend API/ingest/health routes. The SPA fallback
+ * must NEVER serve index.html for these — they get the framework's real
+ * 404/405 instead, so e.g. `GET /api/sessions/<bad-uuid>` reaches the API.
+ */
+const API_PREFIXES = ['/api', '/i', '/health'];
+
+/** True when `pathname` is owned by a backend route (must not be SPA-fallen-back). */
+function isApiPath(pathname: string): boolean {
+  return API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
 
 /**
  * Outer hard ceiling on the request body Fastify will buffer, set ABOVE the §1.4
@@ -66,6 +88,14 @@ export interface BuildAppOptions {
    * oversized bodies reach the size stage for the teaching 413. See bug 6y3.
    */
   bodyLimit?: number;
+  /**
+   * Directory of the built React SPA to serve as static files (DESIGN §13).
+   * Defaults to {@link DEFAULT_WEB_DIST} (`dist/web`). Overridable so tests can
+   * point at a fixture. If the directory does not exist (e.g. `npm test` with no
+   * prior `vite build`), static serving + the SPA fallback are NOT registered,
+   * keeping the app construct-able without a web build.
+   */
+  webDist?: string;
 }
 
 /**
@@ -119,6 +149,25 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   // The sessions API: `POST /api/sessions` mints a session and returns its
   // capability paths (DESIGN.md §5).
   registerSessionsApi(app);
+
+  // The M4 React SPA: serve the Vite build as static files with an SPA fallback
+  // so `/d/:uuid` deep-links resolve to index.html (DESIGN §5/§13). Registered
+  // LAST so it can never shadow /api/*, /i/*, or /health. Guarded on the build
+  // dir existing, so `npm test` (no prior `vite build`) stays green.
+  const webDist = options.webDist ?? DEFAULT_WEB_DIST;
+  if (existsSync(webDist)) {
+    app.register(fastifyStatic, { root: webDist });
+
+    // SPA fallback: a GET that matched no route and is NOT an API/ingest/health
+    // path serves index.html (200, text/html) so the client router can read the
+    // uuid. Non-GET or API paths fall through to Fastify's default 404/405.
+    app.setNotFoundHandler((request, reply) => {
+      if (request.method === 'GET' && !isApiPath(request.url.split('?')[0]!)) {
+        return reply.type('text/html').sendFile('index.html');
+      }
+      return reply.callNotFound();
+    });
+  }
 
   // Log the blessed registry provenance at startup.
   app.ready(() => {
