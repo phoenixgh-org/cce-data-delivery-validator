@@ -4,7 +4,7 @@
  * loading + 404 (unknown/expired uuid) states and passes each child its data
  * slice; B/C/D/E fill in the four components against the exported prop types.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { getSession, type SessionResponse } from '../api';
@@ -23,30 +23,40 @@ export function Dashboard() {
   const { uuid } = useParams<{ uuid: string }>();
   const [state, setState] = useState<State>({ phase: 'loading' });
 
+  // Refetch the session. Used both by the initial-load effect and by children
+  // that mutate session state (e.g. Setup's §1.3 auth toggle). The `cancelled`
+  // guard lets the effect drop a stale in-flight response on unmount/uuid change.
+  const load = useCallback(
+    (cancelled?: () => boolean) => {
+      if (!uuid) {
+        setState({ phase: 'not-found' });
+        return;
+      }
+      getSession(uuid)
+        .then((result) => {
+          if (cancelled?.()) return;
+          if (result.ok) setState({ phase: 'ready', data: result.data });
+          else setState({ phase: 'not-found' });
+        })
+        .catch((err: unknown) => {
+          if (cancelled?.()) return;
+          setState({
+            phase: 'error',
+            message: err instanceof Error ? err.message : 'Failed to load session',
+          });
+        });
+    },
+    [uuid],
+  );
+
   useEffect(() => {
-    if (!uuid) {
-      setState({ phase: 'not-found' });
-      return;
-    }
     let cancelled = false;
     setState({ phase: 'loading' });
-    getSession(uuid)
-      .then((result) => {
-        if (cancelled) return;
-        if (result.ok) setState({ phase: 'ready', data: result.data });
-        else setState({ phase: 'not-found' });
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setState({
-          phase: 'error',
-          message: err instanceof Error ? err.message : 'Failed to load session',
-        });
-      });
+    load(() => cancelled);
     return () => {
       cancelled = true;
     };
-  }, [uuid]);
+  }, [load]);
 
   if (state.phase === 'loading') {
     return (
@@ -84,7 +94,7 @@ export function Dashboard() {
     <main className="container">
       <h1>Validation dashboard</h1>
       <p className="muted">Endpoint {session.uuid}</p>
-      <Setup session={session} ingestUrl={ingestUrl} />
+      <Setup session={session} ingestUrl={ingestUrl} onAuthChange={() => load()} />
       <Matrix summary={summary} />
       <Transmissions transmissions={transmissions} />
       <Lifecycle expiresAt={expiresAt} lastPostAt={session.last_post_at} />

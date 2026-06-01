@@ -1,22 +1,24 @@
 /**
  * Setup view (yih.2). Shows the absolute ingest URL plus copy-paste `curl` and
  * header examples so a supplier can point a transmitter at the endpoint
- * (DESIGN §5 onboarding, §10 Setup). Pure presentational + local clipboard UI
- * state — no fetching. The ingest URL is a bearer capability URL, so it is
- * shown plainly for the holder to copy and use.
+ * (DESIGN §5 onboarding, §10 Setup). Also hosts the §1.3 auth opt-in toggle:
+ * enabling generates a credential and shows a copy-paste config snippet ONCE
+ * (DESIGN §10, §12 — the secret is never echoed again).
  *
- * Scope note: the §1.3 auth opt-in toggle (DESIGN §10) is deferred to M6 and is
- * deliberately NOT rendered here.
+ * The ingest URL is a bearer capability URL, so it is shown plainly for the
+ * holder to copy and use.
  */
 import { useState } from 'react';
 
-import type { SessionMeta } from '../api';
+import { disableAuth, enableAuth, type EnableAuthResponse, type SessionMeta } from '../api';
 
 export interface SetupProps {
   /** Session metadata (uuid, auth flags). */
   session: SessionMeta;
   /** Relative ingest path, e.g. `/i/{uuid}`. Compose origin in the component. */
   ingestUrl: string;
+  /** Refetch the session so the dashboard reflects the new auth state. */
+  onAuthChange: () => void;
 }
 
 /** A small JSON body suppliers can adapt — keeps the curl one realistic. */
@@ -42,6 +44,183 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     <button type="button" onClick={onCopy} aria-label={`Copy ${label}`}>
       {copied ? 'Copied!' : 'Copy'}
     </button>
+  );
+}
+
+/**
+ * Auth opt-in section (DESIGN §1.3 / §10). Renders a toggle reflecting the
+ * persisted `auth_enabled`/`auth_method` (a reload shows the enabled state
+ * without the secret), and on enable shows the show-once credential + a
+ * copy-paste config snippet.
+ */
+function AuthOptIn({
+  session,
+  absoluteIngestUrl,
+  contentType,
+  onAuthChange,
+}: {
+  session: SessionMeta;
+  absoluteIngestUrl: string;
+  contentType: string;
+  onAuthChange: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // The show-once credential, held only in local state for this render. Cleared
+  // on disable; lost on reload (the server never echoes it again — §12).
+  const [credential, setCredential] = useState<EnableAuthResponse | null>(null);
+
+  async function onEnable() {
+    setBusy(true);
+    setError(null);
+    try {
+      // Empty body → service defaults to the `header` method (zero-config opt-in).
+      const result = await enableAuth(session.uuid);
+      setCredential(result);
+      onAuthChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to enable auth');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDisable() {
+    setBusy(true);
+    setError(null);
+    try {
+      await disableAuth(session.uuid);
+      setCredential(null);
+      onAuthChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to disable auth');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3>Authentication (optional)</h3>
+      <p className="muted">
+        §1.3 auth is opt-in. By default the ingest URL is unauthenticated. Enable auth to require a
+        credential on every POST — the validator then grades §1.3 from real traffic.
+      </p>
+
+      <div style={rowStyle}>
+        {session.auth_enabled ? (
+          <button type="button" onClick={onDisable} disabled={busy}>
+            {busy ? 'Working…' : 'Disable authentication'}
+          </button>
+        ) : (
+          <button type="button" onClick={onEnable} disabled={busy}>
+            {busy ? 'Working…' : 'Enable authentication'}
+          </button>
+        )}
+        {session.auth_enabled && (
+          <span className="muted">
+            Enabled
+            {session.auth_method ? ` (${session.auth_method})` : ''}
+          </span>
+        )}
+      </div>
+
+      {error && <p className="error">{error}</p>}
+
+      {/* Reflect a previously-enabled state on reload: the secret is gone, but we
+          tell the holder how to rotate it. */}
+      {session.auth_enabled && !credential && (
+        <p className="muted">
+          A credential is active for this endpoint. The secret is shown only once at creation; if
+          you have lost it, enabling again rotates to a fresh credential.
+        </p>
+      )}
+
+      {credential && (
+        <AuthCredential
+          credential={credential}
+          absoluteIngestUrl={absoluteIngestUrl}
+          contentType={contentType}
+        />
+      )}
+    </>
+  );
+}
+
+/** Show-once credential display + copy-paste config snippet (DESIGN §10/§12). */
+function AuthCredential({
+  credential,
+  absoluteIngestUrl,
+  contentType,
+}: {
+  credential: EnableAuthResponse;
+  absoluteIngestUrl: string;
+  contentType: string;
+}) {
+  const snippet =
+    credential.auth_method === 'header'
+      ? [
+          `curl -X POST '${absoluteIngestUrl}' \\`,
+          `  -H 'Content-Type: ${contentType}' \\`,
+          `  -H '${credential.auth_header_name}: ${credential.token}' \\`,
+          `  -d '${SAMPLE_BODY}'`,
+        ].join('\n')
+      : [
+          `curl -X POST '${absoluteIngestUrl}' \\`,
+          `  -H 'Content-Type: ${contentType}' \\`,
+          `  -u '${credential.username}:${credential.password}' \\`,
+          `  -d '${SAMPLE_BODY}'`,
+        ].join('\n');
+
+  const secret = credential.auth_method === 'header' ? credential.token : credential.password;
+
+  return (
+    <div style={warnBlockStyle}>
+      <p>
+        <strong>Save this credential now — you will not see it again.</strong> The validator stores
+        only a salted hash (§12). To rotate, enable authentication again.
+      </p>
+
+      {credential.auth_method === 'header' ? (
+        <>
+          <h4>Token header</h4>
+          <div style={rowStyle}>
+            <code style={codeInlineStyle}>
+              {credential.auth_header_name}: {credential.token}
+            </code>
+            <CopyButton
+              text={`${credential.auth_header_name}: ${credential.token}`}
+              label="token header"
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <h4>Basic credentials</h4>
+          <div style={rowStyle}>
+            <code style={codeInlineStyle}>
+              {credential.username}:{credential.password}
+            </code>
+            <CopyButton
+              text={`${credential.username}:${credential.password}`}
+              label="basic credentials"
+            />
+          </div>
+        </>
+      )}
+      <div style={rowStyle}>
+        <CopyButton text={secret} label="secret" />
+        <span className="muted">Copy just the secret</span>
+      </div>
+
+      <h4>Example request (curl)</h4>
+      <div style={rowStyle}>
+        <pre style={blockStyle}>
+          <code>{snippet}</code>
+        </pre>
+        <CopyButton text={snippet} label="authenticated curl example" />
+      </div>
+    </div>
   );
 }
 
@@ -90,6 +269,13 @@ export function Setup(props: SetupProps) {
         </pre>
         <CopyButton text={curlExample} label="curl example" />
       </div>
+
+      <AuthOptIn
+        session={props.session}
+        absoluteIngestUrl={absoluteIngestUrl}
+        contentType={contentType}
+        onAuthChange={props.onAuthChange}
+      />
     </section>
   );
 }
@@ -110,6 +296,13 @@ const blockStyle: React.CSSProperties = {
   overflowX: 'auto',
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: '0.85rem',
+};
+
+const warnBlockStyle: React.CSSProperties = {
+  marginTop: '0.75rem',
+  padding: '0.75rem 1rem',
+  border: '1px solid currentColor',
+  borderRadius: '6px',
 };
 
 const codeInlineStyle: React.CSSProperties = {

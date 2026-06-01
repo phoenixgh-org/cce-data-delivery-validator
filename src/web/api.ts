@@ -112,6 +112,45 @@ export interface SessionResponse {
   expiresAt: string;
 }
 
+/** Optional body for POST /api/sessions/:uuid/auth (empty → defaults to `header`). */
+export interface EnableAuthRequest {
+  method?: AuthMethod;
+  /** Custom header name for the `header` method (e.g. `X-CCE-Token`). */
+  headerName?: string;
+  /** Username for the `basic` method. */
+  username?: string;
+}
+
+/**
+ * 201 response of POST /api/sessions/:uuid/auth — mirror src/api/sessions.ts
+ * verbatim. The `token` (header) / `password` (basic) is the show-once plaintext
+ * (DESIGN §12); it is never returned again, so the UI must surface it now.
+ */
+export type EnableAuthResponse =
+  | {
+      uuid: string;
+      auth_enabled: true;
+      auth_method: 'header';
+      auth_header_name: string;
+      /** Show-once plaintext bearer token (§12). */
+      token: string;
+    }
+  | {
+      uuid: string;
+      auth_enabled: true;
+      auth_method: 'basic';
+      username: string;
+      /** Show-once plaintext password (§12). */
+      password: string;
+    };
+
+/** 200 response of DELETE /api/sessions/:uuid/auth — mirror src/api/sessions.ts. */
+export interface DisableAuthResponse {
+  uuid: string;
+  auth_enabled: false;
+  auth_method: null;
+}
+
 /* ------------------------------------------------------------------ *
  * Client functions.
  * ------------------------------------------------------------------ */
@@ -142,4 +181,35 @@ export async function getSession(uuid: string): Promise<GetSessionResult> {
     throw new Error(`getSession failed: HTTP ${res.status}`);
   }
   return { ok: true, data: (await res.json()) as SessionResponse };
+}
+
+/**
+ * Enable (or rotate) §1.3 opt-in auth for a session. POST /api/sessions/:uuid/auth.
+ * Returns the show-once plaintext credential (token or password) — the caller MUST
+ * surface it immediately; it is never returned again (§12).
+ */
+export async function enableAuth(
+  uuid: string,
+  body: EnableAuthRequest = {},
+): Promise<EnableAuthResponse> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(uuid)}/auth`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`enableAuth failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as EnableAuthResponse;
+}
+
+/** Disable §1.3 opt-in auth for a session. DELETE /api/sessions/:uuid/auth. */
+export async function disableAuth(uuid: string): Promise<DisableAuthResponse> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(uuid)}/auth`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    throw new Error(`disableAuth failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as DisableAuthResponse;
 }
