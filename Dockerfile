@@ -10,7 +10,9 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 # Sources + build assets, then compile (tsc) and copy vendored schemas.
-COPY tsconfig.json ./
+# `npm run build` also runs `typecheck:web` (tsconfig.web.json) and `vite build`
+# (vite.config.ts), so both config files must be present in the build stage.
+COPY tsconfig.json tsconfig.web.json vite.config.ts ./
 COPY scripts ./scripts
 COPY src ./src
 RUN npm run build

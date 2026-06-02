@@ -1,7 +1,7 @@
 # Local/dev bring-up: Postgres + app, healthcheck-gated (mirrors ../tremble).
 # The app only starts once Postgres reports healthy. DB connection info is wired
-# through env now so the pg layer (dpp.4) can consume it without compose changes;
-# the app does not read DATABASE_URL yet.
+# through env and consumed by the pg pool (src/db/pool.ts): DATABASE_URL when set,
+# otherwise the PG* vars.
 
 services:
   postgres:
@@ -15,7 +15,7 @@ services:
       - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # First-boot ordered SQL lands here (dpp.4). Empty dir is fine for now.
+      # First-boot ordered schema SQL (10-session, 20-transmission, 30-finding, 40-indexes).
       - ./db/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
@@ -33,7 +33,6 @@ services:
     environment:
       PORT: 3000
       HOST: 0.0.0.0
-      # Wired for dpp.4 (pg layer); not consumed yet.
       DATABASE_URL: postgresql://${POSTGRES_USER:-cce_validator}:${POSTGRES_PASSWORD:-cce_validator}@postgres:5432/${POSTGRES_DB:-cce_validator}
       PGHOST: postgres
       PGPORT: 5432
