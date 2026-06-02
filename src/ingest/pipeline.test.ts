@@ -88,10 +88,80 @@ test('findings accumulate on ctx, including from the halting stage', async () =>
   assert.equal(result.status, 413);
 });
 
-test('buildResponseBody summarizes status + finding count + transmission id', () => {
-  const body = buildResponseBody(200, [{ requirement: '1.2', severity: 'info' }], 'tx-1');
-  assert.deepEqual(body, { transmissionId: 'tx-1', status: 200, findings: 1 });
+test('buildResponseBody echoes id, status, count, and per-finding details (teaching surface)', () => {
+  const findings = [
+    { requirement: '1.4', severity: 'pass', detail: 'wire body is 12 bytes, within the 1MB cap' },
+    { requirement: '3.3', severity: 'info', detail: 'present DS01 objects: AMID×1' },
+  ] as const;
+  const body = buildResponseBody(200, findings, 'tx-1');
 
-  const noRow = buildResponseBody(404, [], null);
-  assert.deepEqual(noRow, { transmissionId: null, status: 404, findings: 0 });
+  assert.equal(body.transmissionId, 'tx-1');
+  assert.equal(body.status, 200);
+  assert.equal(body.findings, 2, 'count is preserved from the original shape');
+  // Per-finding echo carries requirement/severity/detail (no internal pointer).
+  assert.deepEqual(body.findingDetails, [
+    { requirement: '1.4', severity: 'pass', detail: 'wire body is 12 bytes, within the 1MB cap' },
+    { requirement: '3.3', severity: 'info', detail: 'present DS01 objects: AMID×1' },
+  ]);
+});
+
+test('buildResponseBody message: accepted 2xx leads with "Accepted" and the tally', () => {
+  const body = buildResponseBody(
+    200,
+    [
+      { requirement: '1.2', severity: 'pass' },
+      { requirement: '3.3', severity: 'info' },
+    ],
+    'tx-1',
+  );
+  assert.match(body.message, /^Accepted \(200\)/);
+  assert.match(body.message, /2 findings/);
+  assert.match(body.message, /1 info/, 'breaks down the info count');
+});
+
+test('buildResponseBody message: short-circuit leads with "Rejected (NNN)" + fail count', () => {
+  const body = buildResponseBody(
+    422,
+    [
+      { requirement: '1.1', severity: 'pass' },
+      { requirement: '3.2', severity: 'fail', detail: 'schema violation at (root): is invalid' },
+    ],
+    'tx-2',
+  );
+  assert.match(body.message, /^Rejected \(422\)/);
+  assert.match(body.message, /2 findings/);
+  assert.match(body.message, /1 fail/, 'surfaces the fail count');
+});
+
+test('buildResponseBody: no-row pre-body halt (404) → null id, empty details, singular wording', () => {
+  const body = buildResponseBody(404, [], null);
+  assert.equal(body.transmissionId, null);
+  assert.equal(body.status, 404);
+  assert.equal(body.findings, 0);
+  assert.deepEqual(body.findingDetails, []);
+  assert.match(body.message, /Rejected \(404\): 0 findings\./);
+});
+
+test('buildResponseBody: a single finding uses singular "finding"', () => {
+  const body = buildResponseBody(200, [{ requirement: '1.2', severity: 'pass' }], 'tx-3');
+  assert.match(body.message, /1 finding\./);
+  assert.doesNotMatch(body.message, /1 findings/);
+});
+
+test('runPipeline result feeds buildResponseBody end-to-end (no DB)', async () => {
+  const stage: Stage = {
+    name: 'fail-stage',
+    run(c) {
+      c.findings.push({ requirement: '1.6', severity: 'fail', detail: 'undecodable' });
+      return halt(400);
+    },
+  };
+  const ctx = fakeCtx();
+  const result = await runPipeline(ctx, [stage]);
+  const body = buildResponseBody(result.status, result.findings, 'tx-4');
+
+  assert.equal(body.status, 400);
+  assert.equal(body.findings, 1);
+  assert.equal(body.findingDetails[0]?.detail, 'undecodable');
+  assert.match(body.message, /^Rejected \(400\): 1 finding \(1 fail\)\./);
 });

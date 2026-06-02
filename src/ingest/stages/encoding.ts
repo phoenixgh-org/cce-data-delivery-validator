@@ -65,7 +65,7 @@ export function encodingStage(): Stage {
         ctx.findings.push({
           requirement: '1.6',
           severity: 'fail',
-          detail: `unsupported Content-Encoding "${enc}"; §1.6 permits gzip only`,
+          detail: `Content-Encoding "${enc}" is unsupported; only gzip is permitted (§1.6)`,
         });
         return halt(400);
       }
@@ -79,7 +79,7 @@ export function encodingStage(): Stage {
         ctx.findings.push({
           requirement: '1.6',
           severity: 'fail',
-          detail: `Content-Encoding gzip body is undecodable: ${reason} (§1.6)`,
+          detail: `gzip body could not be decompressed: ${reason} (§1.6)`,
         });
         return halt(400);
       }
@@ -90,7 +90,7 @@ export function encodingStage(): Stage {
         ctx.findings.push({
           requirement: '1.6',
           severity: 'fail',
-          detail: 'gzip body decompresses to another gzip member (illegal double-encoding, §1.6)',
+          detail: 'gzip body decompresses to another gzip member — illegal double-encoding (§1.6)',
         });
         return halt(400);
       }
@@ -100,7 +100,7 @@ export function encodingStage(): Stage {
       return record(ctx, {
         requirement: '1.6',
         severity: 'pass',
-        detail: 'Content-Encoding gzip decoded to a single non-gzip layer',
+        detail: 'Content-Encoding gzip decoded cleanly to a single non-gzip layer (§1.6)',
       });
     },
   };

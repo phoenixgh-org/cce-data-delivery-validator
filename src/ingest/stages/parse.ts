@@ -56,7 +56,7 @@ export function parseStage(): Stage {
       ctx.findings.push({
         requirement: '1.1',
         severity: 'pass',
-        detail: 'body parsed as UTF-8 JSON',
+        detail: 'body parsed cleanly as UTF-8 JSON (§1.1)',
       });
       return CONTINUE;
     },

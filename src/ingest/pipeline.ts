@@ -140,20 +140,88 @@ export async function runPipeline(
   return { status: DEFAULT_SUCCESS_STATUS, findings: ctx.findings, haltedAt: null };
 }
 
-/** The small JSON body returned on success/short-circuit (DESIGN.md §6). */
+/**
+ * One finding as echoed in the HTTP response body — the human-readable subset of
+ * a {@link Finding} (`requirement`, `severity`, `detail`). The internal `pointer`
+ * is omitted; suppliers read the per-error location from `detail`, and the full
+ * finding (with pointer) is persisted for the dashboard.
+ */
+export interface ResponseFinding {
+  requirement: string;
+  severity: Severity;
+  /** Human-readable explanation; absent only if a finding carried no detail. */
+  detail?: string | null;
+}
+
+/**
+ * The small JSON body returned on success/short-circuit (DESIGN.md §6).
+ *
+ * This body is a TEACHING SURFACE: a supplier should understand the outcome from
+ * the HTTP response alone, without opening the dashboard (§6). So beyond the
+ * persisted `transmissionId` and HTTP `status`, it carries:
+ *   - `message` — a one-line human summary ("Accepted: …" / "Rejected (NNN): …")
+ *     including a fail/info breakdown so the headline result is self-explanatory.
+ *   - `findings` — the COUNT of findings recorded (kept from the original shape).
+ *   - `findingDetails` — the per-finding `{requirement, severity, detail}` echo,
+ *     so every recorded observation is readable straight from the response.
+ */
 export interface IngestResponseBody {
   /** Persisted transmission id, or null when no row was written (404/405). */
   transmissionId: string | null;
   status: number;
+  /** One-line human summary of the outcome (teaching surface, §6). */
+  message: string;
   /** Count of findings recorded — a teaching surface (§6). */
   findings: number;
+  /** Per-finding human-readable echo so results are visible from the response. */
+  findingDetails: ResponseFinding[];
 }
 
-/** Build the small summary body returned to the supplier. */
+/** True for the HTTP 2xx status range (success — the data was accepted). */
+function isAccepted(status: number): boolean {
+  return status >= 200 && status < 300;
+}
+
+/**
+ * Compose the one-line teaching summary. Accepted runs lead with "Accepted",
+ * short-circuits with "Rejected (NNN)"; both append the finding tally (with a
+ * fail/info breakdown when present) so the headline conveys the result alone.
+ */
+function summarize(status: number, findings: readonly Finding[]): string {
+  const total = findings.length;
+  const fails = findings.filter((f) => f.severity === 'fail').length;
+  const infos = findings.filter((f) => f.severity === 'info').length;
+
+  const plural = (n: number) => (n === 1 ? 'finding' : 'findings');
+  let tally = `${total} ${plural(total)}`;
+  const parts: string[] = [];
+  if (fails > 0) parts.push(`${fails} fail`);
+  if (infos > 0) parts.push(`${infos} info`);
+  if (parts.length > 0) tally += ` (${parts.join(', ')})`;
+
+  return isAccepted(status)
+    ? `Accepted (${status}): data recorded; ${tally}.`
+    : `Rejected (${status}): ${tally}.`;
+}
+
+/**
+ * Build the small summary body returned to the supplier (DESIGN.md §6 teaching
+ * surface). See {@link IngestResponseBody} for the field contract.
+ */
 export function buildResponseBody(
   status: number,
   findings: readonly Finding[],
   transmissionId: string | null,
 ): IngestResponseBody {
-  return { transmissionId, status, findings: findings.length };
+  return {
+    transmissionId,
+    status,
+    message: summarize(status, findings),
+    findings: findings.length,
+    findingDetails: findings.map((f) => ({
+      requirement: f.requirement,
+      severity: f.severity,
+      detail: f.detail,
+    })),
+  };
 }

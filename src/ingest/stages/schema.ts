@@ -52,7 +52,7 @@ function toPointer(instancePath: string): string | null {
 function describeError(err: ErrorObject): string {
   const where = err.instancePath === '' ? '(root)' : err.instancePath;
   const message = err.message ?? 'is invalid';
-  return `${where} ${message}`;
+  return `schema violation at ${where}: ${message} (§3.2)`;
 }
 
 export function schemaStage(): Stage {

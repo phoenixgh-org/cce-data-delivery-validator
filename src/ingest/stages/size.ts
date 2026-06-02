@@ -24,7 +24,7 @@ export function sizeStage(): Stage {
         ctx.findings.push({
           requirement: '1.4',
           severity: 'fail',
-          detail: `wire body ${wireBytes} bytes exceeds the 1MB cap (${MAX_WIRE_BYTES} bytes)`,
+          detail: `wire body is ${wireBytes} bytes, exceeding the 1MB cap (${MAX_WIRE_BYTES} bytes) (§1.4)`,
         });
         return halt(413);
       }
@@ -33,7 +33,7 @@ export function sizeStage(): Stage {
       return record(ctx, {
         requirement: '1.4',
         severity: 'pass',
-        detail: `wire body ${wireBytes} bytes is within the 1MB cap`,
+        detail: `wire body is ${wireBytes} bytes, within the 1MB cap (${MAX_WIRE_BYTES} bytes) (§1.4)`,
       });
     },
   };

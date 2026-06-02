@@ -45,7 +45,7 @@ export function contentTypeStage(): Stage {
         return record(ctx, {
           requirement: '1.2',
           severity: 'fail',
-          detail: 'missing Content-Type; §1.2 requires application/json; charset=utf-8',
+          detail: 'Content-Type header is missing; expected application/json; charset=utf-8 (§1.2)',
         });
       }
 
@@ -74,7 +74,7 @@ export function contentTypeStage(): Stage {
       return record(ctx, {
         requirement: '1.2',
         severity: 'pass',
-        detail: 'Content-Type is application/json; charset=utf-8',
+        detail: 'Content-Type is application/json; charset=utf-8 (§1.2)',
       });
     },
   };
