@@ -59,7 +59,10 @@ export function cloneValid(): {
   meta: Record<string, unknown>;
   data: Record<string, unknown>[];
 } {
-  return structuredClone(validTransmission) as {
+  // structuredClone yields a deep mutable copy at runtime, but its return type
+  // inherits validTransmission's `as const` deep-readonly shape — so cast via
+  // `unknown` to reach the mutable fixture type (TS2352 otherwise).
+  return structuredClone(validTransmission) as unknown as {
     meta: Record<string, unknown>;
     data: Record<string, unknown>[];
   };
