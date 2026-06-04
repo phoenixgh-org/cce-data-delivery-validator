@@ -9,7 +9,9 @@
  *
  * Persistence boundary (DESIGN.md §6/§8):
  *   - 404 (unknown session) and 405 (non-POST) persist NO row — these halt in
- *     stages 0/1 before the body stages.
+ *     stages 0/1 before the body stages and are not graded checks of the supplier.
+ *   - An enabled-auth 401 (stage 2) DOES persist a row — it is a graded §1.3
+ *     failure carrying a 1.3 FAIL finding, so we keep it (don't drop the call).
  *   - EVERYTHING from stage 3 onward (size/content-type/encoding/parse/schema/
  *     semantic) persists a row even when it short-circuits (413/400/422/…): the
  *     request reached the body stages with a valid session, so we record it.
@@ -209,9 +211,22 @@ export function registerIngestRoute(app: FastifyInstance): void {
       const { uuid } = request.params as { uuid: string };
       const ctx = buildContext(request, uuid, app.schemaRegistry);
 
-      // Pre-body stages (0, 1[, 2]): a halt here persists NO transmission row.
+      // Pre-body stages (0, 1[, 2]): a halt here persists NO transmission row —
+      // EXCEPT an enabled-auth 401. The 404 (session) and 405 (method) rejects are
+      // not graded checks of the supplier and carry no findings, so they stay
+      // row-less. An enabled-auth 401 IS a graded §1.3 failure (the auth stage
+      // recorded a 1.3 FAIL finding before halting), so we persist the row + that
+      // finding — we call balls and strikes as we see them, and don't drop the
+      // call. `haltedAt === 'auth'` is the precise signal: the auth stage only
+      // halts when auth is enabled and the credential failed.
       const pre = await runPipeline(ctx, preBodyStages());
       if (pre.haltedAt !== null) {
+        if (pre.haltedAt === 'auth') {
+          const transmissionId = await persistTransmission(ctx, pre.status, ctx.findings);
+          return reply
+            .code(pre.status)
+            .send(buildResponseBody(pre.status, ctx.findings, transmissionId));
+        }
         return reply.code(pre.status).send(buildResponseBody(pre.status, pre.findings, null));
       }
 

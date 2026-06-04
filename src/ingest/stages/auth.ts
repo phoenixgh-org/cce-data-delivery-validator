@@ -28,6 +28,7 @@ import { getSession } from '../../db/repository.js';
 import {
   CONTINUE,
   halt,
+  record,
   type PipelineContext,
   type Stage,
   type StageOutcome,
@@ -53,16 +54,33 @@ export function authStage(db?: Queryable): Stage {
     async run(ctx: PipelineContext): Promise<StageOutcome> {
       const session = await getSession(ctx.sessionUuid, db);
       // Stage 0 already 404'd a missing session; if it is somehow gone now, treat
-      // a non-existent session as "nothing to enforce" and continue — stage 0 owns
-      // the 404, not this stage.
-      if (!session || !session.auth_enabled) {
-        // Zero-friction default (§3): auth not enabled → no-op.
+      // a non-existent session as "nothing to grade" and continue — stage 0 owns
+      // the 404, not this stage (and there is no session to attribute a finding to).
+      if (!session) {
         return CONTINUE;
+      }
+
+      if (!session.auth_enabled) {
+        // Zero-friction default (§3): auth not enabled. We still call §1.3 — an
+        // INFO note that auth was off (info never grades, so the row stays
+        // `untested`, but the count surfaces in the matrix + Transmission detail).
+        return record(ctx, {
+          requirement: '1.3',
+          severity: 'info',
+          detail: 'Authorization disabled for this session; §1.3 not enforced.',
+        });
       }
 
       // Enabled: assemble the request-side material verifyCredential expects.
       //   header method → the value of the configured header (`auth_header_name`).
       //   basic  method → the raw `Authorization` header.
+      // The header a credential is expected in, named for the §1.3 finding notes:
+      // for `basic` it is always `Authorization`; for `header` it is the
+      // configured `auth_header_name`.
+      const expectedHeader =
+        session.auth_method === 'basic'
+          ? 'Authorization'
+          : (session.auth_header_name ?? 'the configured');
       const presented: PresentedCredential = {
         headerValue: session.auth_header_name
           ? headerValue(ctx, session.auth_header_name)
@@ -71,9 +89,32 @@ export function authStage(db?: Queryable): Stage {
       };
 
       if (verifyCredential(presented, session)) {
-        return CONTINUE;
+        // §1.3 PASS — graded from real traffic.
+        return record(ctx, {
+          requirement: '1.3',
+          severity: 'pass',
+          detail: `Successful authorization via ${expectedHeader} header.`,
+        });
       }
-      // Missing/incorrect credential → 401, NO transmission row (pre-body halt).
+
+      // Failed: distinguish "no credential presented" from "wrong credential" so
+      // the producer sees WHY. For `basic` the credential rides in `Authorization`;
+      // for `header` it is the configured header's value.
+      const presentedSomething =
+        session.auth_method === 'basic'
+          ? presented.authorization !== undefined
+          : typeof presented.headerValue === 'string' && presented.headerValue.length > 0;
+
+      // §1.3 FAIL — record BEFORE halting. The route persists the enabled-401 row
+      // (a graded failure, unlike the 404/405 pre-body rejects) so this finding is
+      // not lost: it increments the 1.3 fail counter and shows in Transmission detail.
+      record(ctx, {
+        requirement: '1.3',
+        severity: 'fail',
+        detail: presentedSomething
+          ? `Failed authorization (incorrect token transmitted in ${expectedHeader} header).`
+          : `Failed authorization (no ${expectedHeader} header detected).`,
+      });
       return halt(401);
     },
   };
