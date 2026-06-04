@@ -57,6 +57,19 @@ function flag(value: boolean | null): string {
   return value ? 'yes' : 'no';
 }
 
+/**
+ * Placeholder for the Parsed body section when no body was parsed. An enabled-auth
+ * 401 halts in the pre-body auth stage BEFORE the parse stage runs, so the body was
+ * never read — say that, rather than the generic "(no parsed body)" which reads like
+ * an empty/absent payload. (The delivered bytes still appear under Raw body.)
+ */
+function noParsedBodyNote(tx: TransmissionView): string {
+  if (tx.http_status === 401) {
+    return '(body not parsed — authorization failed before the body was read)';
+  }
+  return '(no parsed body)';
+}
+
 function FindingItem({ finding }: { finding: FindingView }) {
   return (
     <li style={{ margin: '0.5rem 0', listStyle: 'none' }}>
@@ -152,7 +165,7 @@ function TransmissionRow({ tx }: { tx: TransmissionView }) {
               margin: 0,
             }}
           >
-            {tx.body == null ? '(no parsed body)' : JSON.stringify(tx.body, null, 2)}
+            {tx.body == null ? noParsedBodyNote(tx) : JSON.stringify(tx.body, null, 2)}
           </pre>
 
           <h4 style={{ margin: '1rem 0 0.25rem' }}>Raw body</h4>
