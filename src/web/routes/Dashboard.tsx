@@ -19,15 +19,27 @@ type State =
   | { phase: 'error'; message: string }
   | { phase: 'ready'; data: SessionResponse };
 
+/**
+ * Background auto-refresh cadence (qkc). The dashboard silently refetches the
+ * session on this interval so newly-arrived transmissions appear without a
+ * manual reload. SSE-based push is tracked separately (to8) as a lower-latency
+ * replacement; polling is the no-backend-change baseline.
+ */
+const POLL_INTERVAL_MS = 5000;
+
 export function Dashboard() {
   const { uuid } = useParams<{ uuid: string }>();
   const [state, setState] = useState<State>({ phase: 'loading' });
 
-  // Refetch the session. Used both by the initial-load effect and by children
-  // that mutate session state (e.g. Setup's §1.3 auth toggle). The `cancelled`
-  // guard lets the effect drop a stale in-flight response on unmount/uuid change.
+  // Refetch the session. Used by the initial-load effect, the background poll,
+  // and children that mutate session state (e.g. Setup's §1.3 auth toggle). The
+  // `cancelled` guard lets a caller drop a stale in-flight response on
+  // unmount/uuid change. In `background` mode a transient network/5xx error is
+  // swallowed — the live view is kept and the next tick retries — rather than
+  // replacing healthy data with the full-screen error state; a 404 (the session
+  // genuinely expired) still transitions to not-found.
   const load = useCallback(
-    (cancelled?: () => boolean) => {
+    (cancelled?: () => boolean, opts?: { background?: boolean }) => {
       if (!uuid) {
         setState({ phase: 'not-found' });
         return;
@@ -39,7 +51,7 @@ export function Dashboard() {
           else setState({ phase: 'not-found' });
         })
         .catch((err: unknown) => {
-          if (cancelled?.()) return;
+          if (cancelled?.() || opts?.background) return;
           setState({
             phase: 'error',
             message: err instanceof Error ? err.message : 'Failed to load session',
@@ -57,6 +69,45 @@ export function Dashboard() {
       cancelled = true;
     };
   }, [load]);
+
+  // Auto-refresh while the dashboard is showing data. Polling pauses when the
+  // tab is backgrounded (no point refetching a session nobody is watching) and
+  // fires an immediate catch-up refresh when the tab becomes visible again.
+  const isReady = state.phase === 'ready';
+  useEffect(() => {
+    if (!isReady) return;
+    let cancelled = false;
+    const guard = () => cancelled;
+
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const start = () => {
+      timer ??= setInterval(() => load(guard, { background: true }), POLL_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (timer !== undefined) {
+        clearInterval(timer);
+        timer = undefined;
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        load(guard, { background: true });
+        start();
+      }
+    };
+
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      cancelled = true;
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isReady, load]);
 
   if (state.phase === 'loading') {
     return (
