@@ -45,6 +45,17 @@ function toFindingView(f: FindingRow) {
   };
 }
 
+/**
+ * Order findings ascending by §-number for the per-tx drill-down. Requirements are
+ * dotted ids ("1.2", "1.10", "3.2"), so a plain string sort would mis-rank "1.10"
+ * before "1.2"; `numeric: true` compares each numeric run by VALUE, giving true
+ * section order. Sort is stable, so multiple findings under one requirement keep
+ * their insertion (pipeline) order.
+ */
+function byRequirement(a: FindingRow, b: FindingRow): number {
+  return a.requirement.localeCompare(b.requirement, undefined, { numeric: true });
+}
+
 /** Register the sessions API on `app`. */
 export function registerSessionsApi(app: FastifyInstance): void {
   app.post('/api/sessions', async (_request: FastifyRequest, reply: FastifyReply) => {
@@ -175,7 +186,7 @@ export function registerSessionsApi(app: FastifyInstance): void {
         schema_ok: t.schema_ok,
         body: t.body,
         raw_body: t.raw_body,
-        findings: (findingsByTx.get(t.id) ?? []).map(toFindingView),
+        findings: (findingsByTx.get(t.id) ?? []).slice().sort(byRequirement).map(toFindingView),
       }));
 
       const base = session.last_post_at ?? session.created_at;

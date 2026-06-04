@@ -188,6 +188,52 @@ test(
   },
 );
 
+test(
+  'GET /api/sessions/:uuid → per-tx findings ordered ascending by §-number (numeric, not lexical)',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      const tx = await insertTransmission({
+        sessionUuid: uuid,
+        wireBytes: 100,
+        contentType: 'application/json; charset=utf-8',
+        httpStatus: 200,
+        body: { meta: { transferId: 'T-order' } },
+        rawBody: '{"meta":{"transferId":"T-order"}}',
+        parseOk: true,
+        schemaOk: true,
+      });
+
+      // Insert OUT of section order, including a two-digit minor (1.10) so a plain
+      // string sort (which ranks "1.10" < "1.2") would be visibly wrong.
+      await insertFinding(tx.id, { requirement: '3.2', severity: 'pass' });
+      await insertFinding(tx.id, { requirement: '1.10', severity: 'info' });
+      await insertFinding(tx.id, { requirement: '1.2', severity: 'pass' });
+      await insertFinding(tx.id, { requirement: '2.1', severity: 'fail' });
+
+      const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as {
+        transmissions: Array<{ findings: Array<{ requirement: string }> }>;
+      };
+
+      const order = body.transmissions[0]?.findings.map((f) => f.requirement);
+      assert.deepEqual(order, ['1.2', '1.10', '2.1', '3.2'], 'ascending by section number');
+    } finally {
+      if (uuid) {
+        await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      }
+      await app.close();
+    }
+  },
+);
+
 test.after(async () => {
   await closePool().catch(() => {});
 });
