@@ -122,3 +122,38 @@ test('POST /i/:uuid is NOT shadowed by the GET-only SPA fallback', async () => {
     await app.close();
   }
 });
+
+// bug bcm: with the SPA fallback registered, a non-GET unmatched path (and any
+// unmatched API path) must get Fastify's JSON 404 shape — NOT a degraded
+// plain-text "404 Not Found" via reply.callNotFound() re-entering the handler.
+test('POST to an unknown path returns a JSON 404, not the SPA shell (bcm)', async () => {
+  const app = makeApp();
+  await app.ready();
+  try {
+    const res = await app.inject({ method: 'POST', url: '/some-unknown-path' });
+    assert.equal(res.statusCode, 404);
+    assert.match(res.headers['content-type'] ?? '', /application\/json/);
+    assert.doesNotMatch(res.body, /SPA-SHELL/);
+    assert.deepEqual(res.json(), {
+      statusCode: 404,
+      error: 'Not Found',
+      message: 'Route POST:/some-unknown-path not found',
+    });
+  } finally {
+    await app.close();
+  }
+});
+
+test('GET to an unknown /api path returns a JSON 404, not the SPA shell (bcm)', async () => {
+  const app = makeApp();
+  await app.ready();
+  try {
+    const res = await app.inject({ method: 'GET', url: '/api/unknown' });
+    assert.equal(res.statusCode, 404);
+    assert.match(res.headers['content-type'] ?? '', /application\/json/);
+    assert.doesNotMatch(res.body, /SPA-SHELL/);
+    assert.equal(res.json().error, 'Not Found');
+  } finally {
+    await app.close();
+  }
+});

@@ -160,12 +160,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
     // SPA fallback: a GET that matched no route and is NOT an API/ingest/health
     // path serves index.html (200, text/html) so the client router can read the
-    // uuid. Non-GET or API paths fall through to Fastify's default 404/405.
+    // uuid. Non-GET or API paths get a 404 — reproduced INLINE rather than via
+    // reply.callNotFound(): calling that from inside a notFoundHandler re-enters
+    // the handler, which Fastify rejects with a warn log ("Trying to send a
+    // NotFound error inside a 404 handler") and a degraded plain-text body. We
+    // instead send Fastify's own default-404 JSON shape directly (bug bcm).
     app.setNotFoundHandler((request, reply) => {
       if (request.method === 'GET' && !isApiPath(request.url.split('?')[0]!)) {
         return reply.type('text/html').sendFile('index.html');
       }
-      return reply.callNotFound();
+      return reply.code(404).send({
+        statusCode: 404,
+        error: 'Not Found',
+        message: `Route ${request.method}:${request.url} not found`,
+      });
     });
   }
 
