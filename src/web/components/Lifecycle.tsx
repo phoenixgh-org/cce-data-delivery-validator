@@ -1,11 +1,11 @@
 /**
- * Lifecycle / expiry display (yih.5). Surfaces the 30-day inactivity expiry
+ * Lifecycle / expiry display (yih.5). Surfaces the 7-day inactivity expiry
  * clock from `expiresAt` (DESIGN.md §10, §11), framed as informational — a
  * heads-up, never a surprise. The clock is inactivity-based: it resets on each
  * new transmission, and is measured from session creation until the first POST.
  *
  * RENDER-ONLY: `expiresAt` is the ISO instant the API already computed (base +
- * 30 days, base = last_post_at ?? created_at). This component does not refetch
+ * 7 days, base = last_post_at ?? created_at). This component does not refetch
  * or recompute that base — it only derives an absolute date + relative
  * "expires in N days" against `Date.now()` for display.
  */
@@ -41,7 +41,7 @@ export function Lifecycle(props: LifecycleProps) {
     <section>
       <h2>Lifecycle</h2>
       <p className="muted">
-        Inactive test endpoints are purged after 30 days. This is a heads-up, not something you need
+        Inactive test endpoints are purged after 7 days. This is a heads-up, not something you need
         to act on — the clock resets every time you POST a transmission.
       </p>
       <p>

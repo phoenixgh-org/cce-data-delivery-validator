@@ -27,6 +27,7 @@ import { generateCredential } from '../auth/credential.js';
 import {
   RETENTION_MS,
   createSession,
+  deleteSessionData,
   disableAuth,
   enableAuth,
   getSession,
@@ -42,6 +43,7 @@ function toFindingView(f: FindingRow) {
     severity: f.severity,
     detail: f.detail,
     pointer: f.pointer,
+    outdated: f.outdated,
   };
 }
 
@@ -141,6 +143,27 @@ export function registerSessionsApi(app: FastifyInstance): void {
         auth_enabled: view.auth_enabled,
         auth_method: view.auth_method,
       });
+    },
+  );
+
+  // Delete all CAPTURED DATA for a session (DESIGN.md §8 user-triggered purge):
+  // wipes its transmissions + findings but KEEPS the session row + ingest URL
+  // alive, so the supplier can start a fresh test protocol against the same
+  // endpoint. Drives the dashboard's "Delete all captured data" danger zone.
+  // 404 when the session is unknown/expired; otherwise reports how many
+  // transmissions were removed (0 is a valid no-op for an already-empty session).
+  app.delete(
+    '/api/sessions/:uuid/data',
+    async (request: FastifyRequest<{ Params: { uuid: string } }>, reply: FastifyReply) => {
+      const { uuid } = request.params;
+
+      const session = await getSession(uuid);
+      if (!session) {
+        return reply.code(404).send({ error: 'not_found', uuid });
+      }
+
+      const deletedTransmissions = await deleteSessionData(uuid);
+      return reply.send({ uuid, deleted: { transmissions: deletedTransmissions } });
     },
   );
 

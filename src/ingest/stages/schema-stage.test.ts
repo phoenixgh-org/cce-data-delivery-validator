@@ -5,10 +5,11 @@
  *
  *  1. STAGE-UNIT tests — drive `schemaStage().run()` against a hand-built
  *     {@link PipelineContext} carrying a REAL {@link SchemaRegistry} (loaded from
- *     the vendored 0.8.0 bytes). No DB, no HTTP — these always run and prove the
- *     stage's three branches: unknown version → 422, invalid body → 422 with one
- *     finding per Ajv error (each with a JSON Pointer), and a genuinely-valid
- *     0.8.0 transmission → continue with schemaOk = true.
+ *     the vendored bytes). No DB, no HTTP — these always run and prove the
+ *     stage's branches: unknown version → 422, invalid body → 422 with one
+ *     finding per Ajv error (each with a JSON Pointer), a genuinely-valid
+ *     current-version transmission → continue with schemaOk = true + a §3.2 pass,
+ *     and a valid-but-outdated version → continue + a §3.2 info(outdated).
  *
  *  2. FULL-FLOW tests — drive the real route via `app.inject` so the stages run
  *     in order and persist records the outcome. SKIPPED gracefully when no DB is
@@ -33,11 +34,11 @@ import { schemaStage } from './schema.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
 
-/** A genuinely-valid 0.8.0 RTM transmission (verified against the live registry). */
+/** A genuinely-valid RTM transmission on the CURRENT version (verified against the live registry). */
 function validPayload(): Record<string, unknown> {
   return {
     meta: {
-      schemaVersion: '0.8.0',
+      schemaVersion: '0.8.1',
       transferType: 'rtm',
       transferId: 'T-valid-1',
       transferSrc: 'com.example',
@@ -174,22 +175,48 @@ test('schema: parseable-but-invalid body → halt 422, one finding per Ajv error
 
 // ── stage-unit: valid payload ───────────────────────────────────────────────
 
-test('schema: genuinely-valid 0.8.0 transmission → continue, schemaOk true, 3.2 pass', () => {
+test('schema: genuinely-valid current-version transmission → continue, schemaOk true, 3.2 pass', () => {
   const ctx = makeCtx(validPayload());
   const outcome = schemaStage().run(ctx) as StageOutcome;
 
   assert.equal(outcome.kind, 'continue', 'valid payload is not halted');
   assert.equal(ctx.schemaOk, true);
-  assert.equal(ctx.normalizedSchemaVersion, '0.8.0');
+  assert.equal(ctx.normalizedSchemaVersion, '0.8.1');
   assert.equal(findingsBy(ctx.findings, '3.2', 'fail').length, 0, 'no fail findings');
   const passes = findingsBy(ctx.findings, '3.2', 'pass');
   assert.equal(passes.length, 1, 'one pass finding');
   assert.match(passes[0]?.detail ?? '', /sha256/, 'pass cites content-hash provenance');
+  assert.notEqual(passes[0]?.outdated, true, 'a current-version pass is not flagged outdated');
   // meta lifted for persistence.
   assert.equal(ctx.meta.transferId, 'T-valid-1');
   assert.equal(ctx.meta.transferType, 'rtm');
   assert.equal(ctx.meta.transferSrc, 'com.example');
-  assert.equal(ctx.meta.schemaVersion, '0.8.0');
+  assert.equal(ctx.meta.schemaVersion, '0.8.1');
+});
+
+test('schema: valid-but-OUTDATED version (0.8.0) → continue, schemaOk true, one 3.2 info(outdated)', () => {
+  // Same valid body, but declaring the older registered version. The registry's
+  // current version is newer, so the body is ACCEPTED (continue, schemaOk true)
+  // and recorded as a §3.2 info finding flagged `outdated` — never a pass/fail.
+  const body = validPayload();
+  (body.meta as Record<string, unknown>).schemaVersion = '0.8.0';
+  const ctx = makeCtx(body);
+  const outcome = schemaStage().run(ctx) as StageOutcome;
+
+  assert.equal(outcome.kind, 'continue', 'outdated-but-valid payload is still accepted');
+  assert.equal(ctx.schemaOk, true);
+  assert.equal(ctx.normalizedSchemaVersion, '0.8.0');
+  assert.equal(
+    findingsBy(ctx.findings, '3.2', 'pass').length,
+    0,
+    'no pass finding for an outdated version',
+  );
+  assert.equal(findingsBy(ctx.findings, '3.2', 'fail').length, 0, 'outdated is not a fail');
+  const infos = findingsBy(ctx.findings, '3.2', 'info');
+  assert.equal(infos.length, 1, 'one §3.2 info finding');
+  assert.equal(infos[0]?.outdated, true, 'flagged outdated for the dashboard tag');
+  assert.match(infos[0]?.detail ?? '', /0\.8\.0/, 'names the declared version');
+  assert.match(infos[0]?.detail ?? '', /0\.8\.1/, 'names the current version to upgrade to');
 });
 
 // ── full-flow (DB-skip-guarded) ─────────────────────────────────────────────
@@ -249,8 +276,9 @@ async function findingsFor(sessionUuid: string) {
     requirement: string;
     severity: string;
     pointer: string | null;
+    outdated: boolean;
   }>(
-    `SELECT f.requirement, f.severity, f.pointer FROM finding f
+    `SELECT f.requirement, f.severity, f.pointer, f.outdated FROM finding f
      JOIN transmission t ON t.id = f.transmission_id
      WHERE t.session_uuid = $1`,
     [sessionUuid],
@@ -324,7 +352,7 @@ test(
 );
 
 test(
-  'full-flow: genuinely-valid 0.8.0 payload → not 422, schema_ok true persisted',
+  'full-flow: genuinely-valid current-version payload → not 422, schema_ok true persisted',
   { skip },
   async () => {
     const payload = Buffer.from(JSON.stringify(validPayload()), 'utf8');
@@ -338,12 +366,47 @@ test(
 
       const rows = await rowFor(sessionUuid);
       assert.equal(rows[0]?.schema_ok, true, 'schema_ok persisted true');
-      assert.equal(rows[0]?.schema_version, '0.8.0', 'version recorded');
+      assert.equal(rows[0]?.schema_version, '0.8.1', 'version recorded');
 
       const passes = (await findingsFor(sessionUuid)).filter(
         (f) => f.requirement === '3.2' && f.severity === 'pass',
       );
       assert.equal(passes.length, 1, 'one schema pass finding recorded');
+    } finally {
+      if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
+    }
+  },
+);
+
+test(
+  'full-flow: valid-but-outdated 0.8.0 payload → accepted, schema_ok true, §3.2 info(outdated) persisted',
+  { skip },
+  async () => {
+    const body = validPayload();
+    (body.meta as Record<string, unknown>).schemaVersion = '0.8.0';
+    const payload = Buffer.from(JSON.stringify(body), 'utf8');
+    let sessionUuid: string | undefined;
+    try {
+      const out = await postToSession(payload);
+      sessionUuid = out.sessionUuid;
+
+      assert.notEqual(out.statusCode, 422, 'outdated-but-valid payload is still accepted');
+      assert.ok(out.statusCode < 300, `reaches success (got ${out.statusCode})`);
+
+      const rows = await rowFor(sessionUuid);
+      assert.equal(rows[0]?.schema_ok, true, 'schema_ok persisted true');
+      assert.equal(rows[0]?.schema_version, '0.8.0', 'declared (outdated) version recorded');
+
+      const all = await findingsFor(sessionUuid);
+      assert.equal(
+        all.filter((f) => f.requirement === '3.2' && f.severity === 'pass').length,
+        0,
+        'no §3.2 pass for an outdated version',
+      );
+      const infos = all.filter(
+        (f) => f.requirement === '3.2' && f.severity === 'info' && f.outdated,
+      );
+      assert.equal(infos.length, 1, 'one §3.2 info finding flagged outdated');
     } finally {
       if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
     }

@@ -32,6 +32,7 @@ interface VendoredSchema {
  */
 const VENDORED: readonly VendoredSchema[] = [
   { version: '0.8.0', file: './schemas/cce-interop-0.8.0.json' },
+  { version: '0.8.1', file: './schemas/cce-interop-0.8.1.json' },
 ];
 
 /** A compiled, ready-to-use registry entry. */
@@ -72,6 +73,21 @@ function sha256Hex(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+/**
+ * Order two canonical MAJOR.MINOR.PATCH keys by numeric value so `0.8.10` sorts
+ * AFTER `0.8.9` (a plain string sort would mis-rank them). Both inputs are
+ * already-canonical registry keys, so the triple always parses.
+ */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i += 1) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 function buildAjv(): Ajv {
   // draft-07 is the dialect declared by the vendored schema's $schema.
   // Ajv's default export validates draft-07.
@@ -89,7 +105,6 @@ export class SchemaRegistry {
    */
   static load(): SchemaRegistry {
     const registry = new SchemaRegistry();
-    const ajv = buildAjv();
 
     for (const { version, file } of VENDORED) {
       const path = fileURLToPath(new URL(file, import.meta.url));
@@ -106,6 +121,11 @@ export class SchemaRegistry {
 
       let validate: ValidateFunction;
       try {
+        // Each schema compiles in its OWN Ajv instance: the vendored versions
+        // are published with the same `$id` (the URL is the family id, not a
+        // per-version id), so sharing one Ajv would collide on the duplicate id.
+        // Isolated instances keep each compiled validator independent.
+        const ajv = buildAjv();
         const schema = JSON.parse(bytes.toString('utf8')) as AnySchema;
         validate = ajv.compile(schema);
       } catch (err) {
@@ -122,7 +142,19 @@ export class SchemaRegistry {
 
   /** Sorted list of canonical versions this registry can validate against. */
   supportedVersions(): readonly string[] {
-    return [...this.byVersion.keys()].sort();
+    return [...this.byVersion.keys()].sort(compareVersions);
+  }
+
+  /**
+   * The CURRENT (newest) registered version — the highest MAJOR.MINOR.PATCH the
+   * registry knows. A transmission that validates against an older registered
+   * version is "outdated but valid": still accepted, but flagged so the supplier
+   * can upgrade (DESIGN.md §7; the dashboard's OUTDATED SCHEMA signal). Returns
+   * null only for an empty registry (never in practice — load() seeds it).
+   */
+  currentVersion(): string | null {
+    const versions = this.supportedVersions();
+    return versions.length === 0 ? null : versions[versions.length - 1]!;
   }
 
   /** Direct entry access for an already-canonical version key. */

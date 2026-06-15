@@ -3,7 +3,9 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/', 'node_modules/'],
+    // design_handoff_*: vendored design-reference bundle (prototype HTML/JSX/JS),
+    // not project source — linted nowhere, recreated in src/web instead.
+    ignores: ['dist/', 'node_modules/', 'design_handoff_validator_redesign/'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

@@ -45,7 +45,7 @@ When prose and schema disagree, **the schema wins** (per requirement §3.2).
 | Onboarding | **Capability URL**, minted via the **web dashboard** "Create" action (no signup). |
 | Identity | **Single UUID** is both ingest path and dashboard key. Possession = authority. |
 | Auth (§1.3) | **Opt-in compliance layer, not a gate.** On opt-in the **dashboard generates** the credential (token + configurable header name, or Basic Auth) for the supplier to copy in; the endpoint then enforces it so §1.3 becomes gradeable. |
-| Retention | Purge a path + its data after **30 days** of POST inactivity. |
+| Retention | Purge a path + its data after **7 days** of POST inactivity. |
 | Stack | **Node + TypeScript** end-to-end, **Ajv** for schema validation. |
 | Schema versioning | **Bare-semver `schemaVersion`** as an opaque registry key; schemas are **vendored** and validated against **pre-registered copies** (never fetched at runtime); each version is pinned by **content hash** to prove the "blessed bytes." |
 
@@ -235,12 +235,12 @@ Per session (`/d/{uuid}`):
 - **Compliance summary** — the §7 matrix with live counts and the honesty classification.
 - **Transmissions** — reverse-chronological list; drill into any transmission to see the
   raw body, returned status, and the findings (with JSON Pointers to schema errors).
-- **Lifecycle** — shows the 30-day inactivity expiry clock.
+- **Lifecycle** — shows the 7-day inactivity expiry clock.
 
 ## 11. Retention / lifecycle
 
 A periodic worker deletes sessions (and cascades to their transmissions/findings) whose
-`last_post_at` (or `created_at` if no posts) is older than **30 days**. The expiry is surfaced
+`last_post_at` (or `created_at` if no posts) is older than **7 days**. The expiry is surfaced
 in the dashboard so it's never a surprise.
 
 ## 12. Security considerations

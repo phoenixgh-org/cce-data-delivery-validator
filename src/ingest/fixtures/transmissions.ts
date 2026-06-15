@@ -26,13 +26,14 @@ import { gzipSync } from 'node:zlib';
 export const JSON_UTF8 = 'application/json; charset=utf-8';
 
 /**
- * A genuinely schema-valid 0.8.0 RTM transmission — the baseline that reaches
- * the §6 happy-path 200. Mirrors the valid body the existing route tests POST.
- * `as const` keeps the literal shape; callers deep-clone before mutating.
+ * A genuinely schema-valid RTM transmission on the CURRENT schema version — the
+ * baseline that reaches the §6 happy-path 200 with a §3.2 pass. Mirrors the
+ * valid body the existing route tests POST. `as const` keeps the literal shape;
+ * callers deep-clone before mutating.
  */
 export const validTransmission = {
   meta: {
-    schemaVersion: '0.8.0',
+    schemaVersion: '0.8.1',
     transferType: 'rtm',
     transferId: 'T-baseline',
     transferSrc: 'com.example',

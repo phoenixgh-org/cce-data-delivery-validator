@@ -121,7 +121,7 @@ export function Dashboard() {
     return (
       <main className="container">
         <h1>Endpoint not found</h1>
-        <p>This test endpoint does not exist, or it expired after 30 days of inactivity.</p>
+        <p>This test endpoint does not exist, or it expired after 7 days of inactivity.</p>
         <p>
           <Link to="/">Create a new test endpoint</Link>
         </p>

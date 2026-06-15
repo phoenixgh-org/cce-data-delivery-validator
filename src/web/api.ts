@@ -59,6 +59,12 @@ export interface FindingView {
   severity: Severity;
   detail: string | null;
   pointer: string | null;
+  /**
+   * True for the §3.2 info finding raised when a transmission validated against a
+   * valid-but-OUTDATED schema version — drives the dashboard's amber OUTDATED
+   * SCHEMA tag (TransmissionsCard). False for every other finding.
+   */
+  outdated: boolean;
 }
 
 /** One transmission as the dashboard sees it (drill-down + findings). */
@@ -212,4 +218,27 @@ export async function disableAuth(uuid: string): Promise<DisableAuthResponse> {
     throw new Error(`disableAuth failed: HTTP ${res.status}`);
   }
   return (await res.json()) as DisableAuthResponse;
+}
+
+/** 200 response of DELETE /api/sessions/:uuid/data — mirror src/api/sessions.ts. */
+export interface DeleteSessionDataResponse {
+  uuid: string;
+  deleted: { transmissions: number };
+}
+
+/**
+ * Delete all captured data for a session (the danger-zone "Delete all captured
+ * data" control). DELETE /api/sessions/:uuid/data wipes the session's
+ * transmissions + findings but KEEPS the session row + ingest URL alive, so the
+ * caller should refetch afterward to render the empty state. Throws on a 404
+ * (unknown/expired uuid) or any other non-ok status.
+ */
+export async function deleteSessionData(uuid: string): Promise<DeleteSessionDataResponse> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(uuid)}/data`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    throw new Error(`deleteSessionData failed: HTTP ${res.status}`);
+  }
+  return (await res.json()) as DeleteSessionDataResponse;
 }

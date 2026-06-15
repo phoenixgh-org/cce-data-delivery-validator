@@ -25,10 +25,18 @@ CREATE TABLE finding (
 
   -- JSON Pointer into the payload where relevant (e.g. the location of a schema
   -- error); NULL for findings not tied to a specific path (§8, §10).
-  pointer         text
+  pointer         text,
+
+  -- TRUE for the §3.2 info finding raised when a transmission validates against a
+  -- valid-but-OLDER registered schema version (§7 outdated-but-valid): the body
+  -- is accepted, but the dashboard surfaces an OUTDATED SCHEMA tag. FALSE for
+  -- every other finding.
+  outdated        boolean       NOT NULL DEFAULT false
 );
 
 COMMENT ON TABLE finding IS
   'Per-requirement result for a transmission; severity is the §7 pass/fail/info honesty class.';
 COMMENT ON COLUMN finding.pointer IS
   'JSON Pointer into the payload where relevant (e.g. schema-error location); NULL otherwise.';
+COMMENT ON COLUMN finding.outdated IS
+  'TRUE for the §3.2 info finding on an outdated-but-valid schema version; FALSE otherwise.';

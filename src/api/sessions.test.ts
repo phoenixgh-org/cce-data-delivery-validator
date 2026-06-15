@@ -160,10 +160,10 @@ test(
       assert.deepEqual(body.transmissions[0]?.body, { meta: { transferId: 'T-new' } });
       assert.equal(body.transmissions[0]?.raw_body, '{"meta":{"transferId":"T-new"}}');
       assert.deepEqual(body.transmissions[0]?.findings, [
-        { requirement: '1.2', severity: 'pass', detail: null, pointer: null },
+        { requirement: '1.2', severity: 'pass', detail: null, pointer: null, outdated: false },
       ]);
       assert.deepEqual(body.transmissions[1]?.findings, [
-        { requirement: '1.4', severity: 'fail', detail: 'too big', pointer: null },
+        { requirement: '1.4', severity: 'fail', detail: 'too big', pointer: null, outdated: false },
       ]);
 
       // Summary reflects the seeded findings; an unseeded gradeable row is untested.
@@ -225,6 +225,82 @@ test(
 
       const order = body.transmissions[0]?.findings.map((f) => f.requirement);
       assert.deepEqual(order, ['1.2', '1.10', '2.1', '3.2'], 'ascending by section number');
+    } finally {
+      if (uuid) {
+        await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      }
+      await app.close();
+    }
+  },
+);
+
+test('DELETE /api/sessions/:uuid/data → 404 for an unknown uuid', { skip }, async () => {
+  const app = makeApp();
+  await app.ready();
+  try {
+    const res = await app.inject({ method: 'DELETE', url: `/api/sessions/${randomUUID()}/data` });
+    assert.equal(res.statusCode, 404);
+    const body = res.json() as { error: string };
+    assert.equal(body.error, 'not_found');
+  } finally {
+    await app.close();
+  }
+});
+
+test(
+  'DELETE /api/sessions/:uuid/data → wipes transmissions + findings, keeps the session alive',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      const tx = await insertTransmission({
+        sessionUuid: uuid,
+        wireBytes: 100,
+        httpStatus: 200,
+        body: { meta: { transferId: 'T-del' } },
+        rawBody: '{"meta":{"transferId":"T-del"}}',
+        parseOk: true,
+        schemaOk: true,
+      });
+      await insertFinding(tx.id, { requirement: '1.2', severity: 'pass' });
+
+      const res = await app.inject({ method: 'DELETE', url: `/api/sessions/${uuid}/data` });
+      assert.equal(res.statusCode, 200);
+      assert.deepEqual(res.json(), { uuid, deleted: { transmissions: 1 } });
+
+      // Transmissions + findings gone (finding cascades off the transmission).
+      const txRows = await getPool().query<{ n: string }>(
+        'SELECT count(*) AS n FROM transmission WHERE session_uuid = $1',
+        [uuid],
+      );
+      assert.equal(txRows.rows[0]?.n, '0', 'transmissions deleted');
+      const fRows = await getPool().query<{ n: string }>(
+        'SELECT count(*) AS n FROM finding WHERE transmission_id = $1',
+        [tx.id],
+      );
+      assert.equal(fRows.rows[0]?.n, '0', 'findings cascade-deleted');
+
+      // Session row survives, so the ingest URL keeps working.
+      const sessionRows = await getPool().query<{ n: string }>(
+        'SELECT count(*) AS n FROM session WHERE uuid = $1',
+        [uuid],
+      );
+      assert.equal(sessionRows.rows[0]?.n, '1', 'session row kept alive');
+
+      // The dashboard read now returns the empty state for the same endpoint.
+      const after = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(after.statusCode, 200);
+      assert.equal((after.json() as { transmissions: unknown[] }).transmissions.length, 0);
+
+      // Re-deleting is an idempotent no-op (0 rows), still 200.
+      const again = await app.inject({ method: 'DELETE', url: `/api/sessions/${uuid}/data` });
+      assert.equal(again.statusCode, 200);
+      assert.deepEqual(again.json(), { uuid, deleted: { transmissions: 0 } });
     } finally {
       if (uuid) {
         await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);

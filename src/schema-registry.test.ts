@@ -20,11 +20,25 @@ test('normalizeVersion returns null when no semver triple is present', () => {
 
 test('registry loads + compiles 0.8.0 at startup with the blessed sha256', () => {
   const registry = SchemaRegistry.load();
-  assert.deepEqual(registry.supportedVersions(), ['0.8.0']);
+  assert.deepEqual(registry.supportedVersions(), ['0.8.0', '0.8.1']);
   const entry = registry.get('0.8.0');
   assert.ok(entry, '0.8.0 must be registered');
   assert.equal(entry.sha256, EXPECTED_SHA256);
   assert.equal(typeof entry.validate, 'function');
+});
+
+test('registry compiles each vendored version in its own Ajv (shared $id, no collision)', () => {
+  const registry = SchemaRegistry.load();
+  const v0 = registry.get('0.8.0');
+  const v1 = registry.get('0.8.1');
+  assert.ok(v0 && v1, 'both 0.8.0 and 0.8.1 are registered');
+  assert.notEqual(v0.sha256, v1.sha256, 'distinct content → distinct sha256');
+  assert.equal(typeof v1.validate, 'function');
+});
+
+test('currentVersion is the newest registered version (numeric, not lexical)', () => {
+  const registry = SchemaRegistry.load();
+  assert.equal(registry.currentVersion(), '0.8.1');
 });
 
 test('lookup resolves a bare semver to the compiled entry', () => {
@@ -51,7 +65,7 @@ test('unknown version reports unsupported + the supported list, no fuzzy match',
   if (!res.ok) {
     assert.equal(res.reason, 'unsupported');
     assert.equal(res.requested, '0.1.1');
-    assert.deepEqual(res.supported, ['0.8.0']);
+    assert.deepEqual(res.supported, ['0.8.0', '0.8.1']);
   }
 });
 
@@ -59,7 +73,7 @@ test('unparseable version string is reported unsupported (no crash)', () => {
   const registry = SchemaRegistry.load();
   const res = registry.lookup('not-a-version');
   assert.equal(res.ok, false);
-  if (!res.ok) assert.deepEqual(res.supported, ['0.8.0']);
+  if (!res.ok) assert.deepEqual(res.supported, ['0.8.0', '0.8.1']);
 });
 
 test('the compiled 0.8.0 validator accepts a minimal valid transmission', () => {

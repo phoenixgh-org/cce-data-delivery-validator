@@ -15,12 +15,12 @@ import { getPool } from './pool.js';
 export type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
 /**
- * 30-day inactivity retention window (DESIGN.md §11), in milliseconds. SHARED so
+ * 7-day inactivity retention window (DESIGN.md §11), in milliseconds. SHARED so
  * the dashboard's expiry display (src/api/sessions.ts) and the purge predicate
  * ({@link purgeExpiredSessions}) cannot drift: the same number drives both the
  * "expires at" clock and the deletion cutoff.
  */
-export const RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The §1.3 opt-in auth method (DESIGN.md §8). */
 export type AuthMethod = 'header' | 'basic';
@@ -79,6 +79,11 @@ export interface InsertFindingInput {
   detail?: string | null;
   /** JSON Pointer into the payload, or null when not path-tied. */
   pointer?: string | null;
+  /**
+   * True for the §3.2 info finding raised on an outdated-but-valid schema
+   * version (§7) — drives the dashboard's OUTDATED SCHEMA tag. Defaults to false.
+   */
+  outdated?: boolean;
 }
 
 /** A `finding` row (DESIGN.md §8). */
@@ -89,6 +94,8 @@ export interface FindingRow {
   severity: Severity;
   detail: string | null;
   pointer: string | null;
+  /** True for the §3.2 outdated-but-valid info finding (§7). */
+  outdated: boolean;
 }
 
 /** A `transmission` row (DESIGN.md §8). */
@@ -254,7 +261,7 @@ export async function listFindingsForSession(
   db: Queryable = getPool(),
 ): Promise<FindingRow[]> {
   const { rows } = await db.query<FindingRow>(
-    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer
+    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer, f.outdated
      FROM finding f
      JOIN transmission t ON t.id = f.transmission_id
      WHERE t.session_uuid = $1
@@ -386,15 +393,16 @@ export async function insertFinding(
   db: Queryable = getPool(),
 ): Promise<FindingRow> {
   const { rows } = await db.query<FindingRow>(
-    `INSERT INTO finding (transmission_id, requirement, severity, detail, pointer)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, transmission_id, requirement, severity, detail, pointer`,
+    `INSERT INTO finding (transmission_id, requirement, severity, detail, pointer, outdated)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated`,
     [
       transmissionId,
       input.requirement,
       input.severity,
       input.detail ?? null,
       input.pointer ?? null,
+      input.outdated ?? false,
     ],
   );
   return rows[0]!;
@@ -413,20 +421,28 @@ export async function insertFindings(
 
   const values: unknown[] = [];
   const tuples = findings.map((f, i) => {
-    const base = i * 4;
-    values.push(f.requirement, f.severity, f.detail ?? null, f.pointer ?? null);
-    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4})`;
+    const base = i * 5;
+    values.push(
+      f.requirement,
+      f.severity,
+      f.detail ?? null,
+      f.pointer ?? null,
+      f.outdated ?? false,
+    );
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
   });
   // transmission_id is bound once as the trailing param and reused per row.
-  const txParam = `$${findings.length * 4 + 1}`;
+  const txParam = `$${findings.length * 5 + 1}`;
   values.push(transmissionId);
 
+  // `outdated` is cast explicitly: a VALUES-derived column carrying a bound param
+  // is inferred as `unknown`/text, so the cast pins it to boolean for the INSERT.
   const { rows } = await db.query<FindingRow>(
-    `INSERT INTO finding (requirement, severity, detail, pointer, transmission_id)
-     SELECT v.requirement, v.severity, v.detail, v.pointer, ${txParam}
+    `INSERT INTO finding (requirement, severity, detail, pointer, outdated, transmission_id)
+     SELECT v.requirement, v.severity, v.detail, v.pointer, v.outdated::boolean, ${txParam}
      FROM (VALUES ${tuples.join(', ')})
-       AS v(requirement, severity, detail, pointer)
-     RETURNING id, transmission_id, requirement, severity, detail, pointer`,
+       AS v(requirement, severity, detail, pointer, outdated)
+     RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated`,
     values,
   );
   return rows;
@@ -456,5 +472,29 @@ export async function purgeExpiredSessions(db: Queryable = getPool()): Promise<n
             < now() - make_interval(secs => $1)`,
     [RETENTION_MS / 1000],
   );
+  return rowCount ?? 0;
+}
+
+/**
+ * Delete all CAPTURED DATA for one session — every `transmission` and (via the
+ * `ON DELETE CASCADE` FK) every `finding` — while KEEPING the `session` row and
+ * its ingest URL alive (DESIGN.md §8 user-triggered purge). This is the
+ * data-layer half of the dashboard's "Delete all captured data" danger-zone
+ * control: the supplier can wipe a test run and immediately start a fresh one
+ * against the same endpoint, with auth + `last_post_at` untouched.
+ *
+ * Scoped to the session via `session_uuid`, so a single `DELETE FROM
+ * transmission` reaches that session's findings transitively. Returns the number
+ * of transmissions deleted (0 when the session has no data yet). It does NOT
+ * verify the session exists — the caller checks that to distinguish 404 from a
+ * no-op delete.
+ */
+export async function deleteSessionData(
+  sessionUuid: string,
+  db: Queryable = getPool(),
+): Promise<number> {
+  const { rowCount } = await db.query('DELETE FROM transmission WHERE session_uuid = $1', [
+    sessionUuid,
+  ]);
   return rowCount ?? 0;
 }

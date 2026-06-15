@@ -5,7 +5,7 @@
  * short-circuits with **404** and NO transmission row is persisted (the route
  * only persists once a request reaches the body stages with a valid session).
  *
- * On success we stamp `last_post_at` (DESIGN.md §11: drives the 30-day
+ * On success we stamp `last_post_at` (DESIGN.md §11: drives the 7-day
  * inactivity sweep) and continue.
  *
  * NOTE on "not expired": the v1 `session` schema (db/initdb/10-session.sql) has

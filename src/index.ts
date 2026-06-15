@@ -19,7 +19,7 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 
 /**
  * Default retention sweep interval (ms): once per hour. The sweep itself only
- * deletes rows already past the 30-day window (DESIGN.md §11), so cadence only
+ * deletes rows already past the 7-day window (DESIGN.md §11), so cadence only
  * affects how promptly expired sessions are reaped, not WHAT is reaped.
  */
 const DEFAULT_SWEEP_MS = 60 * 60 * 1000;

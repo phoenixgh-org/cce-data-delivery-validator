@@ -226,36 +226,36 @@ test(
 );
 
 test(
-  'purgeExpiredSessions deletes sessions inactive >30 days and cascades; recent survives (§11)',
+  'purgeExpiredSessions deletes sessions inactive >7 days and cascades; recent survives (§11)',
   { skip },
   async () => {
-    // OLD session: created_at and last_post_at both >30 days ago. Force the
+    // OLD session: created_at and last_post_at both >7 days ago. Force the
     // timestamps into the past directly (createSession defaults them to now()).
     const oldSession = await createSession();
     await getPool().query(
       `UPDATE session
-          SET created_at = now() - interval '40 days',
-              last_post_at = now() - interval '31 days'
+          SET created_at = now() - interval '14 days',
+              last_post_at = now() - interval '8 days'
         WHERE uuid = $1`,
       [oldSession.uuid],
     );
     const oldTx = await insertTransmission({ sessionUuid: oldSession.uuid });
     await insertFinding(oldTx.id, { requirement: '1.4', severity: 'info' });
 
-    // OLD session with NO posts: last_post_at NULL, created_at >30 days ago.
+    // OLD session with NO posts: last_post_at NULL, created_at >7 days ago.
     // Exercises the COALESCE fallback to created_at.
     const oldNoPosts = await createSession();
     await getPool().query(
-      `UPDATE session SET created_at = now() - interval '45 days' WHERE uuid = $1`,
+      `UPDATE session SET created_at = now() - interval '20 days' WHERE uuid = $1`,
       [oldNoPosts.uuid],
     );
 
-    // RECENT session: a post 29 days ago (inside the 30-day window) — survives.
+    // RECENT session: a post 6 days ago (inside the 7-day window) — survives.
     const recentSession = await createSession();
     await getPool().query(
       `UPDATE session
           SET created_at = now() - interval '60 days',
-              last_post_at = now() - interval '29 days'
+              last_post_at = now() - interval '6 days'
         WHERE uuid = $1`,
       [recentSession.uuid],
     );

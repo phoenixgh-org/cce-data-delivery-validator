@@ -137,6 +137,23 @@ export function schemaStage(): Stage {
       }
 
       ctx.schemaOk = true;
+
+      // Outdated-but-valid (DESIGN.md §7): the body validates, but against an
+      // OLDER registered version than the current one. The transmission is still
+      // accepted — we record an info finding (not a pass, not a fail) carrying
+      // the `outdated` flag so the dashboard can surface the OUTDATED SCHEMA tag
+      // and nudge an upgrade. A current-version validation records a pass.
+      const current = ctx.registry.currentVersion();
+      if (current !== null && res.entry.version !== current) {
+        ctx.findings.push({
+          requirement: '3.2',
+          severity: 'info',
+          outdated: true,
+          detail: `accepted, but validated against an OUTDATED schema: you declared ${res.entry.version}; the current registered version is ${current}. Upgrade your transmitter to ${current}. (§3.2)`,
+        });
+        return CONTINUE;
+      }
+
       ctx.findings.push({
         requirement: '3.2',
         severity: 'pass',
