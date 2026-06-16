@@ -13,14 +13,22 @@
  * (108.6) consume the lifted cross-link/UI state, and Setup (108.7) is the
  * controlled bar+panel. This shell owns + plumbs that state (expandedReq,
  * selectedTx, showNonGradeable, collapsedGroups, setupOpen, the delete trigger).
- * The 108.8 delete modal is still pending — the inert hidden span (21g) renders
- * when the Danger-zone trigger flips deleteModalOpen until that modal lands.
+ * The Danger-zone trigger flips deleteModalOpen, opening the DeleteModal (108.8);
+ * its typed-confirm runs deleteSessionData + a refetch, which drops back to the
+ * empty state via the auto-collapse effect.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { getSession, type ComplianceClass, type ComplianceRow, type SessionResponse } from '../api';
+import {
+  deleteSessionData,
+  getSession,
+  type ComplianceClass,
+  type ComplianceRow,
+  type SessionResponse,
+} from '../api';
 import { ComplianceCard } from '../components/ComplianceCard';
+import { DeleteModal } from '../components/DeleteModal';
 import { Setup } from '../components/Setup';
 import { TransmissionsCard } from '../components/TransmissionsCard';
 
@@ -103,8 +111,8 @@ export function Dashboard() {
     'active-only': true,
     none: true,
   });
-  // deleteModalOpen + deleteConfirm: owned here; consumed by the Danger zone +
-  // Delete modal built in 108.7/108.8.
+  // deleteModalOpen + deleteConfirm: owned here; consumed by the Danger-zone
+  // trigger (Setup) and the DeleteModal (108.8).
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
 
@@ -222,6 +230,29 @@ export function Dashboard() {
   const toggleGroup = useCallback((cls: ComplianceClass) => {
     setCollapsedGroups((prev) => ({ ...prev, [cls]: !prev[cls] }));
   }, []);
+
+  // Dismiss the delete modal and reset the typed-confirm input.
+  const closeDeleteModal = useCallback(() => {
+    setDeleteModalOpen(false);
+    setDeleteConfirm('');
+  }, []);
+
+  // Run the delete-all-data flow (README §Interactions — Delete). On success:
+  // close the modal, clear the confirm input, and refetch. The refetch returns
+  // zero transmissions, which the auto-collapse effect turns into the empty
+  // state with Setup re-expanded — no extra empty-state handling here.
+  const confirmDelete = useCallback(() => {
+    if (!uuid) return;
+    deleteSessionData(uuid)
+      .then(() => {
+        closeDeleteModal();
+        load();
+      })
+      .catch(() => {
+        // Leave the modal open so the user can retry; the next poll/refetch
+        // will reconcile if the delete actually landed.
+      });
+  }, [uuid, closeDeleteModal, load]);
 
   if (state.phase === 'loading') {
     return (
@@ -405,19 +436,17 @@ export function Dashboard() {
         />
       </div>
 
-      {/* deleteModalOpen + deleteConfirm are plumbed for the 108.8 delete modal.
-          Referenced here (no-op) so the lifted owner state isn't dead code; the
-          modal + Danger-zone trigger arrive in 108.7/108.8. */}
-      {deleteModalOpen ? (
-        <span
-          hidden
-          data-delete-confirm={deleteConfirm}
-          onClick={() => {
-            setDeleteModalOpen(false);
-            setDeleteConfirm('');
-          }}
-        />
-      ) : null}
+      {/* Delete-confirm modal (108.8). Opened by the Setup Danger-zone trigger
+          (deleteModalOpen); the typed-confirm input is bound to deleteConfirm.
+          confirmDelete runs deleteSessionData + refetch on success. */}
+      <DeleteModal
+        open={deleteModalOpen}
+        count={txCount}
+        value={deleteConfirm}
+        onChange={setDeleteConfirm}
+        onCancel={closeDeleteModal}
+        onConfirm={confirmDelete}
+      />
     </main>
   );
 }
