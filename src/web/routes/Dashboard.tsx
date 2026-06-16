@@ -427,6 +427,7 @@ export function Dashboard() {
       >
         <ComplianceCard
           summary={summary}
+          transmissions={transmissions}
           selectedTx={selectedTx}
           onSelectTx={setSelectedTx}
           expandedReq={expandedReq}

@@ -12,7 +12,7 @@
  */
 import type { CSSProperties, ReactElement } from 'react';
 import { useEffect } from 'react';
-import type { ComplianceClass, ComplianceRow } from '../api';
+import type { ComplianceClass, ComplianceRow, Severity, TransmissionView } from '../api';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
 import { CLASS_META } from './ui/statusMaps';
@@ -27,6 +27,12 @@ type CollapsedGroups = Partial<Record<ComplianceClass, boolean>>;
 
 export interface CompliancePaneProps {
   summary: ComplianceRow[];
+  /**
+   * All captured transmissions. Used ONLY to derive the per-requirement
+   * "From transmissions" chips frontend-side (a finding→tx navigation linkage);
+   * the compliance summary/rollup is never recomputed from these.
+   */
+  transmissions: TransmissionView[];
   /** Newest tx selected in the right pane — drives "From transmissions" chips. */
   selectedTx: string | null;
   /** Pick a transmission from a requirement's contributing chip. */
@@ -102,11 +108,21 @@ const prefersReducedMotion =
 
 const mono = 'var(--mono)';
 
+/**
+ * A short, mono-friendly transmission id for the `t-XXXX` chip label — kept in
+ * sync with TransmissionsCard's `shortId` (trailing 8 chars) so chip labels
+ * match the right pane the click selects.
+ */
+function shortId(id: string): string {
+  return id.length > 8 ? id.slice(-8) : id;
+}
+
 function ReqRow({
   row,
   dead,
   expanded,
   onToggle,
+  transmissions,
   selectedTx,
   onSelectTx,
 }: {
@@ -114,6 +130,7 @@ function ReqRow({
   dead: boolean;
   expanded: boolean;
   onToggle: () => void;
+  transmissions: TransmissionView[];
   selectedTx: string | null;
   onSelectTx: (id: string) => void;
 }): ReactElement {
@@ -216,21 +233,12 @@ function ReqRow({
               {guidance}
             </div>
           )}
-          {/*
-           * "From transmissions" chips.
-           *
-           * The prototype derived contributing transmissions by walking each
-           * tx's findings for `f.req === reqId`. The REAL API `ComplianceRow`
-           * (and these props) carry NO per-requirement transmission linkage —
-           * `summary` is a rolled-up view with no tx ids. Fabricating chips
-           * would be dishonest, so we omit this section entirely here.
-           *
-           * The wiring is kept ready for when linkage becomes available: the
-           * chip would call `onSelectTx(txId)` to select it in the right pane,
-           * and `selectedTx` would mark the active chip. Both are referenced
-           * via the no-op guard below so the contract stays live and lint-clean.
-           */}
-          {renderContributingChips({ selectedTx, onSelectTx })}
+          {renderContributingChips({
+            requirement: row.requirement,
+            transmissions,
+            selectedTx,
+            onSelectTx,
+          })}
         </div>
       )}
     </div>
@@ -238,18 +246,92 @@ function ReqRow({
 }
 
 /**
- * Renders the "From transmissions" chip section. Returns `null` today because
- * the API summary carries no per-requirement transmission linkage (see the
- * comment at the call site). Kept as a seam so the integrator can feed
- * contributing-tx data in later without reshaping the row; the `onSelectTx` /
- * `selectedTx` props are threaded through for that future wiring.
+ * Renders the "From transmissions" chip section for a requirement drill-down.
+ *
+ * The compliance `summary` is a rolled-up view with no tx ids, but the linkage
+ * exists elsewhere: each `TransmissionView.findings[]` references a `requirement`.
+ * We derive the finding→tx navigation linkage frontend-side here (NOT a summary
+ * recompute): walk every transmission's findings and emit one chip per finding
+ * whose `requirement` matches this row, newest-first like the prototype's
+ * `.reverse()`. Clicking a chip selects that tx in the right pane via
+ * `onSelectTx`; the chip matching `selectedTx` is marked active. Requirements
+ * with no contributing finding render no section at all.
  */
-function renderContributingChips(_props: {
+function renderContributingChips({
+  requirement,
+  transmissions,
+  selectedTx,
+  onSelectTx,
+}: {
+  requirement: string;
+  transmissions: TransmissionView[];
   selectedTx: string | null;
   onSelectTx: (id: string) => void;
 }): ReactElement | null {
-  // No contributing-tx data is available from props alone — omit gracefully.
-  return null;
+  const chips: { id: string; sev: Severity }[] = [];
+  for (const tx of transmissions) {
+    for (const f of tx.findings) {
+      if (f.requirement === requirement) chips.push({ id: tx.id, sev: f.severity });
+    }
+  }
+  chips.reverse(); // newest-first, matching the prototype
+
+  if (chips.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 11 }}>
+      <div
+        style={{
+          fontSize: 10,
+          textTransform: 'uppercase',
+          letterSpacing: '.05em',
+          color: 'var(--text-faint)',
+          marginBottom: 5,
+        }}
+      >
+        From transmissions
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {chips.map((c, i) => {
+          const active = selectedTx === c.id;
+          return (
+            <button
+              key={`${c.id}·${c.sev}·${i}`}
+              onClick={() => onSelectTx(c.id)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                fontFamily: mono,
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 999,
+                cursor: 'pointer',
+                border: active ? '2px solid var(--text)' : '1px solid var(--border-strong)',
+                background: 'var(--surface)',
+                color: active ? 'var(--text)' : 'var(--text-muted)',
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 999,
+                  background:
+                    c.sev === 'fail'
+                      ? 'var(--fail)'
+                      : c.sev === 'info'
+                        ? 'var(--neutral)'
+                        : 'var(--pass)',
+                }}
+              />
+              t-{shortId(c.id)} · {c.sev}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -258,6 +340,7 @@ function renderContributingChips(_props: {
 
 export function ComplianceCard({
   summary,
+  transmissions,
   selectedTx,
   onSelectTx,
   expandedReq,
@@ -446,6 +529,7 @@ export function ComplianceCard({
                     onToggle={() =>
                       onToggleReq(expandedReq === row.requirement ? null : row.requirement)
                     }
+                    transmissions={transmissions}
                     selectedTx={selectedTx}
                     onSelectTx={onSelectTx}
                   />
