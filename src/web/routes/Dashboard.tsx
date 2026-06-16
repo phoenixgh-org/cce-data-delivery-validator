@@ -115,6 +115,10 @@ export function Dashboard() {
   // trigger (Setup) and the DeleteModal (108.8).
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
+  // In-flight guard for the delete-all-data request: blocks a rapid
+  // double-click (or Enter+click) from firing deleteSessionData twice, and
+  // disables the modal's confirm button while the request is outstanding.
+  const [deleting, setDeleting] = useState(false);
 
   // Refetch the session. Used by the initial-load effect, the background poll,
   // and children that mutate session state (e.g. Setup's §1.3 auth toggle). The
@@ -242,7 +246,8 @@ export function Dashboard() {
   // zero transmissions, which the auto-collapse effect turns into the empty
   // state with Setup re-expanded — no extra empty-state handling here.
   const confirmDelete = useCallback(() => {
-    if (!uuid) return;
+    if (!uuid || deleting) return;
+    setDeleting(true);
     deleteSessionData(uuid)
       .then(() => {
         closeDeleteModal();
@@ -251,8 +256,11 @@ export function Dashboard() {
       .catch(() => {
         // Leave the modal open so the user can retry; the next poll/refetch
         // will reconcile if the delete actually landed.
+      })
+      .finally(() => {
+        setDeleting(false);
       });
-  }, [uuid, closeDeleteModal, load]);
+  }, [uuid, deleting, closeDeleteModal, load]);
 
   if (state.phase === 'loading') {
     return (
@@ -446,6 +454,7 @@ export function Dashboard() {
         onChange={setDeleteConfirm}
         onCancel={closeDeleteModal}
         onConfirm={confirmDelete}
+        deleting={deleting}
       />
     </main>
   );

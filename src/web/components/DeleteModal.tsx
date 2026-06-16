@@ -51,6 +51,12 @@ export interface DeleteModalProps {
   onCancel: () => void;
   /** Run the delete (only reachable once armed). */
   onConfirm: () => void;
+  /**
+   * Whether a delete request is in flight. While true the confirm button is
+   * disabled (re-entry is ignored) so a rapid double-click can't fire the
+   * delete twice; the button reflects the pending state visibly.
+   */
+  deleting: boolean;
 }
 
 export function DeleteModal({
@@ -60,6 +66,7 @@ export function DeleteModal({
   onChange,
   onCancel,
   onConfirm,
+  deleting,
 }: DeleteModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -93,6 +100,7 @@ export function DeleteModal({
   if (!open) return null;
 
   const armed = value.trim().toUpperCase() === 'DELETE';
+  const confirmDisabled = !armed || deleting;
 
   return (
     <div
@@ -178,18 +186,18 @@ export function DeleteModal({
           </button>
           <button
             type="button"
-            disabled={!armed}
+            disabled={confirmDisabled}
             onClick={onConfirm}
             style={{
               ...btn,
               color: '#fff',
               background: 'var(--fail)',
               border: 'none',
-              opacity: armed ? 1 : 0.4,
-              cursor: armed ? 'pointer' : 'not-allowed',
+              opacity: confirmDisabled ? 0.4 : 1,
+              cursor: confirmDisabled ? 'not-allowed' : 'pointer',
             }}
           >
-            <Icon name="trash" size={12} /> Delete everything
+            <Icon name="trash" size={12} /> {deleting ? 'Deleting…' : 'Delete everything'}
           </button>
         </div>
       </div>
