@@ -1,16 +1,27 @@
 /**
- * Setup view (yih.2). Shows the absolute ingest URL plus copy-paste `curl` and
- * header examples so a supplier can point a transmitter at the endpoint
- * (DESIGN §5 onboarding, §10 Setup). Also hosts the §1.3 auth opt-in toggle:
- * enabling generates a credential and shows a copy-paste config snippet ONCE
- * (DESIGN §10, §12 — the secret is never echoed again).
+ * Setup (108.7) — a CONTROLLED collapsed bar + expanded two-column panel
+ * (redesign README §2 "Setup bar / Setup panel"). The bar (chevron + "Endpoint
+ * & setup" + truncated ingest URL + "Start here →" when the endpoint has no
+ * data yet + Expand/Collapse) toggles the panel. The panel's LEFT column hosts
+ * the onboarding copy fields (ingest URL, headers, gzip §1.6, curl example);
+ * the RIGHT column hosts the §1.3 auth opt-in card, the schema & lifecycle line,
+ * and the Danger zone trigger.
  *
  * The ingest URL is a bearer capability URL, so it is shown plainly for the
- * holder to copy and use.
+ * holder to copy and use (DESIGN §5 onboarding, §10 Setup).
+ *
+ * Open/close is controlled when `open`/`onToggleOpen` are supplied (the
+ * Dashboard lifts that state to drive the auto-collapse rule); otherwise the
+ * component falls back to its own state so the existing call site still works.
+ *
+ * Auth opt-in (§1.3 / §10 / §12) is preserved verbatim: enabling generates a
+ * credential and shows a copy-paste snippet ONCE, the enabled state reflects on
+ * reload (without the secret), and disable/rotate reuse the same client calls.
  */
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 
 import { disableAuth, enableAuth, type EnableAuthResponse, type SessionMeta } from '../api';
+import { Icon } from './ui/Icon';
 
 export interface SetupProps {
   /** Session metadata (uuid, auth flags). */
@@ -19,12 +30,22 @@ export interface SetupProps {
   ingestUrl: string;
   /** Refetch the session so the dashboard reflects the new auth state. */
   onAuthChange: () => void;
+  /** Controlled open state. When omitted, the component manages its own. */
+  open?: boolean;
+  /** Toggle handler. When omitted, the component toggles its internal state. */
+  onToggleOpen?: () => void;
+  /** Whether the endpoint has captured any data yet (drives "Start here →"). */
+  hasData?: boolean;
+  /** Open the delete-confirm flow. The modal itself lives elsewhere (108.8). */
+  onRequestDelete?: () => void;
 }
 
 /** A small JSON body suppliers can adapt — keeps the curl one realistic. */
-const SAMPLE_BODY = '{"schemaVersion":"0.8.0","transferId":"demo-001","records":[]}';
+const SAMPLE_BODY = '{"schemaVersion":"0.8.1","transferId":"demo-001","records":[]}';
 
-/** Reusable copy button with a transient "Copied!" affordance. */
+const CONTENT_TYPE = 'application/json; charset=utf-8';
+
+/** Reusable copy button that flips to a check for ~1.3s (redesign look). */
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -32,7 +53,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      window.setTimeout(() => setCopied(false), 1300);
     } catch {
       // Clipboard may be unavailable (e.g. insecure context); fail quietly —
       // the text remains visible for manual selection.
@@ -41,27 +62,68 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   }
 
   return (
-    <button type="button" onClick={onCopy} aria-label={`Copy ${label}`}>
-      {copied ? 'Copied!' : 'Copy'}
+    <button type="button" onClick={onCopy} aria-label={`Copy ${label}`} style={uBtn}>
+      <Icon name={copied ? 'check' : 'copy'} size={12} />
+      {copied ? 'Copied' : 'Copy'}
     </button>
   );
 }
 
 /**
- * Auth opt-in section (DESIGN §1.3 / §10). Renders a toggle reflecting the
- * persisted `auth_enabled`/`auth_method` (a reload shows the enabled state
- * without the secret), and on enable shows the show-once credential + a
- * copy-paste config snippet.
+ * A labelled mono code box + Copy button (redesign "copy field"). `multiline`
+ * preserves whitespace and wraps; single-line truncates with an ellipsis.
  */
-function AuthOptIn({
+function CopyField({
+  label,
+  value,
+  multiline,
+}: {
+  label: string;
+  value: string;
+  multiline?: boolean;
+}) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={eyebrowStyle}>{label}</div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+        <code
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontFamily: 'var(--mono)',
+            fontSize: 12,
+            padding: '8px 11px',
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            color: 'var(--text)',
+            whiteSpace: multiline ? 'pre-wrap' : 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            wordBreak: multiline ? 'break-all' : 'normal',
+          }}
+        >
+          {value}
+        </code>
+        <CopyButton text={value} label={label} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Auth opt-in card (DESIGN §1.3 / §10). Renders the persisted
+ * `auth_enabled`/`auth_method` state (a reload shows the enabled state without
+ * the secret) and, on enable, the show-once credential + copy-paste snippet.
+ * "Rotate" re-enables (the server issues a fresh secret); "Disable" turns it off.
+ */
+function AuthCard({
   session,
   absoluteIngestUrl,
-  contentType,
   onAuthChange,
 }: {
   session: SessionMeta;
   absoluteIngestUrl: string;
-  contentType: string;
   onAuthChange: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -99,51 +161,89 @@ function AuthOptIn({
     }
   }
 
-  return (
-    <>
-      <h3>Authentication (optional)</h3>
-      <p className="muted">
-        §1.3 auth is opt-in. By default the ingest URL is unauthenticated. Enable auth to require a
-        credential on every POST — the validator then grades §1.3 from real traffic.
-      </p>
+  const enabled = session.auth_enabled;
+  const methodLabel = session.auth_method === 'basic' ? 'basic credentials' : 'token header';
 
-      <div style={rowStyle}>
-        {session.auth_enabled ? (
-          <button type="button" onClick={onDisable} disabled={busy}>
-            {busy ? 'Working…' : 'Disable authentication'}
-          </button>
-        ) : (
-          <button type="button" onClick={onEnable} disabled={busy}>
-            {busy ? 'Working…' : 'Enable authentication'}
-          </button>
-        )}
-        {session.auth_enabled && (
-          <span className="muted">
-            Enabled
-            {session.auth_method ? ` (${session.auth_method})` : ''}
+  return (
+    <div>
+      <div style={eyebrowStyle}>Authentication</div>
+      <div
+        style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 6,
+          padding: '11px 13px',
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+          <Icon
+            name="lock"
+            size={13}
+            style={{ color: enabled ? 'var(--pass)' : 'var(--text-faint)' }}
+          />
+          <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+            {enabled ? `Enabled — ${methodLabel}` : 'Optional — not enabled'}
           </span>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.55 }}>
+          {enabled ? (
+            <>
+              Every POST must carry a credential. The secret is shown only once. §1.3 is graded from
+              real traffic.
+            </>
+          ) : (
+            <>
+              By default the ingest URL is unauthenticated. Enable auth to require a credential on
+              every POST — the validator then grades §1.3 from real traffic.
+            </>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+          {enabled ? (
+            <>
+              <button type="button" style={uBtn} onClick={onEnable} disabled={busy}>
+                <Icon name="refresh" size={12} />
+                {busy ? 'Working…' : 'Rotate'}
+              </button>
+              <button type="button" style={uBtn} onClick={onDisable} disabled={busy}>
+                {busy ? 'Working…' : 'Disable'}
+              </button>
+            </>
+          ) : (
+            <button type="button" style={uBtn} onClick={onEnable} disabled={busy}>
+              <Icon name="lock" size={12} />
+              {busy ? 'Working…' : 'Enable authentication'}
+            </button>
+          )}
+        </div>
+
+        {error && (
+          <p style={{ margin: '9px 0 0', fontSize: 11.5, color: 'var(--fail)' }}>{error}</p>
+        )}
+
+        {/* Reflect a previously-enabled state on reload: the secret is gone, but
+            we tell the holder how to rotate it. */}
+        {enabled && !credential && (
+          <p
+            style={{
+              margin: '9px 0 0',
+              fontSize: 11.5,
+              color: 'var(--text-muted)',
+              lineHeight: 1.55,
+            }}
+          >
+            A credential is active for this endpoint. The secret is shown only once at creation; if
+            you have lost it, Rotate issues a fresh credential.
+          </p>
+        )}
+
+        {credential && (
+          <AuthCredential credential={credential} absoluteIngestUrl={absoluteIngestUrl} />
         )}
       </div>
-
-      {error && <p className="error">{error}</p>}
-
-      {/* Reflect a previously-enabled state on reload: the secret is gone, but we
-          tell the holder how to rotate it. */}
-      {session.auth_enabled && !credential && (
-        <p className="muted">
-          A credential is active for this endpoint. The secret is shown only once at creation; if
-          you have lost it, enabling again rotates to a fresh credential.
-        </p>
-      )}
-
-      {credential && (
-        <AuthCredential
-          credential={credential}
-          absoluteIngestUrl={absoluteIngestUrl}
-          contentType={contentType}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
@@ -151,166 +251,228 @@ function AuthOptIn({
 function AuthCredential({
   credential,
   absoluteIngestUrl,
-  contentType,
 }: {
   credential: EnableAuthResponse;
   absoluteIngestUrl: string;
-  contentType: string;
 }) {
   const snippet =
     credential.auth_method === 'header'
       ? [
           `curl -X POST '${absoluteIngestUrl}' \\`,
-          `  -H 'Content-Type: ${contentType}' \\`,
+          `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
           `  -H '${credential.auth_header_name}: ${credential.token}' \\`,
           `  -d '${SAMPLE_BODY}'`,
         ].join('\n')
       : [
           `curl -X POST '${absoluteIngestUrl}' \\`,
-          `  -H 'Content-Type: ${contentType}' \\`,
+          `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
           `  -u '${credential.username}:${credential.password}' \\`,
           `  -d '${SAMPLE_BODY}'`,
         ].join('\n');
 
-  const secret = credential.auth_method === 'header' ? credential.token : credential.password;
+  const credLine =
+    credential.auth_method === 'header'
+      ? `${credential.auth_header_name}: ${credential.token}`
+      : `${credential.username}:${credential.password}`;
 
   return (
-    <div style={warnBlockStyle}>
-      <p>
+    <div
+      style={{
+        marginTop: 11,
+        padding: '10px 12px',
+        border: '1px solid var(--mixed)',
+        background: 'var(--mixed-bg)',
+        borderRadius: 6,
+      }}
+    >
+      <p style={{ margin: '0 0 9px', fontSize: 11.5, lineHeight: 1.55 }}>
         <strong>Save this credential now — you will not see it again.</strong> The validator stores
-        only a salted hash (§12). To rotate, enable authentication again.
+        only a salted hash (§12). Use Rotate to issue a fresh one.
       </p>
-
-      {credential.auth_method === 'header' ? (
-        <>
-          <h4>Token header</h4>
-          <div style={rowStyle}>
-            <code style={codeInlineStyle}>
-              {credential.auth_header_name}: {credential.token}
-            </code>
-            <CopyButton
-              text={`${credential.auth_header_name}: ${credential.token}`}
-              label="token header"
-            />
-          </div>
-        </>
-      ) : (
-        <>
-          <h4>Basic credentials</h4>
-          <div style={rowStyle}>
-            <code style={codeInlineStyle}>
-              {credential.username}:{credential.password}
-            </code>
-            <CopyButton
-              text={`${credential.username}:${credential.password}`}
-              label="basic credentials"
-            />
-          </div>
-        </>
-      )}
-      <div style={rowStyle}>
-        <CopyButton text={secret} label="secret" />
-        <span className="muted">Copy just the secret</span>
-      </div>
-
-      <h4>Example request (curl)</h4>
-      <div style={rowStyle}>
-        <pre style={blockStyle}>
-          <code>{snippet}</code>
-        </pre>
-        <CopyButton text={snippet} label="authenticated curl example" />
-      </div>
+      <CopyField
+        label={credential.auth_method === 'header' ? 'Token header' : 'Basic credentials'}
+        value={credLine}
+      />
+      <CopyField label="Authenticated request" value={snippet} multiline />
     </div>
   );
 }
 
 export function Setup(props: SetupProps) {
+  const { session, ingestUrl, onAuthChange, open, onToggleOpen, hasData, onRequestDelete } = props;
+
+  // Controlled when `open` is supplied; else manage internally (default open).
+  const [internalOpen, setInternalOpen] = useState(true);
+  const isOpen = open ?? internalOpen;
+  const toggle = onToggleOpen ?? (() => setInternalOpen((v) => !v));
+
   // The API returns ingestUrl as a relative path (`/i/{uuid}`); the SPA composes
   // the origin so suppliers get a fully-qualified, runnable URL.
-  const absoluteIngestUrl = `${window.location.origin}${props.ingestUrl}`;
-
-  const contentType = 'application/json; charset=utf-8';
+  const absoluteIngestUrl = `${window.location.origin}${ingestUrl}`;
 
   const curlExample = [
     `curl -X POST '${absoluteIngestUrl}' \\`,
-    `  -H 'Content-Type: ${contentType}' \\`,
+    `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
     `  -d '${SAMPLE_BODY}'`,
   ].join('\n');
 
   return (
     <section>
-      <h2>Setup</h2>
-      <p>
-        Point your transmitter at the ingest URL below, then POST a JSON transmission. Results
-        appear in the dashboard as data arrives. The URL is a bearer capability — anyone holding it
-        can POST and view, so treat it like a secret.
-      </p>
-
-      <h3>Ingest URL</h3>
-      <div style={rowStyle}>
-        <code style={codeInlineStyle}>{absoluteIngestUrl}</code>
-        <CopyButton text={absoluteIngestUrl} label="ingest URL" />
+      {/* Collapsed bar — always rendered; toggles the panel. */}
+      <div
+        onClick={toggle}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          padding: '8px 24px',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--surface-3)',
+          fontSize: 12,
+          cursor: 'pointer',
+        }}
+      >
+        <Icon
+          name={isOpen ? 'chevronDown' : 'chevron'}
+          size={12}
+          style={{ color: 'var(--text-faint)' }}
+        />
+        <span style={{ fontWeight: 600 }}>Endpoint &amp; setup</span>
+        <span
+          style={{
+            fontFamily: 'var(--mono)',
+            fontSize: 11,
+            color: 'var(--text-muted)',
+            flex: 1,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {ingestUrl}
+        </span>
+        {hasData === false && (
+          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
+            Start here →
+          </span>
+        )}
+        <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+          {isOpen ? 'Collapse' : 'Expand'}
+        </span>
       </div>
 
-      <h3>Headers</h3>
-      <p>Send these request headers:</p>
-      <pre style={blockStyle}>
-        <code>{`Content-Type: ${contentType}`}</code>
-      </pre>
-      <p className="muted">
-        Gzip is supported: add <code>Content-Encoding: gzip</code> and send the gzipped body (do not
-        double-encode, e.g. base64 over gzip) — §1.6.
-      </p>
+      {/* Expanded panel — two-column grid. */}
+      {isOpen && (
+        <div
+          style={{
+            padding: '18px 24px 22px',
+            background: 'var(--surface-2)',
+            borderBottom: '1px solid var(--border)',
+            display: 'grid',
+            gridTemplateColumns: '1.4fr 1fr',
+            gap: '0 32px',
+          }}
+        >
+          {/* LEFT: onboarding copy fields. */}
+          <div style={{ minWidth: 0 }}>
+            <CopyField label="Ingest URL" value={absoluteIngestUrl} />
+            <CopyField label="Required headers" value={`Content-Type: ${CONTENT_TYPE}`} />
+            <div
+              style={{
+                fontSize: 11.5,
+                color: 'var(--text-muted)',
+                margin: '-6px 0 14px',
+                lineHeight: 1.55,
+              }}
+            >
+              Gzip is supported — add{' '}
+              <code style={{ fontFamily: 'var(--mono)' }}>Content-Encoding: gzip</code> and send the
+              gzipped body. Do not double-encode (§1.6).
+            </div>
+            <CopyField label="Example request" value={curlExample} multiline />
+          </div>
 
-      <h3>Example request (curl)</h3>
-      <div style={rowStyle}>
-        <pre style={blockStyle}>
-          <code>{curlExample}</code>
-        </pre>
-        <CopyButton text={curlExample} label="curl example" />
-      </div>
+          {/* RIGHT: auth, schema & lifecycle, danger zone. */}
+          <div style={{ minWidth: 0 }}>
+            <AuthCard
+              session={session}
+              absoluteIngestUrl={absoluteIngestUrl}
+              onAuthChange={onAuthChange}
+            />
 
-      <AuthOptIn
-        session={props.session}
-        absoluteIngestUrl={absoluteIngestUrl}
-        contentType={contentType}
-        onAuthChange={props.onAuthChange}
-      />
+            <div style={eyebrowStyle}>Schema &amp; lifecycle</div>
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--text-muted)',
+                lineHeight: 1.6,
+                marginBottom: 16,
+              }}
+            >
+              Validating against official <strong style={{ color: 'var(--text)' }}>0.8.1</strong>{' '}
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>(sha256 9f2a…c1)</span>.
+              Inactive endpoints are purged after 7 days; the clock resets on each POST.
+            </div>
+
+            <div style={{ ...eyebrowStyle, color: 'var(--fail)' }}>Danger zone</div>
+            <div
+              style={{
+                border: '1px solid var(--fail)',
+                borderRadius: 6,
+                padding: '11px 13px',
+                background: 'var(--fail-bg)',
+              }}
+            >
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 3 }}>
+                Delete all captured data
+              </div>
+              <div
+                style={{
+                  fontSize: 11.5,
+                  color: 'var(--text-muted)',
+                  lineHeight: 1.55,
+                  marginBottom: 9,
+                }}
+              >
+                Permanently removes every transmission and finding for this endpoint. The endpoint
+                and its URL keep working. Cannot be undone.
+              </div>
+              <button
+                type="button"
+                onClick={() => onRequestDelete?.()}
+                style={{ ...uBtn, color: '#fff', background: 'var(--fail)', border: 'none' }}
+              >
+                <Icon name="trash" size={12} />
+                Delete data…
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
-const rowStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: '0.5rem',
-  flexWrap: 'wrap',
+const uBtn: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  padding: '6px 12px',
+  fontSize: 12,
+  fontFamily: 'var(--sans)',
+  color: 'var(--text-muted)',
+  background: 'var(--surface)',
+  border: '1px solid var(--border-strong)',
+  borderRadius: 6,
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
 };
 
-const blockStyle: React.CSSProperties = {
-  flex: '1 1 20rem',
-  margin: 0,
-  padding: '0.75rem 1rem',
-  border: '1px solid currentColor',
-  borderRadius: '6px',
-  overflowX: 'auto',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  fontSize: '0.85rem',
-};
-
-const warnBlockStyle: React.CSSProperties = {
-  marginTop: '0.75rem',
-  padding: '0.75rem 1rem',
-  border: '1px solid currentColor',
-  borderRadius: '6px',
-};
-
-const codeInlineStyle: React.CSSProperties = {
-  flex: '1 1 20rem',
-  padding: '0.5rem 0.75rem',
-  border: '1px solid currentColor',
-  borderRadius: '6px',
-  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  fontSize: '0.85rem',
-  wordBreak: 'break-all',
+const eyebrowStyle: CSSProperties = {
+  fontSize: 10.5,
+  textTransform: 'uppercase',
+  letterSpacing: '.05em',
+  color: 'var(--text-faint)',
+  marginBottom: 5,
 };
