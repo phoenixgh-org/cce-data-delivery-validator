@@ -9,27 +9,20 @@
  * initial-load effect, and the visibility-aware 5s poll are preserved verbatim.
  * Only the `phase === 'ready'` render is the redesign.
  *
- * NOTE (108.5/108.6/108.7/108.8): CompliancePane and TransmissionsPane below
- * are PLACEHOLDERS that wrap the existing Matrix/Transmissions components inside
- * the new card chrome. They will be extracted into ComplianceCard.tsx /
- * TransmissionsCard.tsx, which is where the lifted state below (expandedReq,
- * selectedTx, showNonGradeable, collapsedGroups, the delete modal) gets fully
- * consumed. The state is owned + plumbed here now as the forward contract.
+ * The panes are the real cards now: ComplianceCard (108.5) and TransmissionsCard
+ * (108.6) consume the lifted cross-link/UI state, and Setup (108.7) is the
+ * controlled bar+panel. This shell owns + plumbs that state (expandedReq,
+ * selectedTx, showNonGradeable, collapsedGroups, setupOpen, the delete trigger).
+ * The 108.8 delete modal is still pending — the inert hidden span (21g) renders
+ * when the Danger-zone trigger flips deleteModalOpen until that modal lands.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import {
-  getSession,
-  type ComplianceClass,
-  type ComplianceRow,
-  type SessionResponse,
-  type TransmissionView,
-} from '../api';
-import { Matrix } from '../components/Matrix';
+import { getSession, type ComplianceClass, type ComplianceRow, type SessionResponse } from '../api';
+import { ComplianceCard } from '../components/ComplianceCard';
 import { Setup } from '../components/Setup';
-import { Transmissions } from '../components/Transmissions';
-import { Icon } from '../components/ui/Icon';
+import { TransmissionsCard } from '../components/TransmissionsCard';
 
 type State =
   | { phase: 'loading' }
@@ -93,147 +86,6 @@ function computeRollup(summary: ComplianceRow[]): Rollup {
 
 /** Per-verifiability-class collapse map for the non-gradeable groups. */
 type CollapsedGroups = Partial<Record<ComplianceClass, boolean>>;
-
-/* ------------------------------------------------------------------ *
- * Placeholder panes — wrap the existing Matrix/Transmissions inside the
- * redesign card chrome. 108.5/108.6 replace the internals (and consume the
- * deferred props plumbed here); for now only what is implementable is used.
- * ------------------------------------------------------------------ */
-
-interface CompliancePaneProps {
-  summary: ComplianceRow[];
-  /** Newest tx selected in the right pane — drives "From transmissions" chips (108.5). */
-  selectedTx: string | null;
-  /** Pick a transmission from a requirement's contributing chip (108.5/108.6). */
-  onSelectTx: (id: string) => void;
-  /** Which requirement row is open (108.5 drill-down + finding→req cross-link). */
-  expandedReq: string | null;
-  /** Toggle the open requirement row (108.5). */
-  onToggleReq: (req: string | null) => void;
-  /** "Show what we can't grade" filter — wired to the header checkbox now. */
-  showNonGradeable: boolean;
-  /** Setter for the filter checkbox (used now). */
-  onShowNonGradeableChange: (next: boolean) => void;
-  /** Collapse state for the non-gradeable groups (108.5). */
-  collapsedGroups: CollapsedGroups;
-  /** Toggle a non-gradeable group's collapse (108.5). */
-  onToggleGroup: (cls: ComplianceClass) => void;
-}
-
-/**
- * ComplianceCard placeholder. Renders the existing Matrix inside the card
- * chrome. `showNonGradeable` + `onShowNonGradeableChange` ARE wired to the
- * header checkbox now (no visible effect on Matrix yet — 108.5 wires the
- * grouped view). The remaining props (selectedTx, onSelectTx, expandedReq,
- * onToggleReq, collapsedGroups, onToggleGroup) are the forward contract for
- * 108.5/108.6 and intentionally NOT destructured here to avoid no-unused-vars.
- */
-function CompliancePane({
-  summary,
-  showNonGradeable,
-  onShowNonGradeableChange,
-}: CompliancePaneProps) {
-  return (
-    <div
-      style={{
-        flex: '1 1 57%',
-        background: 'var(--surface)',
-        border: '1px solid var(--border-strong)',
-        borderRadius: 8,
-        overflow: 'hidden',
-        boxShadow: 'var(--shadow)',
-        display: 'flex',
-        flexDirection: 'column',
-        minWidth: 0,
-      }}
-    >
-      <div
-        style={{
-          padding: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <span style={{ fontSize: 13, fontWeight: 700 }}>Compliance summary</span>
-        <span style={{ flex: 1 }} />
-        <label
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 11.5,
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={showNonGradeable}
-            onChange={(e) => onShowNonGradeableChange(e.target.checked)}
-          />
-          Show what we can't grade
-        </label>
-      </div>
-      <div style={{ overflowY: 'auto', flex: 1, padding: '0 16px' }}>
-        <Matrix summary={summary} />
-      </div>
-    </div>
-  );
-}
-
-interface TransmissionsPaneProps {
-  transmissions: TransmissionView[];
-  /** Selected transmission shown in detail; default = newest (108.6). */
-  selectedTx: string | null;
-  /** Select a transmission row (108.6). */
-  onSelectTx: (id: string) => void;
-  /** Cross-link: a finding's §req opens that requirement in the compliance pane (108.6). */
-  onSelectReq: (req: string) => void;
-}
-
-/**
- * TransmissionsCard placeholder. Renders the existing Transmissions inside the
- * --surface-tx card chrome. selectedTx/onSelectTx/onSelectReq are the forward
- * contract for 108.6 (the existing list has no selection model yet) and are NOT
- * destructured here to avoid no-unused-vars.
- */
-function TransmissionsPane({ transmissions }: TransmissionsPaneProps) {
-  return (
-    <div
-      style={{
-        flex: '1 1 43%',
-        background: 'var(--surface-tx)',
-        border: '1px solid var(--border-strong)',
-        borderRadius: 8,
-        overflow: 'hidden',
-        boxShadow: 'var(--shadow)',
-        display: 'flex',
-        flexDirection: 'column',
-        minWidth: 0,
-      }}
-    >
-      <div
-        style={{
-          padding: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <span style={{ fontSize: 13, fontWeight: 700 }}>Transmissions</span>
-        <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>
-          · {transmissions.length} recent
-        </span>
-      </div>
-      <div style={{ overflowY: 'auto', flex: 1, padding: '0 16px' }}>
-        <Transmissions transmissions={transmissions} />
-      </div>
-    </div>
-  );
-}
 
 export function Dashboard() {
   const { uuid } = useParams<{ uuid: string }>();
@@ -444,62 +296,18 @@ export function Dashboard() {
         </div>
       </header>
 
-      {/* Setup bar (collapsed) */}
-      <div
-        onClick={() => setSetupOpen((v) => !v)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '8px 24px',
-          background: 'var(--surface-3)',
-          borderBottom: '1px solid var(--border)',
-          cursor: 'pointer',
-        }}
-      >
-        <Icon
-          name={setupOpen ? 'chevronDown' : 'chevron'}
-          size={12}
-          style={{ color: 'var(--text-faint)' }}
-        />
-        <span style={{ fontSize: 13, fontWeight: 600 }}>Endpoint &amp; setup</span>
-        <span
-          style={{
-            fontFamily: 'var(--mono)',
-            fontSize: 11,
-            color: 'var(--text-muted)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            minWidth: 0,
-          }}
-        >
-          {ingestUrl}
-        </span>
-        <span style={{ flex: 1 }} />
-        {!hasData && (
-          <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--accent)' }}>
-            Start here →
-          </span>
-        )}
-        <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>
-          {setupOpen ? 'Collapse' : 'Expand'}
-        </span>
-      </div>
-
-      {/* Setup panel (expanded) — existing Setup inside the panel chrome for now
-          (108.7 rebuilds its internals + adds the Danger zone). */}
-      {setupOpen && (
-        <div
-          style={{
-            background: 'var(--surface-2)',
-            borderBottom: '1px solid var(--border)',
-            padding: '18px 24px',
-          }}
-        >
-          <Setup session={session} ingestUrl={ingestUrl} onAuthChange={() => load()} />
-        </div>
-      )}
+      {/* Setup — controlled collapsed bar + expanded panel (108.7). The
+          auto-collapse rule below flips setupOpen; the Danger-zone trigger
+          opens the 108.8 delete modal via deleteModalOpen. */}
+      <Setup
+        open={setupOpen}
+        onToggleOpen={() => setSetupOpen((v) => !v)}
+        hasData={hasData}
+        session={session}
+        ingestUrl={ingestUrl}
+        onAuthChange={() => load()}
+        onRequestDelete={() => setDeleteModalOpen(true)}
+      />
 
       {/* Scorecard strip */}
       <div
@@ -578,7 +386,7 @@ export function Dashboard() {
           minHeight: 0,
         }}
       >
-        <CompliancePane
+        <ComplianceCard
           summary={summary}
           selectedTx={selectedTx}
           onSelectTx={setSelectedTx}
@@ -589,7 +397,7 @@ export function Dashboard() {
           collapsedGroups={collapsedGroups}
           onToggleGroup={toggleGroup}
         />
-        <TransmissionsPane
+        <TransmissionsCard
           transmissions={transmissions}
           selectedTx={selectedTx}
           onSelectTx={setSelectedTx}
