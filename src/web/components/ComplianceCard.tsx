@@ -11,6 +11,7 @@
  * all the state (filter, open row, collapse map, selected tx).
  */
 import type { CSSProperties, ReactElement } from 'react';
+import { useEffect } from 'react';
 import type { ComplianceClass, ComplianceRow } from '../api';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
@@ -83,6 +84,13 @@ function isCollapsed(group: GroupDef, collapsedGroups: CollapsedGroups): boolean
   return v === undefined ? group.defaultCollapsed : v;
 }
 
+/** Find the group whose members include the given row's primary class. */
+function groupForRow(row: ComplianceRow): GroupDef | undefined {
+  const primary = row.classes[0];
+  if (primary === undefined) return undefined;
+  return GROUPS.find((g) => g.members.includes(primary));
+}
+
 /* ------------------------------------------------------------------ *
  * Row — a single requirement, expandable into its detail panel.
  * ------------------------------------------------------------------ */
@@ -126,7 +134,7 @@ function ReqRow({
   };
 
   return (
-    <div>
+    <div data-req={row.requirement}>
       <div
         onClick={onToggle}
         role="button"
@@ -259,6 +267,41 @@ export function ComplianceCard({
   collapsedGroups,
   onToggleGroup,
 }: CompliancePaneProps): ReactElement {
+  /*
+   * Cross-link reveal (gfx): when a finding §req sets `expandedReq` to a row in a
+   * group that's collapsed or filtered out, the row never renders and the click
+   * dead-ends. Here we make the target row's group visible: enable the filter if
+   * the group is non-gradeable and hidden, and un-collapse it if collapsed.
+   *
+   * Deps are deliberately ONLY `expandedReq` + `summary`: we read the current
+   * `collapsedGroups`/`showNonGradeable` to decide whether a toggle is needed,
+   * but we don't want the effect to re-fire when those change (the toggles below
+   * would otherwise risk a loop / fight a user re-collapsing the group). The
+   * guards ensure each setter fires at most once per cross-link.
+   */
+  useEffect(() => {
+    if (expandedReq === null) return;
+    const row = summary.find((r) => r.requirement === expandedReq);
+    if (row === undefined) return;
+    const group = groupForRow(row);
+    if (group === undefined) return;
+
+    const gradeable = CLASS_META[group.rep].gradeable;
+    if (gradeable) return; // gradeable groups are always visible — nothing to do
+
+    if (!showNonGradeable) onShowNonGradeableChange(true);
+    if (isCollapsed(group, collapsedGroups)) onToggleGroup(group.rep);
+
+    // Bring the now-visible row into view (best-effort; no-op if not rendered yet).
+    if (typeof document !== 'undefined') {
+      const el = document.querySelector<HTMLElement>(`[data-req="${CSS.escape(expandedReq)}"]`);
+      el?.scrollIntoView({
+        block: 'nearest',
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      });
+    }
+  }, [expandedReq, summary]);
+
   return (
     <div
       style={{
