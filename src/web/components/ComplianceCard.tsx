@@ -291,16 +291,31 @@ export function ComplianceCard({
 
     if (!showNonGradeable) onShowNonGradeableChange(true);
     if (isCollapsed(group, collapsedGroups)) onToggleGroup(group.rep);
+  }, [expandedReq, summary]);
 
-    // Bring the now-visible row into view (best-effort; no-op if not rendered yet).
-    if (typeof document !== 'undefined') {
+  /*
+   * Scroll the target row into view — SEPARATE from the reveal effect above so it
+   * runs AFTER the un-collapse/un-filter setters have re-rendered the row into the
+   * DOM. Keyed on `expandedReq` plus the current `showNonGradeable`/`collapsedGroups`
+   * so that when a collapsed/filtered cross-link target becomes visible, this fires
+   * again with the row now present (the reveal effect deliberately omits those deps
+   * to avoid re-firing the toggles, so the scroll cannot live there). A rAF defers
+   * past layout to guarantee the row is mounted; it's cancelled on cleanup.
+   */
+  useEffect(() => {
+    if (expandedReq === null) return;
+    if (typeof document === 'undefined' || typeof requestAnimationFrame !== 'function') return;
+
+    const raf = requestAnimationFrame(() => {
       const el = document.querySelector<HTMLElement>(`[data-req="${CSS.escape(expandedReq)}"]`);
       el?.scrollIntoView({
         block: 'nearest',
         behavior: prefersReducedMotion ? 'auto' : 'smooth',
       });
-    }
-  }, [expandedReq, summary]);
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [expandedReq, showNonGradeable, collapsedGroups]);
 
   return (
     <div
