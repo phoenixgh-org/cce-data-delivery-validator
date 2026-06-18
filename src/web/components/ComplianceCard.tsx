@@ -11,7 +11,7 @@
  * all the state (filter, open row, collapse map, selected tx).
  */
 import type { CSSProperties, ReactElement } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { ComplianceClass, ComplianceRow, Severity, Signature, TransmissionView } from '../api';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
@@ -51,19 +51,15 @@ export interface CompliancePaneProps {
   onToggleGroup: (cls: ComplianceClass) => void;
   /**
    * Scope-relative deduped issue signatures (4h4.9 plumbs from data.signatures).
-   * Seam consumed by 4h4.11 (signature rows + cross-filter) — accepted here but
-   * NOT yet rendered by this card.
+   * Rendered as the per-requirement "Distinct issues" rows in the expanded row.
    */
   signatures?: Signature[];
   /**
    * Cross-filter trigger: select a signature to scope the transmission list.
-   * Seam consumed by 4h4.11 — accepted here but NOT yet wired to any control.
+   * Clicking a signature row calls this — cross-filter only, no in-card expand.
    */
   onSelectSignature?: (sig: Signature) => void;
-  /**
-   * Key of the currently active signature cross-filter (or null). Seam consumed
-   * by 4h4.11 to mark the active signature row — NOT yet rendered.
-   */
+  /** Key of the currently active signature cross-filter (drives active-row styling), or null. */
   activeSignatureKey?: string | null;
 }
 
@@ -133,6 +129,211 @@ function shortId(id: string): string {
   return id.length > 8 ? id.slice(-8) : id;
 }
 
+/**
+ * The deduped signatures that belong to a requirement — `Signature.req` keyed,
+ * matching the prototype's `E.signaturesForReq`. Server already scoped these to
+ * the active window/source, so this is a pure filter (no recompute).
+ */
+function signaturesForReq(signatures: Signature[], requirement: string): Signature[] {
+  return signatures.filter((s) => s.req === requirement);
+}
+
+/**
+ * A single deduped issue (signature) row in an expanded requirement. A button
+ * that cross-filters the transmission list — it does NOT expand or navigate in
+ * the card. The thin proportion bar's width ∝ this signature's share of the
+ * requirement's issue volume (its `count` over the requirement's max). `--fail`
+ * for a hard fail; `--mixed` for a soft/info signature (e.g. an outdated-schema
+ * §3.2 finding, which carries `sev:'info'`). The active row (key ===
+ * `activeSignatureKey`) takes an `--accent` border + `--accent-weak` fill.
+ */
+function SigRow({
+  sig,
+  max,
+  active,
+  onPick,
+}: {
+  sig: Signature;
+  max: number;
+  active: boolean;
+  onPick: (sig: Signature) => void;
+}): ReactElement {
+  const pct = max > 0 ? Math.max(6, Math.round((sig.count / max) * 100)) : 0;
+  const tone = sig.sev === 'fail' ? 'var(--fail)' : 'var(--mixed)';
+  return (
+    <button
+      onClick={() => onPick(sig)}
+      title="View these transmissions"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 56px auto 16px',
+        alignItems: 'center',
+        gap: 10,
+        width: '100%',
+        textAlign: 'left',
+        padding: '7px 9px',
+        borderRadius: 6,
+        cursor: 'pointer',
+        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+        background: active ? 'var(--accent-weak)' : 'var(--surface)',
+      }}
+    >
+      <span style={{ minWidth: 0 }}>
+        <span
+          style={{
+            display: 'block',
+            fontSize: 12,
+            color: 'var(--text)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {sig.title}
+        </span>
+        <span
+          style={{
+            display: 'block',
+            position: 'relative',
+            height: 3,
+            marginTop: 4,
+            background: 'var(--border)',
+            borderRadius: 2,
+          }}
+        >
+          <span
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              height: 3,
+              width: `${pct}%`,
+              background: tone,
+              borderRadius: 2,
+            }}
+          />
+        </span>
+      </span>
+      <span
+        style={{
+          fontFamily: mono,
+          fontSize: 11.5,
+          color: tone,
+          textAlign: 'right',
+        }}
+      >
+        {sig.txCount} tx
+      </span>
+      <span
+        style={{
+          fontFamily: mono,
+          fontSize: 10.5,
+          color: 'var(--text-faint)',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {sig.sourceCount} src
+      </span>
+      <Icon
+        name="arrowRight"
+        size={13}
+        style={{ color: active ? 'var(--accent)' : 'var(--text-faint)' }}
+      />
+    </button>
+  );
+}
+
+/**
+ * The "Distinct issues" summary block in an expanded (gradeable) requirement:
+ * an eyebrow + a mono "{f} failing · {p} passing" line, then a column of
+ * deduped signature rows (max 540px wide). Past 4 signatures it offers a
+ * "+ N more issues" / "Show fewer" toggle (local state). A requirement with no
+ * in-scope signatures shows the empty-state copy; low-cardinality requirements
+ * simply render their single signature. The proportion bar's `max` is the
+ * requirement's largest signature `count`, so widths read as a share of this
+ * requirement's issue volume.
+ */
+function SignatureSummary({
+  row,
+  signatures,
+  activeSignatureKey,
+  onSelectSignature,
+}: {
+  row: ComplianceRow;
+  signatures: Signature[];
+  activeSignatureKey: string | null;
+  onSelectSignature?: (sig: Signature) => void;
+}): ReactElement {
+  const [showAll, setShowAll] = useState(false);
+  const sigs = signaturesForReq(signatures, row.requirement);
+  const hasSigs = sigs.length > 0;
+  const max = hasSigs ? Math.max(...sigs.map((s) => s.count)) : 0;
+  const visible = showAll ? sigs : sigs.slice(0, 4);
+  const extra = sigs.length - 4;
+
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 7 }}>
+        <span
+          style={{
+            fontSize: 10,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            color: 'var(--text-faint)',
+          }}
+        >
+          {hasSigs ? 'Distinct issues' : 'Status'}
+        </span>
+        <span style={{ fontFamily: mono, fontSize: 11, color: 'var(--text-muted)' }}>
+          {row.counts.fail > 0 && (
+            <span style={{ color: 'var(--fail)' }}>{row.counts.fail} failing</span>
+          )}
+          {row.counts.fail > 0 && row.counts.pass > 0 && ' · '}
+          {row.counts.pass > 0 && (
+            <span style={{ color: 'var(--pass)' }}>{row.counts.pass} passing</span>
+          )}
+          {row.counts.fail + row.counts.pass === 0 && 'no transmissions in this window'}
+        </span>
+      </div>
+      {hasSigs ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 540 }}>
+          {visible.map((s) => (
+            <SigRow
+              key={s.key}
+              sig={s}
+              max={max}
+              active={s.key === activeSignatureKey}
+              onPick={(sig) => onSelectSignature?.(sig)}
+            />
+          ))}
+          {sigs.length > 4 && (
+            <button
+              onClick={() => setShowAll((v) => !v)}
+              style={{
+                alignSelf: 'flex-start',
+                fontSize: 11,
+                color: 'var(--accent)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '2px 0',
+              }}
+            >
+              {showAll ? 'Show fewer' : `+ ${extra} more issue${extra === 1 ? '' : 's'}`}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+          {row.counts.fail === 0 && row.counts.pass > 0
+            ? 'No issues — every transmission in this window passed.'
+            : 'Nothing to surface for this window.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReqRow({
   row,
   dead,
@@ -141,6 +342,9 @@ function ReqRow({
   transmissions,
   selectedTx,
   onSelectTx,
+  signatures,
+  activeSignatureKey,
+  onSelectSignature,
 }: {
   row: ComplianceRow;
   dead: boolean;
@@ -149,6 +353,10 @@ function ReqRow({
   transmissions: TransmissionView[];
   selectedTx: string | null;
   onSelectTx: (id: string) => void;
+  /** All in-scope signatures; filtered to this requirement by the summary block. */
+  signatures: Signature[];
+  activeSignatureKey: string | null;
+  onSelectSignature?: (sig: Signature) => void;
 }): ReactElement {
   const ref = getRequirementReference(row.requirement);
   const text = ref?.text ?? row.summary;
@@ -248,6 +456,14 @@ function ReqRow({
               <strong style={{ fontWeight: 600, color: 'var(--text)' }}>How we check it. </strong>
               {guidance}
             </div>
+          )}
+          {!dead && (
+            <SignatureSummary
+              row={row}
+              signatures={signatures}
+              activeSignatureKey={activeSignatureKey}
+              onSelectSignature={onSelectSignature}
+            />
           )}
           {renderContributingChips({
             requirement: row.requirement,
@@ -365,6 +581,9 @@ export function ComplianceCard({
   onShowNonGradeableChange,
   collapsedGroups,
   onToggleGroup,
+  signatures = [],
+  onSelectSignature,
+  activeSignatureKey = null,
 }: CompliancePaneProps): ReactElement {
   /*
    * Cross-link reveal (gfx): when a finding §req sets `expandedReq` to a row in a
@@ -548,6 +767,9 @@ export function ComplianceCard({
                     transmissions={transmissions}
                     selectedTx={selectedTx}
                     onSelectTx={onSelectTx}
+                    signatures={signatures}
+                    activeSignatureKey={activeSignatureKey}
+                    onSelectSignature={onSelectSignature}
                   />
                 ))}
             </div>
