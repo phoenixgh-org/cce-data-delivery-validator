@@ -3,6 +3,6 @@ node_modules/
 docs/
 .beads/
 .claude/
-design_handoff_validator_redesign/
+design_handoff_*/
 *.md
 *.json

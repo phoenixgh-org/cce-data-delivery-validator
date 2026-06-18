@@ -15,7 +15,11 @@ export type IconName =
   | 'filter'
   | 'alert'
   | 'check'
-  | 'refresh';
+  | 'refresh'
+  | 'x'
+  | 'clock'
+  | 'server'
+  | 'arrowRight';
 
 export interface IconProps {
   name: IconName;
@@ -68,6 +72,32 @@ const PATHS: Record<IconName, ReactElement> = {
       <path d="M20 4v4h-4" />
       <path d="M20 12a8 8 0 0 1-13.7 5.6L4 16" />
       <path d="M4 20v-4h4" />
+    </>
+  ),
+  x: (
+    <>
+      <line x1="6" y1="6" x2="18" y2="18" />
+      <line x1="18" y1="6" x2="6" y2="18" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <polyline points="12 7 12 12 15 14" />
+    </>
+  ),
+  server: (
+    <>
+      <rect x="4" y="4" width="16" height="7" rx="1.5" />
+      <rect x="4" y="13" width="16" height="7" rx="1.5" />
+      <circle cx="8" cy="7.5" r="0.4" fill="currentColor" />
+      <circle cx="8" cy="16.5" r="0.4" fill="currentColor" />
+    </>
+  ),
+  arrowRight: (
+    <>
+      <line x1="4" y1="12" x2="19" y2="12" />
+      <polyline points="13 6 19 12 13 18" />
     </>
   ),
 };
