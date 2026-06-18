@@ -347,7 +347,13 @@ function TxDetail({
   return (
     <div style={{ padding: '14px 16px 18px' }}>
       <div
-        style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 8,
+          marginBottom: 10,
+          flexWrap: 'wrap',
+        }}
       >
         <span style={{ ...mono, fontWeight: 700, fontSize: 13 }}>t-{shortId(tx.id)}</span>
         <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)' }}>
