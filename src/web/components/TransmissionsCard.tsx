@@ -28,11 +28,7 @@ export interface TransmissionsCardProps {
   onSelectTx: (id: string) => void;
   /** Cross-link: a finding's §req opens that requirement in the compliance pane (108.6). */
   onSelectReq: (req: string) => void;
-  /**
-   * Whether the list is scoped to failures-only (4h4.9 owns the state).
-   * Seam consumed by 4h4.12 (failures-only checkbox) — accepted here but NOT
-   * yet rendered by this card.
-   */
+  /** Whether the list is scoped to failures-only (4h4.9 owns the state); drives the failures-only checkbox. */
   failuresOnly?: boolean;
   /** Flip the failures-only filter (4h4.9 owns the state; raised by the checkbox). */
   onToggleFailuresOnly?: () => void;
