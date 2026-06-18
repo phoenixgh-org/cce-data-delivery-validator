@@ -12,7 +12,7 @@
  */
 import type { CSSProperties, ReactElement } from 'react';
 import { useEffect, useState } from 'react';
-import type { ComplianceClass, ComplianceRow, Severity, Signature, TransmissionView } from '../api';
+import type { ComplianceClass, ComplianceRow, Signature, TransmissionView } from '../api';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
 import { CLASS_META } from './ui/statusMaps';
@@ -28,14 +28,15 @@ type CollapsedGroups = Partial<Record<ComplianceClass, boolean>>;
 export interface CompliancePaneProps {
   summary: ComplianceRow[];
   /**
-   * All captured transmissions. Used ONLY to derive the per-requirement
-   * "From transmissions" chips frontend-side (a finding→tx navigation linkage);
-   * the compliance summary/rollup is never recomputed from these.
+   * All captured transmissions. Retained for the Dashboard call-site contract;
+   * the expanded requirement detail no longer derives per-tx chips from these
+   * (the deduped signature rows replaced that). The compliance summary/rollup is
+   * never recomputed from these.
    */
   transmissions: TransmissionView[];
-  /** Newest tx selected in the right pane — drives "From transmissions" chips. */
+  /** Newest tx selected in the right pane. Retained for the call-site contract. */
   selectedTx: string | null;
-  /** Pick a transmission from a requirement's contributing chip. */
+  /** Pick a transmission. Retained for the call-site contract. */
   onSelectTx: (id: string) => void;
   /** Which requirement row is open (drill-down + finding→req cross-link). */
   expandedReq: string | null;
@@ -119,15 +120,6 @@ const prefersReducedMotion =
   window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const mono = 'var(--mono)';
-
-/**
- * A short, mono-friendly transmission id for the `t-XXXX` chip label — kept in
- * sync with TransmissionsCard's `shortId` (trailing 8 chars) so chip labels
- * match the right pane the click selects.
- */
-function shortId(id: string): string {
-  return id.length > 8 ? id.slice(-8) : id;
-}
 
 /**
  * The deduped signatures that belong to a requirement — `Signature.req` keyed,
@@ -339,9 +331,6 @@ function ReqRow({
   dead,
   expanded,
   onToggle,
-  transmissions,
-  selectedTx,
-  onSelectTx,
   signatures,
   activeSignatureKey,
   onSelectSignature,
@@ -350,9 +339,6 @@ function ReqRow({
   dead: boolean;
   expanded: boolean;
   onToggle: () => void;
-  transmissions: TransmissionView[];
-  selectedTx: string | null;
-  onSelectTx: (id: string) => void;
   /** All in-scope signatures; filtered to this requirement by the summary block. */
   signatures: Signature[];
   activeSignatureKey: string | null;
@@ -465,103 +451,8 @@ function ReqRow({
               onSelectSignature={onSelectSignature}
             />
           )}
-          {renderContributingChips({
-            requirement: row.requirement,
-            transmissions,
-            selectedTx,
-            onSelectTx,
-          })}
         </div>
       )}
-    </div>
-  );
-}
-
-/**
- * Renders the "From transmissions" chip section for a requirement drill-down.
- *
- * The compliance `summary` is a rolled-up view with no tx ids, but the linkage
- * exists elsewhere: each `TransmissionView.findings[]` references a `requirement`.
- * We derive the finding→tx navigation linkage frontend-side here (NOT a summary
- * recompute): walk every transmission's findings and emit one chip per finding
- * whose `requirement` matches this row, newest-first like the prototype's
- * `.reverse()`. Clicking a chip selects that tx in the right pane via
- * `onSelectTx`; the chip matching `selectedTx` is marked active. Requirements
- * with no contributing finding render no section at all.
- */
-function renderContributingChips({
-  requirement,
-  transmissions,
-  selectedTx,
-  onSelectTx,
-}: {
-  requirement: string;
-  transmissions: TransmissionView[];
-  selectedTx: string | null;
-  onSelectTx: (id: string) => void;
-}): ReactElement | null {
-  const chips: { id: string; sev: Severity }[] = [];
-  for (const tx of transmissions) {
-    for (const f of tx.findings) {
-      if (f.requirement === requirement) chips.push({ id: tx.id, sev: f.severity });
-    }
-  }
-  chips.reverse(); // newest-first, matching the prototype
-
-  if (chips.length === 0) return null;
-
-  return (
-    <div style={{ marginTop: 11 }}>
-      <div
-        style={{
-          fontSize: 10,
-          textTransform: 'uppercase',
-          letterSpacing: '.05em',
-          color: 'var(--text-faint)',
-          marginBottom: 5,
-        }}
-      >
-        From transmissions
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {chips.map((c, i) => {
-          const active = selectedTx === c.id;
-          return (
-            <button
-              key={`${c.id}·${c.sev}·${i}`}
-              onClick={() => onSelectTx(c.id)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                fontFamily: mono,
-                fontSize: 11,
-                padding: '2px 8px',
-                borderRadius: 999,
-                cursor: 'pointer',
-                border: active ? '2px solid var(--text)' : '1px solid var(--border-strong)',
-                background: 'var(--surface)',
-                color: active ? 'var(--text)' : 'var(--text-muted)',
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: 999,
-                  background:
-                    c.sev === 'fail'
-                      ? 'var(--fail)'
-                      : c.sev === 'info'
-                        ? 'var(--neutral)'
-                        : 'var(--pass)',
-                }}
-              />
-              t-{shortId(c.id)} · {c.sev}
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }
@@ -572,9 +463,6 @@ function renderContributingChips({
 
 export function ComplianceCard({
   summary,
-  transmissions,
-  selectedTx,
-  onSelectTx,
   expandedReq,
   onToggleReq,
   showNonGradeable,
@@ -764,9 +652,6 @@ export function ComplianceCard({
                     onToggle={() =>
                       onToggleReq(expandedReq === row.requirement ? null : row.requirement)
                     }
-                    transmissions={transmissions}
-                    selectedTx={selectedTx}
-                    onSelectTx={onSelectTx}
                     signatures={signatures}
                     activeSignatureKey={activeSignatureKey}
                     onSelectSignature={onSelectSignature}
