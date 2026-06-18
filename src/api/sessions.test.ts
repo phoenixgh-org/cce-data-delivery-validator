@@ -617,6 +617,73 @@ test(
   },
 );
 
+test(
+  'GET …/transmissions → signatureKey selects an OUTDATED-schema info finding (§3.2 soft issue)',
+  { skip },
+  async () => {
+    // Guards the outdated soft-issue path: the §3.2 outdated-but-valid finding is
+    // severity=info + outdated=true, which isIssue() counts and txMatchesSig must
+    // match — even though it is NOT a 'fail'. A regression that dropped the
+    // info+outdated branch would silently exclude these tx from a signatureKey
+    // cross-filter; this pins it.
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      // The outdated-schema signature keys off `code` (no schema keyword):
+      // sigKey = '3.2|tx.outdated_schema'. Built from signatures.ts sigKey, NOT a
+      // re-impl.
+      const outdatedFinding: SignatureFinding = {
+        requirement: '3.2',
+        severity: 'info',
+        detail: null,
+        pointer: null,
+        outdated: true,
+        keyword: null,
+        instancePath: null,
+        param: null,
+        code: 'tx.outdated_schema',
+      };
+      const key = sigKey(outdatedFinding);
+
+      // txHit carries the info+outdated finding; txMiss carries a plain info
+      // finding (outdated=false → NOT an issue → excluded).
+      const txHit = await insertTxAt(uuid, new Date(Date.now() - 2 * 60_000).toISOString(), 'src');
+      await insertFinding(txHit, {
+        requirement: '3.2',
+        severity: 'info',
+        outdated: true,
+        code: 'tx.outdated_schema',
+      });
+      const txMiss = await insertTxAt(uuid, new Date(Date.now() - 1 * 60_000).toISOString(), 'src');
+      await insertFinding(txMiss, {
+        requirement: '3.2',
+        severity: 'info',
+        outdated: false,
+        code: 'tx.outdated_schema',
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?signatureKey=${encodeURIComponent(key)}`,
+      });
+      const body = res.json() as ListResp;
+      assert.deepEqual(
+        body.transmissions.map((t) => t.id),
+        [txHit],
+        'signatureKey selects the outdated-schema info tx (info+outdated isIssue), excludes the non-outdated info tx',
+      );
+      assert.equal(body.scoped, 1, 'scoped denominator counts only the outdated soft-issue tx');
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
 test.after(async () => {
   await closePool().catch(() => {});
 });

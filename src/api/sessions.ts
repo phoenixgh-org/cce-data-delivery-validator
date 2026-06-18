@@ -24,6 +24,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { computeComplianceSummary } from './compliance-matrix.js';
 import type { FindingCountsByRequirement } from './compliance-matrix.js';
 import {
+  inScope,
   parseSource,
   parseWindow,
   passTrend,
@@ -478,10 +479,14 @@ export function registerSessionsApi(app: FastifyInstance): void {
       const findingsByTx = groupFindingsByTx(findings);
       const views = transmissions.map((t) => toTransmissionView(t, findingsByTx.get(t.id) ?? []));
 
-      // Apply source + failuresOnly + signatureKey app-side, single-sourced from
-      // source.ts (already baked into view.source) and signatures.ts (txMatchesSig).
+      // Apply scope (source + the window's [lo, now] bound) + failuresOnly +
+      // signatureKey app-side, single-sourced from scope.ts (inScope — the SAME
+      // predicate the summary endpoint scopes with, so the shared "showing
+      // {visible} of {scoped}" header agrees, incl. the received_at <= now upper
+      // bound) and signatures.ts (txMatchesSig). The SQL already pushed the lo
+      // bound; inScope re-applies it harmlessly and adds the now upper bound.
       const filtered = views.filter((t) => {
-        if (source !== 'all' && t.source !== source) return false;
+        if (!inScope(t, window, source, now)) return false;
         if (failuresOnly && !t.findings.some((f) => f.severity === 'fail')) return false;
         if (signatureKey !== null && !txMatchesSig(asSignatureTx(t), signatureKey)) return false;
         return true;
