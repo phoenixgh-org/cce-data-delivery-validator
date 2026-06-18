@@ -16,6 +16,8 @@ import { randomUUID } from 'node:crypto';
 import { buildApp } from '../app.js';
 import { closePool, getPool } from '../db/pool.js';
 import { createSession, insertFinding, insertTransmission } from '../db/repository.js';
+import { sigKey } from './signatures.js';
+import type { SignatureFinding } from './signatures.js';
 
 async function dbReachable(): Promise<boolean> {
   try {
@@ -337,6 +339,279 @@ test(
       if (uuid) {
         await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
       }
+      await app.close();
+    }
+  },
+);
+
+// ── GET /api/sessions/:uuid/transmissions (4h4.5 paginated/filterable list) ──
+
+/** Insert a tx, then stamp its received_at so window/cursor ordering is exact. */
+async function insertTxAt(uuid: string, receivedAtIso: string, transferSrc: string | null) {
+  const tx = await insertTransmission({
+    sessionUuid: uuid,
+    wireBytes: 100,
+    httpStatus: 200,
+    transferSrc,
+    body: { meta: {} },
+    rawBody: '{"meta":{}}',
+    parseOk: true,
+    schemaOk: true,
+  });
+  await getPool().query('UPDATE transmission SET received_at = $2 WHERE id = $1', [
+    tx.id,
+    receivedAtIso,
+  ]);
+  return tx.id;
+}
+
+interface ListResp {
+  transmissions: Array<{
+    id: string;
+    received_at: string;
+    source: string;
+    sourceCode: string;
+    sourceLabel: string;
+    findings: Array<{
+      requirement: string;
+      severity: string;
+      keyword: string | null;
+      instancePath: string | null;
+      param: string | null;
+      code: string | null;
+      detail: string | null;
+    }>;
+  }>;
+  scoped: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+test('GET …/transmissions → 404 for an unknown uuid', { skip }, async () => {
+  const app = makeApp();
+  await app.ready();
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/sessions/${randomUUID()}/transmissions`,
+    });
+    assert.equal(res.statusCode, 404);
+    assert.equal((res.json() as { error: string }).error, 'not_found');
+  } finally {
+    await app.close();
+  }
+});
+
+test(
+  'GET …/transmissions → reverse-chron page with inlined findings + cursor pagination',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      // 5 tx, 1 minute apart; t4 newest. Stamp deterministic timestamps.
+      const base = Date.parse('2026-06-17T12:00:00.000Z');
+      const ids: string[] = [];
+      for (let i = 0; i < 5; i += 1) {
+        ids.push(await insertTxAt(uuid, new Date(base + i * 60_000).toISOString(), 'org.kano'));
+      }
+
+      // Page 1 (limit 2): newest two (t4, t3), hasMore, a nextCursor.
+      const p1 = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?limit=2`,
+      });
+      assert.equal(p1.statusCode, 200);
+      const b1 = p1.json() as ListResp;
+      assert.equal(b1.scoped, 5, 'scoped = all 5 (no filters)');
+      assert.deepEqual(
+        b1.transmissions.map((t) => t.id),
+        [ids[4], ids[3]],
+        'newest-first',
+      );
+      assert.equal(b1.hasMore, true);
+      assert.ok(b1.nextCursor, 'nextCursor present when more pages remain');
+      // Source dimension present on each row.
+      assert.equal(b1.transmissions[0]?.source, 'org.kano');
+      assert.equal(b1.transmissions[0]?.sourceCode, 'KAN');
+
+      // Page 2: follow the cursor → t2, t1.
+      const p2 = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?limit=2&cursor=${b1.nextCursor}`,
+      });
+      const b2 = p2.json() as ListResp;
+      assert.deepEqual(
+        b2.transmissions.map((t) => t.id),
+        [ids[2], ids[1]],
+        'second page continues reverse-chron',
+      );
+      assert.equal(b2.hasMore, true);
+
+      // Page 3: the last row, no more.
+      const p3 = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?limit=2&cursor=${b2.nextCursor}`,
+      });
+      const b3 = p3.json() as ListResp;
+      assert.deepEqual(
+        b3.transmissions.map((t) => t.id),
+        [ids[0]],
+        'final row',
+      );
+      assert.equal(b3.hasMore, false);
+      assert.equal(b3.nextCursor, null, 'no nextCursor on the last page');
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test(
+  'GET …/transmissions → window bounds the candidate set; failuresOnly + source filter',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      const now = Date.now();
+      // Within 15m (5m ago), with a FAIL, src "  org.kano " (untrimmed).
+      const recentFail = await insertTxAt(
+        uuid,
+        new Date(now - 5 * 60_000).toISOString(),
+        '  org.kano ',
+      );
+      await insertFinding(recentFail, { requirement: '1.4', severity: 'fail', code: 'tx.x' });
+      // Within 15m, PASS only, unknown source (null).
+      const recentPass = await insertTxAt(uuid, new Date(now - 6 * 60_000).toISOString(), null);
+      await insertFinding(recentPass, { requirement: '1.2', severity: 'pass' });
+      // OUTSIDE 15m (40m ago), fail — must be excluded by the window bound.
+      const oldFail = await insertTxAt(uuid, new Date(now - 40 * 60_000).toISOString(), 'org.kano');
+      await insertFinding(oldFail, { requirement: '1.4', severity: 'fail', code: 'tx.x' });
+
+      // window=15m → only the two recent tx are candidates.
+      const w = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?window=15m`,
+      });
+      const bw = w.json() as ListResp;
+      assert.equal(bw.scoped, 2, 'old tx excluded by the 15m window bound');
+      assert.ok(!bw.transmissions.some((t) => t.id === oldFail));
+
+      // failuresOnly → only the recent fail.
+      const f = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?window=15m&failuresOnly=true`,
+      });
+      const bf = f.json() as ListResp;
+      assert.deepEqual(
+        bf.transmissions.map((t) => t.id),
+        [recentFail],
+      );
+      assert.equal(bf.scoped, 1);
+
+      // source filter: the TRIMMED key matches (deriveSourceView trims transfer_src).
+      const s = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?window=15m&source=org.kano`,
+      });
+      const bs = s.json() as ListResp;
+      assert.deepEqual(
+        bs.transmissions.map((t) => t.id),
+        [recentFail],
+        'trimmed key matches',
+      );
+
+      // unknown bucket (source=empty key) selects the null-source tx.
+      const u = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?window=15m&source=`,
+      });
+      const bu = u.json() as ListResp;
+      assert.deepEqual(
+        bu.transmissions.map((t) => t.id),
+        [recentPass],
+        'unknown bucket selected',
+      );
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test(
+  'GET …/transmissions → signatureKey filter EQUALS txMatchesSig/sigKey on a fixture',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      // Two tx share one schema signature (same keyword+path+param, different
+      // array index — generalized away); a third carries an unrelated check code.
+      const schemaFinding = (instancePath: string): SignatureFinding => ({
+        requirement: '3.2',
+        severity: 'fail',
+        detail: null,
+        pointer: null,
+        outdated: false,
+        keyword: 'required',
+        instancePath,
+        param: 'ABST',
+        code: null,
+      });
+
+      const txA = await insertTxAt(uuid, new Date(Date.now() - 3 * 60_000).toISOString(), 'src');
+      await insertFinding(txA, {
+        requirement: '3.2',
+        severity: 'fail',
+        keyword: 'required',
+        instancePath: '/data/0',
+        param: 'ABST',
+      });
+      const txB = await insertTxAt(uuid, new Date(Date.now() - 2 * 60_000).toISOString(), 'src');
+      await insertFinding(txB, {
+        requirement: '3.2',
+        severity: 'fail',
+        keyword: 'required',
+        instancePath: '/data/7', // different index → SAME generalized sigKey as txA
+        param: 'ABST',
+      });
+      const txC = await insertTxAt(uuid, new Date(Date.now() - 1 * 60_000).toISOString(), 'src');
+      await insertFinding(txC, { requirement: '1.4', severity: 'fail', code: 'tx.body_too_large' });
+
+      // The expected key comes from signatures.ts sigKey — NOT a re-impl here.
+      const key = sigKey(schemaFinding('/data/*'));
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?signatureKey=${encodeURIComponent(key)}`,
+      });
+      const body = res.json() as ListResp;
+      // Exactly txA + txB match the signature; txC (different sig) excluded.
+      assert.deepEqual(
+        body.transmissions.map((t) => t.id).sort(),
+        [txA, txB].sort(),
+        'signatureKey membership equals txMatchesSig/sigKey',
+      );
+      assert.equal(body.scoped, 2, 'scoped denominator is post-signatureKey-filter');
+      // Findings are inlined per row for the docked detail pane.
+      assert.ok(body.transmissions[0]?.findings.length >= 1, 'findings inlined per row');
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
       await app.close();
     }
   },

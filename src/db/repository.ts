@@ -293,6 +293,73 @@ export async function listFindingsForSession(
 }
 
 /**
+ * List a session's transmissions that fall within a time window, NEWEST-FIRST,
+ * for the paginated/filterable list endpoint (4h4.5). `windowLowerBound` is the
+ * epoch-ms lower bound (from src/api/scope.ts `windowLowerBound`); pass `null`
+ * for the unbounded `'all'` window.
+ *
+ * The window time-bound + reverse-chron ORDER are pushed into SQL so the
+ * `(session_uuid, received_at DESC)` index (DESIGN.md §8) does the time slice and
+ * the ordering — the app never scans rows older than the window. The tie-breaker
+ * `id DESC` makes the order TOTAL (received_at can collide at ms resolution), so
+ * the cursor the endpoint builds on `(received_at, id)` is stable.
+ *
+ * TRADE-OFF (4h4.5): the remaining filters — source (deriveSourceView trims +
+ * collapses null/blank), failuresOnly, and signatureKey (txMatchesSig/sigKey) —
+ * are applied APP-SIDE over this windowed candidate set, NOT in SQL. Per-session
+ * volume is bounded by the 7-day retention window (one client's deliveries), so
+ * the bounded scan is cheap, and source-normalization + sigKey membership stay
+ * single-sourced in src/api/source.ts + src/api/signatures.ts rather than being
+ * re-implemented (and risking drift) in SQL. Pure-SQL pagination would be faster
+ * but would fork those two definitions.
+ */
+export async function listTransmissionsInWindow(
+  sessionUuid: string,
+  windowLowerBound: number | null,
+  db: Queryable = getPool(),
+): Promise<TransmissionRow[]> {
+  const { rows } = await db.query<TransmissionRow>(
+    `SELECT id, session_uuid, received_at, content_hash, wire_bytes,
+            content_type, content_encoding, http_status, transfer_id,
+            transfer_src, transfer_type, schema_version, body, raw_body,
+            parse_ok, schema_ok
+     FROM transmission
+     WHERE session_uuid = $1
+       AND ($2::timestamptz IS NULL OR received_at >= $2)
+     ORDER BY received_at DESC, id DESC`,
+    [sessionUuid, windowLowerBound === null ? null : new Date(windowLowerBound).toISOString()],
+  );
+  return rows;
+}
+
+/**
+ * List the `finding` rows for a session's transmissions WITHIN a time window —
+ * the windowed companion to {@link listFindingsForSession}, scoped by the same
+ * `windowLowerBound` epoch-ms bound so the list endpoint (4h4.5) only fetches
+ * findings for the candidate transmissions it will page over (not the whole
+ * session). The caller groups these by `transmission_id` to inline per-row
+ * findings and to evaluate the signatureKey / failuresOnly app-side filters.
+ * Order mirrors {@link listFindingsForSession} (tx newest-first, then finding id).
+ */
+export async function listFindingsInWindow(
+  sessionUuid: string,
+  windowLowerBound: number | null,
+  db: Queryable = getPool(),
+): Promise<FindingRow[]> {
+  const { rows } = await db.query<FindingRow>(
+    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer, f.outdated,
+            f.keyword, f.instance_path, f.param, f.code
+     FROM finding f
+     JOIN transmission t ON t.id = f.transmission_id
+     WHERE t.session_uuid = $1
+       AND ($2::timestamptz IS NULL OR t.received_at >= $2)
+     ORDER BY t.received_at DESC, f.id`,
+    [sessionUuid, windowLowerBound === null ? null : new Date(windowLowerBound).toISOString()],
+  );
+  return rows;
+}
+
+/**
  * A prior transmission matched by §1.8 duplicate detection — the small subset of
  * `transmission` columns the semantic duplicate check needs to GRADE a repeat
  * (same-transferId or exact-replay) against an earlier POST in the same session.

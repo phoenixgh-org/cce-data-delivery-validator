@@ -19,6 +19,7 @@ import {
   scopeTotals,
   scopeTransmissions,
   txFailing,
+  windowLowerBound,
 } from './scope.js';
 import { computeComplianceSummary } from './compliance-matrix.js';
 import type { ComplianceRow } from './compliance-matrix.js';
@@ -51,10 +52,35 @@ test('parseSource preserves a source key, the empty unknown bucket, and falls ba
   assert.equal(parseSource(123), 'all');
 });
 
-// ── scope predicate (time bound + source filter) ────────────────────────────
+// ── window lower bound (the SQL time-bound, shared with inScope) ─────────────
 
 const NOW = Date.parse('2026-06-17T12:00:00.000Z');
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
+
+test('windowLowerBound returns null for all, else now - span', () => {
+  assert.equal(windowLowerBound('all', NOW), null);
+  assert.equal(windowLowerBound('15m', NOW), NOW - 15 * 60 * 1000);
+  assert.equal(windowLowerBound('1h', NOW), NOW - 60 * 60 * 1000);
+  assert.equal(windowLowerBound('6h', NOW), NOW - 6 * 60 * 60 * 1000);
+});
+
+test('windowLowerBound agrees with inScope time bound (single source of window math)', () => {
+  // A tx exactly at the bound is in scope; one a ms older is not — the SQL bound
+  // (received_at >= lo) must match inScope, which is the summary endpoint's path.
+  for (const w of ['15m', '1h', '6h'] as const) {
+    const lo = windowLowerBound(w, NOW)!;
+    assert.equal(
+      inScope({ received_at: new Date(lo).toISOString(), source: 'a' }, w, 'all', NOW),
+      true,
+    );
+    assert.equal(
+      inScope({ received_at: new Date(lo - 1).toISOString(), source: 'a' }, w, 'all', NOW),
+      false,
+    );
+  }
+});
+
+// ── scope predicate (time bound + source filter) ────────────────────────────
 
 test('inScope: all window has no time bound', () => {
   assert.equal(

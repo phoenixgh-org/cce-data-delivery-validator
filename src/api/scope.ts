@@ -45,6 +45,19 @@ export function parseWindow(raw: unknown): Window {
 }
 
 /**
+ * The lower time bound (epoch ms) a window admits, or `null` for the unbounded
+ * `'all'` window. Single source of the window→time math: the SUMMARY endpoint
+ * filters an in-memory array via {@link inScope}, while the paginated LIST
+ * endpoint (4h4.5) pushes this bound into SQL (`received_at >= $lo`) to reuse the
+ * `(session_uuid, received_at DESC)` index instead of scanning every row. Keeping
+ * the bound here means both endpoints share one definition of "within this
+ * window" — change the spans once, in {@link WINDOW_MS}.
+ */
+export function windowLowerBound(window: Window, now: number): number | null {
+  return window === 'all' ? null : now - WINDOW_MS[window];
+}
+
+/**
  * Parse a raw `source` query value: a non-empty string is taken as a source key,
  * anything else falls back to {@link DEFAULT_SOURCE} ('all'). The empty string is
  * the canonical UNKNOWN bucket key, so it is preserved as a real selector.

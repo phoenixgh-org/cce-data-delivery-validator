@@ -30,8 +30,9 @@ import {
   rollup,
   scopeTotals,
   scopeTransmissions,
+  windowLowerBound,
 } from './scope.js';
-import { computeSignatures } from './signatures.js';
+import { computeSignatures, txMatchesSig } from './signatures.js';
 import type { SignatureTransmission } from './signatures.js';
 import { deriveSourceView, sourceCounts } from './source.js';
 import { generateCredential } from '../auth/credential.js';
@@ -43,9 +44,11 @@ import {
   enableAuth,
   getSession,
   listFindingsForSession,
+  listFindingsInWindow,
   listTransmissions,
+  listTransmissionsInWindow,
 } from '../db/repository.js';
-import type { AuthMethod, FindingRow, Severity } from '../db/repository.js';
+import type { AuthMethod, FindingRow, Severity, TransmissionRow } from '../db/repository.js';
 
 /** Findings as surfaced per-transmission on the dashboard (drill-down detail). */
 function toFindingView(f: FindingRow) {
@@ -73,6 +76,122 @@ function toFindingView(f: FindingRow) {
  */
 function byRequirement(a: FindingRow, b: FindingRow): number {
   return a.requirement.localeCompare(b.requirement, undefined, { numeric: true });
+}
+
+/**
+ * Build the per-transmission view (list row + drill-down detail) from a
+ * transmission row and its pre-grouped findings. Shared by the summary read
+ * (`GET /api/sessions/:uuid`) and the paginated list (`…/transmissions`) so the
+ * row shape — source dimension (4h4.2) + inlined findings — is IDENTICAL on both.
+ */
+function toTransmissionView(t: TransmissionRow, findings: readonly FindingRow[]) {
+  // SOURCE dimension (4h4.2): derive the presentation pair from the raw
+  // transfer_src so list rows + the filter <select> agree (src/api/source.ts).
+  const { source: src, sourceCode, sourceLabel } = deriveSourceView(t.transfer_src);
+  return {
+    id: t.id,
+    received_at: t.received_at,
+    http_status: t.http_status,
+    content_type: t.content_type,
+    content_encoding: t.content_encoding,
+    // wire_bytes is a bigint → pg returns a string; pass it through as-is.
+    wire_bytes: t.wire_bytes,
+    schema_version: t.schema_version,
+    transfer_id: t.transfer_id,
+    // Keep the raw transfer_src for the window-aware source counts.
+    transfer_src: t.transfer_src,
+    // Raw source key + derived 3-letter code + human label (4h4.2).
+    source: src,
+    sourceCode,
+    sourceLabel,
+    parse_ok: t.parse_ok,
+    schema_ok: t.schema_ok,
+    body: t.body,
+    raw_body: t.raw_body,
+    findings: findings.slice().sort(byRequirement).map(toFindingView),
+  };
+}
+
+type TransmissionView = ReturnType<typeof toTransmissionView>;
+
+/** Group findings by transmission_id (preserves per-tx insertion order). */
+function groupFindingsByTx(findings: readonly FindingRow[]): Map<string, FindingRow[]> {
+  const byTx = new Map<string, FindingRow[]>();
+  for (const f of findings) {
+    const bucket = byTx.get(f.transmission_id);
+    if (bucket) bucket.push(f);
+    else byTx.set(f.transmission_id, [f]);
+  }
+  return byTx;
+}
+
+/**
+ * Adapt a built view to the SignatureTransmission shape txMatchesSig/sigKey
+ * consume — `received_at` as an ISO string, raw source key, camelCase findings.
+ * Reusing the same projection the summary feeds computeSignatures keeps the
+ * list's signatureKey cross-filter membership EQUAL to the signature engine.
+ */
+function asSignatureTx(t: TransmissionView): SignatureTransmission {
+  return {
+    id: t.id,
+    received_at: new Date(t.received_at).toISOString(),
+    source: t.source,
+    findings: t.findings,
+  };
+}
+
+/** The opaque list cursor: the (received_at, id) of the last row of a page. */
+interface ListCursor {
+  receivedAt: number;
+  id: string;
+}
+
+/** Encode a cursor as a URL-safe base64 token (received_at epoch ms + id). */
+function encodeCursor(c: ListCursor): string {
+  return Buffer.from(`${c.receivedAt}:${c.id}`, 'utf8').toString('base64url');
+}
+
+/**
+ * Decode a list cursor token, or `null` for an absent/malformed value (the page
+ * just starts from the top — the list, like scope parsing, never 400s on a bad
+ * query param).
+ */
+function decodeCursor(raw: unknown): ListCursor | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  try {
+    const text = Buffer.from(raw, 'base64url').toString('utf8');
+    const sep = text.indexOf(':');
+    if (sep <= 0) return null;
+    const receivedAt = Number(text.slice(0, sep));
+    const id = text.slice(sep + 1);
+    if (!Number.isFinite(receivedAt) || id.length === 0) return null;
+    return { receivedAt, id };
+  } catch {
+    return null;
+  }
+}
+
+/** Default and hard-cap page sizes for the transmission list. */
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+
+/** Parse a `limit` query value, clamped to [1, MAX_PAGE_SIZE], default otherwise. */
+function parsePageSize(raw: unknown): number {
+  const n = typeof raw === 'string' ? Number(raw) : typeof raw === 'number' ? raw : NaN;
+  if (!Number.isFinite(n)) return DEFAULT_PAGE_SIZE;
+  return Math.max(1, Math.min(MAX_PAGE_SIZE, Math.floor(n)));
+}
+
+/**
+ * Strict reverse-chron compare for the cursor: a row comes AFTER the cursor when
+ * its (received_at DESC, id DESC) sort key is strictly past the cursor's — i.e.
+ * older received_at, or same received_at with a smaller id. Matches the SQL
+ * `ORDER BY received_at DESC, id DESC` total order exactly.
+ */
+function afterCursor(receivedAt: number, id: string, cursor: ListCursor): boolean {
+  if (receivedAt < cursor.receivedAt) return true;
+  if (receivedAt > cursor.receivedAt) return false;
+  return id < cursor.id;
 }
 
 /** Register the sessions API on `app`. */
@@ -223,43 +342,14 @@ export function registerSessionsApi(app: FastifyInstance): void {
 
       // Group findings by transmission_id once for the per-tx drill-down; the
       // scope-relative summary counts are recomputed over the SCOPED set below.
-      const findingsByTx = new Map<string, FindingRow[]>();
-      for (const f of findings) {
-        const bucket = findingsByTx.get(f.transmission_id);
-        if (bucket) bucket.push(f);
-        else findingsByTx.set(f.transmission_id, [f]);
-      }
+      const findingsByTx = groupFindingsByTx(findings);
 
       // Build the full per-transmission views (list + drill-down). `source` is the
       // raw key the scope predicate filters on; the camelCase finding fields feed
       // computeSignatures unchanged.
-      const transmissionViews = transmissions.map((t) => {
-        // SOURCE dimension (4h4.2): derive the presentation pair from the raw
-        // transfer_src so list rows + the filter <select> agree (src/api/source.ts).
-        const { source: src, sourceCode, sourceLabel } = deriveSourceView(t.transfer_src);
-        return {
-          id: t.id,
-          received_at: t.received_at,
-          http_status: t.http_status,
-          content_type: t.content_type,
-          content_encoding: t.content_encoding,
-          // wire_bytes is a bigint → pg returns a string; pass it through as-is.
-          wire_bytes: t.wire_bytes,
-          schema_version: t.schema_version,
-          transfer_id: t.transfer_id,
-          // Keep the raw transfer_src for the window-aware source counts below.
-          transfer_src: t.transfer_src,
-          // Raw source key + derived 3-letter code + human label (4h4.2).
-          source: src,
-          sourceCode,
-          sourceLabel,
-          parse_ok: t.parse_ok,
-          schema_ok: t.schema_ok,
-          body: t.body,
-          raw_body: t.raw_body,
-          findings: (findingsByTx.get(t.id) ?? []).slice().sort(byRequirement).map(toFindingView),
-        };
-      });
+      const transmissionViews = transmissions.map((t) =>
+        toTransmissionView(t, findingsByTx.get(t.id) ?? []),
+      );
 
       const now = Date.now();
 
@@ -283,19 +373,9 @@ export function registerSessionsApi(app: FastifyInstance): void {
       }
       const summary = computeComplianceSummary(scopedCounts);
 
-      // computeSignatures consumes the scoped views directly — they are
-      // structurally compatible with SignatureTransmission (id, received_at ISO,
-      // source, camelCase findings).
-      const signatures = computeSignatures(
-        scopedViews.map(
-          (t): SignatureTransmission => ({
-            id: t.id,
-            received_at: new Date(t.received_at).toISOString(),
-            source: t.source,
-            findings: t.findings,
-          }),
-        ),
-      );
+      // computeSignatures consumes the scoped views via the shared signature-tx
+      // projection (same one the list endpoint's cross-filter uses).
+      const signatures = computeSignatures(scopedViews.map(asSignatureTx));
 
       const base = session.last_post_at ?? session.created_at;
       const expiresAt = new Date(base.getTime() + RETENTION_MS).toISOString();
@@ -318,6 +398,117 @@ export function registerSessionsApi(app: FastifyInstance): void {
         sources,
         scoped: scopeTotals(scopedViews, signatures.length),
         expiresAt,
+      });
+    },
+  );
+
+  // PAGINATED, FILTERABLE transmission list (4h4.5). Backs the dashboard's list
+  // region "Transmissions · showing {visible} of {scoped}" at thousands of rows,
+  // where shipping the whole list (the summary read above) does not scale.
+  //
+  // Query params (all resilient — unknown values fall back, never 400):
+  //   - window   15m|1h|6h|all (default all) — same scope semantics as the summary.
+  //   - source   a raw source key | all (default all) — TRIMMED transfer_src, the
+  //              null/blank bucket is the empty-string key (deriveSourceView).
+  //   - failuresOnly  true|1 → keep only tx with ≥1 fail finding.
+  //   - signatureKey  keep only tx exhibiting that signature (txMatchesSig) — the
+  //              cross-filter from a clicked signature row.
+  //   - cursor   opaque (received_at,id) token from a prior page's nextCursor.
+  //   - limit    page size, clamped to [1, MAX_PAGE_SIZE], default DEFAULT_PAGE_SIZE.
+  //
+  // APPROACH (the 4h4.5 trade-off, app-filter side): push only the window
+  // time-bound + reverse-chron ORDER into SQL (reuse the (session_uuid,
+  // received_at DESC) index via listTransmissionsInWindow), fetch the windowed
+  // candidates + their findings, then apply source / failuresOnly / signatureKey
+  // / cursor pagination IN APP. Per-session volume is bounded by the 7-day
+  // retention window, so the bounded scan is cheap — and source-normalization
+  // (source.ts) + signatureKey membership (signatures.ts txMatchesSig) stay
+  // single-sourced instead of being re-implemented in SQL (which would drift).
+  //
+  // Response: { transmissions: [page of rows], scoped, nextCursor, hasMore }.
+  //   - each row is the SAME view as the summary (TransmissionView + source/
+  //     sourceCode/sourceLabel) with its findings INLINED — the docked detail pane
+  //     renders StatusPill/§links/OUTDATED tag/pointer/inventory straight off the
+  //     row, no second fetch (volume is page-bounded, so inlining is cheap).
+  //   - `scoped` is the count AFTER all four filters — the "of {scoped}"
+  //     denominator the header means (visible = transmissions.length ≤ scoped).
+  app.get(
+    '/api/sessions/:uuid/transmissions',
+    async (
+      request: FastifyRequest<{
+        Params: { uuid: string };
+        Querystring: {
+          window?: string;
+          source?: string;
+          failuresOnly?: string;
+          signatureKey?: string;
+          cursor?: string;
+          limit?: string;
+        };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const { uuid } = request.params;
+
+      const session = await getSession(uuid);
+      if (!session) {
+        return reply.code(404).send({ error: 'not_found', uuid });
+      }
+
+      const window = parseWindow(request.query.window);
+      const source = parseSource(request.query.source);
+      const failuresOnly =
+        request.query.failuresOnly === 'true' || request.query.failuresOnly === '1';
+      const signatureKey =
+        typeof request.query.signatureKey === 'string' && request.query.signatureKey.length > 0
+          ? request.query.signatureKey
+          : null;
+      const cursor = decodeCursor(request.query.cursor);
+      const limit = parsePageSize(request.query.limit);
+
+      const now = Date.now();
+      const lo = windowLowerBound(window, now);
+
+      // SQL does the window slice + reverse-chron order; the app does the rest.
+      const [transmissions, findings] = await Promise.all([
+        listTransmissionsInWindow(uuid, lo),
+        listFindingsInWindow(uuid, lo),
+      ]);
+
+      const findingsByTx = groupFindingsByTx(findings);
+      const views = transmissions.map((t) => toTransmissionView(t, findingsByTx.get(t.id) ?? []));
+
+      // Apply source + failuresOnly + signatureKey app-side, single-sourced from
+      // source.ts (already baked into view.source) and signatures.ts (txMatchesSig).
+      const filtered = views.filter((t) => {
+        if (source !== 'all' && t.source !== source) return false;
+        if (failuresOnly && !t.findings.some((f) => f.severity === 'fail')) return false;
+        if (signatureKey !== null && !txMatchesSig(asSignatureTx(t), signatureKey)) return false;
+        return true;
+      });
+
+      // `scoped` = the post-filter denominator the header reads "of {scoped}".
+      const scoped = filtered.length;
+
+      // Cursor pagination over the (already reverse-chron) filtered set: drop rows
+      // up to and including the cursor, take `limit`, expose hasMore + nextCursor.
+      const afterCursorViews =
+        cursor === null
+          ? filtered
+          : filtered.filter((t) => afterCursor(new Date(t.received_at).getTime(), t.id, cursor));
+      const page = afterCursorViews.slice(0, limit);
+      const hasMore = afterCursorViews.length > page.length;
+      const last = page[page.length - 1];
+      const nextCursor =
+        hasMore && last
+          ? encodeCursor({ receivedAt: new Date(last.received_at).getTime(), id: last.id })
+          : null;
+
+      return reply.send({
+        transmissions: page,
+        scoped,
+        nextCursor,
+        hasMore,
       });
     },
   );
