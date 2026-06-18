@@ -12,7 +12,7 @@
  */
 import type { CSSProperties, ReactElement } from 'react';
 import { useEffect } from 'react';
-import type { ComplianceClass, ComplianceRow, Severity, TransmissionView } from '../api';
+import type { ComplianceClass, ComplianceRow, Severity, Signature, TransmissionView } from '../api';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
 import { CLASS_META } from './ui/statusMaps';
@@ -49,6 +49,22 @@ export interface CompliancePaneProps {
   collapsedGroups: CollapsedGroups;
   /** Toggle a non-gradeable group's collapse. */
   onToggleGroup: (cls: ComplianceClass) => void;
+  /**
+   * Scope-relative deduped issue signatures (4h4.9 plumbs from data.signatures).
+   * Seam consumed by 4h4.11 (signature rows + cross-filter) — accepted here but
+   * NOT yet rendered by this card.
+   */
+  signatures?: Signature[];
+  /**
+   * Cross-filter trigger: select a signature to scope the transmission list.
+   * Seam consumed by 4h4.11 — accepted here but NOT yet wired to any control.
+   */
+  onSelectSignature?: (sig: Signature) => void;
+  /**
+   * Key of the currently active signature cross-filter (or null). Seam consumed
+   * by 4h4.11 to mark the active signature row — NOT yet rendered.
+   */
+  activeSignatureKey?: string | null;
 }
 
 /* ------------------------------------------------------------------ *

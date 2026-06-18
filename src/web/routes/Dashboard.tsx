@@ -17,18 +17,21 @@
  * its typed-confirm runs deleteSessionData + a refetch, which drops back to the
  * empty state via the auto-collapse effect.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import {
   deleteSessionData,
   getSession,
+  listTransmissions,
   type ComplianceClass,
-  type ComplianceRow,
+  type ListTransmissionsResponse,
   type SessionResponse,
+  type Signature,
 } from '../api';
 import { ComplianceCard } from '../components/ComplianceCard';
 import { DeleteModal } from '../components/DeleteModal';
+import { FilterBar, type WindowValue } from '../components/FilterBar';
 import { Setup } from '../components/Setup';
 import { TransmissionsCard } from '../components/TransmissionsCard';
 
@@ -62,42 +65,26 @@ function shortUuid(uuid: string): string {
   return `${uuid.slice(0, 8)}…${uuid.slice(-4)}`;
 }
 
-/** A requirement is gradeable when its primary class is verified or heuristic. */
-function isGradeable(cls: ComplianceClass | undefined): boolean {
-  return cls === 'verified' || cls === 'heuristic';
-}
-
-interface Rollup {
-  total: number;
-  gradeable: number;
-  passing: number;
-  failing: number;
-  untested: number;
-}
-
-/**
- * Gradeable rollup — EXACT spec from redesign/engine.js `rollup()`. Counts
- * passing/failing/untested over GRADEABLE rows only (primary class verified or
- * heuristic); self-attested/active/permissive/enforced rows are never counted.
- * `failing` folds `mixed` in with `fail` (a row with any failure is "failing").
- */
-function computeRollup(summary: ComplianceRow[]): Rollup {
-  const grade = summary.filter((r) => isGradeable(r.classes[0]));
-  return {
-    total: summary.length,
-    gradeable: grade.length,
-    passing: grade.filter((r) => r.status === 'pass').length,
-    failing: grade.filter((r) => r.status === 'fail' || r.status === 'mixed').length,
-    untested: grade.filter((r) => r.status === 'untested').length,
-  };
-}
-
 /** Per-verifiability-class collapse map for the non-gradeable groups. */
 type CollapsedGroups = Partial<Record<ComplianceClass, boolean>>;
 
 export function Dashboard() {
   const { uuid } = useParams<{ uuid: string }>();
   const [state, setState] = useState<State>({ phase: 'loading' });
+
+  // ---- Scope state (4h4.9). These drive the SERVER-computed scope: the summary
+  // read passes {window,source}; the list read passes {window,source,failuresOnly,
+  // signatureKey}. Every value here defaults to the unscoped/all view and is
+  // preserved across polls (the poll re-enters the CURRENT scope, never resets).
+  const [window, setWindow] = useState<WindowValue>('all');
+  const [source, setSource] = useState<string>('all');
+  const [selectedSignature, setSelectedSignature] = useState<Signature | null>(null);
+  const [failuresOnly, setFailuresOnly] = useState(false);
+
+  // The paginated transmission list page (a SEPARATE read from the summary). The
+  // TransmissionsCard renders THESE rows (the scoped/filtered page), not the
+  // summary read's full data.transmissions. Null until the first list read lands.
+  const [listData, setListData] = useState<ListTransmissionsResponse | null>(null);
 
   // ---- Lifted cross-link / UI state (README §State). The shell owns it; the
   // panes consume it. Most is exercised by 108.5/108.6/108.8 — see pane props.
@@ -127,13 +114,21 @@ export function Dashboard() {
   // swallowed — the live view is kept and the next tick retries — rather than
   // replacing healthy data with the full-screen error state; a 404 (the session
   // genuinely expired) still transitions to not-found.
+  //
+  // 4h4.9: this closes over the scope state (window/source/failuresOnly/
+  // selectedSignature) and fires BOTH reads — the scope-aware summary AND the
+  // current list page — re-entering the CURRENT scope. The phase machine stays
+  // driven by the SUMMARY read; the list populates into its own state (and may
+  // land slightly after). Changing any scope value re-creates this callback,
+  // which re-runs the reads via the initial-load effect's `load` dependency.
   const load = useCallback(
     (cancelled?: () => boolean, opts?: { background?: boolean }) => {
       if (!uuid) {
         setState({ phase: 'not-found' });
         return;
       }
-      getSession(uuid)
+      // Summary read (drives the phase machine + scorecard + compliance pane).
+      getSession(uuid, { window, source })
         .then((result) => {
           if (cancelled?.()) return;
           if (result.ok) setState({ phase: 'ready', data: result.data });
@@ -146,8 +141,25 @@ export function Dashboard() {
             message: err instanceof Error ? err.message : 'Failed to load session',
           });
         });
+      // List read (separate; drives the TransmissionsCard page). The first page
+      // always re-enters the current scope from the top (no cursor) so a poll
+      // reflects newly-arrived rows. Errors are swallowed regardless of mode —
+      // the summary read owns the not-found/error transitions.
+      listTransmissions(uuid, {
+        window,
+        source,
+        failuresOnly,
+        signatureKey: selectedSignature?.key,
+      })
+        .then((result) => {
+          if (cancelled?.()) return;
+          if (result.ok) setListData(result.data);
+        })
+        .catch(() => {
+          // Swallow — the summary read drives the error/not-found states.
+        });
     },
-    [uuid],
+    [uuid, window, source, failuresOnly, selectedSignature],
   );
 
   useEffect(() => {
@@ -200,9 +212,18 @@ export function Dashboard() {
 
   // Derive the data the render needs (safe defaults while not ready).
   const data = state.phase === 'ready' ? state.data : null;
+  // Full scoped transmissions from the SUMMARY read — feeds ComplianceCard's
+  // "From transmissions" chips (a finding→tx linkage over the whole scope).
   const transmissions = data?.transmissions ?? [];
   const summary = data?.summary ?? [];
+  // Scorecard numbers come from the SERVER rollup now (4h4.9 — no client
+  // recompute). Zero-fallback keeps the type non-optional while not ready; the
+  // scorecard/header only render in the `ready` phase where `data.rollup` exists.
+  const rollup = data?.rollup ?? { total: 0, gradeable: 0, passing: 0, failing: 0, untested: 0 };
   const txCount = transmissions.length;
+  // The list PAGE rows (scoped + filtered + cross-filtered) — what the
+  // TransmissionsCard renders. Empty until the first list read lands.
+  const listRows = listData?.transmissions ?? [];
 
   // Auto-collapse rule (README §Interactions): Setup is open while the endpoint
   // has zero transmissions; the FIRST transmission collapses it ONCE (tracked
@@ -218,18 +239,33 @@ export function Dashboard() {
     }
   }, [txCount, autoCollapsed]);
 
-  // Keep a sensible selected transmission (default = newest; the API returns
-  // transmissions newest-first, so [0] is newest).
+  // Keep a sensible selected transmission against the FILTERED list page (4h4.9):
+  // default = newest in the filtered list (list rows are newest-first, so [0] is
+  // newest); if the current selection has fallen out of the filtered list, move
+  // to the newest remaining row; a still-valid selection is NOT yanked on poll.
   useEffect(() => {
-    const newest = transmissions[0];
+    const newest = listRows[0];
     if (!newest) {
       setSelectedTx(null);
       return;
     }
-    setSelectedTx((cur) => (cur && transmissions.some((t) => t.id === cur) ? cur : newest.id));
-  }, [transmissions]);
+    setSelectedTx((cur) => (cur && listRows.some((t) => t.id === cur) ? cur : newest.id));
+  }, [listRows]);
 
-  const rollup = useMemo(() => computeRollup(summary), [summary]);
+  // Cross-filter handlers (4h4.9 owns the logic; the UI triggers land in
+  // 4h4.11/4h4.12). Picking a signature scopes the list AND clears the docked
+  // selection so the detail follows the newly-filtered list; clearing the chip
+  // returns to the full scoped list; the failures-only toggle flips the filter.
+  const onSelectSignature = useCallback((sig: Signature) => {
+    setSelectedSignature(sig);
+    setSelectedTx(null);
+  }, []);
+  const onClearSignature = useCallback(() => {
+    setSelectedSignature(null);
+  }, []);
+  const onToggleFailuresOnly = useCallback(() => {
+    setFailuresOnly((v) => !v);
+  }, []);
 
   const toggleGroup = useCallback((cls: ComplianceClass) => {
     setCollapsedGroups((prev) => ({ ...prev, [cls]: !prev[cls] }));
@@ -414,6 +450,19 @@ export function Dashboard() {
         </span>
       </div>
 
+      {/* Scoped filter strip (4h4.8) — sits between the scorecard and the panes;
+          drives the server-computed scope. Presentational: Dashboard owns the
+          window/source state and feeds it the summary read's sources + scope
+          totals. */}
+      <FilterBar
+        window={window}
+        source={source}
+        sources={state.data.sources}
+        scoped={state.data.scoped}
+        onWindowChange={setWindow}
+        onSourceChange={setSource}
+      />
+
       {/* Two-pane body */}
       <div
         style={{
@@ -436,12 +485,25 @@ export function Dashboard() {
           onShowNonGradeableChange={setShowNonGradeable}
           collapsedGroups={collapsedGroups}
           onToggleGroup={toggleGroup}
+          // Signature cross-filter seams — consumed by 4h4.11 (not rendered yet).
+          signatures={state.data.signatures}
+          onSelectSignature={onSelectSignature}
+          activeSignatureKey={selectedSignature?.key ?? null}
         />
         <TransmissionsCard
-          transmissions={transmissions}
+          // The list renders the paginated PAGE rows (scoped/filtered), not the
+          // summary read's full transmissions.
+          transmissions={listRows}
           selectedTx={selectedTx}
           onSelectTx={setSelectedTx}
           onSelectReq={setExpandedReq}
+          // Filter/chip/readout seams — consumed by 4h4.12 (not rendered yet).
+          failuresOnly={failuresOnly}
+          onToggleFailuresOnly={onToggleFailuresOnly}
+          activeSignature={selectedSignature}
+          onClearSignature={onClearSignature}
+          visibleCount={listRows.length}
+          scopedTotal={listData?.scoped ?? 0}
         />
       </div>
 

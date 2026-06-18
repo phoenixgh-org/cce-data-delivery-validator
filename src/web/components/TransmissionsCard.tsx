@@ -14,7 +14,7 @@
  */
 import type { CSSProperties, ReactElement } from 'react';
 
-import type { FindingView, Severity, TransmissionView } from '../api';
+import type { FindingView, Severity, Signature, TransmissionView } from '../api';
 import type { DisplayStatus } from '../api';
 import { Icon } from './ui/Icon';
 import { StatusPill } from './ui/StatusPill';
@@ -28,6 +28,39 @@ export interface TransmissionsCardProps {
   onSelectTx: (id: string) => void;
   /** Cross-link: a finding's §req opens that requirement in the compliance pane (108.6). */
   onSelectReq: (req: string) => void;
+  /**
+   * Whether the list is scoped to failures-only (4h4.9 owns the state).
+   * Seam consumed by 4h4.12 (failures-only checkbox) — accepted here but NOT
+   * yet rendered by this card.
+   */
+  failuresOnly?: boolean;
+  /**
+   * Flip the failures-only filter. Seam consumed by 4h4.12 — accepted here but
+   * NOT yet wired to any control.
+   */
+  onToggleFailuresOnly?: () => void;
+  /**
+   * The active signature cross-filter (or null) — the title source for the
+   * future issue chip. Seam consumed by 4h4.12 — accepted here but NOT yet
+   * rendered.
+   */
+  activeSignature?: Signature | null;
+  /**
+   * Clear the active signature cross-filter. Seam consumed by 4h4.12 (issue
+   * chip dismiss) — accepted here but NOT yet wired.
+   */
+  onClearSignature?: () => void;
+  /**
+   * Count of currently-rendered (visible) list rows, for the future
+   * "showing {visible} of {scoped}" header. Seam consumed by 4h4.12 — accepted
+   * here but NOT yet rendered.
+   */
+  visibleCount?: number;
+  /**
+   * Post-all-filters denominator (the list response's plain-number `scoped`).
+   * Seam consumed by 4h4.12 — accepted here but NOT yet rendered.
+   */
+  scopedTotal?: number;
 }
 
 /** Row status-dot tone derived from a transmission's findings (not HTTP). */
