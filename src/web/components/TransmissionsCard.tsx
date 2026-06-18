@@ -12,7 +12,8 @@
  * Reference: design_handoff_validator_redesign/redesign/proto-dashboard.jsx
  * (TxRow / TxDetail / TransmissionsCard) + README §2 "TransmissionsCard".
  */
-import type { CSSProperties, ReactElement } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { FindingView, Severity, Signature, TransmissionView } from '../api';
 import type { DisplayStatus } from '../api';
@@ -40,6 +41,17 @@ export interface TransmissionsCardProps {
   visibleCount?: number;
   /** Post-all-filters denominator (the list response's plain-number `scoped`). */
   scopedTotal?: number;
+  /**
+   * Infinite-scroll seam (4h4.13). The card raises `onLoadMore` when the
+   * virtualizer's last rendered row nears the end of the accumulated list AND
+   * `hasMore` is true AND `isLoadingMore` is false. Dashboard owns the cursor:
+   * it appends the next page and updates `hasMore`. Omitted ⇒ no pagination.
+   */
+  onLoadMore?: () => void;
+  /** Whether another cursor page exists (`nextCursor != null`); gates `onLoadMore`. */
+  hasMore?: boolean;
+  /** Whether a load-more page fetch is in flight; gates `onLoadMore` (no double-fire). */
+  isLoadingMore?: boolean;
 }
 
 /** Row status-dot tone derived from a transmission's findings (not HTTP). */
@@ -423,6 +435,9 @@ export function TransmissionsCard({
   onClearSignature,
   visibleCount,
   scopedTotal,
+  onLoadMore,
+  hasMore,
+  isLoadingMore,
 }: TransmissionsCardProps): ReactElement {
   // Default to the newest (first) transmission when nothing is selected or the
   // selection no longer exists. The API returns newest-first, so [0] is newest.
@@ -432,6 +447,35 @@ export function TransmissionsCard({
   // response; fall back to the page length when the seam isn't supplied.
   const visible = visibleCount ?? transmissions.length;
   const scoped = scopedTotal ?? transmissions.length;
+
+  // Virtualization (4h4.13): the scrolling list region is the scroll element.
+  // We render only the visible window of rows, absolutely positioned inside a
+  // full-height spacer, so a list of thousands stays smooth. Rows are NOT
+  // fixed-height (the chrome wraps), so estimateSize + measureElement keep the
+  // measured heights honest. Header/issue-bar/detail stay outside this and are
+  // never virtualized.
+  const listRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: transmissions.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 37,
+    overscan: 8,
+    getItemKey: (index) => transmissions[index]?.id ?? index,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+
+  // Infinite scroll: when the last rendered row nears the end of the
+  // accumulated list, raise onLoadMore so Dashboard appends the next cursor
+  // page. Guard on hasMore + !isLoadingMore so we never double-fire a page that
+  // is already in flight (or past the last page). Reads the LAST virtual item
+  // rather than a scroll handler so it stays correct under measurement.
+  const lastIndex = virtualItems[virtualItems.length - 1]?.index;
+  useEffect(() => {
+    if (!onLoadMore || !hasMore || isLoadingMore) return;
+    if (lastIndex === undefined) return;
+    if (lastIndex >= transmissions.length - 5) onLoadMore();
+  }, [lastIndex, transmissions.length, onLoadMore, hasMore, isLoadingMore]);
 
   return (
     <div
@@ -546,16 +590,44 @@ export function TransmissionsCard({
         </div>
       ) : (
         <>
-          {/* Scrolling list region — API returns newest-first; no re-sort. */}
-          <div style={{ overflowY: 'auto', flex: '1 1 56%', minHeight: 0 }}>
-            {transmissions.map((t) => (
-              <TxRow
-                key={t.id}
-                tx={t}
-                selected={selected !== null && selected.id === t.id}
-                onSelect={() => onSelectTx(t.id)}
-              />
-            ))}
+          {/* Scrolling list region — API returns newest-first; no re-sort.
+              Row-virtualized (4h4.13): only the visible window renders, each row
+              absolutely positioned inside a full-height spacer so the region's
+              size + scrollbar stay correct. measureElement keeps non-fixed row
+              heights honest. Same fixed-height region + row chrome as before. */}
+          <div ref={listRef} style={{ overflowY: 'auto', flex: '1 1 56%', minHeight: 0 }}>
+            <div
+              style={{
+                height: rowVirtualizer.getTotalSize(),
+                position: 'relative',
+                width: '100%',
+              }}
+            >
+              {virtualItems.map((vi) => {
+                const t = transmissions[vi.index];
+                if (!t) return null;
+                return (
+                  <div
+                    key={vi.key}
+                    data-index={vi.index}
+                    ref={rowVirtualizer.measureElement}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${vi.start}px)`,
+                    }}
+                  >
+                    <TxRow
+                      tx={t}
+                      selected={selected !== null && selected.id === t.id}
+                      onSelect={() => onSelectTx(t.id)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
           {/* Pinned detail region — selecting a row only swaps this; list never reflows. */}
           <div

@@ -17,7 +17,7 @@
  * its typed-confirm runs deleteSessionData + a refetch, which drops back to the
  * empty state via the auto-collapse effect.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import {
@@ -28,6 +28,7 @@ import {
   type ListTransmissionsResponse,
   type SessionResponse,
   type Signature,
+  type TransmissionView,
 } from '../api';
 import { ComplianceCard } from '../components/ComplianceCard';
 import { DeleteModal } from '../components/DeleteModal';
@@ -85,7 +86,21 @@ export function Dashboard() {
   // The paginated transmission list page (a SEPARATE read from the summary). The
   // TransmissionsCard renders THESE rows (the scoped/filtered page), not the
   // summary read's full data.transmissions. Null until the first list read lands.
+  //
+  // 4h4.13: `listData` always holds the PAGE-1 anchor (its `scoped` is the
+  // post-filter denominator). The rows the card renders are ACCUMULATED across
+  // cursor pages in `accumulatedRows`; `listCursor` is the cursor for the NEXT
+  // page (null at the end). A scope/filter change or poll re-anchors: it
+  // REPLACES the accumulated rows with page 1 and resets the cursor. Only a
+  // scroll-to-end load-more appends an additional page.
   const [listData, setListData] = useState<ListTransmissionsResponse | null>(null);
+  const [accumulatedRows, setAccumulatedRows] = useState<TransmissionView[]>([]);
+  const [listCursor, setListCursor] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // Guards a load-more append against a concurrent re-anchor (scope change /
+  // poll): each re-anchor bumps this token, and an in-flight append drops its
+  // result if the token moved while it was outstanding (stale-scope page).
+  const listAnchorRef = useRef(0);
 
   // ---- Lifted cross-link / UI state (README §State). The shell owns it; the
   // panes consume it. Most is exercised by 108.5/108.6/108.8 — see pane props.
@@ -144,8 +159,12 @@ export function Dashboard() {
         });
       // List read (separate; drives the TransmissionsCard page). The first page
       // always re-enters the current scope from the top (no cursor) so a poll
-      // reflects newly-arrived rows. Errors are swallowed regardless of mode —
-      // the summary read owns the not-found/error transitions.
+      // reflects newly-arrived rows. This RE-ANCHORS (4h4.13): it REPLACES the
+      // accumulated rows with page 1 and resets the cursor, and bumps the anchor
+      // token so any in-flight load-more append (older scope) is discarded.
+      // Errors are swallowed regardless of mode — the summary read owns the
+      // not-found/error transitions.
+      const anchorToken = (listAnchorRef.current += 1);
       listTransmissions(uuid, {
         window,
         source,
@@ -154,7 +173,15 @@ export function Dashboard() {
       })
         .then((result) => {
           if (cancelled?.()) return;
-          if (result.ok) setListData(result.data);
+          // A newer re-anchor superseded this read while it was outstanding —
+          // drop it so the stale page-1 doesn't clobber the current scope.
+          if (listAnchorRef.current !== anchorToken) return;
+          if (result.ok) {
+            setListData(result.data);
+            setAccumulatedRows(result.data.transmissions);
+            setListCursor(result.data.nextCursor);
+            setIsLoadingMore(false);
+          }
         })
         .catch(() => {
           // Swallow — the summary read drives the error/not-found states.
@@ -235,9 +262,12 @@ export function Dashboard() {
   // scorecard/header only render in the `ready` phase where `data.rollup` exists.
   const rollup = data?.rollup ?? { total: 0, gradeable: 0, passing: 0, failing: 0, untested: 0 };
   const txCount = transmissions.length;
-  // The list PAGE rows (scoped + filtered + cross-filtered) — what the
-  // TransmissionsCard renders. Empty until the first list read lands.
-  const listRows = listData?.transmissions ?? [];
+  // The list rows (scoped + filtered + cross-filtered) the TransmissionsCard
+  // renders — ACCUMULATED across cursor pages (4h4.13). Page 1 is newest-first
+  // and re-anchored on every scope change/poll; load-more appends OLDER rows at
+  // the END, so newest stays row[0] and a kept selection never jumps. Empty
+  // until the first list read lands.
+  const listRows = accumulatedRows;
 
   // Auto-collapse rule (README §Interactions): Setup is open while the endpoint
   // has zero transmissions; the FIRST transmission collapses it ONCE (tracked
@@ -280,6 +310,39 @@ export function Dashboard() {
   const onToggleFailuresOnly = useCallback(() => {
     setFailuresOnly((v) => !v);
   }, []);
+
+  // Infinite-scroll page fetch (4h4.13). Raised by the TransmissionsCard when
+  // the virtualized list nears its end. Fetches the NEXT cursor page in the
+  // CURRENT scope and APPENDS its (older) rows — it does NOT re-anchor. Guards:
+  // no uuid, no remaining cursor, or an append already in flight short-circuit.
+  // The anchor token captured at fire time is re-checked on resolve so a
+  // scope/filter change or poll that re-anchored mid-flight discards this stale
+  // page rather than appending it to a different scope.
+  const onLoadMore = useCallback(() => {
+    if (!uuid || listCursor === null || isLoadingMore) return;
+    const anchorToken = listAnchorRef.current;
+    setIsLoadingMore(true);
+    listTransmissions(uuid, {
+      window,
+      source,
+      failuresOnly,
+      signatureKey: selectedSignature?.key,
+      cursor: listCursor,
+    })
+      .then((result) => {
+        if (listAnchorRef.current !== anchorToken) return;
+        if (result.ok) {
+          setAccumulatedRows((prev) => [...prev, ...result.data.transmissions]);
+          setListCursor(result.data.nextCursor);
+        }
+      })
+      .catch(() => {
+        // Swallow — the next poll re-anchors page 1; the user can retry scroll.
+      })
+      .finally(() => {
+        if (listAnchorRef.current === anchorToken) setIsLoadingMore(false);
+      });
+  }, [uuid, listCursor, isLoadingMore, window, source, failuresOnly, selectedSignature]);
 
   const toggleGroup = useCallback((cls: ComplianceClass) => {
     setCollapsedGroups((prev) => ({ ...prev, [cls]: !prev[cls] }));
@@ -535,6 +598,11 @@ export function Dashboard() {
           onClearSignature={onClearSignature}
           visibleCount={listRows.length}
           scopedTotal={listData?.scoped ?? 0}
+          // Infinite-scroll seam (4h4.13): the card raises onLoadMore near the
+          // list end; hasMore reflects whether a next cursor page exists.
+          onLoadMore={onLoadMore}
+          hasMore={listCursor !== null}
+          isLoadingMore={isLoadingMore}
         />
       </div>
 
