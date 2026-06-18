@@ -141,6 +141,7 @@ export const intervalCheck: SemanticCheck = (ctx): Finding[] => {
     {
       requirement: '3.4',
       severity: 'fail',
+      code: 'tx.irregular_interval',
       detail:
         `reading cadence looks irregular in ${irregular.length} of ${evaluated.length} ` +
         `report series (worst interval CV ${pct(worstCv)} exceeds the ${pct(

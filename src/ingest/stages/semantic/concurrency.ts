@@ -43,6 +43,7 @@ export const concurrencyCheck: SemanticCheck = (_ctx, deps): Finding[] => {
     {
       requirement: '2.1',
       severity: 'fail',
+      code: 'tx.concurrent_delivery',
       detail:
         `concurrent delivery observed: ${others} other POST${others === 1 ? ' was' : 's were'} ` +
         `in flight for the session alongside this one (${observed} total, incl. self). ` +

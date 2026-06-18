@@ -63,6 +63,7 @@ test('concurrency: snapshot ≥2 (overlap) → one 2.1 fail finding', async () =
     assert.equal(findings[0]?.requirement, '2.1');
     assert.equal(findings[0]?.severity, 'fail', `snapshot ${observed} ⇒ fail`);
     assert.match(findings[0]?.detail ?? '', /serial delivery by default/, 'cites §2.1 caveat');
+    assert.equal(findings[0]?.code, 'tx.concurrent_delivery', 'carries the stable signature code');
   }
 });
 

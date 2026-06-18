@@ -115,6 +115,7 @@ test('interval: uneven gaps → one 3.4 fail with the honesty caveat', () => {
   assert.equal(fails.length, 1, 'one fail');
   assert.match(fails[0]?.detail ?? '', /irregular/);
   assert.match(fails[0]?.detail ?? '', /Heuristic only/, 'carries the §3.4 honesty caveat');
+  assert.equal(fails[0]?.code, 'tx.irregular_interval', 'carries the stable signature code');
 });
 
 // ── multi-report aggregation: any irregular ⇒ fail ──────────────────────────────
