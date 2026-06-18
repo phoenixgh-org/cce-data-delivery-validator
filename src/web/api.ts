@@ -65,6 +65,16 @@ export interface FindingView {
    * SCHEMA tag (TransmissionsCard). False for every other finding.
    */
   outdated: boolean;
+  /**
+   * Structured signature fields (4h4.1) — mirror toFindingView at
+   * src/api/sessions.ts. Schema (Ajv) errors carry `keyword`/`instancePath`/
+   * `param`; transport/heuristic findings carry a stable `code`. The web
+   * `instancePath` mirrors the backend `f.instance_path`.
+   */
+  keyword: string | null;
+  instancePath: string | null;
+  param: string | null;
+  code: string | null;
 }
 
 /** One transmission as the dashboard sees it (drill-down + findings). */
@@ -119,11 +129,101 @@ export interface CreateSessionResponse {
   dashboardUrl: string;
 }
 
-/** 200 response of GET /api/sessions/:uuid. */
+/**
+ * One aggregated signature — mirror src/api/signatures.ts `Signature`
+ * (SignatureView). Pre-rolled server-side so the browser never needs the raw
+ * findings to render the §3.2 compliance signatures.
+ */
+export interface Signature {
+  /** Stable key the list cross-filter matches against (?signatureKey=). */
+  key: string;
+  /** The requirement this signature belongs to (e.g. "3.2"). */
+  req: string;
+  /** Human title for the issue. */
+  title: string;
+  /** 'schema' for Ajv-keyword defects, 'check' for transport/heuristic codes. */
+  kind: 'schema' | 'check';
+  /** Severity of the representative finding ('fail' or 'info' for outdated). */
+  sev: Severity;
+  /** Raw finding count across all transmissions. */
+  count: number;
+  /** Distinct transmissions exhibiting this signature. */
+  txCount: number;
+  /** Distinct sources exhibiting this signature ('' counts as one). */
+  sourceCount: number;
+  /** Earliest received_at (ISO string) exhibiting this signature. */
+  first: string;
+  /** Latest received_at (ISO string) exhibiting this signature. */
+  last: string;
+  /** Representative JSON Pointer for the issue (may be null). */
+  examplePointer: string | null;
+}
+
+/**
+ * One pass-rate trend bucket — mirror src/api/scope.ts `TrendBucket`. `rate` is
+ * pass/(pass+fail), or null for an empty bucket (a RENDER concern downstream).
+ */
+export interface TrendBucket {
+  tot: number;
+  fail: number;
+  rate: number | null;
+}
+
+/**
+ * One filter `<select>` option — mirror src/api/source.ts `SourceCount`
+ * (SourceView + count): a source view plus its in-scope count.
+ */
+export interface SourceCount {
+  source: string;
+  sourceCode: string;
+  sourceLabel: string;
+  /** How many transmissions in the scoped set carry this source. */
+  count: number;
+}
+
+/**
+ * The scope-relative gradeable rollup (scorecard numbers) — mirror
+ * src/api/scope.ts `Rollup`.
+ */
+export interface Rollup {
+  total: number;
+  gradeable: number;
+  passing: number;
+  failing: number;
+  untested: number;
+}
+
+/**
+ * Scope totals for the readout above the list — mirror src/api/scope.ts
+ * `ScopeTotals`. NOTE the nested `scoped.scoped`: this is the SUMMARY response's
+ * `scoped` OBJECT, DISTINCT from the LIST response's plain-number `scoped`
+ * denominator (see {@link ListTransmissionsResponse}). Do NOT share a type.
+ */
+export interface ScopeTotals {
+  /** Total transmissions in the scope. */
+  scoped: number;
+  /** Transmissions exhibiting ≥1 fail finding. */
+  withFailures: number;
+  /** Distinct signature count over the scope. */
+  distinctIssues: number;
+}
+
+/**
+ * 200 response of the scope-aware GET /api/sessions/:uuid?window&source — mirror
+ * the LANDED reply.send at src/api/sessions.ts. The full `transmissions` array
+ * still ships here (for the docked detail pane); the paginated list is a
+ * separate read ({@link listTransmissions}).
+ */
 export interface SessionResponse {
   session: SessionMeta;
   transmissions: TransmissionView[];
   summary: ComplianceRow[];
+  rollup: Rollup;
+  signatures: Signature[];
+  trend: TrendBucket[];
+  sources: SourceCount[];
+  /** SUMMARY `scoped` is a ScopeTotals OBJECT (`scoped.scoped` is nested). */
+  scoped: ScopeTotals;
   /** ISO timestamp string when the session expires (DESIGN §11). */
   expiresAt: string;
 }
@@ -184,12 +284,22 @@ export async function createSession(): Promise<CreateSessionResponse> {
 export type GetSessionResult = { ok: true; data: SessionResponse } | { ok: false; status: number };
 
 /**
- * Read a session by uuid. Returns a discriminated result: `{ ok: false }` for a
- * 404 (unknown/expired uuid) so the shell can render a friendly state; throws
- * only on network / unexpected (5xx) errors.
+ * Read a session by uuid, optionally scoped by `window`/`source` (the scope-aware
+ * summary, 4h4.4). Returns a discriminated result: `{ ok: false }` for a 404
+ * (unknown/expired uuid) so the shell can render a friendly state; throws only on
+ * network / unexpected (5xx) errors. `opts` is optional so existing no-arg
+ * callers keep compiling; only provided keys are serialized into the query.
  */
-export async function getSession(uuid: string): Promise<GetSessionResult> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(uuid)}`);
+export async function getSession(
+  uuid: string,
+  opts?: { window?: string; source?: string },
+): Promise<GetSessionResult> {
+  const params = new URLSearchParams();
+  if (opts?.window !== undefined) params.set('window', opts.window);
+  if (opts?.source !== undefined) params.set('source', opts.source);
+  const qs = params.toString();
+  const url = `/api/sessions/${encodeURIComponent(uuid)}${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url);
   if (res.status === 404) {
     return { ok: false, status: 404 };
   }
@@ -197,6 +307,69 @@ export async function getSession(uuid: string): Promise<GetSessionResult> {
     throw new Error(`getSession failed: HTTP ${res.status}`);
   }
   return { ok: true, data: (await res.json()) as SessionResponse };
+}
+
+/**
+ * 200 response of the paginated GET /api/sessions/:uuid/transmissions (4h4.5) —
+ * mirror the LANDED reply.send at src/api/sessions.ts. The page rows are the SAME
+ * TransmissionView the summary ships (source dimension + inlined findings).
+ */
+export interface ListTransmissionsResponse {
+  transmissions: TransmissionView[];
+  /**
+   * LIST `scoped` is a plain NUMBER: the post-all-filters denominator the
+   * "showing {visible} of {scoped}" header reads. DISTINCT from the summary's
+   * {@link ScopeTotals} object — do NOT conflate them.
+   */
+  scoped: number;
+  /** Opaque cursor for the next page, or null when there is no more. */
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+/** Discriminated result of {@link listTransmissions} (mirrors GetSessionResult). */
+export type ListTransmissionsResult =
+  | { ok: true; data: ListTransmissionsResponse }
+  | { ok: false; status: number };
+
+/**
+ * Read a page of a session's transmissions, scoped + filtered + cursor-paginated
+ * (4h4.5). `failuresOnly` serializes as `failuresOnly=true`; falsy/absent params
+ * are OMITTED. `cursor` is an OPAQUE token from a prior page's `nextCursor` —
+ * passed back verbatim, never parsed client-side. Returns a discriminated result
+ * ({ ok: false } for a 404 unknown/expired uuid) mirroring {@link getSession};
+ * throws only on network / unexpected (5xx) errors.
+ */
+export async function listTransmissions(
+  uuid: string,
+  opts: {
+    window?: string;
+    source?: string;
+    failuresOnly?: boolean;
+    signatureKey?: string;
+    cursor?: string;
+    limit?: number;
+  } = {},
+): Promise<ListTransmissionsResult> {
+  const params = new URLSearchParams();
+  if (opts.window !== undefined) params.set('window', opts.window);
+  if (opts.source !== undefined) params.set('source', opts.source);
+  if (opts.failuresOnly) params.set('failuresOnly', 'true');
+  if (opts.signatureKey !== undefined && opts.signatureKey.length > 0) {
+    params.set('signatureKey', opts.signatureKey);
+  }
+  if (opts.cursor !== undefined && opts.cursor.length > 0) params.set('cursor', opts.cursor);
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+  const qs = params.toString();
+  const url = `/api/sessions/${encodeURIComponent(uuid)}/transmissions${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url);
+  if (res.status === 404) {
+    return { ok: false, status: 404 };
+  }
+  if (!res.ok) {
+    throw new Error(`listTransmissions failed: HTTP ${res.status}`);
+  }
+  return { ok: true, data: (await res.json()) as ListTransmissionsResponse };
 }
 
 /**
