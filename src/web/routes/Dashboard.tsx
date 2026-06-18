@@ -163,9 +163,22 @@ export function Dashboard() {
     [uuid, window, source, failuresOnly, selectedSignature],
   );
 
+  // Full-screen loading RESET is keyed on `uuid` ONLY (3ta). Post-4h4.9 `load`
+  // is recreated on any scope/filter change, so keying the loading reset on
+  // `[load]` blanked the ENTIRE dashboard (header, scorecard, FilterBar, both
+  // panes) to "Loading…" for a round-trip on every toggle. Resetting on `uuid`
+  // means only a genuine session switch (or mount) drops to the loading screen;
+  // a scope/filter change refetches IN PLACE via the `[load]` effect below,
+  // keeping the ready render (and the user's just-made FilterBar selection).
+  useEffect(() => {
+    setState({ phase: 'loading' });
+  }, [uuid]);
+
+  // The fetch itself is keyed on `load` so scope/filter changes re-run BOTH
+  // reads — but WITHOUT touching the phase, so the ready render survives the
+  // round-trip. On mount/uuid change this fires alongside the reset above.
   useEffect(() => {
     let cancelled = false;
-    setState({ phase: 'loading' });
     load(() => cancelled);
     return () => {
       cancelled = true;
