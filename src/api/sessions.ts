@@ -23,6 +23,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { computeComplianceSummary } from './compliance-matrix.js';
 import type { FindingCountsByRequirement } from './compliance-matrix.js';
+import { deriveSourceView } from './source.js';
 import { generateCredential } from '../auth/credential.js';
 import {
   RETENTION_MS,
@@ -201,22 +202,31 @@ export function registerSessionsApi(app: FastifyInstance): void {
         counts[f.severity as Severity] += 1;
       }
 
-      const transmissionViews = transmissions.map((t) => ({
-        id: t.id,
-        received_at: t.received_at,
-        http_status: t.http_status,
-        content_type: t.content_type,
-        content_encoding: t.content_encoding,
-        // wire_bytes is a bigint → pg returns a string; pass it through as-is.
-        wire_bytes: t.wire_bytes,
-        schema_version: t.schema_version,
-        transfer_id: t.transfer_id,
-        parse_ok: t.parse_ok,
-        schema_ok: t.schema_ok,
-        body: t.body,
-        raw_body: t.raw_body,
-        findings: (findingsByTx.get(t.id) ?? []).slice().sort(byRequirement).map(toFindingView),
-      }));
+      const transmissionViews = transmissions.map((t) => {
+        // SOURCE dimension (4h4.2): derive the presentation pair from the raw
+        // transfer_src so list rows + the filter <select> agree (src/api/source.ts).
+        const { source, sourceCode, sourceLabel } = deriveSourceView(t.transfer_src);
+        return {
+          id: t.id,
+          received_at: t.received_at,
+          http_status: t.http_status,
+          content_type: t.content_type,
+          content_encoding: t.content_encoding,
+          // wire_bytes is a bigint → pg returns a string; pass it through as-is.
+          wire_bytes: t.wire_bytes,
+          schema_version: t.schema_version,
+          transfer_id: t.transfer_id,
+          // Raw source key + derived 3-letter code + human label (4h4.2).
+          source,
+          sourceCode,
+          sourceLabel,
+          parse_ok: t.parse_ok,
+          schema_ok: t.schema_ok,
+          body: t.body,
+          raw_body: t.raw_body,
+          findings: (findingsByTx.get(t.id) ?? []).slice().sort(byRequirement).map(toFindingView),
+        };
+      });
 
       const base = session.last_post_at ?? session.created_at;
       const expiresAt = new Date(base.getTime() + RETENTION_MS).toISOString();

@@ -79,6 +79,16 @@ export interface TransmissionView {
   wire_bytes: string | null;
   schema_version: string | null;
   transfer_id: string | null;
+  /**
+   * SOURCE dimension (4h4.2) — derived server-side from `transfer_src` so the
+   * list rows and the filter `<select>` share one derivation:
+   *   - `source`      raw source key (empty string for the unknown bucket).
+   *   - `sourceCode`  stable 3-letter UPPERCASE code (e.g. KAN) shown in the row.
+   *   - `sourceLabel` human label (full source) shown as the row title attr.
+   */
+  source: string;
+  sourceCode: string;
+  sourceLabel: string;
   parse_ok: boolean | null;
   schema_ok: boolean | null;
   body: unknown;

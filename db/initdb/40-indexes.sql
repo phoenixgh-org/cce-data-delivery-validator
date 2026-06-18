@@ -20,6 +20,14 @@ CREATE INDEX transmission_session_content_hash
 CREATE INDEX transmission_session_transfer_id
   ON transmission (session_uuid, transfer_id);
 
+-- Source-dimension filtering + per-source counts (4h4.2): scope by source within
+-- a session for the filter <select> options ("All sources (N)" + per-source
+-- counts) and the source-scoped summary/list endpoints (4h4.4, 4h4.5). transfer_src
+-- is the raw source key (meta.transferSrc); NULL/blank collapses to one bucket in
+-- the app layer (src/api/source.ts).
+CREATE INDEX transmission_session_transfer_src
+  ON transmission (session_uuid, transfer_src);
+
 -- Per-transmission finding fetch for the drill-down view (§10).
 CREATE INDEX finding_transmission ON finding (transmission_id);
 
@@ -29,3 +37,5 @@ COMMENT ON INDEX transmission_session_content_hash IS
   'Exact-replay detection (§1.8); content_hash is NON-UNIQUE — repeats are graded, not dropped.';
 COMMENT ON INDEX transmission_session_transfer_id IS
   'Duplicate-transferId detection (§1.8).';
+COMMENT ON INDEX transmission_session_transfer_src IS
+  'Source-dimension filtering + per-source counts (4h4.2); scope/list endpoints (4h4.4, 4h4.5).';
