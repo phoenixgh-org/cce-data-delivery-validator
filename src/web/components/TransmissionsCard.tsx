@@ -34,32 +34,15 @@ export interface TransmissionsCardProps {
    * yet rendered by this card.
    */
   failuresOnly?: boolean;
-  /**
-   * Flip the failures-only filter. Seam consumed by 4h4.12 — accepted here but
-   * NOT yet wired to any control.
-   */
+  /** Flip the failures-only filter (4h4.9 owns the state; raised by the checkbox). */
   onToggleFailuresOnly?: () => void;
-  /**
-   * The active signature cross-filter (or null) — the title source for the
-   * future issue chip. Seam consumed by 4h4.12 — accepted here but NOT yet
-   * rendered.
-   */
+  /** The active signature cross-filter (or null) — title source for the issue chip. */
   activeSignature?: Signature | null;
-  /**
-   * Clear the active signature cross-filter. Seam consumed by 4h4.12 (issue
-   * chip dismiss) — accepted here but NOT yet wired.
-   */
+  /** Clear the active signature cross-filter (the issue chip's Clear button). */
   onClearSignature?: () => void;
-  /**
-   * Count of currently-rendered (visible) list rows, for the future
-   * "showing {visible} of {scoped}" header. Seam consumed by 4h4.12 — accepted
-   * here but NOT yet rendered.
-   */
+  /** Count of currently-rendered (visible) list rows for the "showing {visible} of {scoped}" header. */
   visibleCount?: number;
-  /**
-   * Post-all-filters denominator (the list response's plain-number `scoped`).
-   * Seam consumed by 4h4.12 — accepted here but NOT yet rendered.
-   */
+  /** Post-all-filters denominator (the list response's plain-number `scoped`). */
   scopedTotal?: number;
 }
 
@@ -134,6 +117,14 @@ function shortId(id: string): string {
 
 const mono: CSSProperties = { fontFamily: 'var(--mono)' };
 
+/** HTTP status tone: 2xx pass, 3xx/4xx mixed, 5xx (or unknown) fail. */
+function httpTone(status: number | null): string {
+  if (status === null) return 'var(--text-faint)';
+  if (status < 300) return 'var(--pass)';
+  if (status < 500) return 'var(--mixed)';
+  return 'var(--fail)';
+}
+
 function TxRow({
   tx,
   selected,
@@ -175,8 +166,21 @@ function TxRow({
       <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)', width: 64 }}>
         {shortTime(tx.received_at)}
       </span>
-      <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)' }}>
-        HTTP {tx.http_status ?? '—'}
+      <span
+        title={tx.sourceLabel}
+        style={{
+          ...mono,
+          fontSize: 10,
+          color: 'var(--text-faint)',
+          width: 30,
+          letterSpacing: '.03em',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {tx.sourceCode || '—'}
+      </span>
+      <span style={{ ...mono, fontSize: 11.5, color: httpTone(tx.http_status), width: 40 }}>
+        {tx.http_status ?? '—'}
       </span>
       <span
         style={{
@@ -341,17 +345,13 @@ function TxDetail({
   ];
 
   return (
-    <div
-      style={{
-        background: 'var(--detail)',
-        borderTop: '1px solid var(--border-strong)',
-        padding: '14px 16px 18px',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10 }}>
+    <div style={{ padding: '14px 16px 18px' }}>
+      <div
+        style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}
+      >
         <span style={{ ...mono, fontWeight: 700, fontSize: 13 }}>t-{shortId(tx.id)}</span>
         <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)' }}>
-          HTTP {tx.http_status ?? '—'} · {relativeAgo(tx.received_at)}
+          {tx.sourceLabel} · HTTP {tx.http_status ?? '—'} · {relativeAgo(tx.received_at)}
         </span>
       </div>
 
@@ -415,15 +415,26 @@ export function TransmissionsCard({
   selectedTx,
   onSelectTx,
   onSelectReq,
+  failuresOnly,
+  onToggleFailuresOnly,
+  activeSignature,
+  onClearSignature,
+  visibleCount,
+  scopedTotal,
 }: TransmissionsCardProps): ReactElement {
   // Default to the newest (first) transmission when nothing is selected or the
   // selection no longer exists. The API returns newest-first, so [0] is newest.
+  // Dashboard owns selection reconciliation; we only resolve the row to dock.
   const selected = transmissions.find((t) => t.id === selectedTx) ?? transmissions[0] ?? null;
+  // Header denominator: prefer the post-filter scoped total from the list
+  // response; fall back to the page length when the seam isn't supplied.
+  const visible = visibleCount ?? transmissions.length;
+  const scoped = scopedTotal ?? transmissions.length;
 
   return (
     <div
       style={{
-        flex: '1 1 43%',
+        flex: '1 1 44%',
         background: 'var(--surface-tx)',
         border: '1px solid var(--border-strong)',
         borderRadius: 8,
@@ -440,34 +451,136 @@ export function TransmissionsCard({
           display: 'flex',
           alignItems: 'center',
           gap: 8,
+          flexWrap: 'wrap',
           borderBottom: '1px solid var(--border)',
         }}
       >
         <span style={{ fontSize: 13, fontWeight: 700 }}>Transmissions</span>
         <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>
-          · {transmissions.length} recent
+          · showing {visible} of {scoped}
         </span>
+        <span style={{ flex: 1 }} />
+        <label
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11.5,
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={failuresOnly ?? false}
+            onChange={() => onToggleFailuresOnly?.()}
+          />
+          Failures only
+        </label>
       </div>
+
+      {activeSignature && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '7px 16px',
+            background: 'var(--accent-weak)',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 10.5,
+              textTransform: 'uppercase',
+              letterSpacing: '.05em',
+              color: 'var(--accent)',
+              fontWeight: 700,
+            }}
+          >
+            Issue
+          </span>
+          <span
+            title={activeSignature.title}
+            style={{
+              fontSize: 12,
+              color: 'var(--text)',
+              flex: 1,
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {activeSignature.title}
+          </span>
+          <button
+            type="button"
+            onClick={() => onClearSignature?.()}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              fontSize: 11,
+              color: 'var(--text-muted)',
+              background: 'var(--surface)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 6,
+              padding: '2px 7px',
+              cursor: 'pointer',
+            }}
+          >
+            <Icon name="x" size={11} /> Clear
+          </button>
+        </div>
+      )}
 
       {transmissions.length === 0 ? (
         <div style={{ padding: '34px 24px', textAlign: 'center', color: 'var(--text-muted)' }}>
-          <div style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: 280, margin: '0 auto' }}>
-            No transmissions yet. POST to your ingest URL — results appear here as data arrives.
+          <div style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: 300, margin: '0 auto' }}>
+            No transmissions match the current filters. Widen the time window or clear a filter.
           </div>
         </div>
       ) : (
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {/* API returns newest-first; render in given order (no re-sort). */}
-          {transmissions.map((t) => (
-            <TxRow
-              key={t.id}
-              tx={t}
-              selected={selected !== null && selected.id === t.id}
-              onSelect={() => onSelectTx(t.id)}
-            />
-          ))}
-          {selected && <TxDetail tx={selected} onSelectReq={onSelectReq} />}
-        </div>
+        <>
+          {/* Scrolling list region — API returns newest-first; no re-sort. */}
+          <div style={{ overflowY: 'auto', flex: '1 1 56%', minHeight: 0 }}>
+            {transmissions.map((t) => (
+              <TxRow
+                key={t.id}
+                tx={t}
+                selected={selected !== null && selected.id === t.id}
+                onSelect={() => onSelectTx(t.id)}
+              />
+            ))}
+          </div>
+          {/* Pinned detail region — selecting a row only swaps this; list never reflows. */}
+          <div
+            style={{
+              flex: '1 1 44%',
+              minHeight: 120,
+              overflowY: 'auto',
+              background: 'var(--detail)',
+              borderTop: '2px solid var(--border-strong)',
+            }}
+          >
+            {selected ? (
+              <TxDetail tx={selected} onSelectReq={onSelectReq} />
+            ) : (
+              <div
+                style={{
+                  padding: '28px 16px',
+                  textAlign: 'center',
+                  fontSize: 12,
+                  color: 'var(--text-faint)',
+                }}
+              >
+                Select a transmission to see its findings.
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
