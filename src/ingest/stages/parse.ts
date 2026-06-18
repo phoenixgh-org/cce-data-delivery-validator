@@ -47,6 +47,7 @@ export function parseStage(): Stage {
           requirement: '1.1',
           severity: 'fail',
           detail: `body is not valid UTF-8 JSON: ${reason} (§1.1)`,
+          code: 'tx.parse_failed',
         });
         return halt(400);
       }

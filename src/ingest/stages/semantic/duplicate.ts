@@ -79,6 +79,7 @@ export const duplicateCheck: SemanticCheck = async (ctx, deps): Promise<Finding[
       requirement: '1.8',
       severity: 'fail',
       detail: `duplicate observed in this session — ${kinds.join('; ')}. §1.8: ${REPEAT_CAVEAT}.`,
+      code: 'tx.duplicate_transfer',
     },
   ];
 };

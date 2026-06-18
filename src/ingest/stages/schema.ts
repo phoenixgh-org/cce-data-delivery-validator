@@ -55,6 +55,50 @@ function describeError(err: ErrorObject): string {
   return `schema violation at ${where}: ${message} (§3.2)`;
 }
 
+/**
+ * The IDENTIFYING param for a signature (4h4.1) — the param that names WHICH
+ * defect of this keyword class occurred, NOT the offending value. Pulled from
+ * Ajv's structured `err.params` per keyword:
+ *   required             → missingProperty
+ *   format               → format
+ *   additionalProperties → additionalProperty
+ *   enum                 → allowedValues (joined)
+ *   minimum / maximum    → limit
+ *   type                 → type
+ * Any other keyword has no stable identifying param → null.
+ */
+function identifyingParam(err: ErrorObject): string | null {
+  const p = err.params as Record<string, unknown>;
+  let value: unknown;
+  switch (err.keyword) {
+    case 'required':
+      value = p.missingProperty;
+      break;
+    case 'format':
+      value = p.format;
+      break;
+    case 'additionalProperties':
+      value = p.additionalProperty;
+      break;
+    case 'enum':
+      value = p.allowedValues;
+      break;
+    case 'minimum':
+    case 'maximum':
+    case 'exclusiveMinimum':
+    case 'exclusiveMaximum':
+      value = p.limit;
+      break;
+    case 'type':
+      value = p.type;
+      break;
+    default:
+      return null;
+  }
+  if (value == null) return null;
+  return Array.isArray(value) ? value.join(',') : String(value);
+}
+
 export function schemaStage(): Stage {
   return {
     name: 'schema',
@@ -88,6 +132,7 @@ export function schemaStage(): Stage {
             .supportedVersions()
             .join(', ')} (§3.2)`,
           pointer: '/meta/schemaVersion',
+          code: 'tx.missing_schema_version',
         });
         return halt(422);
       }
@@ -103,6 +148,7 @@ export function schemaStage(): Stage {
           severity: 'fail',
           detail: `unsupported schemaVersion "${raw}"; supported: ${res.supported.join(', ')} (§3.2)`,
           pointer: '/meta/schemaVersion',
+          code: 'tx.unsupported_schema_version',
         });
         return halt(422);
       }
@@ -122,6 +168,11 @@ export function schemaStage(): Stage {
             severity: 'fail',
             detail: describeError(err),
             pointer: toPointer(err.instancePath),
+            // Structured signature fields (4h4.1): sign on Ajv's closed keyword
+            // vocabulary + path + identifying param, never the message string.
+            keyword: err.keyword,
+            instancePath: err.instancePath,
+            param: identifyingParam(err),
           });
         }
         // Guard: Ajv should always populate errors on failure, but never let a
@@ -131,6 +182,7 @@ export function schemaStage(): Stage {
             requirement: '3.2',
             severity: 'fail',
             detail: `body failed validation against schema ${res.entry.version} (§3.2)`,
+            code: 'tx.schema_invalid',
           });
         }
         return halt(422);
@@ -150,6 +202,7 @@ export function schemaStage(): Stage {
           severity: 'info',
           outdated: true,
           detail: `accepted, but validated against an OUTDATED schema: you declared ${res.entry.version}; the current registered version is ${current}. Upgrade your transmitter to ${current}. (§3.2)`,
+          code: 'tx.outdated_schema',
         });
         return CONTINUE;
       }

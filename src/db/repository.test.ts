@@ -148,17 +148,39 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
     requirement: '1.4',
     severity: 'fail',
     detail: 'too big',
+    code: 'tx.body_too_large',
   });
   assert.match(single.id, /^[0-9a-f-]{36}$/);
   assert.equal(single.transmission_id, tx.id);
   assert.equal(single.severity, 'fail');
+  // Structured signature fields round-trip (4h4.1): code set, schema fields null.
+  assert.equal(single.code, 'tx.body_too_large');
+  assert.equal(single.keyword, null);
+  assert.equal(single.instance_path, null);
+  assert.equal(single.param, null);
 
   const many = await insertFindings(tx.id, [
     { requirement: '1.2', severity: 'pass' },
-    { requirement: '3.2', severity: 'info', detail: 'd', pointer: '/data/0' },
+    {
+      requirement: '3.2',
+      severity: 'fail',
+      detail: 'd',
+      pointer: '/data/0',
+      keyword: 'required',
+      instancePath: '/data/0',
+      param: 'EERR',
+    },
   ]);
   assert.equal(many.length, 2);
   assert.equal(many[1]?.pointer, '/data/0');
+  // The schema fail carries its Ajv keyword/instancePath/param and no code.
+  assert.equal(many[1]?.keyword, 'required');
+  assert.equal(many[1]?.instance_path, '/data/0');
+  assert.equal(many[1]?.param, 'EERR');
+  assert.equal(many[1]?.code, null);
+  // The pass finding carries no structured fields.
+  assert.equal(many[0]?.keyword, null);
+  assert.equal(many[0]?.code, null);
 
   // Empty array short-circuits without running SQL.
   assert.deepEqual(await insertFindings(tx.id, []), []);

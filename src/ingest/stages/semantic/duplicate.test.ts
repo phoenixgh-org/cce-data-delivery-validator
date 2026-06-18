@@ -71,6 +71,7 @@ test('duplicate: prior with same transferId → 1.8 fail naming repeated transfe
   const findings = await duplicateCheck(ctx, fakeDeps([prior]));
   const f = only(findings);
   assert.equal(f.severity, 'fail');
+  assert.equal(f.code, 'tx.duplicate_transfer', 'stable code for the §1.8 signature');
   assert.match(f.detail ?? '', /transferId/);
   assert.match(f.detail ?? '', /T-2/);
   // Not an exact replay — the detail must not claim byte-identical content.

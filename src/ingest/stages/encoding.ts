@@ -66,6 +66,7 @@ export function encodingStage(): Stage {
           requirement: '1.6',
           severity: 'fail',
           detail: `Content-Encoding "${enc}" is unsupported; only gzip is permitted (§1.6)`,
+          code: 'tx.unsupported_encoding',
         });
         return halt(400);
       }
@@ -80,6 +81,7 @@ export function encodingStage(): Stage {
           requirement: '1.6',
           severity: 'fail',
           detail: `gzip body could not be decompressed: ${reason} (§1.6)`,
+          code: 'tx.undecodable_body',
         });
         return halt(400);
       }
@@ -91,6 +93,7 @@ export function encodingStage(): Stage {
           requirement: '1.6',
           severity: 'fail',
           detail: 'gzip body decompresses to another gzip member — illegal double-encoding (§1.6)',
+          code: 'tx.double_encoded',
         });
         return halt(400);
       }

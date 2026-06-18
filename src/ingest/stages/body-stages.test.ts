@@ -69,6 +69,15 @@ function hasFinding(
   return findings.some((f) => f.requirement === requirement && f.severity === severity);
 }
 
+/** The stable signature `code` of the (requirement, severity) finding, if any (4h4.1). */
+function findingCode(
+  findings: InsertFindingInput[],
+  requirement: string,
+  severity: string,
+): string | null | undefined {
+  return findings.find((f) => f.requirement === requirement && f.severity === severity)?.code;
+}
+
 async function runStage(
   stage: { run(c: PipelineContext): Promise<StageOutcome> | StageOutcome },
   ctx: PipelineContext,
@@ -86,6 +95,7 @@ test('size: body over the 1MB cap → halt 413 with a 1.4 fail finding', async (
 
   assert.deepEqual(outcome, { kind: 'halt', status: 413 });
   assert.ok(hasFinding(ctx.findings, '1.4', 'fail'), '1.4 fail finding recorded');
+  assert.equal(findingCode(ctx.findings, '1.4', 'fail'), 'tx.body_too_large', 'stable code');
 });
 
 test('size: body at exactly the 1MB cap → continue with a 1.4 pass finding', async () => {
@@ -110,6 +120,7 @@ test('content-type: bare application/json (no charset) → continue, 1.2 fail', 
   const outcome = await runStage(contentTypeStage(), ctx);
   assert.equal(outcome.kind, 'continue', 'never halts (415 optional)');
   assert.ok(hasFinding(ctx.findings, '1.2', 'fail'));
+  assert.equal(findingCode(ctx.findings, '1.2', 'fail'), 'tx.missing_charset', 'charset code');
 });
 
 test('content-type: missing / wrong media type → continue, 1.2 fail', async () => {
@@ -118,6 +129,11 @@ test('content-type: missing / wrong media type → continue, 1.2 fail', async ()
     const outcome = await runStage(contentTypeStage(), ctx);
     assert.equal(outcome.kind, 'continue');
     assert.ok(hasFinding(ctx.findings, '1.2', 'fail'), `1.2 fail for ${ct}`);
+    assert.equal(
+      findingCode(ctx.findings, '1.2', 'fail'),
+      'tx.bad_media_type',
+      `bad-media-type code for ${ct}`,
+    );
   }
 });
 
@@ -150,6 +166,11 @@ test('encoding: gzip header on non-gzip bytes → halt 400, 1.6 fail', async () 
   const outcome = await runStage(encodingStage(), ctx);
   assert.deepEqual(outcome, { kind: 'halt', status: 400 });
   assert.ok(hasFinding(ctx.findings, '1.6', 'fail'));
+  assert.equal(
+    findingCode(ctx.findings, '1.6', 'fail'),
+    'tx.undecodable_body',
+    'undecodable-body code',
+  );
 });
 
 test('encoding: double-encoded gzip (gzip-of-gzip) → halt 400, 1.6 fail', async () => {
@@ -158,6 +179,11 @@ test('encoding: double-encoded gzip (gzip-of-gzip) → halt 400, 1.6 fail', asyn
   const outcome = await runStage(encodingStage(), ctx);
   assert.deepEqual(outcome, { kind: 'halt', status: 400 });
   assert.ok(hasFinding(ctx.findings, '1.6', 'fail'), 'illegal layering flagged');
+  assert.equal(
+    findingCode(ctx.findings, '1.6', 'fail'),
+    'tx.double_encoded',
+    'double-encoded code',
+  );
 });
 
 test('encoding: unsupported encoding token → halt 400, 1.6 fail', async () => {
@@ -165,6 +191,11 @@ test('encoding: unsupported encoding token → halt 400, 1.6 fail', async () => 
   const outcome = await runStage(encodingStage(), ctx);
   assert.deepEqual(outcome, { kind: 'halt', status: 400 });
   assert.ok(hasFinding(ctx.findings, '1.6', 'fail'));
+  assert.equal(
+    findingCode(ctx.findings, '1.6', 'fail'),
+    'tx.unsupported_encoding',
+    'unsupported-encoding code',
+  );
 });
 
 test('encoding: zip-bomb over the 1MB decoded cap → halt 400, 1.6 fail', async () => {
@@ -193,6 +224,7 @@ test('parse: malformed JSON → halt 400, parseOk false, 1.1 fail', async () => 
   assert.deepEqual(outcome, { kind: 'halt', status: 400 });
   assert.equal(ctx.parseOk, false);
   assert.ok(hasFinding(ctx.findings, '1.1', 'fail'));
+  assert.equal(findingCode(ctx.findings, '1.1', 'fail'), 'tx.parse_failed', 'parse-failed code');
 });
 
 test('parse: invalid UTF-8 bytes → halt 400, parseOk false, 1.1 fail', async () => {

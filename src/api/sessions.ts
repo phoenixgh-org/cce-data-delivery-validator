@@ -44,6 +44,12 @@ function toFindingView(f: FindingRow) {
     detail: f.detail,
     pointer: f.pointer,
     outdated: f.outdated,
+    // Structured signature fields (4h4.1): schema errors carry keyword/
+    // instancePath/param; transport/heuristic findings carry a stable code.
+    keyword: f.keyword,
+    instancePath: f.instance_path,
+    param: f.param,
+    code: f.code,
   };
 }
 

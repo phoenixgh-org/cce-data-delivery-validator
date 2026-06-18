@@ -25,6 +25,7 @@ export function sizeStage(): Stage {
           requirement: '1.4',
           severity: 'fail',
           detail: `wire body is ${wireBytes} bytes, exceeding the 1MB cap (${MAX_WIRE_BYTES} bytes) (§1.4)`,
+          code: 'tx.body_too_large',
         });
         return halt(413);
       }

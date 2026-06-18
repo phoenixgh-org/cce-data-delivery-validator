@@ -84,6 +84,18 @@ export interface InsertFindingInput {
    * version (§7) — drives the dashboard's OUTDATED SCHEMA tag. Defaults to false.
    */
   outdated?: boolean;
+  /**
+   * Structured signature fields (4h4.1). A signature collapses identical defects
+   * by keying off these, never the message string. All optional/nullable.
+   */
+  /** Ajv keyword for §3.2 schema errors (defect class); null for non-schema. */
+  keyword?: string | null;
+  /** Ajv instancePath for schema errors (e.g. /data/0/ABST); null otherwise. */
+  instancePath?: string | null;
+  /** Identifying param of a schema error (missingProperty/format/…) — NOT the value. */
+  param?: string | null;
+  /** Stable check code for transport/heuristic findings (e.g. tx.missing_charset). */
+  code?: string | null;
 }
 
 /** A `finding` row (DESIGN.md §8). */
@@ -96,6 +108,14 @@ export interface FindingRow {
   pointer: string | null;
   /** True for the §3.2 outdated-but-valid info finding (§7). */
   outdated: boolean;
+  /** Ajv keyword for §3.2 schema errors (defect class); null for non-schema. */
+  keyword: string | null;
+  /** Ajv instancePath for schema errors (e.g. /data/0/ABST); null otherwise. */
+  instance_path: string | null;
+  /** Identifying param of a schema error (missingProperty/format/…). */
+  param: string | null;
+  /** Stable check code for transport/heuristic findings; null for schema. */
+  code: string | null;
 }
 
 /** A `transmission` row (DESIGN.md §8). */
@@ -261,7 +281,8 @@ export async function listFindingsForSession(
   db: Queryable = getPool(),
 ): Promise<FindingRow[]> {
   const { rows } = await db.query<FindingRow>(
-    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer, f.outdated
+    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer, f.outdated,
+            f.keyword, f.instance_path, f.param, f.code
      FROM finding f
      JOIN transmission t ON t.id = f.transmission_id
      WHERE t.session_uuid = $1
@@ -393,9 +414,11 @@ export async function insertFinding(
   db: Queryable = getPool(),
 ): Promise<FindingRow> {
   const { rows } = await db.query<FindingRow>(
-    `INSERT INTO finding (transmission_id, requirement, severity, detail, pointer, outdated)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated`,
+    `INSERT INTO finding (transmission_id, requirement, severity, detail, pointer, outdated,
+                          keyword, instance_path, param, code)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated,
+               keyword, instance_path, param, code`,
     [
       transmissionId,
       input.requirement,
@@ -403,6 +426,10 @@ export async function insertFinding(
       input.detail ?? null,
       input.pointer ?? null,
       input.outdated ?? false,
+      input.keyword ?? null,
+      input.instancePath ?? null,
+      input.param ?? null,
+      input.code ?? null,
     ],
   );
   return rows[0]!;
@@ -419,30 +446,40 @@ export async function insertFindings(
 ): Promise<FindingRow[]> {
   if (findings.length === 0) return [];
 
+  const COLS = 9; // per-row bound params (requirement…code)
   const values: unknown[] = [];
   const tuples = findings.map((f, i) => {
-    const base = i * 5;
+    const base = i * COLS;
     values.push(
       f.requirement,
       f.severity,
       f.detail ?? null,
       f.pointer ?? null,
       f.outdated ?? false,
+      f.keyword ?? null,
+      f.instancePath ?? null,
+      f.param ?? null,
+      f.code ?? null,
     );
-    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+    const ph = Array.from({ length: COLS }, (_, j) => `$${base + j + 1}`);
+    return `(${ph.join(', ')})`;
   });
   // transmission_id is bound once as the trailing param and reused per row.
-  const txParam = `$${findings.length * 5 + 1}`;
+  const txParam = `$${findings.length * COLS + 1}`;
   values.push(transmissionId);
 
   // `outdated` is cast explicitly: a VALUES-derived column carrying a bound param
   // is inferred as `unknown`/text, so the cast pins it to boolean for the INSERT.
   const { rows } = await db.query<FindingRow>(
-    `INSERT INTO finding (requirement, severity, detail, pointer, outdated, transmission_id)
-     SELECT v.requirement, v.severity, v.detail, v.pointer, v.outdated::boolean, ${txParam}
+    `INSERT INTO finding (requirement, severity, detail, pointer, outdated,
+                          keyword, instance_path, param, code, transmission_id)
+     SELECT v.requirement, v.severity, v.detail, v.pointer, v.outdated::boolean,
+            v.keyword, v.instance_path, v.param, v.code, ${txParam}
      FROM (VALUES ${tuples.join(', ')})
-       AS v(requirement, severity, detail, pointer, outdated)
-     RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated`,
+       AS v(requirement, severity, detail, pointer, outdated,
+             keyword, instance_path, param, code)
+     RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated,
+               keyword, instance_path, param, code`,
     values,
   );
   return rows;

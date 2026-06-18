@@ -109,6 +109,7 @@ test('schema: missing meta.schemaVersion → halt 422, one 3.2 fail, schemaOk fa
   const fails = findingsBy(ctx.findings, '3.2', 'fail');
   assert.equal(fails.length, 1, 'one schema-version fail');
   assert.equal(fails[0]?.pointer, '/meta/schemaVersion');
+  assert.equal(fails[0]?.code, 'tx.missing_schema_version', 'stable code for signatures');
   // meta.* still lifted from what the supplier sent.
   assert.equal(ctx.meta.transferType, 'rtm');
   assert.equal(ctx.meta.schemaVersion, null);
@@ -127,6 +128,7 @@ test('schema: unknown schemaVersion → halt 422 with one finding listing suppor
   assert.match(fails[0]?.detail ?? '', /supported:/);
   assert.match(fails[0]?.detail ?? '', /0\.8\.0/, 'lists 0.8.0 as supported');
   assert.equal(fails[0]?.pointer, '/meta/schemaVersion');
+  assert.equal(fails[0]?.code, 'tx.unsupported_schema_version', 'stable code for signatures');
   assert.equal(ctx.meta.schemaVersion, '9.9.9', 'raw version recorded as sent');
 });
 
@@ -171,6 +173,18 @@ test('schema: parseable-but-invalid body → halt 422, one finding per Ajv error
     fails.some((f) => f.pointer === '/meta'),
     'a finding pinpoints /meta (missing required transfer fields)',
   );
+  // Structured signature fields (4h4.1): each Ajv error carries its keyword +
+  // instancePath; transport codes are NOT set on schema findings.
+  for (const f of fails) {
+    assert.equal(typeof f.keyword, 'string', 'Ajv keyword captured for the signature');
+    assert.equal(typeof f.instancePath, 'string', 'Ajv instancePath captured');
+    assert.equal(f.code, undefined, 'schema findings sign on keyword, not a code');
+  }
+  // A `required` error names the missing property as its identifying param.
+  const requiredFail = fails.find((f) => f.keyword === 'required');
+  assert.ok(requiredFail, 'a required-keyword error is present');
+  assert.equal(requiredFail?.instancePath, '/meta', 'required error sits at /meta');
+  assert.equal(typeof requiredFail?.param, 'string', 'param is the missing property name');
 });
 
 // ── stage-unit: valid payload ───────────────────────────────────────────────
@@ -215,6 +229,7 @@ test('schema: valid-but-OUTDATED version (0.8.0) → continue, schemaOk true, on
   const infos = findingsBy(ctx.findings, '3.2', 'info');
   assert.equal(infos.length, 1, 'one §3.2 info finding');
   assert.equal(infos[0]?.outdated, true, 'flagged outdated for the dashboard tag');
+  assert.equal(infos[0]?.code, 'tx.outdated_schema', 'stable code for the soft signature');
   assert.match(infos[0]?.detail ?? '', /0\.8\.0/, 'names the declared version');
   assert.match(infos[0]?.detail ?? '', /0\.8\.1/, 'names the current version to upgrade to');
 });

@@ -110,7 +110,12 @@ test(
         parseOk: true,
         schemaOk: true,
       });
-      await insertFinding(older.id, { requirement: '1.4', severity: 'fail', detail: 'too big' });
+      await insertFinding(older.id, {
+        requirement: '1.4',
+        severity: 'fail',
+        detail: 'too big',
+        code: 'tx.body_too_large',
+      });
 
       // Tiny gap so received_at ordering is unambiguous for the assertion.
       await new Promise((r) => setTimeout(r, 10));
@@ -139,7 +144,14 @@ test(
           wire_bytes: string;
           body: unknown;
           raw_body: string;
-          findings: Array<{ requirement: string; severity: string }>;
+          findings: Array<{
+            requirement: string;
+            severity: string;
+            keyword: string | null;
+            instancePath: string | null;
+            param: string | null;
+            code: string | null;
+          }>;
         }>;
         summary: Array<{ requirement: string; status: string }>;
         expiresAt: string;
@@ -160,10 +172,30 @@ test(
       assert.deepEqual(body.transmissions[0]?.body, { meta: { transferId: 'T-new' } });
       assert.equal(body.transmissions[0]?.raw_body, '{"meta":{"transferId":"T-new"}}');
       assert.deepEqual(body.transmissions[0]?.findings, [
-        { requirement: '1.2', severity: 'pass', detail: null, pointer: null, outdated: false },
+        {
+          requirement: '1.2',
+          severity: 'pass',
+          detail: null,
+          pointer: null,
+          outdated: false,
+          keyword: null,
+          instancePath: null,
+          param: null,
+          code: null,
+        },
       ]);
       assert.deepEqual(body.transmissions[1]?.findings, [
-        { requirement: '1.4', severity: 'fail', detail: 'too big', pointer: null, outdated: false },
+        {
+          requirement: '1.4',
+          severity: 'fail',
+          detail: 'too big',
+          pointer: null,
+          outdated: false,
+          keyword: null,
+          instancePath: null,
+          param: null,
+          code: 'tx.body_too_large',
+        },
       ]);
 
       // Summary reflects the seeded findings; an unseeded gradeable row is untested.

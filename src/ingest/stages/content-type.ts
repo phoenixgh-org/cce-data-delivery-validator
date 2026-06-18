@@ -46,6 +46,7 @@ export function contentTypeStage(): Stage {
           requirement: '1.2',
           severity: 'fail',
           detail: 'Content-Type header is missing; expected application/json; charset=utf-8 (§1.2)',
+          code: 'tx.bad_media_type',
         });
       }
 
@@ -57,6 +58,7 @@ export function contentTypeStage(): Stage {
           requirement: '1.2',
           severity: 'fail',
           detail: `Content-Type media type "${mediaType}" is not application/json (§1.2)`,
+          code: 'tx.bad_media_type',
         });
       }
       if (charset !== 'utf-8') {
@@ -67,6 +69,7 @@ export function contentTypeStage(): Stage {
             charset === undefined
               ? 'Content-Type is application/json but omits the required charset=utf-8 (§1.2)'
               : `Content-Type charset "${charset}" is not utf-8 (§1.2)`,
+          code: 'tx.missing_charset',
         });
       }
 

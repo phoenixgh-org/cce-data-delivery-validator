@@ -31,7 +31,30 @@ CREATE TABLE finding (
   -- valid-but-OLDER registered schema version (§7 outdated-but-valid): the body
   -- is accepted, but the dashboard surfaces an OUTDATED SCHEMA tag. FALSE for
   -- every other finding.
-  outdated        boolean       NOT NULL DEFAULT false
+  outdated        boolean       NOT NULL DEFAULT false,
+
+  -- STRUCTURED signature fields (4h4.1): a signature collapses identical defects
+  -- into one issue by keying off these fields, never the English message string
+  -- (which drifts across Ajv versions). All nullable — populated only where they
+  -- apply, NULL otherwise.
+
+  -- Ajv keyword for schema (§3.2) errors — the defect CLASS (required / format /
+  -- additionalProperties / type / enum / minimum / maximum / …). NULL for
+  -- non-schema findings.
+  keyword         text,
+
+  -- Ajv instancePath for schema errors, e.g. '/data/0/ABST'. NULL when the
+  -- finding is not a schema error.
+  instance_path   text,
+
+  -- The identifying param pulled from the Ajv error (missingProperty / format /
+  -- additionalProperty / enum-of / limit / …) — NOT the offending value. NULL
+  -- when n/a.
+  param           text,
+
+  -- Stable check code for transport/heuristic findings (e.g. 'tx.missing_charset',
+  -- 'tx.outdated_schema'). NULL for schema findings (those key off keyword).
+  code            text
 );
 
 COMMENT ON TABLE finding IS
@@ -40,3 +63,11 @@ COMMENT ON COLUMN finding.pointer IS
   'JSON Pointer into the payload where relevant (e.g. schema-error location); NULL otherwise.';
 COMMENT ON COLUMN finding.outdated IS
   'TRUE for the §3.2 info finding on an outdated-but-valid schema version; FALSE otherwise.';
+COMMENT ON COLUMN finding.keyword IS
+  'Ajv keyword for §3.2 schema errors (defect class, closed vocabulary); NULL for non-schema findings.';
+COMMENT ON COLUMN finding.instance_path IS
+  'Ajv instancePath for schema errors (e.g. /data/0/ABST); NULL when not a schema error.';
+COMMENT ON COLUMN finding.param IS
+  'Identifying param of a schema error (missingProperty / format / additionalProperty / …) — NOT the bad value; NULL when n/a.';
+COMMENT ON COLUMN finding.code IS
+  'Stable check code for transport/heuristic findings (e.g. tx.missing_charset); NULL for schema findings.';
