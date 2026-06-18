@@ -23,7 +23,17 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { computeComplianceSummary } from './compliance-matrix.js';
 import type { FindingCountsByRequirement } from './compliance-matrix.js';
-import { deriveSourceView } from './source.js';
+import {
+  parseSource,
+  parseWindow,
+  passTrend,
+  rollup,
+  scopeTotals,
+  scopeTransmissions,
+} from './scope.js';
+import { computeSignatures } from './signatures.js';
+import type { SignatureTransmission } from './signatures.js';
+import { deriveSourceView, sourceCounts } from './source.js';
 import { generateCredential } from '../auth/credential.js';
 import {
   RETENTION_MS,
@@ -174,9 +184,28 @@ export function registerSessionsApi(app: FastifyInstance): void {
     },
   );
 
+  // SCOPE-AWARE session read (4h4.4). Accepts a time `window` (15m|1h|6h|all,
+  // default all) + `source` (a raw source key | all, default all) and returns,
+  // over the SCOPED transmission set, a pre-aggregated payload so the browser
+  // never holds every raw finding to render the scorecard/compliance/sparkline/
+  // signatures: { session, summary, rollup, signatures, trend, sources, scoped }.
+  // Unknown/invalid window/source values FALL BACK to defaults (no 400) to keep
+  // the dashboard resilient. 404/meta/expiresAt and the per-tx findings drill-down
+  // are preserved.
+  //
+  // LIST/SUMMARY SPLIT (DECISION): the full `transmissions` list STILL ships in
+  // this response for now — the docked detail pane reads it. The paginated/
+  // filterable LIST endpoint (4h4.5) supersedes this list path later; this
+  // handler is the summary half of that split.
   app.get(
     '/api/sessions/:uuid',
-    async (request: FastifyRequest<{ Params: { uuid: string } }>, reply: FastifyReply) => {
+    async (
+      request: FastifyRequest<{
+        Params: { uuid: string };
+        Querystring: { window?: string; source?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
       const { uuid } = request.params;
 
       const session = await getSession(uuid);
@@ -184,28 +213,30 @@ export function registerSessionsApi(app: FastifyInstance): void {
         return reply.code(404).send({ error: 'not_found', uuid });
       }
 
+      const window = parseWindow(request.query.window);
+      const source = parseSource(request.query.source);
+
       const [transmissions, findings] = await Promise.all([
         listTransmissions(uuid),
         listFindingsForSession(uuid),
       ]);
 
-      // Group findings by transmission_id for per-tx drill-down, and aggregate
-      // them by requirement+severity for the §7 summary in a single pass.
+      // Group findings by transmission_id once for the per-tx drill-down; the
+      // scope-relative summary counts are recomputed over the SCOPED set below.
       const findingsByTx = new Map<string, FindingRow[]>();
-      const countsByRequirement: FindingCountsByRequirement = {};
       for (const f of findings) {
         const bucket = findingsByTx.get(f.transmission_id);
         if (bucket) bucket.push(f);
         else findingsByTx.set(f.transmission_id, [f]);
-
-        const counts = (countsByRequirement[f.requirement] ??= { pass: 0, fail: 0, info: 0 });
-        counts[f.severity as Severity] += 1;
       }
 
+      // Build the full per-transmission views (list + drill-down). `source` is the
+      // raw key the scope predicate filters on; the camelCase finding fields feed
+      // computeSignatures unchanged.
       const transmissionViews = transmissions.map((t) => {
         // SOURCE dimension (4h4.2): derive the presentation pair from the raw
         // transfer_src so list rows + the filter <select> agree (src/api/source.ts).
-        const { source, sourceCode, sourceLabel } = deriveSourceView(t.transfer_src);
+        const { source: src, sourceCode, sourceLabel } = deriveSourceView(t.transfer_src);
         return {
           id: t.id,
           received_at: t.received_at,
@@ -216,8 +247,10 @@ export function registerSessionsApi(app: FastifyInstance): void {
           wire_bytes: t.wire_bytes,
           schema_version: t.schema_version,
           transfer_id: t.transfer_id,
+          // Keep the raw transfer_src for the window-aware source counts below.
+          transfer_src: t.transfer_src,
           // Raw source key + derived 3-letter code + human label (4h4.2).
-          source,
+          source: src,
           sourceCode,
           sourceLabel,
           parse_ok: t.parse_ok,
@@ -227,6 +260,42 @@ export function registerSessionsApi(app: FastifyInstance): void {
           findings: (findingsByTx.get(t.id) ?? []).slice().sort(byRequirement).map(toFindingView),
         };
       });
+
+      const now = Date.now();
+
+      // Window-only set (NOT narrowed by the selected source) — the filter
+      // <select> must show every source's in-window count, regardless of which
+      // source is currently selected.
+      const windowViews = scopeTransmissions(transmissionViews, window, 'all', now);
+      const sources = sourceCounts(windowViews);
+
+      // The fully SCOPED set drives every scope-relative aggregate.
+      const scopedViews = scopeTransmissions(transmissionViews, window, source, now);
+
+      // Scope-relative §7 summary: recompute countsByRequirement over the scoped
+      // set, then feed the existing server-side computeComplianceSummary.
+      const scopedCounts: FindingCountsByRequirement = {};
+      for (const t of scopedViews) {
+        for (const f of t.findings) {
+          const counts = (scopedCounts[f.requirement] ??= { pass: 0, fail: 0, info: 0 });
+          counts[f.severity as Severity] += 1;
+        }
+      }
+      const summary = computeComplianceSummary(scopedCounts);
+
+      // computeSignatures consumes the scoped views directly — they are
+      // structurally compatible with SignatureTransmission (id, received_at ISO,
+      // source, camelCase findings).
+      const signatures = computeSignatures(
+        scopedViews.map(
+          (t): SignatureTransmission => ({
+            id: t.id,
+            received_at: new Date(t.received_at).toISOString(),
+            source: t.source,
+            findings: t.findings,
+          }),
+        ),
+      );
 
       const base = session.last_post_at ?? session.created_at;
       const expiresAt = new Date(base.getTime() + RETENTION_MS).toISOString();
@@ -240,8 +309,14 @@ export function registerSessionsApi(app: FastifyInstance): void {
           auth_enabled: session.auth_enabled,
           auth_method: session.auth_method,
         },
+        // Full list still ships here for the docked detail pane (see split note).
         transmissions: transmissionViews,
-        summary: computeComplianceSummary(countsByRequirement),
+        summary,
+        rollup: rollup(summary),
+        signatures,
+        trend: passTrend(scopedViews),
+        sources,
+        scoped: scopeTotals(scopedViews, signatures.length),
         expiresAt,
       });
     },
