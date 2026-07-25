@@ -121,10 +121,16 @@ export class SchemaRegistry {
 
       let validate: ValidateFunction;
       try {
-        // Each schema compiles in its OWN Ajv instance: the vendored versions
-        // are published with the same `$id` (the URL is the family id, not a
-        // per-version id), so sharing one Ajv would collide on the duplicate id.
-        // Isolated instances keep each compiled validator independent.
+        // Each schema compiles in its OWN Ajv instance.
+        //
+        // This was originally justified by the vendored versions sharing one
+        // `$id`. That was never true of the *published* schemas — every release
+        // carries a version-specific `$id` — it was true only of our vendored
+        // 0.8.1, which was a copy of 0.8.0's bytes with the `$id` left stale
+        // (fixed 2026-07-25). Isolation is kept deliberately: it means a future
+        // vendored file with a duplicate or malformed `$id` degrades to "that
+        // one version fails to compile" rather than poisoning the whole
+        // registry at boot.
         const ajv = buildAjv();
         const schema = JSON.parse(bytes.toString('utf8')) as AnySchema;
         validate = ajv.compile(schema);

@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://schemas.2to8.cc/schemas/cce-interop-0.8.0.json",
+  "$id": "https://schemas.2to8.cc/schemas/cce-interop-0.8.1.json",
   "type": "object",
   "title": "Cold Chain Equipment monitoring transmission",
   "description": "Schema for transmission of Cold-Chain Equipment (CCE) monitoring data from monitoring suppliers to third-parties (esp., countries). This schema supports both both EMS and non-EMS (i.e., RTM) data and is a derivative of the WHO/PQS EMS specification (esp., E006/DS01 and Annexes) to the greatest extent possible. Notable differences from the PQS EMS standards are (primarily) to accommodate RTM systems.",
@@ -1348,7 +1348,7 @@
         "transferId": "ba302d2b-a60d-423b-a34e-22bca05b6c24",
         "transferredAt": "2023-08-12T13:07:21.234524Z",
         "transferType": "ems",
-        "schemaVersion": "0.8.0",
+        "schemaVersion": "0.8.1",
         "callbackUrl": null
       },
       "data": [
@@ -1390,7 +1390,7 @@
         "transferId": "ba302d2b-a60d-423b-a34e-22bca05b6c24",
         "transferredAt": "2023-08-12T13:07:21.234524Z",
         "transferType": "rtm",
-        "schemaVersion": "0.8.0",
+        "schemaVersion": "0.8.1",
         "callbackUrl": null
       },
       "data": [

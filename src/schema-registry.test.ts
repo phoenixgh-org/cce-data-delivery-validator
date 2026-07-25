@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { SchemaRegistry, normalizeVersion } from './schema-registry.js';
 
@@ -27,13 +29,45 @@ test('registry loads + compiles 0.8.0 at startup with the blessed sha256', () =>
   assert.equal(typeof entry.validate, 'function');
 });
 
-test('registry compiles each vendored version in its own Ajv (shared $id, no collision)', () => {
+test('registry compiles each vendored version in its own Ajv instance', () => {
   const registry = SchemaRegistry.load();
   const v0 = registry.get('0.8.0');
   const v1 = registry.get('0.8.1');
   assert.ok(v0 && v1, 'both 0.8.0 and 0.8.1 are registered');
   assert.notEqual(v0.sha256, v1.sha256, 'distinct content → distinct sha256');
   assert.equal(typeof v1.validate, 'function');
+});
+
+/**
+ * Regression guard. Until 2026-07-25 the vendored 0.8.1 was a copy of 0.8.0's
+ * bytes with `$id` and both example `schemaVersion` values left reading
+ * "0.8.0" — so the registry served 0.8.0's schema under the 0.8.1 key. Every
+ * published release carries a version-specific `$id`; assert each vendored file
+ * self-identifies as the version it is registered under.
+ */
+test('each vendored schema self-identifies as its registered version', () => {
+  const registry = SchemaRegistry.load();
+  for (const version of registry.supportedVersions()) {
+    const bytes = readFileSync(
+      fileURLToPath(new URL(`./schemas/cce-interop-${version}.json`, import.meta.url)),
+    );
+    const schema = JSON.parse(bytes.toString('utf8')) as {
+      $id?: string;
+      examples?: { meta?: { schemaVersion?: string } }[];
+    };
+    assert.equal(
+      schema.$id,
+      `https://schemas.2to8.cc/schemas/cce-interop-${version}.json`,
+      `${version}: $id must name its own version`,
+    );
+    for (const [i, ex] of (schema.examples ?? []).entries()) {
+      assert.equal(
+        ex.meta?.schemaVersion,
+        version,
+        `${version}: embedded example ${i} must declare its own version`,
+      );
+    }
+  }
 });
 
 test('currentVersion is the newest registered version (numeric, not lexical)', () => {
