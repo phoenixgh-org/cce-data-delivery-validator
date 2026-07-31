@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import {
   CONTINUE,
   DEFAULT_SUCCESS_STATUS,
+  SYNTHETIC_DATA_NOTICE,
   buildResponseBody,
   halt,
   record,
@@ -103,6 +104,14 @@ test('buildResponseBody echoes id, status, count, and per-finding details (teach
     { requirement: '1.4', severity: 'pass', detail: 'wire body is 12 bytes, within the 1MB cap' },
     { requirement: '3.3', severity: 'info', detail: 'present DS01 objects: AMID×1' },
   ]);
+});
+
+test('buildResponseBody carries the synthetic-data-only notice on accepted AND rejected bodies', () => {
+  // dkz.1 — the sandbox constraint has to reach an integrator who never opens
+  // the dashboard, so it rides every response, not just the 2xx path.
+  assert.equal(buildResponseBody(200, [], 'tx-2').notice, SYNTHETIC_DATA_NOTICE);
+  assert.equal(buildResponseBody(422, [], 'tx-2').notice, SYNTHETIC_DATA_NOTICE);
+  assert.match(SYNTHETIC_DATA_NOTICE, /Synthetic test data only/);
 });
 
 test('buildResponseBody message: accepted 2xx leads with "Accepted" and the tally', () => {

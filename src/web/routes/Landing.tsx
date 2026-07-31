@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { createSession } from '../api';
+import { SyntheticDataNotice } from '../components/ui/SyntheticDataNotice';
 
 export function Landing() {
   const navigate = useNavigate();
@@ -86,13 +87,15 @@ export function Landing() {
             fontSize: 12.5,
             lineHeight: 1.6,
             color: 'var(--text-faint)',
-            margin: '0 0 22px',
+            margin: '0 0 18px',
           }}
         >
           Your data is not shared with anyone (not even the maintainers of this site). Delete your
           data at any time. All endpoints and their data are automatically deleted after 7 days of
           inactivity.
         </p>
+        {/* Synthetic-data-only warning, BEFORE they commit (DESIGN §2/§12, dkz.1). */}
+        <SyntheticDataNotice />
         <button
           type="button"
           onClick={onCreate}

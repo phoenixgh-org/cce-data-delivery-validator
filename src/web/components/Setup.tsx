@@ -22,6 +22,7 @@ import { useState, type CSSProperties } from 'react';
 
 import { disableAuth, enableAuth, type EnableAuthResponse, type SessionMeta } from '../api';
 import { Icon } from './ui/Icon';
+import { SyntheticDataNotice } from './ui/SyntheticDataNotice';
 
 export interface SetupProps {
   /** Session metadata (uuid, auth flags). */
@@ -376,6 +377,9 @@ export function Setup(props: SetupProps) {
         >
           {/* LEFT: onboarding copy fields. */}
           <div style={{ minWidth: 0 }}>
+            {/* Synthetic-data-only warning at the moment of integration — sits
+                directly above the ingest URL and curl snippet (DESIGN §2/§12, dkz.1). */}
+            <SyntheticDataNotice compact />
             <CopyField label="Ingest URL" value={absoluteIngestUrl} />
             <CopyField label="Required headers" value={`Content-Type: ${CONTENT_TYPE}`} />
             <div

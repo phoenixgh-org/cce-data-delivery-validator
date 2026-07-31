@@ -164,6 +164,7 @@ export interface ResponseFinding {
  *   - `findings` — the COUNT of findings recorded (kept from the original shape).
  *   - `findingDetails` — the per-finding `{requirement, severity, detail}` echo,
  *     so every recorded observation is readable straight from the response.
+ *   - `notice` — the standing synthetic-data-only warning (§2/§12).
  */
 export interface IngestResponseBody {
   /** Persisted transmission id, or null when no row was written (404/405). */
@@ -175,7 +176,22 @@ export interface IngestResponseBody {
   findings: number;
   /** Per-finding human-readable echo so results are visible from the response. */
   findingDetails: ResponseFinding[];
+  /**
+   * Standing sandbox warning (dkz.1). Receiving real production data is an
+   * explicit non-goal (DESIGN §2) and the capability-URL design is only safe
+   * under that constraint (DESIGN §12) — so the teaching surface says so on
+   * every response, not just in the UI the integrator may never open.
+   */
+  notice: string;
 }
+
+/**
+ * The synthetic-data-only warning echoed on every ingest response. Wording is
+ * kept in step with the web UI notice (`src/web/components/ui/SyntheticDataNotice.tsx`).
+ */
+export const SYNTHETIC_DATA_NOTICE =
+  'Synthetic test data only: this is a sandbox endpoint. Never send real CCE data or PII — ' +
+  'the endpoint URL is a bearer capability that anyone holding it can read.';
 
 /** True for the HTTP 2xx status range (success — the data was accepted). */
 function isAccepted(status: number): boolean {
@@ -223,5 +239,6 @@ export function buildResponseBody(
       severity: f.severity,
       detail: f.detail,
     })),
+    notice: SYNTHETIC_DATA_NOTICE,
   };
 }
