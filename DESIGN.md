@@ -21,7 +21,9 @@ The governing artifacts:
 - `src/schemas/cce-interop-*.json` — the transmission JSON Schemas, vendored and
   registered (§9). This is the **only** copy in the repo; `docs/` deliberately
   holds no schemas, so there is one place to verify against the published bytes.
-- `docs/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` — the prose requirements.
+- `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` — the
+  prose requirements (local-only: `docs/internal/` is gitignored, so this file is
+  absent from a fresh clone).
 - `docs/clause-mapping.md` — how those requirement numbers map to the DS01.3 rewrite.
 
 When prose and schema disagree, **the schema wins**. This came from 2025

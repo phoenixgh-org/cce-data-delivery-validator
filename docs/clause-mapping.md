@@ -7,7 +7,8 @@ rendered throughout the dashboard, and enumerated in
 `src/api/compliance-matrix.ts`) come from:
 
 > *Interoperable CCE Data Delivery — REQUIREMENTS*, 30 March 2025
-> (`docs/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf`)
+> (`docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf`,
+> local-only — `docs/internal/` is gitignored)
 
 The forthcoming **WHO/PQS/E006/DS01.3** rewrites Clause 5 and renumbers every
 requirement into `5.1.x` / `5.2.x` / `5.3.x` / `5.4.x`. Source of truth for the

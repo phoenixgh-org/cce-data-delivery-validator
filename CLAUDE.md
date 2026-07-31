@@ -31,7 +31,7 @@ key; 7-day retention after POST inactivity.
 |----------|---------|
 | `DESIGN.md` | Scope, locked decisions, ingest pipeline, verifiability matrix. Start here. |
 | `src/schemas/cce-interop-*.json` | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts`; 0.8.1 (JSON Schema 2020-12) is the sole registered version. |
-| `docs/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. |
+| `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. **Local-only**: `docs/internal/` is gitignored (reference material kept out of the repo — e.g. unconfirmed redistribution rights), so it is absent from a fresh clone. |
 | `../WHO_PQS_E006_EMS_specifications` | **Authoritative** source for the spec and schema: PQS E006 DS01 PDF, the draft DS01.3 `.docx`, the Annex-1 data-object spreadsheet, and the schema authoring folder under `data_delivery/`. |
 | `../ems-data-simulator` | Produces `cce-interop`-conformant EMS/RTMD payloads with realistic faults and edge values. The first producer to deliver here; the two evolve together. |
 | `../ColdchainDB` | Downstream store/query layer. Reuses this project's schema and validation logic on its ingest path, and treats `db/initdb/*.sql` as the house DB-schema style. |
