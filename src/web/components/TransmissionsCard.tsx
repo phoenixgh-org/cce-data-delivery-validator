@@ -125,6 +125,44 @@ function shortId(id: string): string {
 
 const mono: CSSProperties = { fontFamily: 'var(--mono)' };
 
+/**
+ * Estimated height of one TxRow, in px — the virtualizer's `estimateSize` AND
+ * the basis of the list-region height cap below. Rows are not fixed-height (the
+ * chrome wraps at narrow widths), so `measureElement` corrects the real heights;
+ * this is only the pre-measure estimate. It tracks TxRow's chrome:
+ * 8px padding top + ~20px line box (11.5px mono) + 8px padding bottom + 1px
+ * bottom border = 37.
+ */
+const ROW_ESTIMATE_PX = 37;
+
+/** How many rows the list region shows before it scrolls (5bs.6). */
+const LIST_VISIBLE_ROWS = 10;
+
+/**
+ * Height cap for the scrolling list region (5bs.6).
+ *
+ * The list used to be sized proportionally (`flex: 1 1 56%`), which is what the
+ * design handoff specifies — but the handoff's prototype shell is viewport-
+ * locked (`height: 100%`), so 56% of the card was 56% of a bounded box. Our
+ * dashboard shell is `minHeight: 100vh` and grows with the compliance pane's
+ * content, so a proportional list grew without bound and pushed the DOCKED
+ * DETAIL PANE below the fold — reinstating the scroll-past-the-list problem the
+ * master-detail redesign removed.
+ *
+ * So cap in rows, derived from ROW_ESTIMATE_PX rather than a hardcoded pixel
+ * number that would drift if the row chrome changes: 10 × 37 = 370px.
+ *
+ * Height budget above the detail pane, at 16px root padding:
+ *   header ~66 + setup bar ~40 + scorecard ~62 + filter bar ~40  ≈ 208
+ *   + body padding 16 + card header ~44 + list 370                = 638
+ * so the docked detail starts at ~640px and clears the fold on an 800px-tall
+ * viewport (~160px of detail visible, above its own 120px min-height) and
+ * comfortably so at 1000px (~360px). An active issue chip adds ~33px, still
+ * inside the budget. The list keeps its own scrollbar and stays virtualized —
+ * this caps the region, it does not page the data.
+ */
+const LIST_MAX_HEIGHT_PX = ROW_ESTIMATE_PX * LIST_VISIBLE_ROWS;
+
 /** HTTP status tone: 2xx pass, 3xx/4xx mixed, 5xx (or unknown) fail. */
 function httpTone(status: number | null): string {
   if (status === null) return 'var(--text-faint)';
@@ -458,7 +496,7 @@ export function TransmissionsCard({
   const rowVirtualizer = useVirtualizer({
     count: transmissions.length,
     getScrollElement: () => listRef.current,
-    estimateSize: () => 37,
+    estimateSize: () => ROW_ESTIMATE_PX,
     overscan: 8,
     getItemKey: (index) => transmissions[index]?.id ?? index,
   });
@@ -594,8 +632,22 @@ export function TransmissionsCard({
               Row-virtualized (4h4.13): only the visible window renders, each row
               absolutely positioned inside a full-height spacer so the region's
               size + scrollbar stay correct. measureElement keeps non-fixed row
-              heights honest. Same fixed-height region + row chrome as before. */}
-          <div ref={listRef} style={{ overflowY: 'auto', flex: '1 1 56%', minHeight: 0 }}>
+              heights honest.
+
+              Sizing (5bs.6): `0 1 auto` + LIST_MAX_HEIGHT_PX — the region is as
+              tall as its content up to ~LIST_VISIBLE_ROWS rows, then scrolls,
+              and may still shrink below that on a short card so the docked
+              detail keeps its min-height. A short list no longer strands the
+              detail pane at the bottom of a half-empty region. */}
+          <div
+            ref={listRef}
+            style={{
+              overflowY: 'auto',
+              flex: '0 1 auto',
+              maxHeight: LIST_MAX_HEIGHT_PX,
+              minHeight: 0,
+            }}
+          >
             <div
               style={{
                 height: rowVirtualizer.getTotalSize(),
