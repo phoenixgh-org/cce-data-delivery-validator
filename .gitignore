@@ -7,3 +7,5 @@ dist/
 .dolt/
 *.db
 .beads-credential-key
+
+docs/internal/
