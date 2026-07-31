@@ -17,11 +17,16 @@ side** of that interface, plus a **web dashboard** where suppliers get an
 independent, honest read on their compliance — "to the extent possible" from the
 receiving vantage point.
 
-The governing artifacts live in `docs/`:
-- `cce-interop-0.8.0.json` — the transmission JSON Schema (draft-07).
-- `Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` — the prose requirements.
+The governing artifacts:
+- `src/schemas/cce-interop-*.json` — the transmission JSON Schemas, vendored and
+  registered (§9). This is the **only** copy in the repo; `docs/` deliberately
+  holds no schemas, so there is one place to verify against the published bytes.
+- `docs/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` — the prose requirements.
+- `docs/clause-mapping.md` — how those requirement numbers map to the DS01.3 rewrite.
 
-When prose and schema disagree, **the schema wins** (per requirement §3.2).
+When prose and schema disagree, **the schema wins**. This came from 2025
+requirement §3.2; DS01.3 drops the precedence rule, and we keep it deliberately
+as a house rule (see `CLAUDE.md`).
 
 ## 2. Goals and non-goals (v1)
 
@@ -205,9 +210,12 @@ a migration runner is deferred until the schema needs to evolve in production.
 
 ## 9. Schema registry and versioning
 
-- The service hosts a registry of **vendored** schema versions, seeded with **0.8.0**
-  (`docs/cce-interop-0.8.0.json`). Older revisions are added as they are obtained; multi-version
-  support is a feature, not a complication.
+- The service hosts a registry of **vendored** schema versions, currently **0.8.1** only
+  (`src/schemas/cce-interop-0.8.1.json`). Multi-version support is a feature, not a
+  complication — the registry is a *policy* about which versions we accept, and the
+  pre-release 0.8.0 was deliberately dropped once 0.8.1 was published (nothing outside
+  this machine had used it). A payload declaring an unregistered version gets `422`
+  with the supported list, never a silent fallback.
 - **Never fetched at runtime.** `meta.schemaVersion` is a *lookup key*, not a locator. We validate
   only against pre-registered copies — runtime fetching would (a) couple our ingest path to an
   external host's uptime, (b) be an SSRF foot-gun (a URL pulled from request data), and (c) destroy
@@ -258,7 +266,9 @@ in the dashboard so it's never a surprise.
 
 - **Runtime/language:** Node + TypeScript.
 - **HTTP:** Fastify (fast, schema-friendly, first-class `Content-Type`/raw-body control) — to be confirmed at build time.
-- **Validation:** Ajv (draft-07) running the published schema directly.
+- **Validation:** Ajv running the published schema directly, using the build that
+  matches the schema's declared dialect — currently **2020-12** (`ajv/dist/2020`),
+  since 0.8.1 as published declares 2020-12. The pre-release 0.8.0 was draft-07.
 - **Storage:** PostgreSQL via `node-postgres` (`pg`), behind a thin repository layer; schema
   adopts `tremble`'s content-addressed `source_artifact` / `jsonb`-body patterns.
 - **Frontend:** lightweight SPA (React or similar); may be server-rendered for v1 simplicity.

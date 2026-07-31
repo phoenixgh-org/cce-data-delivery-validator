@@ -34,6 +34,32 @@ import { schemaStage } from './schema.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
 
+/** A synthetic version, newer than anything real, used only to exercise the
+ *  outdated-but-valid path. Deliberately not a plausible real release number. */
+const SYNTHETIC_NEWER = '9.9.9';
+
+/**
+ * A registry that behaves exactly like the live one but reports
+ * {@link SYNTHETIC_NEWER} as its current version, so the REAL current version
+ * (0.8.1) resolves as "valid but outdated".
+ *
+ * Needed because the registry now vendors a single version: with nothing older
+ * than current, the §3.2 outdated path has no live case and would otherwise go
+ * untested. Delegating to the real registry keeps the actual compiled 0.8.1
+ * validator in play — only the currency verdict is synthesized. Restore this to
+ * a plain `SchemaRegistry.load()` once two real versions are registered again.
+ */
+function registryWithNewerCurrent(): SchemaRegistry {
+  const real = SchemaRegistry.load();
+  const stub: Pick<SchemaRegistry, 'lookup' | 'currentVersion' | 'supportedVersions' | 'get'> = {
+    lookup: (raw: string) => real.lookup(raw),
+    get: (version: string) => real.get(version),
+    supportedVersions: () => [...real.supportedVersions(), SYNTHETIC_NEWER],
+    currentVersion: () => SYNTHETIC_NEWER,
+  };
+  return stub as SchemaRegistry;
+}
+
 /** A genuinely-valid RTM transmission on the CURRENT version (verified against the live registry). */
 function validPayload(): Record<string, unknown> {
   return {
@@ -126,7 +152,7 @@ test('schema: unknown schemaVersion → halt 422 with one finding listing suppor
   const fails = findingsBy(ctx.findings, '3.2', 'fail');
   assert.equal(fails.length, 1, 'a single unsupported-version finding');
   assert.match(fails[0]?.detail ?? '', /supported:/);
-  assert.match(fails[0]?.detail ?? '', /0\.8\.0/, 'lists 0.8.0 as supported');
+  assert.match(fails[0]?.detail ?? '', /0\.8\.1/, 'lists 0.8.1 as supported');
   assert.equal(fails[0]?.pointer, '/meta/schemaVersion');
   assert.equal(fails[0]?.code, 'tx.unsupported_schema_version', 'stable code for signatures');
   assert.equal(ctx.meta.schemaVersion, '9.9.9', 'raw version recorded as sent');
@@ -135,13 +161,13 @@ test('schema: unknown schemaVersion → halt 422 with one finding listing suppor
 test('schema: version given as a full $id URL normalizes + resolves', () => {
   const body = validPayload();
   (body.meta as Record<string, unknown>).schemaVersion =
-    'https://schemas.2to8.cc/schemas/cce-interop-0.8.0.json';
+    'https://schemas.2to8.cc/schemas/cce-interop-0.8.1.json';
   const ctx = makeCtx(body);
   const outcome = schemaStage().run(ctx) as StageOutcome;
 
-  assert.equal(outcome.kind, 'continue', 'URL form resolves to 0.8.0 and validates');
+  assert.equal(outcome.kind, 'continue', 'URL form resolves to 0.8.1 and validates');
   assert.equal(ctx.schemaOk, true);
-  assert.equal(ctx.normalizedSchemaVersion, '0.8.0');
+  assert.equal(ctx.normalizedSchemaVersion, '0.8.1');
 });
 
 // ── stage-unit: invalid-but-parseable body ──────────────────────────────────
@@ -151,12 +177,12 @@ test('schema: parseable-but-invalid body → halt 422, one finding per Ajv error
   //   - data is empty (minItems: 1) → a root-level error (instancePath '')
   //   - meta is missing required fields (transferType/transferId/...) → errors
   //     pointing INTO /meta.
-  const ctx = makeCtx({ meta: { schemaVersion: '0.8.0' }, data: [] });
+  const ctx = makeCtx({ meta: { schemaVersion: '0.8.1' }, data: [] });
   const outcome = schemaStage().run(ctx) as StageOutcome;
 
   assert.deepEqual(outcome, { kind: 'halt', status: 422 });
   assert.equal(ctx.schemaOk, false);
-  assert.equal(ctx.normalizedSchemaVersion, '0.8.0');
+  assert.equal(ctx.normalizedSchemaVersion, '0.8.1');
 
   const fails = findingsBy(ctx.findings, '3.2', 'fail');
   assert.ok(fails.length >= 1, 'at least one fail finding per Ajv error');
@@ -208,18 +234,17 @@ test('schema: genuinely-valid current-version transmission → continue, schemaO
   assert.equal(ctx.meta.schemaVersion, '0.8.1');
 });
 
-test('schema: valid-but-OUTDATED version (0.8.0) → continue, schemaOk true, one 3.2 info(outdated)', () => {
-  // Same valid body, but declaring the older registered version. The registry's
-  // current version is newer, so the body is ACCEPTED (continue, schemaOk true)
-  // and recorded as a §3.2 info finding flagged `outdated` — never a pass/fail.
-  const body = validPayload();
-  (body.meta as Record<string, unknown>).schemaVersion = '0.8.0';
-  const ctx = makeCtx(body);
+test('schema: valid-but-OUTDATED version → continue, schemaOk true, one 3.2 info(outdated)', () => {
+  // A valid 0.8.1 body against a registry whose current version is NEWER, so
+  // 0.8.1 resolves as outdated-but-valid: the body is ACCEPTED (continue,
+  // schemaOk true) and recorded as a §3.2 info finding flagged `outdated` —
+  // never a pass/fail. See registryWithNewerCurrent() for why this is synthetic.
+  const ctx = makeCtx(validPayload(), registryWithNewerCurrent());
   const outcome = schemaStage().run(ctx) as StageOutcome;
 
   assert.equal(outcome.kind, 'continue', 'outdated-but-valid payload is still accepted');
   assert.equal(ctx.schemaOk, true);
-  assert.equal(ctx.normalizedSchemaVersion, '0.8.0');
+  assert.equal(ctx.normalizedSchemaVersion, '0.8.1');
   assert.equal(
     findingsBy(ctx.findings, '3.2', 'pass').length,
     0,
@@ -230,8 +255,12 @@ test('schema: valid-but-OUTDATED version (0.8.0) → continue, schemaOk true, on
   assert.equal(infos.length, 1, 'one §3.2 info finding');
   assert.equal(infos[0]?.outdated, true, 'flagged outdated for the dashboard tag');
   assert.equal(infos[0]?.code, 'tx.outdated_schema', 'stable code for the soft signature');
-  assert.match(infos[0]?.detail ?? '', /0\.8\.0/, 'names the declared version');
-  assert.match(infos[0]?.detail ?? '', /0\.8\.1/, 'names the current version to upgrade to');
+  assert.match(infos[0]?.detail ?? '', /0\.8\.1/, 'names the declared version');
+  assert.match(
+    infos[0]?.detail ?? '',
+    new RegExp(SYNTHETIC_NEWER.replace(/\./g, '\\.')),
+    'names the current version to upgrade to',
+  );
 });
 
 // ── full-flow (DB-skip-guarded) ─────────────────────────────────────────────
@@ -249,13 +278,18 @@ async function dbReachable(): Promise<boolean> {
 const reachable = await dbReachable();
 const skip = reachable ? false : 'no Postgres reachable (DATABASE_URL/PG* unset or DB down)';
 
-async function postToSession(payload: Buffer): Promise<{
+async function postToSession(
+  payload: Buffer,
+  registry?: SchemaRegistry,
+): Promise<{
   statusCode: number;
   body: { transmissionId: string | null; status: number; findings: number };
   sessionUuid: string;
 }> {
   const session = await createSession();
-  const app = buildApp({ logger: false });
+  // `registry` overrides the app's own SchemaRegistry.load() — the only way to
+  // drive the outdated-but-valid path now that a single version is vendored.
+  const app = buildApp({ logger: false, ...(registry ? { registry } : {}) });
   await app.ready();
   try {
     const res = await app.inject({
@@ -338,7 +372,7 @@ test(
   { skip },
   async () => {
     const payload = Buffer.from(
-      JSON.stringify({ meta: { schemaVersion: '0.8.0' }, data: [] }),
+      JSON.stringify({ meta: { schemaVersion: '0.8.1' }, data: [] }),
       'utf8',
     );
     let sessionUuid: string | undefined;
@@ -350,7 +384,7 @@ test(
 
       const rows = await rowFor(sessionUuid);
       assert.equal(rows[0]?.schema_ok, false, 'schema_ok persisted false');
-      assert.equal(rows[0]?.schema_version, '0.8.0', 'normalized version recorded');
+      assert.equal(rows[0]?.schema_version, '0.8.1', 'normalized version recorded');
 
       const fails = (await findingsFor(sessionUuid)).filter(
         (f) => f.requirement === '3.2' && f.severity === 'fail',
@@ -394,15 +428,15 @@ test(
 );
 
 test(
-  'full-flow: valid-but-outdated 0.8.0 payload → accepted, schema_ok true, §3.2 info(outdated) persisted',
+  'full-flow: valid-but-outdated payload → accepted, schema_ok true, §3.2 info(outdated) persisted',
   { skip },
   async () => {
-    const body = validPayload();
-    (body.meta as Record<string, unknown>).schemaVersion = '0.8.0';
-    const payload = Buffer.from(JSON.stringify(body), 'utf8');
+    // A valid 0.8.1 payload against a registry reporting a NEWER current
+    // version, so 0.8.1 grades as outdated-but-valid end to end.
+    const payload = Buffer.from(JSON.stringify(validPayload()), 'utf8');
     let sessionUuid: string | undefined;
     try {
-      const out = await postToSession(payload);
+      const out = await postToSession(payload, registryWithNewerCurrent());
       sessionUuid = out.sessionUuid;
 
       assert.notEqual(out.statusCode, 422, 'outdated-but-valid payload is still accepted');
@@ -410,7 +444,7 @@ test(
 
       const rows = await rowFor(sessionUuid);
       assert.equal(rows[0]?.schema_ok, true, 'schema_ok persisted true');
-      assert.equal(rows[0]?.schema_version, '0.8.0', 'declared (outdated) version recorded');
+      assert.equal(rows[0]?.schema_version, '0.8.1', 'declared (outdated) version recorded');
 
       const all = await findingsFor(sessionUuid);
       assert.equal(

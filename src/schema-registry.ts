@@ -1,7 +1,16 @@
 /**
  * Schema registry (content-hash pinned).
  *
- * Hosts the *vendored* transmission JSON Schemas (draft-07), seeded with 0.8.0.
+ * Hosts the *vendored* transmission JSON Schemas, currently 0.8.1 only.
+ *
+ * DIALECT: 0.8.1 as published declares JSON Schema **2020-12**, so the registry
+ * compiles with Ajv's 2020 build (`ajv/dist/2020`), NOT the draft-07 default
+ * export. The pre-release 0.8.0 was draft-07 and is deliberately no longer
+ * registered (see VENDORED) — nothing outside this machine ever used it, and
+ * carrying it would mean selecting an Ajv build per entry for no benefit. If a
+ * future version ever reintroduces a second dialect, that per-entry selection
+ * is the seam to add: each version already compiles in its own Ajv instance.
+ *
  * Design constraints (DESIGN.md §9):
  *   - Never fetched at runtime: `meta.schemaVersion` is an opaque lookup key.
  *   - Normalized matching: accept a bare semver (`0.8.0`) OR a full `$id`-style
@@ -16,7 +25,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { Ajv, type AnySchema, type ValidateFunction } from 'ajv';
+import type { AnySchema, ValidateFunction } from 'ajv';
+// The 2020-12 build, not the draft-07 default export — see the dialect note
+// above. Named import (not default) so it resolves under NodeNext ESM: the
+// default export of this CJS build types as a namespace, not a constructor.
+import { Ajv2020 } from 'ajv/dist/2020.js';
 
 /** A schema version vendored into the registry. */
 interface VendoredSchema {
@@ -31,7 +44,6 @@ interface VendoredSchema {
  * SHA-256 is taken over exactly the published artifact (not a re-serialization).
  */
 const VENDORED: readonly VendoredSchema[] = [
-  { version: '0.8.0', file: './schemas/cce-interop-0.8.0.json' },
   { version: '0.8.1', file: './schemas/cce-interop-0.8.1.json' },
 ];
 
@@ -88,10 +100,16 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-function buildAjv(): Ajv {
-  // draft-07 is the dialect declared by the vendored schema's $schema.
-  // Ajv's default export validates draft-07.
-  return new Ajv({ allErrors: true, strict: false });
+function buildAjv(): Ajv2020 {
+  // 2020-12 is the dialect declared by the vendored schema's $schema. Ajv's
+  // DEFAULT export validates draft-07 and rejects a 2020-12 schema outright
+  // ("no schema with key or ref .../draft/2020-12/schema"), which took the whole
+  // process down at boot when 0.8.1 was republished — SchemaRegistry.load() runs
+  // inside buildApp(). Use the 2020 build.
+  //
+  // `strict: false` is kept from the draft-07 configuration: the published bytes
+  // are not ours to adjust, so schema-authoring warnings must never fail a boot.
+  return new Ajv2020({ allErrors: true, strict: false });
 }
 
 export class SchemaRegistry {

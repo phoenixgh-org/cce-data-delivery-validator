@@ -30,21 +30,44 @@ key; 7-day retention after POST inactivity.
 | Location | Content |
 |----------|---------|
 | `DESIGN.md` | Scope, locked decisions, ingest pipeline, verifiability matrix. Start here. |
-| `docs/cce-interop-0.8.x.json` | Vendored transmission JSON Schema (draft-07). See the schema-drift warning below. |
+| `src/schemas/cce-interop-*.json` | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts`; 0.8.1 (JSON Schema 2020-12) is the sole registered version. |
 | `docs/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. |
 | `../WHO_PQS_E006_EMS_specifications` | **Authoritative** source for the spec and schema: PQS E006 DS01 PDF, the draft DS01.3 `.docx`, the Annex-1 data-object spreadsheet, and the schema authoring folder under `data_delivery/`. |
 | `../ems-data-simulator` | Produces `cce-interop`-conformant EMS/RTMD payloads with realistic faults and edge values. The first producer to deliver here; the two evolve together. |
 | `../ColdchainDB` | Downstream store/query layer. Reuses this project's schema and validation logic on its ingest path, and treats `db/initdb/*.sql` as the house DB-schema style. |
 
-**When prose and schema disagree, the schema wins** (requirement §3.2) — except
-for data-object bounds and units, where Annex 1 is authoritative over the schema.
+**When prose and schema disagree, the schema wins** — except for data-object
+bounds and units, where Annex 1 is authoritative over the schema.
 
-**Schema drift warning.** The vendored `cce-interop-*.json` copies here have
-diverged from the authoring folder — as of 2026-07-25 `src/schemas/cce-interop-0.8.1.json`
-still carries `$id`/`schemaVersion` of `0.8.0` inside a file named `0.8.1`. Diff
-against `../WHO_PQS_E006_EMS_specifications/data_delivery/schemas/` before
-trusting a vendored copy, and flag disagreements rather than silently
-"correcting" them — reconciliation is a spec decision.
+This came from 2025 requirement §3.2 ("the JSON schema shall take precedence").
+**DS01.3 removes that rule**, replacing it with a duty to notify the employer of
+discrepancies and supplying no tiebreaker. **We keep schema-precedence anyway**
+(decided 2026-07-31): a schema is less ambiguous than prose and will prevail as a
+practical matter of enforcement, and a supplier who believes the two conflict
+should resolve it through PQS channels rather than expect the validator to grade
+against prose. Do NOT "correct" this when DS01.3 publishes — it is a deliberate
+house rule that outlives its original citation. See `docs/clause-mapping.md`.
+
+**Schema provenance.** Verified 2026-07-31: `src/schemas/cce-interop-0.8.1.json`
+is byte-identical to the live published artifact (sha256 `290290fd…`), as is
+0.8.0 (`e6614cc7…`). Earlier drift — including a 0.8.1 that carried 0.8.0's
+`$id`, and a 0.8.0 that disagreed with the published bytes — has been repaired
+upstream. Re-verify before trusting a vendored copy, and **flag disagreements
+rather than silently "correcting" them** — reconciliation is a spec decision.
+
+```bash
+curl -sL https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-0.8.1.json | sha256sum
+sha256sum src/schemas/cce-interop-0.8.1.json   # must match
+```
+
+**The `$id` is not the download location.** Published schemas declare
+`$id: https://schemas.2to8.cc/schemas/cce-interop-<version>.json`, but **that
+host does not resolve**. The artifact lives at
+`https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-<version>.json` —
+different host, different path. This is the live proof of DESIGN §9's rule that
+`$id` is an *identifier*, never a locator, and that we never fetch at runtime.
+The `$id` is expected to become a URN upstream; `normalizeVersion()` already
+resolves URN forms carrying a semver triple, so that change needs no code here.
 
 ## Issue tracking
 

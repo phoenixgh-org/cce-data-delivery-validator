@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 import { SchemaRegistry, normalizeVersion } from './schema-registry.js';
 
-const EXPECTED_SHA256 = 'e6614cc7d749be2e22ae91353a8b08b8ac88eadadc86dc1bef955510b827ef1a';
+/** Blessed bytes of the published 0.8.1 (JSON Schema 2020-12). */
+const EXPECTED_SHA256 = '290290fd4623d25c3fc18724f317249469e03bee9d64ec39279730d3b3a87470';
 
 test('normalizeVersion extracts MAJOR.MINOR.PATCH from bare semver', () => {
   assert.equal(normalizeVersion('0.8.0'), '0.8.0');
@@ -20,22 +21,37 @@ test('normalizeVersion returns null when no semver triple is present', () => {
   assert.equal(normalizeVersion('0.8'), null);
 });
 
-test('registry loads + compiles 0.8.0 at startup with the blessed sha256', () => {
+test('registry loads + compiles 0.8.1 at startup with the blessed sha256', () => {
   const registry = SchemaRegistry.load();
-  assert.deepEqual(registry.supportedVersions(), ['0.8.0', '0.8.1']);
-  const entry = registry.get('0.8.0');
-  assert.ok(entry, '0.8.0 must be registered');
+  assert.deepEqual(registry.supportedVersions(), ['0.8.1']);
+  const entry = registry.get('0.8.1');
+  assert.ok(entry, '0.8.1 must be registered');
   assert.equal(entry.sha256, EXPECTED_SHA256);
   assert.equal(typeof entry.validate, 'function');
 });
 
-test('registry compiles each vendored version in its own Ajv instance', () => {
+/**
+ * Dialect + isolation guard. EVERY vendored version must compile, whatever
+ * dialect it declares — the 0.8.1 republication moved from draft-07 to 2020-12
+ * and took the process down at boot, because compilation only ever happened
+ * inside SchemaRegistry.load() during buildApp(). Written as a loop over
+ * supportedVersions() rather than against named versions, so it keeps its teeth
+ * (and re-acquires the distinct-hash assertion) the moment a second version is
+ * registered again.
+ */
+test('every vendored version compiles and gets its own entry', () => {
   const registry = SchemaRegistry.load();
-  const v0 = registry.get('0.8.0');
-  const v1 = registry.get('0.8.1');
-  assert.ok(v0 && v1, 'both 0.8.0 and 0.8.1 are registered');
-  assert.notEqual(v0.sha256, v1.sha256, 'distinct content → distinct sha256');
-  assert.equal(typeof v1.validate, 'function');
+  const versions = registry.supportedVersions();
+  assert.ok(versions.length > 0, 'registry is not empty');
+
+  const seenHashes = new Set<string>();
+  for (const version of versions) {
+    const entry = registry.get(version);
+    assert.ok(entry, `${version} must be registered`);
+    assert.equal(typeof entry.validate, 'function', `${version} compiled to a validator`);
+    assert.equal(seenHashes.has(entry.sha256), false, `${version} has distinct blessed bytes`);
+    seenHashes.add(entry.sha256);
+  }
 });
 
 /**
@@ -77,19 +93,19 @@ test('currentVersion is the newest registered version (numeric, not lexical)', (
 
 test('lookup resolves a bare semver to the compiled entry', () => {
   const registry = SchemaRegistry.load();
-  const res = registry.lookup('0.8.0');
+  const res = registry.lookup('0.8.1');
   assert.equal(res.ok, true);
   if (res.ok) {
-    assert.equal(res.entry.version, '0.8.0');
+    assert.equal(res.entry.version, '0.8.1');
     assert.equal(res.entry.sha256, EXPECTED_SHA256);
   }
 });
 
-test('lookup resolves a full $id URL to the same 0.8.0 entry', () => {
+test('lookup resolves a full $id URL to the same 0.8.1 entry', () => {
   const registry = SchemaRegistry.load();
-  const res = registry.lookup('https://schemas.2to8.cc/schemas/cce-interop-0.8.0.json');
+  const res = registry.lookup('https://schemas.2to8.cc/schemas/cce-interop-0.8.1.json');
   assert.equal(res.ok, true);
-  if (res.ok) assert.equal(res.entry.version, '0.8.0');
+  if (res.ok) assert.equal(res.entry.version, '0.8.1');
 });
 
 test('unknown version reports unsupported + the supported list, no fuzzy match', () => {
@@ -99,7 +115,7 @@ test('unknown version reports unsupported + the supported list, no fuzzy match',
   if (!res.ok) {
     assert.equal(res.reason, 'unsupported');
     assert.equal(res.requested, '0.1.1');
-    assert.deepEqual(res.supported, ['0.8.0', '0.8.1']);
+    assert.deepEqual(res.supported, ['0.8.1']);
   }
 });
 
@@ -107,12 +123,12 @@ test('unparseable version string is reported unsupported (no crash)', () => {
   const registry = SchemaRegistry.load();
   const res = registry.lookup('not-a-version');
   assert.equal(res.ok, false);
-  if (!res.ok) assert.deepEqual(res.supported, ['0.8.0', '0.8.1']);
+  if (!res.ok) assert.deepEqual(res.supported, ['0.8.1']);
 });
 
-test('the compiled 0.8.0 validator accepts a minimal valid transmission', () => {
+test('the compiled 0.8.1 validator accepts a minimal valid transmission', () => {
   const registry = SchemaRegistry.load();
-  const entry = registry.get('0.8.0');
+  const entry = registry.get('0.8.1');
   assert.ok(entry);
   // Minimal shape: top-level requires meta + data (non-empty array).
   const valid = entry.validate({
