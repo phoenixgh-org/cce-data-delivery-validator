@@ -17,10 +17,18 @@
  * Auth opt-in (§1.3 / §10 / §12) is preserved verbatim: enabling generates a
  * credential and shows a copy-paste snippet ONCE, the enabled state reflects on
  * reload (without the secret), and disable/rotate reuse the same client calls.
+ * The supplier picks WHICH of the three DS01.3 methods to enable (5bs.4/dav) —
+ * before, the panel silently took the service's `header` default.
  */
 import { useState, type CSSProperties } from 'react';
 
-import { disableAuth, enableAuth, type EnableAuthResponse, type SessionMeta } from '../api';
+import {
+  disableAuth,
+  enableAuth,
+  type AuthMethod,
+  type EnableAuthResponse,
+  type SessionMeta,
+} from '../api';
 import { Icon } from './ui/Icon';
 import { SyntheticDataNotice } from './ui/SyntheticDataNotice';
 
@@ -45,6 +53,53 @@ export interface SetupProps {
 const SAMPLE_BODY = '{"schemaVersion":"0.8.1","transferId":"demo-001","records":[]}';
 
 const CONTENT_TYPE = 'application/json; charset=utf-8';
+
+/**
+ * The three §1.3 / DS01.3 clause 5.1.5 authentication methods, as the picker
+ * offers them. `label` is the segmented-control face, `blurb` the one-line
+ * explanation under it, `name` the prose form used in the enabled-state summary
+ * and the "switch method" button.
+ *
+ * `header` and `bearer` are DELIBERATELY separate entries: the first is the 2025
+ * requirement's token-in-a-configurable-header method (no scheme prefix), the
+ * second the RFC 6750 scheme DS01.3 adds. Collapsing them is the conflation
+ * 5bs.5 removed from the requirement text.
+ */
+interface AuthMethodOption {
+  v: AuthMethod;
+  label: string;
+  name: string;
+  blurb: string;
+}
+
+/** The service's own default, and this picker's fallback for an unknown method. */
+const HEADER_METHOD_OPTION: AuthMethodOption = {
+  v: 'header',
+  label: 'Token header',
+  name: 'token header',
+  blurb: 'Access token in a configurable header (X-CCE-Token) — no scheme prefix.',
+};
+
+const AUTH_METHOD_OPTIONS: AuthMethodOption[] = [
+  HEADER_METHOD_OPTION,
+  {
+    v: 'basic',
+    label: 'HTTP Basic',
+    name: 'HTTP Basic',
+    blurb: 'HTTP Basic — Authorization: Basic base64(username:password).',
+  },
+  {
+    v: 'bearer',
+    label: 'Bearer',
+    name: 'Bearer token',
+    blurb: 'Authorization: Bearer <token> (RFC 6750) — the method DS01.3 adds.',
+  },
+];
+
+/** Look up an option by method, falling back to the `header` default. */
+function methodOption(method: AuthMethod | null): AuthMethodOption {
+  return AUTH_METHOD_OPTIONS.find((o) => o.v === method) ?? HEADER_METHOD_OPTION;
+}
 
 /** Reusable copy button that flips to a check for ~1.3s (redesign look). */
 function CopyButton({ text, label }: { text: string; label: string }) {
@@ -113,6 +168,61 @@ function CopyField({
 }
 
 /**
+ * Method picker — a small segmented control matching FilterBar's `Seg` (the
+ * house style for a short exclusive choice). Radio semantics are spelled out for
+ * assistive tech since these are `<button>`s, not `<input type="radio">`.
+ */
+function MethodPicker({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: AuthMethod;
+  onChange: (v: AuthMethod) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Authentication method"
+      style={{
+        display: 'inline-flex',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 6,
+        overflow: 'hidden',
+      }}
+    >
+      {AUTH_METHOD_OPTIONS.map((o, i) => {
+        const active = value === o.v;
+        return (
+          <button
+            key={o.v}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            onClick={() => onChange(o.v)}
+            style={{
+              fontSize: 11.5,
+              fontFamily: 'var(--sans)',
+              padding: '4px 10px',
+              border: 'none',
+              cursor: disabled ? 'default' : 'pointer',
+              background: active ? 'var(--accent)' : 'var(--surface)',
+              color: active ? '#fff' : 'var(--text-muted)',
+              fontWeight: active ? 600 : 400,
+              borderLeft: i ? '1px solid var(--border)' : 'none',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
  * Auth opt-in card (DESIGN §1.3 / §10). Renders the persisted
  * `auth_enabled`/`auth_method` state (a reload shows the enabled state without
  * the secret) and, on enable, the show-once credential + copy-paste snippet.
@@ -132,13 +242,18 @@ function AuthCard({
   // The show-once credential, held only in local state for this render. Cleared
   // on disable; lost on reload (the server never echoes it again — §12).
   const [credential, setCredential] = useState<EnableAuthResponse | null>(null);
+  // The picked §1.3 method. Seeded from the persisted one so an already-enabled
+  // endpoint opens on what it is actually using; thereafter the supplier owns it
+  // (no re-sync on refetch — that would fight the click that caused the refetch).
+  const [method, setMethod] = useState<AuthMethod>(session.auth_method ?? 'header');
 
   async function onEnable() {
     setBusy(true);
     setError(null);
     try {
-      // Empty body → service defaults to the `header` method (zero-config opt-in).
-      const result = await enableAuth(session.uuid);
+      // The picked method is always sent explicitly; the service's own default
+      // (`header`) is only a back-compat fallback for a body-less caller.
+      const result = await enableAuth(session.uuid, { method });
       setCredential(result);
       onAuthChange();
     } catch (err) {
@@ -163,7 +278,11 @@ function AuthCard({
   }
 
   const enabled = session.auth_enabled;
-  const methodLabel = session.auth_method === 'basic' ? 'basic credentials' : 'token header';
+  const activeOption = methodOption(session.auth_method);
+  const pickedOption = methodOption(method);
+  // Re-POSTing with a different method switches it (and mints a fresh secret), so
+  // the primary button says so rather than calling that a "Rotate".
+  const switching = enabled && session.auth_method !== null && session.auth_method !== method;
 
   return (
     <div>
@@ -184,7 +303,7 @@ function AuthCard({
             style={{ color: enabled ? 'var(--pass)' : 'var(--text-faint)' }}
           />
           <span style={{ fontSize: 12.5, fontWeight: 600 }}>
-            {enabled ? `Enabled — ${methodLabel}` : 'Optional — not enabled'}
+            {enabled ? `Enabled — ${activeOption.name}` : 'Optional — not enabled'}
           </span>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.55 }}>
@@ -201,12 +320,39 @@ function AuthCard({
           )}
         </div>
 
+        {/* Method picker (§1.3 offers two, DS01.3 a third) — the choice is made
+            BEFORE enabling, and re-picking while enabled switches the method. */}
+        <div style={{ marginTop: 11 }}>
+          <div style={eyebrowStyle}>Method</div>
+          <MethodPicker value={method} onChange={setMethod} disabled={busy} />
+          <div
+            style={{
+              fontSize: 11.5,
+              color: 'var(--text-muted)',
+              lineHeight: 1.55,
+              marginTop: 6,
+            }}
+          >
+            {pickedOption.blurb}
+          </div>
+        </div>
+
         <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
           {enabled ? (
             <>
-              <button type="button" style={uBtn} onClick={onEnable} disabled={busy}>
+              <button
+                type="button"
+                style={uBtn}
+                onClick={onEnable}
+                disabled={busy}
+                title={
+                  switching
+                    ? `Switch this endpoint to ${pickedOption.name} and issue a fresh credential`
+                    : 'Issue a fresh credential for the current method'
+                }
+              >
                 <Icon name="refresh" size={12} />
-                {busy ? 'Working…' : 'Rotate'}
+                {busy ? 'Working…' : switching ? `Switch to ${pickedOption.label}` : 'Rotate'}
               </button>
               <button type="button" style={uBtn} onClick={onDisable} disabled={busy}>
                 {busy ? 'Working…' : 'Disable'}
@@ -248,7 +394,15 @@ function AuthCard({
   );
 }
 
-/** Show-once credential display + copy-paste config snippet (DESIGN §10/§12). */
+/**
+ * Show-once credential display + copy-paste config snippet (DESIGN §10/§12).
+ *
+ * One arm per method, discriminated on `auth_method` — the credential LINE and
+ * the curl flag differ for each and must not be guessed from the shape:
+ *   header → `-H '<configured header>: <token>'` (bare token, no scheme)
+ *   basic  → `-u '<username>:<password>'`
+ *   bearer → `-H 'Authorization: Bearer <token>'` (RFC 6750)
+ */
 function AuthCredential({
   credential,
   absoluteIngestUrl,
@@ -256,25 +410,29 @@ function AuthCredential({
   credential: EnableAuthResponse;
   absoluteIngestUrl: string;
 }) {
-  const snippet =
-    credential.auth_method === 'header'
-      ? [
-          `curl -X POST '${absoluteIngestUrl}' \\`,
-          `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
-          `  -H '${credential.auth_header_name}: ${credential.token}' \\`,
-          `  -d '${SAMPLE_BODY}'`,
-        ].join('\n')
-      : [
-          `curl -X POST '${absoluteIngestUrl}' \\`,
-          `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
-          `  -u '${credential.username}:${credential.password}' \\`,
-          `  -d '${SAMPLE_BODY}'`,
-        ].join('\n');
+  let credLine: string;
+  let credLabel: string;
+  let authArg: string;
+  if (credential.auth_method === 'basic') {
+    credLine = `${credential.username}:${credential.password}`;
+    credLabel = 'Basic credentials';
+    authArg = `-u '${credLine}'`;
+  } else if (credential.auth_method === 'bearer') {
+    credLine = `${credential.auth_header_name}: Bearer ${credential.token}`;
+    credLabel = 'Bearer token';
+    authArg = `-H '${credLine}'`;
+  } else {
+    credLine = `${credential.auth_header_name}: ${credential.token}`;
+    credLabel = 'Token header';
+    authArg = `-H '${credLine}'`;
+  }
 
-  const credLine =
-    credential.auth_method === 'header'
-      ? `${credential.auth_header_name}: ${credential.token}`
-      : `${credential.username}:${credential.password}`;
+  const snippet = [
+    `curl -X POST '${absoluteIngestUrl}' \\`,
+    `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
+    `  ${authArg} \\`,
+    `  -d '${SAMPLE_BODY}'`,
+  ].join('\n');
 
   return (
     <div
@@ -290,10 +448,7 @@ function AuthCredential({
         <strong>Save this credential now — you will not see it again.</strong> The validator stores
         only a salted hash (§12). Use Rotate to issue a fresh one.
       </p>
-      <CopyField
-        label={credential.auth_method === 'header' ? 'Token header' : 'Basic credentials'}
-        value={credLine}
-      />
+      <CopyField label={credLabel} value={credLine} />
       <CopyField label="Authenticated request" value={snippet} multiline />
     </div>
   );

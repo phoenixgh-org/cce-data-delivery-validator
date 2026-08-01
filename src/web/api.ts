@@ -106,8 +106,17 @@ export interface TransmissionView {
   findings: FindingView[];
 }
 
-/** §1.3 opt-in auth method (display only in M4). */
-export type AuthMethod = 'header' | 'basic';
+/**
+ * §1.3 opt-in auth method — mirrors `AuthMethod` in src/db/repository.ts (kept as
+ * a local re-declaration: this file is browser code and imports no backend
+ * module). Read back on {@link SessionMeta} for display AND sent on
+ * {@link EnableAuthRequest} by the Setup panel's method picker.
+ *
+ * `bearer` is the DS01.3 clause 5.1.5 / RFC 6750 addition — `Authorization:
+ * Bearer <token>`. It is DISTINCT from `header`, whose token rides in a
+ * configurable header (e.g. `X-CCE-Token`) with no scheme prefix.
+ */
+export type AuthMethod = 'header' | 'basic' | 'bearer';
 
 /** Session metadata the dashboard surfaces (no secrets). */
 export interface SessionMeta {
@@ -228,7 +237,11 @@ export interface SessionResponse {
   expiresAt: string;
 }
 
-/** Optional body for POST /api/sessions/:uuid/auth (empty → defaults to `header`). */
+/**
+ * Optional body for POST /api/sessions/:uuid/auth. Every field is optional; an
+ * omitted `method` still means `header` (back-compat), but an unrecognised one is
+ * rejected with 400 `invalid_method` rather than silently falling back.
+ */
 export interface EnableAuthRequest {
   method?: AuthMethod;
   /** Custom header name for the `header` method (e.g. `X-CCE-Token`). */
@@ -239,16 +252,18 @@ export interface EnableAuthRequest {
 
 /**
  * 201 response of POST /api/sessions/:uuid/auth — mirror src/api/sessions.ts
- * verbatim. The `token` (header) / `password` (basic) is the show-once plaintext
- * (DESIGN §12); it is never returned again, so the UI must surface it now.
+ * verbatim. The `token` (header, bearer) / `password` (basic) is the show-once
+ * plaintext (DESIGN §12); it is never returned again, so the UI must surface it
+ * now.
  */
 export type EnableAuthResponse =
   | {
       uuid: string;
       auth_enabled: true;
       auth_method: 'header';
+      /** The configurable header the token rides in, bare (no scheme prefix). */
       auth_header_name: string;
-      /** Show-once plaintext bearer token (§12). */
+      /** Show-once plaintext token (§12). */
       token: string;
     }
   | {
@@ -258,6 +273,15 @@ export type EnableAuthResponse =
       username: string;
       /** Show-once plaintext password (§12). */
       password: string;
+    }
+  | {
+      uuid: string;
+      auth_enabled: true;
+      auth_method: 'bearer';
+      /** Always the literal `Authorization` — RFC 6750 fixes the header. */
+      auth_header_name: string;
+      /** Show-once plaintext token, sent as `Authorization: Bearer <token>` (§12). */
+      token: string;
     };
 
 /** 200 response of DELETE /api/sessions/:uuid/auth — mirror src/api/sessions.ts. */
@@ -374,6 +398,8 @@ export async function listTransmissions(
 
 /**
  * Enable (or rotate) §1.3 opt-in auth for a session. POST /api/sessions/:uuid/auth.
+ * `body.method` selects one of the three DS01.3 methods (default `header`); the
+ * response arm is discriminated by the method the service actually configured.
  * Returns the show-once plaintext credential (token or password) — the caller MUST
  * surface it immediately; it is never returned again (§12).
  */

@@ -53,7 +53,7 @@ export const REQUIREMENT_REFERENCE: Record<string, RequirementReference> = {
   '1.3': {
     text: "Data supplier shall, at employer's discretion, authenticate against employer system by either: posting an access token in an HTTP header specified by the employer (e.g., x-api-key) — the name of the HTTP header should be configurable on a per-country basis — OR using HTTP Basic Authentication (Authentication header).",
     guidance:
-      'Auth is opt-in: enable it from the endpoint panel, pick the header-token or HTTP Basic method, and we generate a credential for you. Once enabled, we enforce it and grade §1.3 from real traffic. Note the requirement names the Basic credential carrier the "Authentication" header; HTTP Basic in practice uses Authorization, which is what we read.',
+      'Auth is opt-in: enable it from the endpoint panel, pick a method there, and we generate the credential for you. Three are offered — an access token in a configurable header (the quoted text\'s first option), HTTP Basic, and "Authorization: Bearer <token>" (RFC 6750), which DS01.3 clause 5.1.5 adds to the two named above. Once enabled we enforce the chosen method and grade §1.3 from real traffic; a credential presented under the wrong scheme fails like a wrong secret. Note the requirement names the Basic credential carrier the "Authentication" header; HTTP Basic in practice uses Authorization, which is what we read.',
   },
   '1.4': {
     text: 'Data supplier shall limit the size of HTTP request bodies to a maximum of 1 megabyte (1MB), measured after any applicable content encoding (e.g., compression) is applied.',
