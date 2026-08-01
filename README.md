@@ -206,6 +206,7 @@ Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
 | Where | What |
 |---|---|
 | [`DESIGN.md`](DESIGN.md) | Scope, locked decisions, the ingest pipeline and response codes, and the full §7 verifiability matrix. The authority on all of it. |
+| [`docs/api.md`](docs/api.md) | The HTTP API reference: every route, request and response shape, and status code — what you need to integrate server-side without reading source. |
 | [`docs/deployment.md`](docs/deployment.md) | Operating it behind a TLS edge: the proxy contract, the environment surface, and how each violation fails silently. |
 | [`docs/clause-mapping.md`](docs/clause-mapping.md) | How the 2025 requirement numbers used throughout this project map to the DS01.3 rewrite. |
 | `src/schemas/` + `src/schema-registry.ts` | The vendored transmission schemas and the registry that pins them by content hash. Schemas are never fetched at runtime — `schemaVersion` is a lookup key, not a locator. |
@@ -225,6 +226,34 @@ npm run build                   # tsc + schemas + web typecheck + vite build
 Tests colocate with their source as `*.test.ts`. The dashboard is served by the same
 Node process from `dist/web`, so a full `npm run build` (or `docker compose up -d`)
 is what puts the UI on `:3000`.
+
+### Tests need a database — `npm test` alone does not tell you so
+
+`npm test` **without a database is not a full run.** Eight suites — the repository
+layer, the ingest route, the ingest stages, and the sessions API — probe Postgres
+once and skip themselves entirely when it is unreachable. You get `# pass 222 /
+# fail 0 / # skipped 50`: green, and the whole persistence and ingest-integration
+layer never executed. Treat a bare `npm test` as the pure-logic subset only.
+
+To run everything, bring up Postgres and point the suite at it:
+
+```bash
+docker compose up -d postgres   # first boot applies db/initdb/*.sql in order
+npm run test:db                 # npm test with the compose-local DATABASE_URL preset
+```
+
+That is `# pass 272 / # fail 0 / # skipped 0`. If you see skips, the database is
+not reachable — or its schema predates a DDL file. `db/initdb/` is applied only on
+**first** boot of the volume, so a database created before a numbered file was
+added never got it; apply the missing files by hand, or `docker compose down -v`
+and let it re-initialize from scratch.
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs lint, build and the
+full suite against a real Postgres, applying every `db/initdb/*.sql` in filename
+order first. It **fails on any skip**, because in CI a skipped test means the
+database gating broke rather than that a database was unavailable. (The repo has
+no remote yet, so the workflow is checked in and starts running when it is
+published.)
 
 ## License
 

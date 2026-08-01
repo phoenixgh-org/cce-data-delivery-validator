@@ -1,0 +1,128 @@
+# CI for the CCE Data Delivery Validator.
+#
+# NOTE ON STATUS: this repository has no git remote yet. The workflow is
+# authored and checked in ahead of publication; GitHub Actions only starts
+# running it once the repo is pushed to GitHub. It has therefore never been
+# executed — it was validated syntactically (YAML parse) and its two
+# non-obvious mechanisms (the DDL apply loop and the no-skip guard) were
+# rehearsed locally against the docker-compose Postgres. Treat the first
+# post-publication run as the real smoke test.
+#
+# One job on purpose: lint, build and test share a single `npm ci`, and the
+# Postgres service is cheap enough that splitting it out would cost more in
+# repeated installs than it saves.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    name: lint + build + tests (Postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      # The tests talk to a REAL Postgres; there is no in-memory substitute and
+      # no fixture that fakes the schema. Credentials mirror docker-compose.yml
+      # (the published `cce_validator` trio — a local default, not a secret).
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: cce_validator
+          POSTGRES_USER: cce_validator
+          POSTGRES_PASSWORD: cce_validator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cce_validator -d cce_validator"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      # Both forms are set because src/db/pool.ts prefers DATABASE_URL and falls
+      # back to PG*; psql below reads the PG* vars.
+      DATABASE_URL: postgresql://cce_validator:cce_validator@localhost:5432/cce_validator
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGDATABASE: cce_validator
+      PGUSER: cce_validator
+      PGPASSWORD: cce_validator
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # package.json engines: node >=20.
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Apply db/initdb/*.sql in filename order
+        # A `services:` container does NOT run the repo's DDL: docker-compose.yml
+        # mounts db/initdb into /docker-entrypoint-initdb.d, but a service
+        # container has no such mount, and nothing in the test suite bootstraps
+        # schema (src/db/repository.test.ts and the seven other DB-gated suites
+        # only probe `SELECT 1` and skip themselves when it fails). So the DDL is
+        # applied explicitly here, ALL of it — including 50-session-auth-bearer.sql,
+        # which postdates the developer machines that got 10..40 from first boot.
+        #
+        # The glob expands in lexical order, which is the intended order given the
+        # two-digit numeric prefixes (10 → 20 → 30 → 40 → 50). Keep prefixes
+        # two digits: a "100-" file would sort before "20-".
+        run: |
+          set -euo pipefail
+          for f in db/initdb/*.sql; do
+            echo "applying $f"
+            psql -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Test (full suite) — fail on any skip
+        # THE POINT OF THIS JOB. Without a reachable database the suite skips its
+        # whole persistence and ingest-integration layer and still prints
+        # "# fail 0", so a broken DB gate reads as green (dkz.14). With
+        # DATABASE_URL set and the DDL applied the suite must run 272/272 with
+        # ZERO skips, so in CI a skip is not a neutral event — it means the gate
+        # silently stopped seeing the database — and it fails the build.
+        #
+        # Mechanism: node's test runner emits TAP when stdout is not a TTY, which
+        # a pipe guarantees. We tee the run to a file and read the two top-level
+        # summary counters. `^#` anchors to the summary; nested subtest diagnostics
+        # are indented and cannot match. An absent counter is treated as failure
+        # (the reporter changed, and the guard would otherwise pass vacuously).
+        shell: bash
+        run: |
+          set +e
+          npm test 2>&1 | tee test-output.tap
+          test_status=${PIPESTATUS[0]}
+          set -e
+
+          failed=$(grep -E '^# fail ' test-output.tap | tail -1 | awk '{print $3}' || true)
+          skipped=$(grep -E '^# skipped ' test-output.tap | tail -1 | awk '{print $3}' || true)
+          echo "TAP summary: exit=${test_status} fail=${failed:-<missing>} skipped=${skipped:-<missing>}"
+
+          if [ -z "$failed" ] || [ -z "$skipped" ]; then
+            echo "::error::could not read the TAP summary — the test reporter changed; the no-skip guard is not enforcing anything"
+            exit 1
+          fi
+          if [ "$test_status" -ne 0 ] || [ "$failed" != "0" ]; then
+            echo "::error::test failures: fail=${failed}, runner exit=${test_status}"
+            exit 1
+          fi
+          if [ "$skipped" != "0" ]; then
+            echo "::error::${skipped} test(s) skipped — DB-gated suites must all run in CI (see db/initdb apply step)"
+            exit 1
+          fi
