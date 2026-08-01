@@ -5,7 +5,12 @@ export default tseslint.config(
   {
     // design_handoff_*: vendored design-reference bundles (prototype HTML/JSX/JS),
     // not project source — linted nowhere, recreated in src/web instead.
-    ignores: ['dist/', 'node_modules/', 'design_handoff_*/'],
+    // docs/: prose plus reference material, including the gitignored
+    // docs/internal/ (design handoff bundles that ship their own prototype .js).
+    // None of it is project source; .prettierignore already skips docs/, so
+    // eslint matches it — otherwise a local-only tree makes `npm run lint` red
+    // and its non-zero exit stops the chained `prettier --check` from running.
+    ignores: ['dist/', 'node_modules/', 'design_handoff_*/', 'docs/'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
