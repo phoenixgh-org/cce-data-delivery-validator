@@ -465,7 +465,7 @@ const RAW_MAX_HEIGHT_PX = 220;
  * element (that is what makes per-JSON-Pointer highlighting possible), so an
  * unbounded body would mean tens of thousands of nodes. Past this we render the
  * head of the payload and SAY the view is clipped — a display cap, unrelated to
- * the write-side stored-copy bound reported by {@link describeStoredCopy}.
+ * the stored-copy completeness reported by {@link describeStoredCopy}.
  */
 const MAX_RENDERED_LINES = 2000;
 
@@ -559,6 +559,70 @@ interface StoredCopyNote {
 }
 
 /**
+ * §1.6 finding codes (src/ingest/stages/encoding.ts) that mean stage 5 REJECTED
+ * the `Content-Encoding` and halted 400 *before* decoding anything. A row is
+ * still persisted on those paths (DESIGN §8), so the copy it carries is the raw
+ * wire body — not payload.
+ */
+const ENCODING_REJECTED_CODES = new Set([
+  'tx.unsupported_encoding',
+  'tx.undecodable_body',
+  'tx.double_encoded',
+]);
+
+/** Leading chars of `raw_body` sampled when testing for binary-read-as-text. */
+const MOJIBAKE_SAMPLE_CHARS = 4096;
+
+/** Share of U+FFFD in that sample at/above which the copy reads as binary. */
+const MOJIBAKE_RATIO = 0.05;
+
+/**
+ * True when the head of `s` is dense in U+FFFD — the signature of binary bytes
+ * (e.g. still-gzipped ones) run through `toString('utf8')`. Sampled, not
+ * counted whole: `raw_body` can be several MiB and this runs on every render of
+ * the detail pane.
+ */
+function replacementDense(s: string): boolean {
+  const sample = s.slice(0, MOJIBAKE_SAMPLE_CHARS);
+  if (sample.length === 0) return false;
+  let hits = 0;
+  for (let i = 0; i < sample.length; i += 1) {
+    if (sample.charCodeAt(i) === 0xfffd) {
+      hits += 1;
+    }
+  }
+  return hits / sample.length >= MOJIBAKE_RATIO;
+}
+
+/** What the row lets us conclude about whether its stored copy was decoded. */
+type DecodeState = 'decoded' | 'rejected' | 'unconfirmed';
+
+/**
+ * Decide, from the row alone, whether the stored copy is decoded payload.
+ *
+ * The dashboard never sees stage 5's outcome directly, so it must be inferred
+ * (bug vul — a set `Content-Encoding` is NOT evidence of a decode; only the one
+ * single-layer-gzip success path in src/ingest/stages/encoding.ts ever calls
+ * `setDecodedBody`, and every other path halts 400 with the compressed bytes
+ * still in `ctx.rawBody`):
+ *
+ *   - a parsed `body` proves it — compressed bytes never parse as JSON, so
+ *     whatever was stored had already been decompressed;
+ *   - a §1.6 rejection finding disproves it — the encoding was refused before
+ *     any decompression, so the copy is the wire body;
+ *   - otherwise (decoded but unparseable, say) the copy is presumed decoded
+ *     UNLESS it reads as binary, which we cannot resolve either way and must
+ *     therefore not present as payload.
+ */
+function decodeState(tx: TransmissionView, storedText: string): DecodeState {
+  if (tx.body !== null && tx.body !== undefined) return 'decoded';
+  if (tx.findings.some((f) => f.code !== null && ENCODING_REJECTED_CODES.has(f.code))) {
+    return 'rejected';
+  }
+  return replacementDense(storedText) ? 'unconfirmed' : 'decoded';
+}
+
+/**
  * Say honestly how the stored `raw_body` relates to what was actually on the
  * wire (5bs.3 "disclose truncation").
  *
@@ -569,9 +633,12 @@ interface StoredCopyNote {
  * 0x00. The wire facts are preserved elsewhere (`content_hash`, `wire_bytes`,
  * `content_encoding`).
  *
- * We therefore do not assert a fixed byte cap — we compare the copy we were
- * given against the recorded `wire_bytes` and report the difference:
- *   - decoded payload      -> both sizes stated; no comparison is meaningful.
+ * We assert no byte cap — none is implemented (beads 1z9), and DESIGN §8 says
+ * not to describe the copy as size-bounded. We report only what the row itself
+ * supports:
+ *   - encoded + decoded     -> both sizes stated; no comparison is meaningful.
+ *   - encoded + refused     -> the copy is the undecoded wire body, not payload.
+ *   - encoded, decode unproven -> said so; the copy reads as binary.
  *   - copy shorter than wire -> shortened; explicitly NOT the complete payload.
  *   - copy longer than wire  -> undecodable bytes were substituted.
  *   - equal                 -> stated as complete, so a silent note is not
@@ -581,15 +648,36 @@ function describeStoredCopy(tx: TransmissionView): StoredCopyNote | null {
   if (tx.raw_body === null) return null;
   const stored = utf8ByteLength(tx.raw_body);
   const encoding = tx.content_encoding === null ? null : tx.content_encoding.trim();
-  const decoded = encoding !== null && encoding !== '' && encoding.toLowerCase() !== 'identity';
+  const encoded = encoding !== null && encoding !== '' && encoding.toLowerCase() !== 'identity';
   const wire = tx.wire_bytes === null ? null : Number(tx.wire_bytes);
   const wireKnown = wire !== null && Number.isFinite(wire);
+  const wireText = wireKnown ? fmtBytes(wire) : 'an unrecorded number of';
 
-  if (decoded) {
+  if (encoded) {
+    const state = decodeState(tx, tx.raw_body);
+    if (state === 'rejected') {
+      return {
+        text:
+          `Not decoded: the ${encoding} encoding was rejected before the body was ` +
+          `decompressed, so this copy is the ${encoding} bytes as sent, read as text — ` +
+          `${fmtBytes(stored)} bytes stored from ${wireText} bytes on the wire, undecodable ` +
+          `bytes substituted and NUL bytes stripped. This is NOT readable payload.`,
+        warn: true,
+      };
+    }
+    if (state === 'unconfirmed') {
+      return {
+        text:
+          `Decoding unconfirmed: ${fmtBytes(stored)} bytes stored from ${wireText} ` +
+          `${encoding} bytes on the wire, but the copy reads as binary (dense in ` +
+          `replacement characters), so it cannot be shown as decoded payload.`,
+        warn: true,
+      };
+    }
     return {
       text:
         `Shown decoded: ${fmtBytes(stored)} bytes of payload from ` +
-        `${wireKnown ? fmtBytes(wire) : 'an unrecorded number of'} ${encoding} bytes on the wire. ` +
+        `${wireText} ${encoding} bytes on the wire. ` +
         `NUL bytes are stripped when the copy is stored.`,
       warn: false,
     };
@@ -605,8 +693,8 @@ function describeStoredCopy(tx: TransmissionView): StoredCopyNote | null {
   if (stored < wire) {
     return {
       text:
-        `Truncated: ${fmtBytes(stored)} of ${fmtBytes(wire)} wire bytes are stored. The ` +
-        `drill-down copy is size-bounded and has NUL bytes stripped — this is NOT the ` +
+        `Shortened: ${fmtBytes(stored)} of ${fmtBytes(wire)} wire bytes are stored. NUL ` +
+        `bytes are stripped when the copy is stored; whatever the cause, this is NOT the ` +
         `complete payload.`,
       warn: true,
     };
