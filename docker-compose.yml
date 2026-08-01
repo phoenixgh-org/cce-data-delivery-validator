@@ -39,12 +39,51 @@ services:
       PGDATABASE: ${POSTGRES_DB:-cce_validator}
       PGUSER: ${POSTGRES_USER:-cce_validator}
       PGPASSWORD: ${POSTGRES_PASSWORD:-cce_validator}
+      # Address(es) whose X-Forwarded-* headers Fastify trusts (src/app.ts).
+      # Loopback by default = trust nobody but ourselves, which is right for the
+      # dev flow below. Behind the `edge` profile the proxy is a CONTAINER, so
+      # this must name its address/subnet or X-Forwarded-Proto is ignored — set
+      # TRUSTED_PROXY in .env. See docs/deployment.md.
+      TRUSTED_PROXY: ${TRUSTED_PROXY:-127.0.0.1}
     ports:
+      # Dev convenience. In production the app port must NOT be publicly
+      # reachable (DESIGN §4.1): bind it to loopback ('127.0.0.1:3000:3000') or
+      # drop this mapping entirely and reach the app only via the edge profile.
       - '${APP_PORT:-3000}:3000'
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
+  # TLS edge (DESIGN.md §4.1). Behind an OPTIONAL compose profile so the dev
+  # flow is untouched: `docker compose up -d` and `docker compose up -d postgres`
+  # never start it, because a profiled service only runs when its profile is
+  # selected. Bring it up with:
+  #
+  #   docker compose --profile edge up -d
+  #
+  # deploy/Caddyfile IS the proxy contract (X-Forwarded-Proto, no body cap below
+  # the app's thresholds, body passed through uncompressed). Edit the hostname
+  # and set TRUSTED_PROXY before first boot, then verify with
+  # deploy/smoke-proxy-contract.sh. See docs/deployment.md.
+  caddy:
+    image: caddy:2-alpine
+    container_name: cce-validator-caddy
+    profiles: ['edge']
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp' # HTTP/3
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates + ACME account state; losing these means re-issuing certs.
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - app
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  caddydata:
+  caddyconfig:

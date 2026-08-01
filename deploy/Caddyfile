@@ -1,0 +1,102 @@
+# CCE Data Delivery Validator — TLS edge (Caddy v2).
+#
+# THIS FILE IS THE DESIGN.md §4.1 PROXY CONTRACT, ENCODED.
+#
+# The app sits behind this proxy on plain HTTP and grades *other people's*
+# conformance from what reaches it. A proxy that quietly rewrites the request
+# does not produce an error — it produces WRONG VERDICTS issued under this
+# project's name. Every directive (and every deliberate NON-directive) below is
+# load-bearing for that reason; see docs/deployment.md for the failure mode of
+# each one.
+#
+# Deploy: docker compose --profile edge up -d   (mounts this file read-only)
+#     or: caddy run --config deploy/Caddyfile   (standalone; set the upstream)
+# Verify after ANY edit here: deploy/smoke-proxy-contract.sh https://<host>
+#
+# ---------------------------------------------------------------------------
+# Substitute before first boot
+# ---------------------------------------------------------------------------
+#   validator.example.org  → the real public hostname (Caddy provisions the
+#                            Let's Encrypt cert for it automatically, which is
+#                            what satisfies DESIGN §12 / Country Guidance
+#                            Attachment 2: valid certs, no supplier-installed
+#                            intermediates).
+#   app:3000               → the app upstream. `app` is the compose service name
+#                            (docker-compose.yml, container cce-validator-app);
+#                            use 127.0.0.1:3000 for a standalone Caddy on the
+#                            same host.
+{
+	# ACME contact address. Uncomment and set for expiry notices.
+	# email ops@example.org
+
+	# NOT SET, deliberately: no global `servers { }` block clamping request
+	# bodies or timeouts. Caddy ships NO default request-body cap, so the app
+	# keeps ownership of the §1.4 threshold (contract term 2 below).
+}
+
+validator.example.org {
+	# -------------------------------------------------------------------------
+	# Contract term 2 — the proxy must NOT cap request bodies below the app's
+	# thresholds. The app owns the §1.4 (1 MiB) grading cap.
+	#
+	# INVARIANT: this value MUST stay strictly greater than the app's Fastify
+	# `bodyLimit` (2 MiB — src/app.ts DEFAULT_BODY_LIMIT), which is itself above
+	# the §1.4 cap (1 MiB — MAX_WIRE_BYTES in src/ingest/stages/size.ts) so that
+	# an oversized-but-bounded POST reaches the size stage and earns the teaching
+	# 413 + persisted row. 8MB leaves headroom while still bounding an abusive
+	# upload at the edge.
+	#
+	# Setting this at or below 1MB is the silent-failure case: oversized POSTs
+	# would get Caddy's bare 413, no transmission row would ever be written and
+	# the §1.4 finding would never be emitted — the supplier learns nothing and
+	# the dashboard shows the transmission simply never happened.
+	#
+	# This block is `caddy validate`-clean on v2.11.4, and Caddy imposes no
+	# default request-body cap of its own. VERIFY on the version you deploy
+	# (`caddy validate --config deploy/Caddyfile`) — and if some build rejects
+	# the directive, DELETE this block rather than lowering it: unbounded is
+	# contract-correct, a low cap is not.
+	request_body {
+		max_size 8MB
+	}
+
+	# -------------------------------------------------------------------------
+	# Contract terms 1 and 3 — scheme advertised, body passed through untouched.
+	#
+	# Term 1 (scheme): satisfied by DEFAULT — reverse_proxy sets X-Forwarded-For
+	# / -Proto / -Host itself, from the scheme Caddy actually served on, never
+	# from a client-supplied value. Do NOT add `header_up X-Forwarded-Proto
+	# {scheme}`: it is a no-op that Caddy warns about at startup ("Unnecessary
+	# header_up X-Forwarded-Proto", verified on v2.11.4).
+	# The other half of term 1 lives in the APP: it only honours the header when
+	# the request ARRIVES from the address in TRUSTED_PROXY (Fastify trustProxy —
+	# src/app.ts:107, default 127.0.0.1). That env var and this proxy's address
+	# must agree, or the header is ignored. See docs/deployment.md §3.
+	#
+	# Term 3 (bytes as sent): the app measures §1.4 on the exact wire bytes and
+	# grades §1.6 Content-Encoding / double-encoding from them, so nothing here
+	# may decompress, re-encode or rewrite the body. Caddy does not decompress
+	# request bodies and reverse_proxy streams them unbuffered by DEFAULT — the
+	# guarantee is therefore expressed as things we do NOT configure:
+	#
+	#   * NO `request_buffers` — leave the body streaming; do not buffer/reframe.
+	#   * NO request-decompression handler (third-party modules exist; none is
+	#     built in, and none may be added to this build).
+	#   * NO `header_up -Content-Encoding` / `-Content-Type` / `-Content-Length`
+	#     and no rewriting of them: §1.6 grades the headers as the supplier sent
+	#     them.
+	#   * `encode` (Caddy's compression directive) is intentionally absent. It
+	#     compresses RESPONSES only and would not touch a request body, but it is
+	#     omitted so nobody reads this file as "compression happens at the edge".
+	#
+	# VERIFY, do not assume: run deploy/smoke-proxy-contract.sh after deploying.
+	# It POSTs a gzip body and asserts the app reported "gzip decoded cleanly" —
+	# an edge that decompressed would instead produce a §1.6 FAIL against an
+	# innocent supplier.
+	reverse_proxy app:3000
+
+	# Access log to stdout so `docker compose logs caddy` shows it.
+	log {
+		output stdout
+	}
+}

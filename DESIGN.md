@@ -102,6 +102,12 @@ small **contract** so the receiving-side checks stay accurate:
   detection see exactly the supplier's bytes. (Caddy does not decompress request bodies by
   default — verify and lock the config.)
 
+**Implementation.** The contract is encoded and commented in `deploy/Caddyfile` (wired as an
+optional `edge` compose profile), the operator half — `TRUSTED_PROXY`, the env surface, and the
+failure mode of each violation — is `docs/deployment.md`, and `deploy/smoke-proxy-contract.sh`
+verifies a running deployment by POSTing an oversized and a gzipped body and asserting the *app*,
+not the proxy, answered.
+
 ## 5. Onboarding flow (web-driven)
 
 1. Supplier visits the site, clicks **Create test endpoint**.
