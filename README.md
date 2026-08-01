@@ -150,8 +150,13 @@ Useful things to know while testing:
   recognises — token in a configurable header, HTTP Basic, or `Authorization:
   Bearer` (RFC 6750) — and then enforces it so §1.3 becomes gradeable.
 - Transmissions are validated against the vendored, content-hash-pinned
-  `cce-interop` schema. **0.8.1 is the only registered version**; any other declared
-  `schemaVersion` gets a `422` listing what is supported, never a silent fallback.
+  `cce-interop` schema. **0.8.1 is the only registered version** — sha256
+  `290290fd…`, byte-identical to the copy published upstream — and any other
+  declared `schemaVersion` gets a `422` listing what is supported, never a silent
+  fallback. The schema is never fetched at runtime and the `$id` URL inside it is
+  an *identifier*, not a download location: that host does not currently resolve,
+  and the published artifact lives elsewhere. `DESIGN.md` §9 has the full version
+  and publication picture.
 - An endpoint and all its data are **purged after 7 days without a POST**. The clock
   resets on each POST and the expiry is shown in the dashboard.
 

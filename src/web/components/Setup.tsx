@@ -570,8 +570,12 @@ export function Setup(props: SetupProps) {
               }}
             >
               Validating against official <strong style={{ color: 'var(--text)' }}>0.8.1</strong>{' '}
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>(sha256 9f2a…c1)</span>.
-              Inactive endpoints are purged after 7 days; the clock resets on each POST.
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>(sha256 290290fd…)</span> —
+              our vendored copy, byte-identical to the bytes published upstream, and the only
+              registered version. Schemas are never fetched at runtime: the{' '}
+              <code style={{ fontFamily: 'var(--mono)' }}>$id</code> inside the schema names the
+              version, it is not a download location. Inactive endpoints are purged after 7 days;
+              the clock resets on each POST.
             </div>
 
             <div style={{ ...eyebrowStyle, color: 'var(--fail)' }}>Danger zone</div>
