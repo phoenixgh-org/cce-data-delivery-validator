@@ -1,8 +1,9 @@
 /**
  * Stage 8 — semantic checks (DESIGN.md §6 row 8; §1.8 duplicate, §2.1
- * concurrency, §3.x interval + inventory; milestone M5).
+ * concurrency, §3.x interval + inventory + §3.1 custom-object declaration;
+ * milestone M5).
  *
- * This stage is the FROZEN shared contract for the four semantic checks. Each
+ * This stage is the FROZEN shared contract for the semantic checks. Each
  * check is a {@link SemanticCheck}: it inspects the (already parse+schema-valid)
  * {@link PipelineContext} plus the {@link SemanticDeps} the handler supplies, and
  * returns its findings. The orchestrator awaits each check and pushes all
@@ -26,6 +27,7 @@
 import type { PriorTransmission } from '../../db/repository.js';
 import { CONTINUE, type Finding, type PipelineContext, type Stage } from '../pipeline.js';
 import { concurrencyCheck } from './semantic/concurrency.js';
+import { customDataSchemaCheck } from './semantic/custom-schema.js';
 import { duplicateCheck } from './semantic/duplicate.js';
 import { intervalCheck } from './semantic/interval.js';
 import { inventoryCheck } from './semantic/inventory.js';
@@ -33,7 +35,7 @@ import { inventoryCheck } from './semantic/inventory.js';
 export type { PriorTransmission };
 
 /**
- * Everything the four semantic checks need that is NOT already on the
+ * Everything the semantic checks need that is NOT already on the
  * {@link PipelineContext}. Supplied by the route handler via the stage closure
  * so the frozen `ctx` type is never widened.
  */
@@ -57,10 +59,15 @@ export type SemanticCheck = (
 ) => Finding[] | Promise<Finding[]>;
 
 /** The body-inspecting checks: skipped when there is no parse+schema-valid body. */
-const BODY_CHECKS: readonly SemanticCheck[] = [duplicateCheck, intervalCheck, inventoryCheck];
+const BODY_CHECKS: readonly SemanticCheck[] = [
+  duplicateCheck,
+  intervalCheck,
+  inventoryCheck,
+  customDataSchemaCheck,
+];
 
 /**
- * Build the semantic stage closed over its `deps`. Composes the four checks,
+ * Build the semantic stage closed over its `deps`. Composes the checks,
  * awaits each, and pushes every returned finding onto `ctx.findings`. Always
  * continues (never halts).
  */

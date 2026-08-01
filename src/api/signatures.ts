@@ -113,6 +113,8 @@ const CODE_TITLE: Record<string, string> = {
   'tx.schema_invalid': 'Body failed schema validation',
   'tx.irregular_interval': 'ABST reading cadence looks irregular',
   'tx.concurrent_delivery': 'Concurrent delivery (expected serial)',
+  // Added with the §3.1 conditional custom-object check (5bs.1).
+  'tx.missing_custom_schema': 'Custom data objects sent without meta.customDataSchema',
 };
 
 /**

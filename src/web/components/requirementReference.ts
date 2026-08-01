@@ -96,7 +96,8 @@ export const REQUIREMENT_REFERENCE: Record<string, RequirementReference> = {
   },
   '3.1': {
     text: 'When sending CCE data to employers, data supplier shall adopt the Data Objects naming conventions and definitions from WHO/PQS/E006/DS01, Annex 1: Cold Chain Data Objects, plus the following additional Data Object definitions: transferId, transferSrc, transferType, schemaVersion, and transferredAt (all required).',
-    guidance: 'The schema enforces the transmission metadata block and DS01 object shapes.',
+    guidance:
+      'Structural conformance — the transmission metadata block and the DS01 object shapes — is graded under §3.2, where Ajv checks it against the published schema; we do not grade it twice. What we grade here is the half a schema cannot express: manufacturer-specific data objects (lower-case and "z"-prefixed, e.g. ztpcm) must be described by a schema carried in meta.customDataSchema. Send custom objects without it and this fails; send none and it passes as not applicable. We record the declaration only — the referenced schema is never fetched and your custom objects are never validated against it. We also note, informationally, object names that depart from the DS01 naming convention.',
   },
   '3.2': {
     text: 'Data supplier shall transmit JSON messages that can be validated according to the JSON schema published in Attachment 1: Schema for Interoperable CCE Data Transmission. If there are discrepancies between this document and the JSON schema published in Attachment 1, the JSON schema shall take precedence.',

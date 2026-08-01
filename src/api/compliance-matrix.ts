@@ -123,9 +123,15 @@ export const COMPLIANCE_MATRIX: readonly MatrixRow[] = [
     summary: 'Alarm within 15 min + include data since last tx',
     classes: ['attestation'],
   },
+  // 3.1's STRUCTURAL half (metadata block + DS01 object shapes) is graded by
+  // §3.2's Ajv run — grading it twice would double-count the same evidence. What
+  // this row grades is the half a schema cannot express: the CONDITIONAL duty to
+  // declare `meta.customDataSchema` when the payload carries manufacturer-specific
+  // (clause 4.5 `z`-prefixed) data objects, checked by the stage-8
+  // `customDataSchemaCheck` (5bs.1).
   {
     requirement: '3.1',
-    summary: 'Adopt DS01 objects + transmission meta fields',
+    summary: 'Declare custom data objects via meta.customDataSchema',
     classes: ['verified'],
   },
   { requirement: '3.2', summary: 'Validates against the schema', classes: ['verified'] },
