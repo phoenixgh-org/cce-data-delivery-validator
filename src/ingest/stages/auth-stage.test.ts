@@ -359,10 +359,10 @@ const JSON_UTF8 = 'application/json; charset=utf-8';
 
 /**
  * A genuinely-valid RTM transmission (so a passing auth reaches a 2xx). The
- * default version is the one the pre-existing tests below were written against;
- * callers pass a registered version explicitly.
+ * default is the sole version the registry blesses (src/schema-registry.ts);
+ * an unregistered version 422s at stage 7 before auth's assertions matter.
  */
-function validPayload(schemaVersion = '0.8.0'): Buffer {
+function validPayload(schemaVersion = '0.8.1'): Buffer {
   return Buffer.from(
     JSON.stringify({
       meta: {

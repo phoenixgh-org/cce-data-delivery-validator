@@ -303,7 +303,7 @@ test(
     const payload = Buffer.from(
       JSON.stringify({
         meta: {
-          schemaVersion: '0.8.0',
+          schemaVersion: '0.8.1',
           transferType: 'rtm',
           transferId: 'T-ct',
           transferSrc: 'com.example',
@@ -437,12 +437,12 @@ test(
   'full-flow: real gzip body → 200, decoded text persisted in raw_body, no 500 (do5)',
   { skip },
   async () => {
-    // A schema-valid 0.8.0 payload, gzipped on the wire. The NUL bytes in the gzip
+    // A schema-valid 0.8.1 payload, gzipped on the wire. The NUL bytes in the gzip
     // stream once made the raw_body text insert 500; route.ts now stores the
     // DECODED, NUL-stripped text. Whole flow must reach 200 with schema_ok=true.
     const json = JSON.stringify({
       meta: {
-        schemaVersion: '0.8.0',
+        schemaVersion: '0.8.1',
         transferType: 'rtm',
         transferId: 'T-gz-flow',
         transferSrc: 'com.example',

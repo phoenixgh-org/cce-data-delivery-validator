@@ -99,13 +99,13 @@ test('POST to a valid session → 200, persists a transmission row', { skip }, a
     const session = await createSession();
     sessionUuid = session.uuid;
 
-    // A genuinely schema-valid 0.8.0 RTM transmission so the request reaches the
+    // A genuinely schema-valid 0.8.1 RTM transmission so the request reaches the
     // happy-path 200 now that stages 6 (parse) and 7 (schema) are live — the old
     // stub-era body (`data:[]`, no schemaVersion) now correctly 422s.
     const payload = Buffer.from(
       JSON.stringify({
         meta: {
-          schemaVersion: '0.8.0',
+          schemaVersion: '0.8.1',
           transferType: 'rtm',
           transferId: 'T-9',
           transferSrc: 'com.example',
