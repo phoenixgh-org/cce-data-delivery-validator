@@ -100,7 +100,7 @@ export const COMPLIANCE_MATRIX: readonly MatrixRow[] = [
   },
   {
     requirement: '1.3',
-    summary: 'Auth via token header or Basic Auth (opt-in)',
+    summary: 'Auth via token header, Basic, or Bearer (opt-in)',
     classes: ['verified'],
   },
   { requirement: '1.4', summary: 'Body ≤ 1MB post-encoding', classes: ['verified'] },

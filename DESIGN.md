@@ -1,7 +1,9 @@
 # CCE Data Delivery Validator — Design
 
-**Status:** Draft (v1 scope)
-**Last updated:** 2026-05-28
+**Status:** Living document — **v1 scope is locked**; §3 records the decisions
+that are settled and are not reopened casually. Everything else tracks the built
+system and is updated as it ships.
+**Last updated:** 2026-08-01
 
 ## 1. Overview
 
@@ -51,7 +53,7 @@ as a house rule (see `CLAUDE.md`).
 | Data | **Test/sandbox** synthetic data; no real CCE/PII. |
 | Onboarding | **Capability URL**, minted via the **web dashboard** "Create" action (no signup). |
 | Identity | **Single UUID** is both ingest path and dashboard key. Possession = authority. |
-| Auth (§1.3) | **Opt-in compliance layer, not a gate.** On opt-in the **dashboard generates** the credential (token + configurable header name, or Basic Auth) for the supplier to copy in; the endpoint then enforces it so §1.3 becomes gradeable. |
+| Auth (§1.3) | **Opt-in compliance layer, not a gate.** On opt-in the **dashboard generates** the credential — token + configurable header name, HTTP Basic, or `Authorization: Bearer` (RFC 6750, the third method DS01.3 clause 5.1.5 adds) — for the supplier to copy in; the endpoint then enforces the chosen method so §1.3 becomes gradeable. |
 | Retention | Purge a path + its data after **7 days** of POST inactivity. |
 | Stack | **Node + TypeScript** end-to-end, **Ajv** for schema validation. |
 | Schema versioning | **Bare-semver `schemaVersion`** as an opaque registry key; schemas are **vendored** and validated against **pre-registered copies** (never fetched at runtime); each version is pinned by **content hash** to prove the "blessed bytes." |
@@ -121,17 +123,31 @@ or **short-circuits** with a response code. We follow the Country Guidance (Atta
 |-------|-------|-----------|
 | 0. Session | UUID exists & not expired | `404` |
 | 1. Method/TLS | POST over HTTPS (§1.1) | TLS enforced at the edge; non-POST → `405` |
-| 2. Auth (opt-in) | If enabled, expected token header or Basic Auth present & correct (§1.3) | `401` |
+| 2. Auth (opt-in) | If enabled, the configured credential — token header, Basic, or Bearer — is present & correct (§1.3) | `401` |
 | 3. Size | Wire body ≤ 1MB **after** content-encoding (§1.4) | `413` + finding |
 | 4. Content-Type | `application/json; charset=utf-8` (§1.2) | finding; continue (`415` optional) |
 | 5. Content-Encoding | If `gzip`, decompress; detect illegal double-encoding e.g. base64 (§1.6) | finding; `400` if undecodable |
 | 6. JSON parse | Body is valid UTF-8 JSON (§1.1) | `400` |
-| 7. Schema validate | Ajv against `meta.schemaVersion` (§3.1/§3.2) | `422` + per-error findings |
-| 8. Semantic checks | Duplicate `transferId` (§1.8), interval regularity (§3.4), concurrency (§2.1), present-object inventory (§3.3 info) | findings; `2xx` (data accepted) |
+| 7. Schema validate | Ajv against `meta.schemaVersion` (§3.2) | `422` + per-error findings |
+| 8. Semantic checks | Duplicate `transferId` (§1.8), interval regularity (§3.4), concurrency (§2.1), present-object inventory (§3.3 info), custom-data-object declaration (§3.1) | findings; `2xx` (data accepted) |
 
-Success: `200`/`202` with a small JSON body summarizing what was recorded. The exact body is
-also a teaching surface — it can echo the count of findings so suppliers see results without
-opening the dashboard.
+Stage 8 never halts: every §1.8/§2.1/§3.x concern is a *teaching* finding, not a rejection.
+
+**§3.1 vs §3.2 (the division of labour).** Ajv at stage 7 grades §3.2 only. §3.1's structural
+half — the metadata block and the DS01 object shapes — is already implied by a passing Ajv run,
+so grading it again at stage 7 would double-count the same evidence. What §3.1 owns instead is
+the half a schema cannot express: `meta.customDataSchema` is required **only when** the payload
+carries manufacturer-specific (clause 4.5 `z`-prefixed) data objects. That conditional runs as a
+**schema-independent** stage-8 check, because `meta.customDataSchema` does not exist in 0.8.1 at
+all and 0.8.1's `additionalProperties: true` lets custom objects through Ajv unexamined. See §7
+row 3.1 and §9.
+
+Success: `200`/`202` with a small JSON body summarizing what was recorded. The body is a
+deliberate **teaching surface** — a supplier should understand the outcome from the HTTP response
+alone, without opening the dashboard. It carries the persisted `transmissionId`, the `status`, a
+one-line `message` with the fail/info tally, the per-finding `findingDetails` echo, and a standing
+`notice` restating that this is a synthetic-data-only sandbox (§2, §12). The same shape is
+returned on rejection, so a 4xx is just as self-explanatory as a 2xx.
 
 **Size note (§1.4):** the requirement is measured *after* encoding (the bytes on the wire), so
 we measure the raw request body length, not the decompressed size.
@@ -146,7 +162,7 @@ The product's distinguishing honesty is classifying every requirement, not just 
 |-----|---------|-------|-----|
 | 1.1 | HTTPS POST, UTF-8 JSON | ✅ / 🔒 | **HTTPS is 🔒 enforced at the edge** — non-HTTPS never reaches us, so it always "passes" and is *not* a test of the supplier's choice; **POST method + UTF-8 JSON parse** are ✅ verified from supplier traffic |
 | 1.2 | `Content-Type: application/json; charset=utf-8` | ✅ | Header inspection |
-| 1.3 | Auth via token header or Basic Auth | ✅ (opt-in) | Enforced once supplier enables the auth layer |
+| 1.3 | Auth via token header, Basic, or Bearer | ✅ (opt-in) | Enforced once supplier enables the auth layer; the configured method is the one graded |
 | 1.4 | Body ≤ 1MB post-encoding | ✅ | Measure wire bytes |
 | 1.5 | Expect standard 2xx/4xx/5xx | 📝 | We *return* correct codes; supplier-side expectation isn't observable |
 | 1.6 | Gzip via `Content-Encoding`, no double base64 | ✅ | Decode + detect double-encoding |
@@ -155,7 +171,7 @@ The product's distinguishing honesty is classifying every requirement, not just 
 | 2.1 | Serial delivery by default | 🟡 | Observe concurrent in-flight requests per session |
 | 2.2 | Deliver within minutes of receipt | 📝 | Remote-system receipt time is unknown to us |
 | 2.3 | Alarm within 15 min + include data since last tx | 📝 | Alarm origin time unknown to us |
-| 3.1 | Adopt DS01 objects + transmission meta fields | ✅ | Schema enforces `meta.*` |
+| 3.1 | Declare custom data objects via `meta.customDataSchema` | ✅ | Stage-8 semantic check, **not** the schema: fail when `z`-prefixed custom objects are present without the declaration, pass otherwise. We record the declaration only — we never dereference it (§9). Non-conformant object naming is a separate info finding. The structural half of §3.1 is covered by §3.2's Ajv run |
 | 3.2 | Validates against the schema | ✅ | Ajv (the core check) |
 | 3.3 | Transmit all collected objects | 📝 | We don't know what they collect; we can *inventory* what's present |
 | 3.4 | Preserve logger time resolution | 🟡 | `ABST` interval regularity heuristic |
@@ -174,7 +190,11 @@ The product's distinguishing honesty is classifying every requirement, not just 
 
 The dashboard renders this matrix per session: ✅/🟡 carry live pass/fail counts from the
 supplier's actual traffic; 🔌 are marked "not yet exercised — available in a future test mode";
-📝 are marked "self-attestation — outside what a receiver can prove."
+📝 are marked "self-attestation — outside what a receiver can prove." A gradeable row with zero
+findings so far shows **untested**, never a false pass.
+
+This table is the source for `COMPLIANCE_MATRIX` in `src/api/compliance-matrix.ts`, which
+encodes the same 27 rows verbatim — change them together.
 
 ## 8. Data model
 
@@ -191,16 +211,39 @@ POST** and instead *flag* repeats — duplicate detection is the §1.8 signal we
 must never silently collapse it.
 
 - **session** — `uuid` (PK), `created_at`, `last_post_at`, `auth_enabled bool`, `auth_method`
-  (`header` | `basic`), `auth_header_name`, `auth_secret_hash`.
+  (`header` | `basic` | `bearer`), `auth_header_name`, `auth_secret_hash`.
 - **transmission** — `id uuid` (PK), `session_uuid` (FK → session), `received_at timestamptz`,
   `content_hash bytea` (SHA-256 of the raw wire body; **not** unique — used to detect exact
   replays), `wire_bytes bigint`, `content_type`, `content_encoding`, `http_status int`,
   `transfer_id`, `transfer_src`, `transfer_type`, `schema_version`,
-  `body jsonb` (parsed payload; null if unparseable), `raw_body` (size-bounded, kept for
-  drill-down especially when parsing fails), `parse_ok bool`, `schema_ok bool`.
+  `body jsonb` (parsed payload; null if unparseable), `raw_body text` (the original bytes, kept
+  for drill-down especially when parsing fails — see the size note below), `parse_ok bool`,
+  `schema_ok bool`.
 - **finding** — `id`, `transmission_id` (FK → transmission), `requirement` (e.g. `1.4`),
   `severity` (`pass` | `fail` | `info`), `detail`, `pointer` (JSON Pointer into the payload
-  where relevant).
+  where relevant), `outdated bool` (true only for the §3.2 info finding raised when a
+  transmission validates against a valid-but-**older** registered version — the body is accepted
+  and the dashboard shows an amber OUTDATED SCHEMA tag), plus the structured **signature**
+  fields that let identical defects collapse into one issue without keying off an English
+  message that drifts between Ajv versions: `keyword`, `instance_path`, `param` for schema
+  (§3.2) errors, and `code` (e.g. `tx.missing_charset`) for transport/heuristic findings. All
+  are nullable and populated only where they apply.
+
+**On `raw_body` size (honest statement of what is implemented).** There is **no write-side cap**:
+the ingest path gzip-decodes, strips NUL (illegal in a Postgres `text` column), and stores the
+result whole. The only ceilings that exist today are upstream of the insert:
+
+- **Fastify `bodyLimit` — 2 MiB.** Deliberately set *above* the §1.4 1MB grading cap so an
+  oversized-but-bounded POST still reaches the size stage and earns its §1.4 teaching finding and
+  a persisted row. Beyond 2 MiB, Fastify's generic `413` fires and nothing is recorded.
+- **gzip `maxOutputLength` — 1 MiB.** The zip-bomb guard: a gzip body whose output would exceed
+  it throws and is rejected `400` as undecodable, so it never reaches the insert either.
+
+So a stored `raw_body` is bounded in practice, but by the transport, not by the write. Whether to
+add an explicit write-side cap (and what bound) is an **open decision** — see beads issue
+`cce-data-delivery-validator-1z9`. Until it is settled, do not describe `raw_body` as
+"size-bounded"; the dashboard's truncation disclosure compares against `wire_bytes` for exactly
+this reason.
 
 Indexes: `transmission (session_uuid, received_at DESC)` for the dashboard's reverse-chronological
 list and per-session rollups; `transmission (session_uuid, content_hash)` and
@@ -216,8 +259,10 @@ a migration runner is deferred until the schema needs to evolve in production.
   (`src/schemas/cce-interop-0.8.1.json`). Multi-version support is a feature, not a
   complication — the registry is a *policy* about which versions we accept, and the
   pre-release 0.8.0 was deliberately dropped once 0.8.1 was published (nothing outside
-  this machine had used it). A payload declaring an unregistered version gets `422`
-  with the supported list, never a silent fallback.
+  this machine had used it). Its bytes are still on disk at
+  `src/schemas/cce-interop-0.8.0.json` but are absent from the registry's `VENDORED` list, so
+  they are never compiled and a payload declaring 0.8.0 is not accepted. A payload declaring any
+  unregistered version gets `422` with the supported list, never a silent fallback.
 - **Never fetched at runtime.** `meta.schemaVersion` is a *lookup key*, not a locator. We validate
   only against pre-registered copies — runtime fetching would (a) couple our ingest path to an
   external host's uptime, (b) be an SSRF foot-gun (a URL pulled from request data), and (c) destroy
@@ -230,21 +275,43 @@ a migration runner is deferred until the schema needs to evolve in production.
   "close" version (that would defeat conformance). Unknown version → `422` with an
   "unsupported schemaVersion" finding that **lists the versions we do support**.
 - **Content-hash provenance ("blessed bytes").** Each registered version is pinned by the SHA-256
-  of its canonical bytes; the dashboard can surface "validated against official 0.8.0 (sha256 …)".
+  of its canonical bytes; the dashboard can surface "validated against official 0.8.1 (sha256 …)".
   The vendored file is therefore kept **byte-identical** to the published artifact — cosmetic issues
   in the schema (the stale `0.1.1` example, the `schemaVersion`→`$id` phrasing) are **not** patched
   locally, but tracked as standard-revision proposals (§15), so the hash keeps matching what WHO
-  published.
-- Ajv compiles each registered schema once at startup and reuses the compiled validator.
+  published. Verified 2026-07-31: vendored 0.8.1 is `290290fd…`, identical to the live published
+  artifact and to the upstream authoring folder.
+- **The `$id` is not a download location.** Published schemas declare
+  `$id: https://schemas.2to8.cc/schemas/cce-interop-<version>.json`, but that host does not
+  resolve — the artifact is served from a different host and path. That is the live proof of the
+  rule above rather than a counterexample to it: `$id` identifies, it never locates, and we never
+  fetch. `normalizeVersion()` already accepts URN-shaped values carrying a semver triple, so the
+  expected upstream move of `$id` to a URN needs no code change here.
+- **Adding a version is a policy act, not maintenance.** A new version arrives as a *new* vendored
+  file plus a registry entry; an existing schema file is never edited in place. Upstream **0.8.2**
+  is published and is the first version to define `meta.customDataSchema` — and its own `$comment`
+  on that definition says the conditional is deliberately *not* enforced by the schema and that
+  employers wishing to enforce it should do so in their own validation layer. We are that layer
+  (§7 row 3.1), which is why our §3.1 check is schema-independent and works for suppliers still
+  declaring 0.8.1. Whether to accept 0.8.2 declarations is an open version-acceptance decision
+  (beads `cce-data-delivery-validator-fvw`), not a promise this document makes.
+- Ajv compiles each registered schema once at startup, in its own instance per version, and reuses
+  the compiled validator. Registration is a boot-time gate: bytes that cannot be read or compiled
+  fail the process loudly rather than degrading silently.
 
 ## 10. Dashboard
 
 Per session (`/d/{uuid}`):
-- **Setup** — ingest URL, copy-paste `curl`/header examples, and the §1.3 auth opt-in
-  (toggle → service generates token + header name or Basic creds → shows config snippet).
-- **Compliance summary** — the §7 matrix with live counts and the honesty classification.
-- **Transmissions** — reverse-chronological list; drill into any transmission to see the
-  raw body, returned status, and the findings (with JSON Pointers to schema errors).
+- **Setup** — ingest URL, copy-paste `curl`/header examples, the synthetic-data-only notice, and
+  the §1.3 auth opt-in (toggle → pick one of the three methods → service generates the credential
+  → shows a config snippet).
+- **Compliance summary** — the §7 matrix with live counts and the honesty classification. Each row
+  drills down to the **verbatim** 2025-requirement text; our own editorializing lives in a
+  separate guidance field so a supplier can always tell the requirement from our reading of it.
+- **Transmissions** — reverse-chronological, paginated list; drill into any transmission to see
+  the returned status, the compression/wire-byte picture, a raw-payload inspector, and the
+  findings (with JSON Pointers to schema errors). The list pane is height-capped so the detail
+  pane stays on screen.
 - **Lifecycle** — shows the 7-day inactivity expiry clock.
 
 ## 11. Retention / lifecycle
@@ -261,19 +328,24 @@ in the dashboard so it's never a surprise.
 - **HTTPS only**, with valid certs that don't require suppliers to install intermediates
   (Country Guidance, Attachment 2).
 - **Auth secrets** stored hashed, never echoed after first display.
-- **Resource limits** — enforce the 1MB body cap at the framework layer to bound memory;
-  guard gzip decompression against zip-bomb expansion ratios.
+- **Resource limits** — Fastify's `bodyLimit` bounds buffered request memory at **2 MiB**, set
+  above the §1.4 1MB grading cap on purpose so oversized-but-bounded bodies still reach the size
+  stage and get a teaching `413` with a persisted row instead of Fastify's opaque one; gzip
+  decompression is bounded at **1 MiB** of output as a zip-bomb guard. See the `raw_body` note in
+  §8 for what this does and does not bound at the storage layer.
 
 ## 13. Tech stack
 
 - **Runtime/language:** Node + TypeScript.
-- **HTTP:** Fastify (fast, schema-friendly, first-class `Content-Type`/raw-body control) — to be confirmed at build time.
+- **HTTP:** Fastify (fast, schema-friendly, first-class `Content-Type`/raw-body control). Locked.
 - **Validation:** Ajv running the published schema directly, using the build that
   matches the schema's declared dialect — currently **2020-12** (`ajv/dist/2020`),
   since 0.8.1 as published declares 2020-12. The pre-release 0.8.0 was draft-07.
 - **Storage:** PostgreSQL via `node-postgres` (`pg`), behind a thin repository layer; schema
   adopts `tremble`'s content-addressed `source_artifact` / `jsonb`-body patterns.
-- **Frontend:** lightweight SPA (React or similar); may be server-rendered for v1 simplicity.
+- **Frontend:** React + Vite SPA (with `react-router-dom`), built to `dist/web` and served by the
+  same Node process via `@fastify/static` with an SPA fallback for non-API paths. Locked
+  2026-05-30; the server-rendered alternative was dropped.
 - **Edge:** **Caddy** reverse proxy (Digital Ocean) terminating TLS with automatic Let's Encrypt
   certs; honors the proxy contract in §4.1.
 - **Local/dev:** `docker-compose` (app + Postgres), following `tremble`'s healthcheck-gated bring-up.
@@ -281,7 +353,7 @@ in the dashboard so it's never a surprise.
 ## 14. Build order (v1 milestones)
 
 1. **Skeleton** — Node/TS project, Fastify server, Postgres via docker-compose with first-boot
-   schema, schema registry loading 0.8.0; Ajv compiles.
+   schema, schema registry loading the vendored version (0.8.1 today); Ajv compiles.
 2. **Ingest core** — `POST /i/{uuid}`: size/content-type/encoding/parse/schema stages → persist transmission + findings → correct status codes.
 3. **Sessions + dashboard read** — `POST /api/sessions`, `GET /api/sessions/{uuid}` (transmissions, findings, summary).
 4. **Web UI** — Create button, setup page with copy-paste examples, transmission list + drill-down, the §7 matrix.
