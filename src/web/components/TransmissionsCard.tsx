@@ -12,7 +12,15 @@
  * Reference: design_handoff_validator_redesign/redesign/proto-dashboard.jsx
  * (TxRow / TxDetail / TransmissionsCard) + README §2 "TransmissionsCard".
  */
-import { useEffect, useRef, type CSSProperties, type ReactElement } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { FindingView, Severity, Signature, TransmissionView } from '../api';
@@ -282,10 +290,16 @@ const eyebrow: CSSProperties = {
 function FindingItem({
   finding,
   onSelectReq,
+  onLocate,
 }: {
   finding: FindingView;
   onSelectReq: (req: string) => void;
+  /** Open the raw-payload inspector at this finding's JSON Pointer (5bs.3). */
+  onLocate?: (pointer: string) => void;
 }): ReactElement {
+  // Ajv's instancePath is the pointer into the payload; `pointer` is the same
+  // value normalized to null at the root. Prefer the former, fall back.
+  const locatable = finding.instancePath ?? finding.pointer;
   return (
     <div
       style={{
@@ -339,11 +353,33 @@ function FindingItem({
         )}
       </div>
       {finding.detail && <div style={{ color: 'var(--text-muted)' }}>{finding.detail}</div>}
-      {finding.pointer !== null && (
-        <div style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>
-          pointer: {finding.pointer}
-        </div>
-      )}
+      {finding.pointer !== null &&
+        (onLocate && locatable !== null && locatable !== '' ? (
+          <button
+            type="button"
+            title="Show this location in the raw payload"
+            onClick={() => onLocate(locatable)}
+            style={{
+              ...mono,
+              display: 'block',
+              fontSize: 10.5,
+              color: 'var(--text-muted)',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              marginTop: 2,
+              cursor: 'pointer',
+              textAlign: 'left',
+              textDecoration: 'underline',
+            }}
+          >
+            pointer: {finding.pointer}
+          </button>
+        ) : (
+          <div style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>
+            pointer: {finding.pointer}
+          </div>
+        ))}
     </div>
   );
 }
@@ -375,6 +411,419 @@ function deriveInventory(body: unknown): string[] {
   return [];
 }
 
+/** One meta-grid cell; `warn` renders it in the amber tone with an alert glyph. */
+interface MetaCell {
+  key: string;
+  value: string;
+  warn?: boolean;
+}
+
+/**
+ * The `compression` meta cell (5bs.2) — derived from the request
+ * `Content-Encoding` the pipeline recorded.
+ *
+ * The tone MIRRORS src/ingest/stages/encoding.ts so the cell never contradicts
+ * the §1.6 finding sitting next to it:
+ *   - absent header            -> `none`      (stage 5 no-ops; nothing to grade)
+ *   - `identity` (any casing)   -> the raw value, untoned — legal and explicitly
+ *                                 a no-op for stage 5, so warning it would be a
+ *                                 false alarm; but we do NOT flatten it to
+ *                                 `none` either, because the supplier did send a
+ *                                 header and that is worth seeing.
+ *   - `gzip` (any casing)       -> `gzip`      (the one decodable encoding)
+ *   - anything else             -> THE RAW VALUE, warning-toned. This is the
+ *                                 §1.6 signal; coercing it to `none` would hide
+ *                                 exactly the thing the cell exists to show. An
+ *                                 empty-but-present header renders `(empty)`,
+ *                                 which stage 5 also fails.
+ * The verdict itself stays with the §1.6 finding — the cell only makes the value
+ * visible and visibly odd.
+ */
+function compressionCell(contentEncoding: string | null): MetaCell {
+  if (contentEncoding === null) return { key: 'compression', value: 'none' };
+  const token = contentEncoding.trim().toLowerCase();
+  if (token === '') return { key: 'compression', value: '(empty)', warn: true };
+  if (token === 'identity') return { key: 'compression', value: contentEncoding.trim() };
+  if (token === 'gzip') return { key: 'compression', value: 'gzip' };
+  return { key: 'compression', value: contentEncoding.trim(), warn: true };
+}
+
+/**
+ * Height cap for the raw-payload scroll region (5bs.3).
+ *
+ * The inspector lives INSIDE the docked detail pane, which already owns
+ * `overflowY: auto` (flex '1 1 44%', minHeight 120), so adding content here
+ * cannot change the pane's own footprint and the fold budget documented on
+ * LIST_MAX_HEIGHT_PX is untouched. This second cap keeps a large payload from
+ * monopolising the pane's scroll: the JSON scrolls inside its own region so the
+ * findings above it stay reachable without paging past the whole body.
+ */
+const RAW_MAX_HEIGHT_PX = 220;
+
+/**
+ * Ceiling on how many payload lines we turn into DOM nodes. Each line is its own
+ * element (that is what makes per-JSON-Pointer highlighting possible), so an
+ * unbounded body would mean tens of thousands of nodes. Past this we render the
+ * head of the payload and SAY the view is clipped — a display cap, unrelated to
+ * the write-side stored-copy bound reported by {@link describeStoredCopy}.
+ */
+const MAX_RENDERED_LINES = 2000;
+
+/** Escape an object key into an RFC 6901 pointer token (`~` → `~0`, `/` → `~1`). */
+function pointerToken(key: string): string {
+  return key.replaceAll('~', '~0').replaceAll('/', '~1');
+}
+
+/** One pretty-printed line plus the JSON Pointer of the value it opens/closes. */
+interface JsonLine {
+  text: string;
+  path: string;
+}
+
+/**
+ * Hand-rolled pretty printer (no JSON-viewer dependency). The joined `text` of
+ * the returned lines is byte-identical to `JSON.stringify(value, null, 2)` —
+ * verified by fuzzing 200k random values — but each line additionally carries
+ * the JSON Pointer of the value that begins (or ends) on it, which is what lets
+ * a schema finding's `instancePath` highlight and scroll to its own line.
+ *
+ * A container contributes its path to BOTH its opening and closing line;
+ * callers highlight a subtree by matching `path === pointer ||
+ * path.startsWith(pointer + '/')`, which selects a contiguous run.
+ */
+function renderJsonLines(value: unknown): JsonLine[] {
+  const lines: JsonLine[] = [];
+  const push = (depth: number, text: string, path: string): void => {
+    lines.push({ text: '  '.repeat(depth) + text, path });
+  };
+
+  const walk = (v: unknown, depth: number, path: string, prefix: string, suffix: string): void => {
+    if (Array.isArray(v)) {
+      if (v.length === 0) {
+        push(depth, `${prefix}[]${suffix}`, path);
+        return;
+      }
+      push(depth, `${prefix}[`, path);
+      v.forEach((item, i) => {
+        walk(item, depth + 1, `${path}/${i}`, '', i === v.length - 1 ? '' : ',');
+      });
+      push(depth, `]${suffix}`, path);
+      return;
+    }
+    if (v !== null && typeof v === 'object') {
+      const entries = Object.entries(v as Record<string, unknown>).filter(
+        ([, x]) => x !== undefined,
+      );
+      if (entries.length === 0) {
+        push(depth, `${prefix}{}${suffix}`, path);
+        return;
+      }
+      push(depth, `${prefix}{`, path);
+      entries.forEach(([k, val], i) => {
+        walk(
+          val,
+          depth + 1,
+          `${path}/${pointerToken(k)}`,
+          `${JSON.stringify(k)}: `,
+          i === entries.length - 1 ? '' : ',',
+        );
+      });
+      push(depth, `}${suffix}`, path);
+      return;
+    }
+    // `JSON.stringify` returns undefined for undefined/function/symbol; in an
+    // array position those serialize as null (object keys are filtered above).
+    push(depth, `${prefix}${JSON.stringify(v) ?? 'null'}${suffix}`, path);
+  };
+
+  walk(value, 0, '', '', '');
+  return lines;
+}
+
+const utf8 = new TextEncoder();
+
+/** UTF-8 byte length of a string — the unit `wire_bytes` is counted in. */
+function utf8ByteLength(s: string): number {
+  return utf8.encode(s).length;
+}
+
+/** Thousands-separated byte count. */
+function fmtBytes(n: number): string {
+  return n.toLocaleString();
+}
+
+/** A one-line honesty note about the stored copy; `warn` = it is not the whole body. */
+interface StoredCopyNote {
+  text: string;
+  warn: boolean;
+}
+
+/**
+ * Say honestly how the stored `raw_body` relates to what was actually on the
+ * wire (5bs.3 "disclose truncation").
+ *
+ * `raw_body` is a drill-down COPY, not the authoritative artifact (DESIGN §8):
+ * src/ingest/route.ts `storedRawBody()` stores the gzip-DECODED text when stage
+ * 5 decoded one, decodes as UTF-8 (invalid byte sequences become U+FFFD, which
+ * can make the copy LONGER), and strips NUL because Postgres `text` rejects
+ * 0x00. The wire facts are preserved elsewhere (`content_hash`, `wire_bytes`,
+ * `content_encoding`).
+ *
+ * We therefore do not assert a fixed byte cap — we compare the copy we were
+ * given against the recorded `wire_bytes` and report the difference:
+ *   - decoded payload      -> both sizes stated; no comparison is meaningful.
+ *   - copy shorter than wire -> shortened; explicitly NOT the complete payload.
+ *   - copy longer than wire  -> undecodable bytes were substituted.
+ *   - equal                 -> stated as complete, so a silent note is not
+ *                              mistaken for a missing check.
+ */
+function describeStoredCopy(tx: TransmissionView): StoredCopyNote | null {
+  if (tx.raw_body === null) return null;
+  const stored = utf8ByteLength(tx.raw_body);
+  const encoding = tx.content_encoding === null ? null : tx.content_encoding.trim();
+  const decoded = encoding !== null && encoding !== '' && encoding.toLowerCase() !== 'identity';
+  const wire = tx.wire_bytes === null ? null : Number(tx.wire_bytes);
+  const wireKnown = wire !== null && Number.isFinite(wire);
+
+  if (decoded) {
+    return {
+      text:
+        `Shown decoded: ${fmtBytes(stored)} bytes of payload from ` +
+        `${wireKnown ? fmtBytes(wire) : 'an unrecorded number of'} ${encoding} bytes on the wire. ` +
+        `NUL bytes are stripped when the copy is stored.`,
+      warn: false,
+    };
+  }
+  if (!wireKnown) {
+    return {
+      text:
+        `${fmtBytes(stored)} bytes stored. The wire size was not recorded, so this copy ` +
+        `cannot be confirmed complete.`,
+      warn: true,
+    };
+  }
+  if (stored < wire) {
+    return {
+      text:
+        `Truncated: ${fmtBytes(stored)} of ${fmtBytes(wire)} wire bytes are stored. The ` +
+        `drill-down copy is size-bounded and has NUL bytes stripped — this is NOT the ` +
+        `complete payload.`,
+      warn: true,
+    };
+  }
+  if (stored > wire) {
+    return {
+      text:
+        `Altered: ${fmtBytes(stored)} bytes stored from ${fmtBytes(wire)} wire bytes — the ` +
+        `body was not valid UTF-8, so undecodable bytes were substituted. This is not the ` +
+        `payload as sent.`,
+      warn: true,
+    };
+  }
+  return { text: `Complete: all ${fmtBytes(wire)} wire bytes are stored.`, warn: false };
+}
+
+/** A request to scroll the inspector to a pointer; `seq` re-fires a repeat click. */
+interface LocateRequest {
+  pointer: string;
+  seq: number;
+}
+
+/**
+ * Collapsible raw-payload inspector (5bs.3) — the bottom section of TxDetail.
+ *
+ * Shows the pretty-printed parsed `body` when there is one, and FALLS BACK to
+ * the stored `raw_body` text when parsing failed and `body` is null. That
+ * failure case is the whole reason the section exists (DESIGN §8, §10), so it
+ * must never render nothing while bytes are on hand.
+ */
+function RawPayload({
+  tx,
+  open,
+  onToggle,
+  locate,
+}: {
+  tx: TransmissionView;
+  open: boolean;
+  onToggle: () => void;
+  locate: LocateRequest | null;
+}): ReactElement {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const hasParsed = tx.body !== null && tx.body !== undefined;
+  const note = useMemo(() => describeStoredCopy(tx), [tx]);
+
+  // Only serialize while the section is open — a closed inspector costs nothing.
+  const all = useMemo(
+    () => (open && hasParsed ? renderJsonLines(tx.body) : null),
+    [open, hasParsed, tx.body],
+  );
+  const lines = all === null ? null : all.slice(0, MAX_RENDERED_LINES);
+  const clipped = all !== null && all.length > MAX_RENDERED_LINES;
+
+  // Pointers carried by this transmission's findings — schema errors use the
+  // Ajv instancePath; other findings fall back to the normalized pointer. '' is
+  // the root pointer and would select the whole document, so it is dropped.
+  const pointers = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of tx.findings) {
+      const p = f.instancePath ?? f.pointer;
+      if (p !== null && p !== '') set.add(p);
+    }
+    return set;
+  }, [tx.findings]);
+
+  const isFlagged = useCallback(
+    (path: string): boolean => {
+      for (const p of pointers) {
+        if (path === p || path.startsWith(`${p}/`)) return true;
+      }
+      return false;
+    },
+    [pointers],
+  );
+
+  // Scroll the region (not the page) to the requested pointer's first line.
+  // `seq` is in the deps so clicking the same pointer twice re-scrolls.
+  const seq = locate?.seq;
+  const pointer = locate?.pointer;
+  useEffect(() => {
+    if (!open || pointer === undefined) return;
+    const container = scrollRef.current;
+    if (container === null) return;
+    const target = container.querySelector<HTMLElement>(`[data-path="${CSS.escape(pointer)}"]`);
+    if (target === null) return;
+    container.scrollTop = Math.max(0, target.offsetTop - 24);
+  }, [open, pointer, seq]);
+
+  let summary: string;
+  if (hasParsed) summary = 'parsed JSON';
+  else if (tx.raw_body !== null) summary = 'raw bytes — payload did not parse';
+  else summary = 'not retained';
+
+  return (
+    <>
+      <div
+        onClick={onToggle}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          margin: '13px 0 0',
+          cursor: 'pointer',
+        }}
+      >
+        <Icon
+          name={open ? 'chevronDown' : 'chevron'}
+          size={11}
+          style={{ color: 'var(--text-faint)' }}
+        />
+        <span style={eyebrow}>Raw payload</span>
+        <span style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)' }}>· {summary}</span>
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 6 }}>
+          {note !== null && (
+            <div
+              style={{
+                fontSize: 11,
+                lineHeight: 1.45,
+                marginBottom: 5,
+                color: note.warn ? 'var(--mixed)' : 'var(--text-faint)',
+                fontWeight: note.warn ? 600 : 400,
+              }}
+            >
+              {note.warn ? (
+                <>
+                  <Icon name="alert" size={10} /> {note.text}
+                </>
+              ) : (
+                note.text
+              )}
+            </div>
+          )}
+          {lines !== null ? (
+            <div
+              ref={scrollRef}
+              style={{
+                position: 'relative',
+                maxHeight: RAW_MAX_HEIGHT_PX,
+                overflow: 'auto',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '7px 9px',
+              }}
+            >
+              {lines.map((line, i) => {
+                const flagged = isFlagged(line.path);
+                return (
+                  <div
+                    key={i}
+                    data-path={line.path}
+                    style={{
+                      ...mono,
+                      fontSize: 11,
+                      lineHeight: 1.45,
+                      whiteSpace: 'pre',
+                      background: flagged ? 'var(--mixed-bg)' : 'transparent',
+                      boxShadow: flagged ? 'inset 2px 0 0 var(--mixed)' : undefined,
+                      color: flagged ? 'var(--text)' : 'var(--text-muted)',
+                    }}
+                  >
+                    {line.text}
+                  </div>
+                );
+              })}
+              {clipped && (
+                <div
+                  style={{
+                    ...mono,
+                    fontSize: 10.5,
+                    marginTop: 4,
+                    color: 'var(--mixed)',
+                    fontWeight: 600,
+                  }}
+                >
+                  … view clipped at {MAX_RENDERED_LINES.toLocaleString()} of{' '}
+                  {all.length.toLocaleString()} lines
+                </div>
+              )}
+            </div>
+          ) : tx.raw_body !== null ? (
+            // Parse failed (or the body is otherwise absent) — show the stored
+            // bytes verbatim. This is the case the inspector exists for.
+            <pre
+              style={{
+                ...mono,
+                fontSize: 11,
+                lineHeight: 1.45,
+                margin: 0,
+                maxHeight: RAW_MAX_HEIGHT_PX,
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '7px 9px',
+                color: 'var(--text-muted)',
+              }}
+            >
+              {tx.raw_body}
+            </pre>
+          ) : (
+            <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
+              No payload was retained for this transmission.
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 function TxDetail({
   tx,
   onSelectReq,
@@ -383,12 +832,29 @@ function TxDetail({
   onSelectReq: (req: string) => void;
 }): ReactElement {
   const inventory = deriveInventory(tx.body);
-  const meta: Array<[string, string]> = [
-    ['transferId', tx.transfer_id ?? '—'],
-    ['schema', tx.schema_version ? `v${tx.schema_version}` : '—'],
-    ['bytes', tx.wire_bytes ?? '—'],
-    ['type', tx.content_type ?? '—'],
+  const meta: MetaCell[] = [
+    { key: 'transferId', value: tx.transfer_id ?? '—' },
+    { key: 'schema', value: tx.schema_version ? `v${tx.schema_version}` : '—' },
+    { key: 'bytes', value: tx.wire_bytes ?? '—' },
+    { key: 'type', value: tx.content_type ?? '—' },
+    compressionCell(tx.content_encoding),
   ];
+
+  // Raw-payload inspector state. Open/closed PERSISTS across row selections (so
+  // payloads can be compared row to row); the pending scroll target does not.
+  const [rawOpen, setRawOpen] = useState(false);
+  const [locate, setLocate] = useState<LocateRequest | null>(null);
+  const seqRef = useRef(0);
+  useEffect(() => {
+    setLocate(null);
+  }, [tx.id]);
+
+  // A finding's JSON Pointer opens the inspector and scrolls to that line.
+  const onLocate = useCallback((p: string) => {
+    seqRef.current += 1;
+    setRawOpen(true);
+    setLocate({ pointer: p, seq: seqRef.current });
+  }, []);
 
   return (
     <div style={{ padding: '14px 16px 18px' }}>
@@ -415,10 +881,27 @@ function TxDetail({
           marginBottom: 13,
         }}
       >
-        {meta.map(([k, v]) => (
-          <div key={k} style={{ minWidth: 0 }}>
-            <div style={eyebrow}>{k}</div>
-            <div style={{ ...mono, fontSize: 11.5, wordBreak: 'break-all' }}>{v}</div>
+        {meta.map((cell) => (
+          <div key={cell.key} style={{ minWidth: 0 }}>
+            <div style={eyebrow}>{cell.key}</div>
+            <div
+              title={cell.warn ? 'Unexpected Content-Encoding — see the §1.6 finding' : undefined}
+              style={{
+                ...mono,
+                fontSize: 11.5,
+                wordBreak: 'break-all',
+                color: cell.warn ? 'var(--mixed)' : undefined,
+                fontWeight: cell.warn ? 700 : undefined,
+              }}
+            >
+              {cell.warn ? (
+                <>
+                  <Icon name="alert" size={10} /> {cell.value}
+                </>
+              ) : (
+                cell.value
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -431,7 +914,7 @@ function TxDetail({
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {tx.findings.map((f, i) => (
-            <FindingItem key={i} finding={f} onSelectReq={onSelectReq} />
+            <FindingItem key={i} finding={f} onSelectReq={onSelectReq} onLocate={onLocate} />
           ))}
         </div>
       )}
@@ -458,6 +941,8 @@ function TxDetail({
           </div>
         </>
       )}
+
+      <RawPayload tx={tx} open={rawOpen} onToggle={() => setRawOpen((o) => !o)} locate={locate} />
     </div>
   );
 }
