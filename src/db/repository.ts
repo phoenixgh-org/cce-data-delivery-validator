@@ -22,8 +22,24 @@ export type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
  */
 export const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** The §1.3 opt-in auth method (DESIGN.md §8). */
-export type AuthMethod = 'header' | 'basic';
+/**
+ * The §1.3 opt-in auth method (DESIGN.md §8). `bearer` (RFC 6750) is the third
+ * method DS01.3 clause 5.1.5 adds; the `session.auth_method` CHECK constraint was
+ * widened for it in db/initdb/50-session-auth-bearer.sql, so keep the two in step.
+ */
+export type AuthMethod = 'header' | 'basic' | 'bearer';
+
+/**
+ * The allowed {@link AuthMethod} values as data, for validating a client-supplied
+ * method and for reporting the allowed set back. Kept beside the type so the two
+ * cannot drift; mirrors the CHECK constraint on `session.auth_method`.
+ */
+export const AUTH_METHODS: readonly AuthMethod[] = ['header', 'basic', 'bearer'];
+
+/** True when `value` is one of the {@link AUTH_METHODS}. */
+export function isAuthMethod(value: unknown): value is AuthMethod {
+  return typeof value === 'string' && (AUTH_METHODS as readonly string[]).includes(value);
+}
 
 /** A `session` row (DESIGN.md §8). */
 export interface SessionRow {

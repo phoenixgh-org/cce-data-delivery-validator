@@ -38,12 +38,14 @@ import type { SignatureTransmission } from './signatures.js';
 import { deriveSourceView, sourceCounts } from './source.js';
 import { generateCredential } from '../auth/credential.js';
 import {
+  AUTH_METHODS,
   RETENTION_MS,
   createSession,
   deleteSessionData,
   disableAuth,
   enableAuth,
   getSession,
+  isAuthMethod,
   listFindingsForSession,
   listFindingsInWindow,
   listTransmissions,
@@ -213,8 +215,30 @@ export function registerSessionsApi(app: FastifyInstance): void {
   // credential (a fresh secret is minted each time).
   //
   // The app keeps raw bytes for ingest (§1.4) and registers no JSON parser, so the
-  // body arrives as a Buffer; parse it here. An absent/empty body defaults to the
-  // `header` method (zero-config opt-in).
+  // body arrives as a Buffer; parse it here.
+  //
+  // REQUEST BODY (all fields optional; an absent/empty body is valid):
+  //
+  //   {
+  //     "method":     "header" | "basic" | "bearer",   // default "header"
+  //     "headerName": string,   // `header` method only — default X-CCE-Token
+  //     "username":   string    // `basic`  method only — default cce
+  //   }
+  //
+  // `method` DEFAULTS to `header` when omitted (back-compat: the pre-5bs.4 caller
+  // sent `{}`), but an unrecognised value is REJECTED with 400 `invalid_method`
+  // rather than silently falling back — a supplier who asks for a method we do not
+  // implement must not be told auth is configured the way they asked.
+  //
+  // 201 RESPONSE, by method (the show-once plaintext, §12):
+  //
+  //   header → { uuid, auth_enabled, auth_method:'header', auth_header_name, token }
+  //   basic  → { uuid, auth_enabled, auth_method:'basic',  username, password }
+  //   bearer → { uuid, auth_enabled, auth_method:'bearer', auth_header_name, token }
+  //
+  // For `bearer` (RFC 6750) `auth_header_name` is always the literal
+  // `Authorization` and the credential is sent as `Authorization: Bearer <token>`;
+  // nothing about it is configurable, so `headerName`/`username` are ignored.
   app.post(
     '/api/sessions/:uuid/auth',
     async (request: FastifyRequest<{ Params: { uuid: string } }>, reply: FastifyReply) => {
@@ -230,7 +254,14 @@ export function registerSessionsApi(app: FastifyInstance): void {
         }
       }
 
-      const method: AuthMethod = body.method === 'basic' ? 'basic' : 'header';
+      // Omitted → `header` (back-compat default); present-but-unknown → 400.
+      let method: AuthMethod = 'header';
+      if (body.method !== undefined) {
+        if (!isAuthMethod(body.method)) {
+          return reply.code(400).send({ error: 'invalid_method', allowed: AUTH_METHODS });
+        }
+        method = body.method;
+      }
       const headerName = typeof body.headerName === 'string' ? body.headerName : undefined;
       const username = typeof body.username === 'string' ? body.username : undefined;
 
@@ -245,9 +276,9 @@ export function registerSessionsApi(app: FastifyInstance): void {
       }
 
       // Echo the plaintext credential EXACTLY ONCE (§12) plus the config it
-      // implies. The salted hash is never returned. `header` → token + header
-      // name; `basic` → username + password.
-      if (method === 'header') {
+      // implies. The salted hash is never returned. `header`/`bearer` → token +
+      // the header it rides in; `basic` → username + password.
+      if (method === 'header' || method === 'bearer') {
         return reply.code(201).send({
           uuid: view.uuid,
           auth_enabled: view.auth_enabled,

@@ -18,6 +18,16 @@
  *   - `basic`  method: `auth_header_name` = the Basic username; `auth_secret_hash`
  *     = KDF(generated password). Verify decodes `Authorization: Basic
  *     base64(user:pass)`, requires `user === auth_header_name` AND KDF(pass) match.
+ *   - `bearer` method (DS01.3 clause 5.1.5 / RFC 6750, 5bs.4): `auth_header_name`
+ *     = the literal `Authorization` (the header is fixed by the scheme — there is
+ *     nothing to configure, but the column stays populated so the ingest stage can
+ *     name the expected header uniformly); `auth_secret_hash` = KDF(generated
+ *     token). Verify requires `Authorization: Bearer <token>` and KDF(token) match.
+ *
+ * `basic` and `bearer` SHARE the `Authorization` header, so both verifies dispatch
+ * on the SCHEME token — matched case-insensitively per RFC 9110 §11.1 — and never
+ * on mere header presence. A Basic credential presented to a bearer-configured
+ * session (or vice versa) fails as surely as a wrong secret.
  *
  * Stored form of `auth_secret_hash` is `salt:hash` (both hex). The plaintext token
  * or password is returned by {@link generateCredential} exactly once (§12) and is
@@ -38,6 +48,12 @@ const DEFAULT_HEADER_NAME = 'X-CCE-Token';
 const SECRET_LEN = 24;
 /** Generated Basic-auth username when the caller does not supply one. */
 const DEFAULT_BASIC_USER = 'cce';
+/**
+ * The header a `bearer` credential always rides in (RFC 6750 §2.1). Unlike the
+ * `header` method's configurable name, this one is fixed by the scheme; it is
+ * stored in `auth_header_name` so every method populates the column.
+ */
+const BEARER_HEADER_NAME = 'Authorization';
 
 /** Options for {@link generateCredential}, by method. */
 export interface GenerateOptions {
@@ -66,7 +82,10 @@ export interface StoredAuth {
  */
 export interface GeneratedCredential {
   store: StoredAuth;
-  /** Show-once plaintext. For `header`, the token; for `basic`, the password. */
+  /**
+   * Show-once plaintext. For `header` and `bearer`, the token; for `basic`, the
+   * password.
+   */
   plaintext: string;
   /** For `basic`, the username half (it is not secret — also stored as the header name). */
   username?: string;
@@ -83,8 +102,9 @@ export interface StoredSessionAuth {
 /**
  * The request-side material a verify checks. `headerValue` is the value of the
  * configured header (`header` method) — typically read case-insensitively by the
- * caller; `authorization` is the raw `Authorization` request header (`basic`
- * method). Either may be undefined when the client sent nothing.
+ * caller; `authorization` is the raw `Authorization` request header (`basic` and
+ * `bearer` methods, told apart by their scheme token). Either may be undefined
+ * when the client sent nothing.
  */
 export interface PresentedCredential {
   headerValue?: string;
@@ -148,6 +168,19 @@ export function generateCredential(
     };
   }
 
+  if (method === 'bearer') {
+    // bearer: nothing is configurable — the token rides in `Authorization: Bearer
+    // <token>` (RFC 6750 §2.1), so auth_header_name records that fixed header.
+    return {
+      store: {
+        auth_method: 'bearer',
+        auth_header_name: BEARER_HEADER_NAME,
+        auth_secret_hash: hashSecret(plaintext),
+      },
+      plaintext,
+    };
+  }
+
   // basic: the username is stored in auth_header_name (it is not secret), the
   // password is the show-once plaintext whose hash we persist.
   const username = opts.username?.trim() || DEFAULT_BASIC_USER;
@@ -162,20 +195,61 @@ export function generateCredential(
   };
 }
 
+/**
+ * Split an `Authorization` header into its scheme token and the remainder
+ * (RFC 9110 §11.6.2 `credentials = auth-scheme [ 1*SP token68 … ]`). The scheme
+ * is returned LOWERCASED — it is matched case-insensitively per RFC 9110 §11.1,
+ * so `Bearer`, `bearer` and `BEARER` are the same scheme. Returns null for an
+ * absent header or one with no scheme + parameter pair.
+ */
+function parseAuthorization(
+  authorization: string | undefined,
+): { scheme: string; params: string } | null {
+  if (typeof authorization !== 'string') return null;
+  // tchar set for the scheme token, then at least one space, then the rest
+  // (trailing whitespace trimmed).
+  const m = /^[ \t]*([A-Za-z0-9!#$%&'*+\-.^_`|~]+)[ \t]+(.*?)[ \t]*$/.exec(authorization);
+  if (!m || !m[2]) return null;
+  return { scheme: m[1]!.toLowerCase(), params: m[2] };
+}
+
+/**
+ * The lowercased scheme token of an `Authorization` header (`basic`, `bearer`, …),
+ * or null when absent/unparseable. Exported so the ingest stage can EXPLAIN a
+ * scheme mismatch without re-parsing the header itself — `basic` and `bearer`
+ * share the header, so "something was presented" is not the same question as
+ * "the right scheme was presented".
+ */
+export function authorizationScheme(authorization: string | undefined): string | null {
+  return parseAuthorization(authorization)?.scheme ?? null;
+}
+
 /** Decode an `Authorization: Basic base64(user:pass)` header → {user, pass} or null. */
 function decodeBasic(authorization: string | undefined): { user: string; pass: string } | null {
-  if (!authorization) return null;
-  const m = /^\s*Basic\s+(.+)\s*$/i.exec(authorization);
-  if (!m || !m[1]) return null;
+  const parsed = parseAuthorization(authorization);
+  if (!parsed || parsed.scheme !== 'basic') return null;
   let decoded: string;
   try {
-    decoded = Buffer.from(m[1], 'base64').toString('utf8');
+    decoded = Buffer.from(parsed.params, 'base64').toString('utf8');
   } catch {
     return null;
   }
   const sep = decoded.indexOf(':');
   if (sep < 0) return null;
   return { user: decoded.slice(0, sep), pass: decoded.slice(sep + 1) };
+}
+
+/**
+ * Extract the token from an `Authorization: Bearer <token>` header (RFC 6750 §2.1),
+ * or null when the header is absent, carries another scheme, or is malformed. The
+ * token68 grammar admits no internal whitespace, so `Bearer a b` is rejected rather
+ * than silently taken as `a b`.
+ */
+function decodeBearer(authorization: string | undefined): string | null {
+  const parsed = parseAuthorization(authorization);
+  if (!parsed || parsed.scheme !== 'bearer') return null;
+  if (/\s/.test(parsed.params)) return null;
+  return parsed.params;
 }
 
 /**
@@ -199,6 +273,14 @@ export function verifyCredential(
     const value = presented.headerValue;
     if (typeof value !== 'string' || value.length === 0) return false;
     return verifySecret(value, session.auth_secret_hash);
+  }
+
+  if (session.auth_method === 'bearer') {
+    // Dispatch on the SCHEME, not on header presence: a `Basic …` value here is a
+    // miss, not a candidate (decodeBearer returns null for any other scheme).
+    const token = decodeBearer(presented.authorization);
+    if (token === null || token.length === 0) return false;
+    return verifySecret(token, session.auth_secret_hash);
   }
 
   if (session.auth_method === 'basic') {
