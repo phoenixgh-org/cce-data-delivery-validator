@@ -183,7 +183,9 @@ Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
 - **Passive validation only.** We grade what arrives; we do not probe.
 - **No active conformance harness** — nothing deliberately returns 429/503/5xx to
   measure a supplier's retry count, backoff shape, or `Retry-After` handling. That
-  is why the whole of §4 sits in the 🔌 column.
+  is why §4.1–4.5 sit in the 🔌 column (§4.4 is dual-classed 🔌/📝). §4.6–4.9 are a
+  different matter: they are supplier-internal and stay 📝 — no harness would make
+  them provable from the receiving side.
 - **No guided retransmission scenarios** for §5 (6-month retransmit, time-range
   filters, all-vs-never-sent).
 - **No real production data**, ever, in this mode. Synthetic test payloads only.

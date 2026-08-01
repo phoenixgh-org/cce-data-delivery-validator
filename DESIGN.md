@@ -143,7 +143,8 @@ Stage 8 never halts: every §1.8/§2.1/§3.x concern is a *teaching* finding, no
 half — the metadata block and the DS01 object shapes — is already implied by a passing Ajv run,
 so grading it again at stage 7 would double-count the same evidence. What §3.1 owns instead is
 the half a schema cannot express: `meta.customDataSchema` is required **only when** the payload
-carries manufacturer-specific (clause 4.5 `z`-prefixed) data objects. That conditional runs as a
+carries manufacturer-specific data objects — clause 4.5 `z`-prefixed keys, plus any key that is
+custom by elimination (see §7 row 3.1). That conditional runs as a
 **schema-independent** stage-8 check, because `meta.customDataSchema` does not exist in 0.8.1 at
 all and 0.8.1's `additionalProperties: true` lets custom objects through Ajv unexamined. See §7
 row 3.1 and §9.
@@ -177,7 +178,7 @@ The product's distinguishing honesty is classifying every requirement, not just 
 | 2.1 | Serial delivery by default | 🟡 | Observe concurrent in-flight requests per session |
 | 2.2 | Deliver within minutes of receipt | 📝 | Remote-system receipt time is unknown to us |
 | 2.3 | Alarm within 15 min + include data since last tx | 📝 | Alarm origin time unknown to us |
-| 3.1 | Declare custom data objects via `meta.customDataSchema` | ✅ | Stage-8 semantic check, **not** the schema: fail when `z`-prefixed custom objects are present without the declaration, pass otherwise. We record the declaration only — we never dereference it (§9). Non-conformant object naming is a separate info finding. The structural half of §3.1 is covered by §3.2's Ajv run |
+| 3.1 | Declare custom data objects via `meta.customDataSchema` | ✅ | Stage-8 semantic check, **not** the schema: fail when manufacturer-specific objects are present without the declaration — clause 4.5 `z`-prefixed keys **plus** keys that are custom by elimination (neither DS01-shaped nor a mis-cased DS01 code, e.g. `customTemp`, `zTPCM`); pass when they are declared, or when none are present. Unrecognized DS01-shaped and mis-cased codes never drive the grade. We record the declaration only — we never dereference it (§9). The custom-by-elimination keys additionally raise a separate info finding for non-conformant naming. The structural half of §3.1 is covered by §3.2's Ajv run |
 | 3.2 | Validates against the schema | ✅ | Ajv (the core check) |
 | 3.3 | Transmit all collected objects | 📝 | We don't know what they collect; we can *inventory* what's present |
 | 3.4 | Preserve logger time resolution | 🟡 | `ABST` interval regularity heuristic |
@@ -243,9 +244,15 @@ result whole. The only ceilings that exist today are upstream of the insert:
   oversized-but-bounded POST still reaches the size stage and earns its §1.4 teaching finding and
   a persisted row. Beyond 2 MiB, Fastify's generic `413` fires and nothing is recorded.
 - **gzip `maxOutputLength` — 1 MiB.** The zip-bomb guard: a gzip body whose output would exceed
-  it throws and is rejected `400` as undecodable, so it never reaches the insert either.
+  it throws, and stage 5 halts `400` as undecodable. That halt is *downstream* of the persistence
+  boundary — a request that reached the body stages persists a row whether or not a body stage
+  short-circuits — so a row **is** still written, and its `raw_body` is the still-**compressed**
+  wire bytes read as UTF-8 (invalid sequences become U+FFFD), not a decoded payload. This ceiling
+  therefore bounds only the decoded path.
 
-So a stored `raw_body` is bounded in practice, but by the transport, not by the write. Whether to
+So a stored `raw_body` is bounded in practice, but by the transport rather than by the write —
+and loosely: U+FFFD substitution emits three bytes of text per undecodable wire byte, so the
+2 MiB `bodyLimit` translates to a several-MiB worst case in the column. Whether to
 add an explicit write-side cap (and what bound) is an **open decision** — see beads issue
 `cce-data-delivery-validator-1z9`. Until it is settled, do not describe `raw_body` as
 "size-bounded"; the dashboard's truncation disclosure compares against `wire_bytes` for exactly
