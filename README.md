@@ -157,9 +157,14 @@ Useful things to know while testing:
 
 ## Self-hosting
 
-`docker compose up -d` brings up Postgres and the app for local use. For a real
-deployment, TLS is terminated at a Caddy reverse proxy brought up behind an optional
-compose profile:
+`docker compose up -d` brings up Postgres and the app for local use — on defaults,
+with no configuration. To change any of it, copy [`.env.example`](.env.example) to
+`.env`: it annotates the whole variable surface and marks what **must** change
+before a public deployment, starting with the `cce_validator` database credentials,
+which are a published default and not a secret.
+
+For a real deployment, TLS is terminated at a Caddy reverse proxy brought up behind
+an optional compose profile:
 
 ```bash
 docker compose --profile edge up -d

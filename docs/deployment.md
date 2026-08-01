@@ -175,6 +175,13 @@ Compose-level variables (read by `docker-compose.yml`, not by the app):
 `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`,
 `APP_PORT`, plus `TRUSTED_PROXY` passed through to the app.
 
+[`.env.example`](../.env.example) is the annotated starting point for both
+blocks — copy it to `.env` and edit. Two things it makes explicit and this table
+does not: `.env` is read by **compose only** (the app has no dotenv dependency,
+so running it outside compose means exporting the app-level variables
+yourself), and the `cce_validator` database/user/password trio is a published
+default that **must** be changed before any public deployment.
+
 ---
 
 ## 5. Bring-up

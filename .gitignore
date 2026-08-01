@@ -3,6 +3,11 @@
 node_modules/
 dist/
 
+# Local environment (copied from .env.example, may hold real credentials)
+.env
+.env.*
+!.env.example
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
