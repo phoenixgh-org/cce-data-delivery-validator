@@ -172,19 +172,41 @@ export function scanDataObjects(parsedBody: unknown): ScanResult {
 }
 
 /**
+ * Whether one `customDataSchema` value carries an actual declaration, matching
+ * the shapes 0.8.2's `$defs/custom-data-schema-item` allows:
+ *
+ *   - BY REFERENCE — a string, `minLength: 1`. Blank/whitespace names no schema.
+ *   - INLINE — an object with `required: ["$id"]`, itself `minLength: 1`. We
+ *     accept a non-empty inline schema whose `$id` is missing as well: 0.8.1 is
+ *     the only registered version and never carried this field at all, so an
+ *     inline schema lacking `$id` has still made a declaration, and §3.1 grades
+ *     whether one was made — not whether it is well-formed. But an `$id` that IS
+ *     present and empty/non-string names nothing, and `{}` is not a schema.
+ *
+ * Everything else — `null`, numbers, booleans, `{}`, `''` — is absent.
+ */
+function isSchemaDeclaration(value: unknown): boolean {
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (!isPlainObject(value)) return false;
+  if ('$id' in value) return typeof value.$id === 'string' && value.$id.trim().length > 0;
+  return Object.keys(value).length > 0;
+}
+
+/**
  * Whether `meta.customDataSchema` is DECLARED. Present means: the key exists with
- * a value that actually carries a declaration — a non-empty string, an object, or
- * a non-empty array. `null`, `''` and `[]` are treated as absent: they name no
- * schema, so they cannot discharge the obligation.
+ * a value that actually carries a declaration — a non-empty string, an inline
+ * schema object (see {@link isSchemaDeclaration}), or an array with at least one
+ * entry that is itself such a declaration. `null`, `''`, `[]`, `{}`, `['']` and
+ * `[{}]` are all treated as absent: they name no schema, so they cannot
+ * discharge the obligation, and letting them through would turn an empty
+ * declaration into a §3.1 PASS.
  */
 export function hasCustomDataSchema(parsedBody: unknown): boolean {
   const meta = (parsedBody as { meta?: unknown } | null | undefined)?.meta;
   if (!isPlainObject(meta)) return false;
   const value = meta.customDataSchema;
-  if (value === undefined || value === null) return false;
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  return isPlainObject(value);
+  if (Array.isArray(value)) return value.some(isSchemaDeclaration);
+  return isSchemaDeclaration(value);
 }
 
 /** Sorted, capped, comma-joined key list for a finding detail. */
@@ -236,7 +258,8 @@ export const customDataSchemaCheck: SemanticCheck = (ctx: PipelineContext): Find
       code: 'tx.missing_custom_schema',
       detail:
         `manufacturer-specific data objects (${listKeys(custom)}) are present but ` +
-        'meta.customDataSchema is missing: a payload carrying custom objects must ' +
+        'meta.customDataSchema is missing or names no schema: a payload carrying ' +
+        'custom objects must ' +
         'describe them with a schema, by reference (a versioned, immutable URL) or ' +
         `inline (a schema bearing a versioned $id); ${DIVISION_OF_LABOUR}`,
     });

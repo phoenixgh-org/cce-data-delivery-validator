@@ -326,12 +326,45 @@ test('hasCustomDataSchema: string / object / array forms vs the empty forms', ()
   assert.equal(hasCustomDataSchema({ meta: { customDataSchema: 'https://x/y.json' } }), true);
   assert.equal(hasCustomDataSchema({ meta: { customDataSchema: { $id: 'urn:x' } } }), true);
   assert.equal(hasCustomDataSchema({ meta: { customDataSchema: ['https://x/y.json'] } }), true);
+  assert.equal(
+    hasCustomDataSchema({ meta: { customDataSchema: { $defs: { ztpcm: {} } } } }),
+    true,
+    'an inline schema without $id still declares something (0.8.1 never carried the field)',
+  );
+  assert.equal(
+    hasCustomDataSchema({ meta: { customDataSchema: [{}, { $id: 'urn:x' }] } }),
+    true,
+    'one good array entry is enough',
+  );
   assert.equal(hasCustomDataSchema({ meta: { customDataSchema: '' } }), false);
   assert.equal(hasCustomDataSchema({ meta: { customDataSchema: [] } }), false);
   assert.equal(hasCustomDataSchema({ meta: { customDataSchema: null } }), false);
   assert.equal(hasCustomDataSchema({ meta: {} }), false);
   assert.equal(hasCustomDataSchema({}), false);
   assert.equal(hasCustomDataSchema(null), false);
+});
+
+test('hasCustomDataSchema: values that name no schema are ABSENT, not present (squ)', () => {
+  // Each of these once returned true — {} because isPlainObject({}) is, and the
+  // array forms because only length was checked, never the items. A payload
+  // carrying undeclared custom objects then got a §3.1 PASS: a false pass in a
+  // conformance grader.
+  for (const value of [{}, [''], ['   '], [{}], [null], { $id: '' }, [{ $id: '' }], 0, false]) {
+    assert.equal(
+      hasCustomDataSchema({ meta: { customDataSchema: value } }),
+      false,
+      `${JSON.stringify(value)} names no schema`,
+    );
+  }
+});
+
+test('3.1: custom objects present with an empty declaration ({}) still FAILs (squ)', async () => {
+  const payload = rtmPayload({ customDataSchema: {} }, {}, { ztpcm: 2.7 });
+  const findings = await customDataSchemaCheck(makeCtx(payload), deps);
+  assert.equal(grade(findings).severity, 'fail');
+  const f = findings.find((x) => x.severity === 'fail')!;
+  assert.equal(f.code, 'tx.missing_custom_schema');
+  assert.match(f.detail ?? '', /names no schema/);
 });
 
 // ── orchestration ────────────────────────────────────────────────────────────
