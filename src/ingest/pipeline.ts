@@ -107,7 +107,10 @@ export function record(ctx: PipelineContext, finding: Finding): StageOutcome {
   return CONTINUE;
 }
 
-/** Default success status when no stage halts (DESIGN.md §6: 200/202). */
+/**
+ * Default success status when no stage halts. DESIGN.md §6 makes `200` the
+ * SINGLE success status — `202` is not used.
+ */
 export const DEFAULT_SUCCESS_STATUS = 200;
 
 /** The outcome of a full pipeline run. */

@@ -476,7 +476,7 @@ export async function insertTransmission(
 
 /**
  * Stamp `session.last_post_at = now()` for a successful ingest (DESIGN.md §11:
- * the 30-day inactivity sweep keys off the most recent POST). Returns the new
+ * the 7-day inactivity sweep keys off the most recent POST). Returns the new
  * timestamp, or null if the uuid does not exist.
  */
 export async function bumpLastPostAt(
