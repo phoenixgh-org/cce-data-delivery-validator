@@ -45,6 +45,12 @@ services:
       # this must name its address/subnet or X-Forwarded-Proto is ignored — set
       # TRUSTED_PROXY in .env. See docs/deployment.md.
       TRUSTED_PROXY: ${TRUSTED_PROXY:-127.0.0.1}
+      # Cadence of the §11 retention sweep (src/index.ts), default 1 h. Passed
+      # through from .env like TRUSTED_PROXY above — without this line the app
+      # never sees it, since compose reads .env only for ${...} interpolation
+      # and the app has no dotenv (bug 4w4). Cadence only: it changes how
+      # promptly expired sessions are reaped, never the 7-day window itself.
+      RETENTION_SWEEP_MS: ${RETENTION_SWEEP_MS:-3600000}
     ports:
       # Dev convenience. In production the app port must NOT be publicly
       # reachable (DESIGN §4.1): bind it to loopback ('127.0.0.1:3000:3000') or
