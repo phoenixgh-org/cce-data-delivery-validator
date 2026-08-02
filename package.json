@@ -1,8 +1,17 @@
 {
   "name": "cce-data-delivery-validator",
-  "version": "0.0.0",
-  "description": "CCE data delivery validator",
+  "version": "0.1.0",
+  "description": "Receiving-side conformance validator for WHO PQS E006/DS01 CCE data delivery — plays the employer system and gives suppliers an independent read on their conformance",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phoenixgh-org/cce-data-delivery-validator.git"
+  },
+  "homepage": "https://github.com/phoenixgh-org/cce-data-delivery-validator#readme",
+  "bugs": {
+    "url": "https://github.com/phoenixgh-org/cce-data-delivery-validator/issues"
+  },
   "private": true,
   "engines": {
     "node": ">=20"

@@ -80,8 +80,9 @@ it mid-session.
 - Use `bd remember` / `bd memories` for durable knowledge, not MEMORY.md files.
 - `bd ready` to find work, `bd update <id> --claim`, `bd close <id>`.
 - Land the plane: file follow-ups, run quality gates, and commit before
-  considering work done. This repo has **no remote yet**, so there is nothing to
-  push to.
+  considering work done. The remote is
+  `git@github.com:phoenixgh-org/cce-data-delivery-validator.git` (`origin`);
+  push only when asked.
 
 ## Build & test
 
