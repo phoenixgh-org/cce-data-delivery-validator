@@ -69,3 +69,54 @@ test('app does not blanket-trust proxy headers (trustProxy is scoped)', async ()
     await app.close();
   }
 });
+
+test('an ignored X-Forwarded-Proto warns once, naming TRUSTED_PROXY (c64)', async () => {
+  const app = buildApp({ logger: false, trustedProxy: '10.0.0.1' });
+  const warnings: string[] = [];
+  app.log.warn = ((msg: unknown) => {
+    if (typeof msg === 'string') warnings.push(msg);
+  }) as typeof app.log.warn;
+  app.get('/proto', async () => ({ ok: true }));
+  await app.ready();
+  try {
+    const untrusted = {
+      method: 'GET' as const,
+      url: '/proto',
+      headers: { 'x-forwarded-proto': 'https' },
+      remoteAddress: '203.0.113.9', // outside trustedProxy
+    };
+    await app.inject(untrusted);
+    await app.inject(untrusted);
+    assert.equal(warnings.length, 1, 'the warning is logged once, not once per request');
+    assert.match(warnings[0]!, /TRUSTED_PROXY \(10\.0\.0\.1\)/);
+    assert.match(warnings[0]!, /203\.0\.113\.9/);
+
+    // A request with no forwarded scheme adds nothing (and the flag stays set).
+    await app.inject({ method: 'GET', url: '/proto' });
+    assert.equal(warnings.length, 1);
+  } finally {
+    await app.close();
+  }
+});
+
+test('an X-Forwarded-Proto from the trusted proxy does not warn (c64)', async () => {
+  const app = buildApp({ logger: false, trustedProxy: '10.0.0.1' });
+  const warnings: string[] = [];
+  app.log.warn = ((msg: unknown) => {
+    if (typeof msg === 'string') warnings.push(msg);
+  }) as typeof app.log.warn;
+  app.get('/proto', async (request) => ({ protocol: request.protocol }));
+  await app.ready();
+  try {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/proto',
+      headers: { 'x-forwarded-proto': 'https' },
+      remoteAddress: '10.0.0.1', // IS the trusted proxy
+    });
+    assert.equal((res.json() as { protocol: string }).protocol, 'https');
+    assert.deepEqual(warnings, [], 'a trusted proxy is not a misconfiguration');
+  } finally {
+    await app.close();
+  }
+});

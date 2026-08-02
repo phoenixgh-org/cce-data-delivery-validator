@@ -15,7 +15,9 @@
  *
  *   - **Scoped trustProxy.** `X-Forwarded-Proto` (how §1.1 HTTPS is known) is
  *     only trusted from Caddy's address — never blanket `true`, which would let
- *     a client spoof the scheme. The trusted proxy address is env-configurable.
+ *     a client spoof the scheme. The trusted proxy address is env-configurable,
+ *     and a scope that does not cover the real proxy is warned about once per
+ *     instance rather than silently dropping the header (c64).
  */
 
 import { existsSync } from 'node:fs';
@@ -136,6 +138,41 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     if (Buffer.isBuffer(request.body)) {
       request.rawBody = request.body;
     }
+  });
+
+  // Make the TRUSTED_PROXY misconfiguration fail LOUD (c64).
+  //
+  // The out-of-the-box compose default (`TRUSTED_PROXY=127.0.0.1`) is wrong the
+  // moment the proxy is a container on the bridge network: Fastify then ignores
+  // its `X-Forwarded-Proto` and every request reads as plain `http`, with no
+  // error anywhere. docker-compose.yml and docs/deployment.md §2 both say so —
+  // but only to a reader who reads them, and there is no assertable surface for
+  // that contract term (deployment.md §6). So detect it at request time: if a
+  // request carries `X-Forwarded-Proto` and `request.protocol` still disagrees
+  // with it, Fastify rejected the peer address and the trust scope does not
+  // match the real proxy.
+  //
+  // OBSERVATIONAL ONLY. Nothing about grading changes — DESIGN §7 row 1.1 keeps
+  // HTTPS as 🔒 enforced-by-us and src/ingest/stages/method.ts stays deliberately
+  // lenient on scheme. Warned once per instance so a misconfigured edge logs a
+  // single line rather than one per request.
+  let forwardedProtoWarned = false;
+  app.addHook('onRequest', async (request) => {
+    if (forwardedProtoWarned) return;
+    const header = request.headers['x-forwarded-proto'];
+    if (typeof header !== 'string' || header.trim() === '') return;
+    // Fastify honours the LAST comma-separated entry (lib/request.js
+    // `getLastEntryInMultiHeaderValue`) and does not case-fold it, so compare
+    // like for like or a proxy sending `HTTPS` would read as a mismatch.
+    const claimed = header.slice(header.lastIndexOf(',') + 1).trim();
+    if (claimed.toLowerCase() === (request.protocol ?? '').toLowerCase()) return;
+    forwardedProtoWarned = true;
+    app.log.warn(
+      `X-Forwarded-Proto: ${claimed} arrived from ${request.ip}, which TRUSTED_PROXY ` +
+        `(${trustedProxy}) does not cover — the header is being IGNORED and requests are ` +
+        `treated as ${request.protocol}. If this address is your reverse proxy, set ` +
+        `TRUSTED_PROXY to it (or its subnet); see docs/deployment.md §3. Logged once.`,
+    );
   });
 
   app.get('/health', async () => {
