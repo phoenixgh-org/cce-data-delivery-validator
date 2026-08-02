@@ -3,6 +3,10 @@
 node_modules/
 dist/
 
+# TAP transcript written by the CI no-skip guard (.github/workflows/ci.yml);
+# rehearsing that step locally leaves one behind.
+test-output.tap
+
 # Local environment (copied from .env.example, may hold real credentials)
 .env
 .env.*

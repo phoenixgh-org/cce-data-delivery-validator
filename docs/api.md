@@ -154,8 +154,8 @@ Notes on the table:
 - **Content-Type never rejects.** `DESIGN.md` §6 marks `415` optional; the
   implementation does not use it — a bad `Content-Type` is a §1.2 finding and the
   pipeline continues.
-- **A `200` is the only success code.** `DESIGN.md` §6 says "`200`/`202`"; the
-  implementation has a single success status and never returns `202`.
+- **A `200` is the only success code.** There is a single success status and `202`
+  is never returned (`DESIGN.md` §6).
 - The framework `413` body is
   `{"statusCode":413,"code":"FST_ERR_CTP_BODY_TOO_LARGE","error":"Payload Too Large","message":"Request body is too large"}`
   — the one ingest response that is not the shape below. An unexpected server fault

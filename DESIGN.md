@@ -127,17 +127,25 @@ or **short-circuits** with a response code. We follow the Country Guidance (Atta
 
 | Stage | Check | On failure |
 |-------|-------|-----------|
-| 0. Session | UUID exists & not expired | `404` |
+| — Framework | Request body ≤ 2 MiB (Fastify `bodyLimit`; see §8) | `413` **before any stage runs** — no row, and a framework error body rather than the ingest response shape |
 | 1. Method/TLS | POST over HTTPS (§1.1) | TLS enforced at the edge; non-POST → `405` |
+| 0. Session | UUID exists & not expired | `404` |
 | 2. Auth (opt-in) | If enabled, the configured credential — token header, Basic, or Bearer — is present & correct (§1.3) | `401` |
 | 3. Size | Wire body ≤ 1MB **after** content-encoding (§1.4) | `413` + finding |
-| 4. Content-Type | `application/json; charset=utf-8` (§1.2) | finding; continue (`415` optional) |
+| 4. Content-Type | `application/json; charset=utf-8` (§1.2) | finding; continue — `415` is optional and **we never return it** |
 | 5. Content-Encoding | If `gzip`, decompress; detect illegal double-encoding e.g. base64 (§1.6) | finding; `400` if undecodable |
 | 6. JSON parse | Body is valid UTF-8 JSON (§1.1) | `400` |
 | 7. Schema validate | Ajv against `meta.schemaVersion` (§3.2) | `422` + per-error findings |
-| 8. Semantic checks | Duplicate `transferId` (§1.8), interval regularity (§3.4), concurrency (§2.1), present-object inventory (§3.3 info), custom-data-object declaration (§3.1) | findings; `2xx` (data accepted) |
+| 8. Semantic checks | Duplicate `transferId` (§1.8), interval regularity (§3.4), concurrency (§2.1), present-object inventory (§3.3 info), custom-data-object declaration (§3.1) | findings; `200` (data accepted) |
 
 Stage 8 never halts: every §1.8/§2.1/§3.x concern is a *teaching* finding, not a rejection.
+
+**Stage numbers are stable labels, not the run order.** The rows above are listed in *execution*
+order, but the numbers are the identifiers used in code comments and `docs/api.md` and do not
+change. `src/ingest/route.ts` deliberately runs **method (1) before session (0)** so a non-POST
+short-circuits `405` without a pointless database lookup — observable as `405`, not `404`, for a
+non-POST to an *unknown* UUID. Neither stage persists a row, so nothing else about the outcome
+changes.
 
 **§3.1 vs §3.2 (the division of labour).** Ajv at stage 7 grades §3.2 only. §3.1's structural
 half — the metadata block and the DS01 object shapes — is already implied by a passing Ajv run,
@@ -149,7 +157,8 @@ custom by elimination (see §7 row 3.1). That conditional runs as a
 all and 0.8.1's `additionalProperties: true` lets custom objects through Ajv unexamined. See §7
 row 3.1 and §9.
 
-Success: `200`/`202` with a small JSON body summarizing what was recorded. The body is a
+Success: `200` — the single success status; `202` is not used. It carries a small JSON body
+summarizing what was recorded. The body is a
 deliberate **teaching surface** — a supplier should understand the outcome from the HTTP response
 alone, without opening the dashboard. It carries the persisted `transmissionId`, the `status`, a
 one-line `message` with the fail/info tally, the per-finding `findingDetails` echo, and a standing
