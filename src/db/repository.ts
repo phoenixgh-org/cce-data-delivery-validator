@@ -77,7 +77,7 @@ export interface InsertTransmissionInput {
   schemaVersion?: string | null;
   /** Parsed payload; null when unparseable (column is jsonb). */
   body?: unknown;
-  /** Size-bounded original bytes kept for drill-down. */
+  /** Original bytes kept for drill-down; no write-side size cap is applied (1z9). */
   rawBody?: string | null;
   parseOk?: boolean | null;
   schemaOk?: boolean | null;

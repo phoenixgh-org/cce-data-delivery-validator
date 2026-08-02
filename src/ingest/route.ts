@@ -49,7 +49,9 @@ import { sessionStage } from './stages/session.js';
 import { sizeStage } from './stages/size.js';
 
 /**
- * Stages that run BEFORE the persistence boundary — a halt here writes no row.
+ * Stages that run BEFORE the persistence boundary — a halt here writes no row,
+ * with ONE exception: an enabled-auth 401 (stage 2), which the handler persists
+ * because it is a graded §1.3 failure. See the module header.
  *
  * Ordering note: the §6 table numbers session as stage 0 and method as stage 1,
  * but we run METHOD FIRST so a non-POST short-circuits 405 without a (pointless)
@@ -63,9 +65,12 @@ function preBodyStages(db?: Queryable): Stage[] {
     methodStage(),
     // Stage 0 — session lookup (404, no row).
     sessionStage(db),
-    // Stage 2 — Auth (opt-in, §1.3, M6/ct4.2). When the session has opted in,
-    //   a missing/incorrect credential short-circuits 401 like 404/405 with no
-    //   transmission row; the zero-friction default (auth disabled) is a no-op.
+    // Stage 2 — Auth (opt-in, §1.3, M6/ct4.2). The zero-friction default (auth
+    //   disabled) is a no-op. When the session has opted in, a missing/incorrect
+    //   credential short-circuits 401 — but UNLIKE the 404/405 halts above, that
+    //   401 DOES persist a transmission row: it is a graded §1.3 failure carrying
+    //   a 1.3 FAIL finding, so the handler special-cases `haltedAt === 'auth'`
+    //   (see the module header and the handler comment below).
     authStage(db),
   ];
 }
@@ -126,9 +131,9 @@ function buildContext(
  * Build the NUL-safe text stored in `transmission.raw_body` (a `text` column).
  *
  * Two adjustments to the exact wire bytes, both for drill-down usefulness/safety
- * (DESIGN.md §8 — raw_body is a size-bounded drill-down view, not the
- * authoritative artifact; `content_hash` + `wire_bytes` + `content_encoding`
- * preserve the wire facts for §1.4/§1.8):
+ * (DESIGN.md §8 — raw_body is a drill-down COPY, not the authoritative artifact;
+ * `content_hash` + `wire_bytes` + `content_encoding` preserve the wire facts for
+ * §1.4/§1.8):
  *
  *   - When stage 5 decoded a `Content-Encoding` (gzip), store the DECODED text —
  *     the readable payload a human drills into — instead of the binary gzip
@@ -136,6 +141,15 @@ function buildContext(
  *   - Strip NUL (0x00): Postgres `text` rejects 0x00 ("invalid byte sequence for
  *     encoding UTF8: 0x00"), so a binary/gzip body would otherwise throw and turn
  *     the whole insert — hence the ingest response — into a 500 (bug do5).
+ *
+ * NOT a third adjustment: length. No write-side cap is applied here or in
+ * `insertTransmission` (decided 2026-08-02, beads 1z9) — the text is stored
+ * whole into an unbounded `text` column. The only ceilings sit upstream, in the
+ * transport: Fastify's 2 MiB `bodyLimit` (nothing recorded past it) and gzip's
+ * 1 MiB `maxOutputLength` (stage 5 halts 400, and the row keeps the still-
+ * compressed wire bytes). U+FFFD substitution can make the stored copy LONGER
+ * than the wire, which is why the dashboard's truncation disclosure compares
+ * against `wire_bytes` rather than quoting a cap.
  */
 function storedRawBody(ctx: PipelineContext): string {
   const bytes = getDecodedBody(ctx) ?? ctx.rawBody;

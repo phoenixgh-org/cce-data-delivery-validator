@@ -10,8 +10,10 @@
 -- The pipeline (§6) fills the parse/schema columns as it runs: a transmission
 -- row is written even when parsing or schema validation fails, so the dashboard
 -- can show what was rejected and why. `body` is NULL when the payload is
--- unparseable; `raw_body` is the size-bounded original kept for drill-down,
--- especially in the failure case.
+-- unparseable; `raw_body` is the original kept for drill-down, especially in the
+-- failure case. There is NO write-side size cap on that copy (decided 2026-08-02,
+-- beads 1z9): the column is deliberately unbounded `text`, and the only ceilings
+-- are upstream of the insert (Fastify's 2 MiB bodyLimit, gzip maxOutputLength).
 
 CREATE TABLE transmission (
   id               uuid          PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -45,8 +47,9 @@ CREATE TABLE transmission (
   -- Parsed payload; NULL when the body is unparseable (§8).
   body             jsonb,
 
-  -- Size-bounded original bytes, retained for dashboard drill-down — especially
-  -- valuable when parsing fails and `body` is NULL (§8, §10).
+  -- Original bytes, retained for dashboard drill-down — especially valuable when
+  -- parsing fails and `body` is NULL (§8, §10). Unbounded by design: no
+  -- write-side cap is applied on insert (see header; beads 1z9).
   raw_body         text,
 
   parse_ok         boolean,                    -- did §6 stage 6 (JSON parse) succeed?
@@ -60,4 +63,4 @@ COMMENT ON COLUMN transmission.content_hash IS
 COMMENT ON COLUMN transmission.body IS
   'Parsed JSON payload; NULL when the body is unparseable.';
 COMMENT ON COLUMN transmission.raw_body IS
-  'Size-bounded original bytes kept for drill-down, especially when parsing fails.';
+  'Original bytes kept for drill-down, especially when parsing fails; no write-side size cap — unbounded text.';
