@@ -71,10 +71,10 @@ mirrored in `src/api/compliance-matrix.ts` and rendered live in the dashboard.
 
 ## Quick start
 
-**Hosted instance:** _URL to be announced._
-<!-- TODO(dkz.2/dkz.3): publication target is an open decision; fill in the hosted URL here once settled. -->
-
-To run it locally, all you need is Docker:
+**There is no hosted instance.** Nothing is running at a public URL today, and
+whether there ever will be is an open question — a supplier testing their own stack
+mostly wants an endpoint they control, not a shared host. **Running it yourself is
+the supported path**, and it is a one-liner:
 
 ```bash
 docker compose up -d          # Postgres 16 + the app; the app serves :3000
@@ -83,7 +83,7 @@ docker compose up -d          # Postgres 16 + the app; the app serves :3000
 Then create an endpoint, send a transmission, and read the report:
 
 ```bash
-BASE=http://localhost:3000    # or the hosted instance, once announced
+BASE=http://localhost:3000
 
 # 1. Mint a test endpoint. The UUID is both the ingest path and the dashboard key.
 curl -sX POST "$BASE/api/sessions"
@@ -128,8 +128,8 @@ outcome without opening the dashboard (findings abridged here):
 {
   "transmissionId": "1aeb82e6-…",
   "status": 200,
-  "message": "Accepted (200): data recorded; 8 findings (2 info).",
-  "findings": 8,
+  "message": "Accepted (200): data recorded; 9 findings (2 info).",
+  "findings": 9,
   "findingDetails": [
     { "requirement": "3.2", "severity": "pass", "detail": "validated against official 0.8.1 (sha256 290290fd…) (§3.2)" }
   ],
@@ -141,6 +141,8 @@ A rejection has the same shape, so a 4xx is just as self-explanatory as a 2xx.
 
 Useful things to know while testing:
 
+- **`200` is the only success code.** Ingest is synchronous — findings are computed
+  before the response is written — so there is no `202`/`201` path to handle.
 - Gzip is supported — send `Content-Encoding: gzip` with the gzipped body. Do not
   double-encode (§1.6).
 - The §1.4 grading cap is 1MB **of wire bytes, after content-encoding**. Going over
@@ -185,8 +187,11 @@ input. The smoke test exists to catch exactly that.
 ## Status and v1 scope
 
 **Pre-release.** The service runs end to end — ingest pipeline, dashboard, semantic
-checks, the §1.3 auth opt-in, and the retention worker have all landed — and it is
-not yet publicly hosted. Interfaces may still change.
+checks, the §1.3 auth opt-in, and the retention worker have all landed. There is no
+public instance, and self-hosting is the intended way to use it. Interfaces may
+still change.
+
+Source: <https://github.com/phoenixgh-org/cce-data-delivery-validator>.
 
 Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
 
@@ -231,7 +236,7 @@ is what puts the UI on `:3000`.
 
 `npm test` **without a database is not a full run.** Eight suites — the repository
 layer, the ingest route, the ingest stages, and the sessions API — probe Postgres
-once and skip themselves entirely when it is unreachable. You get `# pass 222 /
+once and skip themselves entirely when it is unreachable. You get `# pass 232 /
 # fail 0 / # skipped 50`: green, and the whole persistence and ingest-integration
 layer never executed. Treat a bare `npm test` as the pure-logic subset only.
 
@@ -242,7 +247,7 @@ docker compose up -d postgres   # first boot applies db/initdb/*.sql in order
 npm run test:db                 # npm test with the compose-local DATABASE_URL preset
 ```
 
-That is `# pass 272 / # fail 0 / # skipped 0`. If you see skips, the database is
+That is `# pass 282 / # fail 0 / # skipped 0`. If you see skips, the database is
 not reachable — or its schema predates a DDL file. `db/initdb/` is applied only on
 **first** boot of the volume, so a database created before a numbered file was
 added never got it; apply the missing files by hand, or `docker compose down -v`
@@ -251,9 +256,9 @@ and let it re-initialize from scratch.
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs lint, build and the
 full suite against a real Postgres, applying every `db/initdb/*.sql` in filename
 order first. It **fails on any skip**, because in CI a skipped test means the
-database gating broke rather than that a database was unavailable. (The repo has
-no remote yet, so the workflow is checked in and starts running when it is
-published.)
+database gating broke rather than that a database was unavailable. (Nothing has been
+pushed to the remote yet, so the workflow is checked in and starts running on the
+first push.)
 
 ## License
 
