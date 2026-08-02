@@ -127,8 +127,10 @@ export const COMPLIANCE_MATRIX: readonly MatrixRow[] = [
   // §3.2's Ajv run — grading it twice would double-count the same evidence. What
   // this row grades is the half a schema cannot express: the CONDITIONAL duty to
   // declare `meta.customDataSchema` when the payload carries manufacturer-specific
-  // (clause 4.5 `z`-prefixed) data objects, checked by the stage-8
-  // `customDataSchemaCheck` (5bs.1).
+  // data objects — clause 4.5 `z`-prefixed keys PLUS keys that are custom by
+  // elimination (neither DS01-shaped nor a mis-cased DS01 code, e.g. `customTemp`,
+  // `zTPCM`) — checked by the stage-8 `customDataSchemaCheck` (5bs.1). See
+  // DESIGN §7 row 3.1.
   {
     requirement: '3.1',
     summary: 'Declare custom data objects via meta.customDataSchema',
