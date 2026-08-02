@@ -33,7 +33,9 @@ Hence the contract below is mandatory, and hence the smoke test exists.
 ## 2. The §4.1 proxy contract
 
 Three terms. Each states what the edge must do, where the app depends on it, and
-**what a violation looks like** — because none of them announce themselves.
+**what a violation looks like** — because none of them announce themselves loudly.
+(Term 1 is the one exception: it logs a single warning. Terms 2 and 3 say nothing
+at all.)
 
 ### Term 1 — the scheme is advertised, and trusted only from the proxy
 
@@ -53,7 +55,14 @@ than restating it.) The half that *is* configurable is `TRUSTED_PROXY`, below.
 `127.0.0.1` while the proxy is a container on the bridge network). The header is
 ignored, `request.protocol` reads `http`, and the service's claim that "§1.1 is
 enforced at the edge" is no longer backed by anything it can observe. Nothing
-errors. Note the app is deliberately lenient about scheme today — the method
+*errors* — but it is no longer silent either: the first time an
+`X-Forwarded-Proto` arrives from an address `TRUSTED_PROXY` does not cover, the
+app writes one `warn` line (`src/app.ts`) naming the offending peer address, the
+configured `TRUSTED_PROXY`, and the scheme requests are being treated as. That
+line **is** the observable signal for this failure mode — grep the app log for
+`X-Forwarded-Proto` after bring-up. It is emitted **once per instance**, so it
+will not repeat per request and it will not reappear after the first occurrence
+without a restart. Note the app is deliberately lenient about scheme today — the method
 stage reads `request.protocol` for awareness and never rejects
 (`src/ingest/stages/method.ts`) — so this misconfiguration currently degrades a
 *claim* rather than a finding. Fix it anyway: the claim is on the dashboard.
@@ -259,11 +268,25 @@ Run it after every deployment, proxy upgrade, or Caddyfile edit. It is cheap and
 it is the only thing standing between a config typo and a stream of wrong
 verdicts.
 
-**What it cannot check.** `X-Forwarded-Proto` has no assertable surface today:
-§1.1 is classified 🔒 *enforced by us* in the §7 matrix and the app emits no
-scheme finding, so term 1 is verified by config review plus `TRUSTED_PROXY`
-agreement — not by the script. Check 3 covers only the visible half (the edge
-redirect).
+**What it cannot check.** `X-Forwarded-Proto` produces no *finding*: §1.1 is
+classified 🔒 *enforced by us* in the §7 matrix and the app emits no scheme
+finding, so term 1 is not asserted by the script — it is verified by config
+review plus `TRUSTED_PROXY` agreement. Check 3 covers only the visible half (the
+edge redirect).
+
+The app log is the one assertable surface the script does not read. A trust scope
+that does not cover the real proxy emits a single `warn` line naming the peer
+address and the configured `TRUSTED_PROXY` (§2, term 1), so a bring-up check can
+grep the app log for `X-Forwarded-Proto` after the first proxied request:
+
+```bash
+docker compose logs app | grep 'X-Forwarded-Proto'   # any hit ⇒ term 1 is violated
+```
+
+Read the result asymmetrically. A **hit is proof** the trust scope is wrong.
+**Silence proves nothing on its own** — it also looks like "no proxied request
+has arrived yet", and the line is logged once per instance, so a restart resets
+it and a grep of a truncated log can miss it.
 
 **Side effects.** The script creates one session and up to two transmissions of
 synthetic data on the target, all reaped by the §11 retention sweep after 7 days

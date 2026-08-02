@@ -141,8 +141,10 @@ A rejection has the same shape, so a 4xx is just as self-explanatory as a 2xx.
 
 Useful things to know while testing:
 
-- **`200` is the only success code.** Ingest is synchronous — findings are computed
-  before the response is written — so there is no `202`/`201` path to handle.
+- **`200` is the only success code on ingest.** `POST /i/<uuid>` is synchronous —
+  findings are computed before the response is written — so there is no `202` path
+  to handle. (Other routes differ: minting a session in step 1 above returns `201
+  Created`. See [`docs/api.md`](docs/api.md).)
 - Gzip is supported — send `Content-Encoding: gzip` with the gzipped body. Do not
   double-encode (§1.6).
 - The §1.4 grading cap is 1MB **of wire bytes, after content-encoding**. Going over
