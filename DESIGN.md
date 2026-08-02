@@ -207,7 +207,10 @@ The product's distinguishing honesty is classifying every requirement, not just 
 The dashboard renders this matrix per session: ✅/🟡 carry live pass/fail counts from the
 supplier's actual traffic; 🔌 are marked "not yet exercised — available in a future test mode";
 📝 are marked "self-attestation — outside what a receiver can prove." A gradeable row with zero
-findings so far shows **untested**, never a false pass.
+findings so far shows **untested**, never a false pass. A row whose only evidence came from
+transmissions validated against a registered-but-*older* schema version shows
+**pass-outdated** — those findings are `info` + `outdated` with no pass finding, so counting
+pass/fail alone would report **untested** and claim we never checked (`cce-data-delivery-validator-2kx`).
 
 This table is the source for `COMPLIANCE_MATRIX` in `src/api/compliance-matrix.ts`, which
 encodes the same 27 rows verbatim — change them together.
@@ -261,11 +264,10 @@ result whole. The only ceilings that exist today are upstream of the insert:
 
 So a stored `raw_body` is bounded in practice, but by the transport rather than by the write —
 and loosely: U+FFFD substitution emits three bytes of text per undecodable wire byte, so the
-2 MiB `bodyLimit` translates to a several-MiB worst case in the column. Whether to
-add an explicit write-side cap (and what bound) is an **open decision** — see beads issue
-`cce-data-delivery-validator-1z9`. Until it is settled, do not describe `raw_body` as
-"size-bounded"; the dashboard's truncation disclosure compares against `wire_bytes` for exactly
-this reason.
+2 MiB `bodyLimit` translates to a several-MiB worst case in the column. **Decided 2026-08-02: no
+write-side cap** (`cce-data-delivery-validator-1z9`) — the two transport ceilings above are the
+only bounds, and they stay as they are. Do not describe `raw_body` as "size-bounded"; the
+dashboard's truncation disclosure compares against `wire_bytes` for exactly this reason.
 
 Indexes: `transmission (session_uuid, received_at DESC)` for the dashboard's reverse-chronological
 list and per-session rollups; `transmission (session_uuid, content_hash)` and

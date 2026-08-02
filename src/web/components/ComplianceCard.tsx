@@ -236,6 +236,41 @@ function SigRow({
 }
 
 /**
+ * The long-form evidence line under an expanded requirement: one coloured
+ * segment per non-zero tally, joined with " · " by the caller. `outdated` (2kx)
+ * is its own segment in the --mixed amber, NOT folded into passing: an outdated
+ * finding is recorded severity=info with no pass finding, so a row can be
+ * `pass-outdated` with zero passes and zero fails — which used to render as the
+ * "no transmissions in this window" empty state despite every payload having
+ * been validated. Empty array = genuinely nothing in scope.
+ */
+function countSegments(row: ComplianceRow): ReactElement[] {
+  const segments: ReactElement[] = [];
+  if (row.counts.fail > 0) {
+    segments.push(
+      <span key="fail" style={{ color: 'var(--fail)' }}>
+        {row.counts.fail} failing
+      </span>,
+    );
+  }
+  if (row.counts.pass > 0) {
+    segments.push(
+      <span key="pass" style={{ color: 'var(--pass)' }}>
+        {row.counts.pass} passing
+      </span>,
+    );
+  }
+  if (row.outdated > 0) {
+    segments.push(
+      <span key="outdated" style={{ color: 'var(--mixed)' }}>
+        {row.outdated} validated against an outdated schema
+      </span>,
+    );
+  }
+  return segments;
+}
+
+/**
  * The "Distinct issues" summary block in an expanded (gradeable) requirement:
  * an eyebrow + a mono "{f} failing · {p} passing" line, then a column of
  * deduped signature rows (max 540px wide). Past 4 signatures it offers a
@@ -257,6 +292,7 @@ function SignatureSummary({
   onSelectSignature?: (sig: Signature) => void;
 }): ReactElement {
   const [showAll, setShowAll] = useState(false);
+  const segments = countSegments(row);
   const sigs = signaturesForReq(signatures, row.requirement);
   const hasSigs = sigs.length > 0;
   const max = hasSigs ? Math.max(...sigs.map((s) => s.count)) : 0;
@@ -277,14 +313,10 @@ function SignatureSummary({
           {hasSigs ? 'Distinct issues' : 'Status'}
         </span>
         <span style={{ fontFamily: mono, fontSize: 11, color: 'var(--text-muted)' }}>
-          {row.counts.fail > 0 && (
-            <span style={{ color: 'var(--fail)' }}>{row.counts.fail} failing</span>
+          {segments.flatMap((seg, i) =>
+            i === 0 ? [seg] : [<span key={`sep-${i}`}>{' · '}</span>, seg],
           )}
-          {row.counts.fail > 0 && row.counts.pass > 0 && ' · '}
-          {row.counts.pass > 0 && (
-            <span style={{ color: 'var(--pass)' }}>{row.counts.pass} passing</span>
-          )}
-          {row.counts.fail + row.counts.pass === 0 && 'no transmissions in this window'}
+          {segments.length === 0 && 'no transmissions in this window'}
         </span>
       </div>
       {hasSigs ? (
@@ -411,7 +443,15 @@ function ReqRow({
             {row.counts.pass > 0 && (
               <span style={{ color: 'var(--pass)' }}>{row.counts.pass}p</span>
             )}
-            {row.counts.pass + row.counts.fail === 0 && '—'}
+            {/* 2kx: outdated-but-valid validations have no pass finding, so
+                without their own tally a `pass-outdated` row would read "—". */}
+            {row.outdated > 0 && (
+              <span style={{ color: 'var(--mixed)' }}>
+                {row.counts.pass > 0 ? ' ' : ''}
+                {row.outdated}o
+              </span>
+            )}
+            {row.counts.pass + row.counts.fail + row.outdated === 0 && '—'}
           </span>
         )}
         <span style={{ width: 88, textAlign: 'right', flexShrink: 0 }}>

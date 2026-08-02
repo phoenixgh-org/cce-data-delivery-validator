@@ -396,14 +396,20 @@ export function registerSessionsApi(app: FastifyInstance): void {
 
       // Scope-relative §7 summary: recompute countsByRequirement over the scoped
       // set, then feed the existing server-side computeComplianceSummary.
+      // `outdated` is tallied in its own map: it is a per-finding MODIFIER, not a
+      // severity (2kx keeps the outdated-but-valid schema finding at info), and it
+      // is what lifts a session that only ever used an older registered version off
+      // 'untested' onto 'pass-outdated'.
       const scopedCounts: FindingCountsByRequirement = {};
+      const scopedOutdated: Record<string, number> = {};
       for (const t of scopedViews) {
         for (const f of t.findings) {
           const counts = (scopedCounts[f.requirement] ??= { pass: 0, fail: 0, info: 0 });
           counts[f.severity as Severity] += 1;
+          if (f.outdated) scopedOutdated[f.requirement] = (scopedOutdated[f.requirement] ?? 0) + 1;
         }
       }
-      const summary = computeComplianceSummary(scopedCounts);
+      const summary = computeComplianceSummary(scopedCounts, scopedOutdated);
 
       // computeSignatures consumes the scoped views via the shared signature-tx
       // projection (same one the list endpoint's cross-filter uses).

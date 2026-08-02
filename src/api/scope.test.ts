@@ -151,6 +151,25 @@ test('rollup matches the engine.js spec: gradeable=verified|heuristic, failing f
   );
 });
 
+test('rollup folds pass-outdated into passing (2kx) — it must not fall out of every bucket', () => {
+  const summary = computeComplianceSummary();
+  const set = (req: string, status: ComplianceRow['status']) => {
+    const row = summary.find((r) => r.requirement === req)!;
+    (row as { status: ComplianceRow['status'] }).status = status;
+  };
+  set('1.2', 'pass');
+  set('3.2', 'pass-outdated'); // validated, passed, but on an older schema version
+
+  const r = rollup(summary);
+  assert.equal(r.passing, 2, 'pass + pass-outdated');
+  assert.equal(r.failing, 0);
+  assert.equal(
+    r.passing + r.failing + r.untested,
+    r.gradeable,
+    'every gradeable row lands in exactly one scorecard bucket',
+  );
+});
+
 // ── passTrend (30 buckets, {tot,fail,rate}) ─────────────────────────────────
 
 const tx = (mins: number, fail: boolean) => ({

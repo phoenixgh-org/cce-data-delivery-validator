@@ -53,8 +53,29 @@ export type FindingCounts = Record<Severity, number>;
 export type FindingCountsByRequirement = Record<string, FindingCounts>;
 
 /**
+ * Map of requirement id → how many of that requirement's findings carry the
+ * `outdated` flag (2kx).
+ *
+ * `outdated` is NOT a severity and deliberately does not become one: an
+ * outdated-but-valid schema version is recorded severity=`info` (see bd memory
+ * `schema-registry-0.8.1-current-outdated`), and 2kx locked that model — no
+ * fourth severity, no DDL. It is a per-finding MODIFIER carried alongside the
+ * severity counts, which is why it travels in its own map rather than as a
+ * fourth key of {@link FindingCounts} (that type mirrors the DB severity enum
+ * and the browser's copy of it). Requirements absent from the map have zero.
+ *
+ * Only the §3.2 schema stage sets the flag today, but nothing here is §3.2
+ * specific — any requirement that ever flags a finding gets the same treatment.
+ */
+export type OutdatedCountsByRequirement = Record<string, number>;
+
+/**
  * Derived display status for a row (DESIGN.md §7 render rules):
  * - `pass`            gradeable, only pass findings (≥1).
+ * - `pass-outdated`   gradeable, no fails, but ≥1 finding flagged `outdated` —
+ *                     "we checked and it passed, against an OLDER schema
+ *                     version" (2kx). Distinct from `pass` so the dashboard can
+ *                     say which schema version the evidence came from.
  * - `fail`            gradeable, ≥1 fail finding and no pass.
  * - `mixed`           gradeable, both pass and fail present.
  * - `untested`        gradeable, ZERO findings so far (not a false pass).
@@ -65,6 +86,7 @@ export type FindingCountsByRequirement = Record<string, FindingCounts>;
  */
 export type DisplayStatus =
   | 'pass'
+  | 'pass-outdated'
   | 'fail'
   | 'mixed'
   | 'untested'
@@ -76,6 +98,14 @@ export type DisplayStatus =
 /** A matrix row joined with its live counts and derived display status. */
 export interface ComplianceRow extends MatrixRow {
   counts: FindingCounts;
+  /**
+   * How many of this requirement's findings carry the `outdated` flag (2kx).
+   * Sits beside `counts` rather than inside it because it is a modifier, not a
+   * severity — see {@link OutdatedCountsByRequirement}. It is the evidence
+   * behind a `pass-outdated` status, and the dashboard renders it as its own
+   * amber count.
+   */
+  outdated: number;
   status: DisplayStatus;
 }
 
@@ -168,11 +198,30 @@ export const COMPLIANCE_MATRIX: readonly MatrixRow[] = [
 const ZERO_COUNTS: FindingCounts = { pass: 0, fail: 0, info: 0 };
 
 /**
- * Derive a row's display status from its PRIMARY class (classes[0]) and live
- * counts, per the §7 render rules. `info` findings never affect grading — they
- * are drill-down detail, not a pass/fail signal.
+ * Derive a row's display status from its PRIMARY class (classes[0]), live counts
+ * and the count of findings flagged `outdated`, per the §7 render rules. `info`
+ * findings never affect grading on their own — they are drill-down detail, not a
+ * pass/fail signal.
+ *
+ * THE `outdated` MODIFIER (2kx). A transmission that validates cleanly against a
+ * registered-but-older schema version is recorded as info + `outdated`, with NO
+ * pass finding. Counting only pass/fail therefore reported `untested` for a
+ * session whose traffic all used an older version — a false claim that we never
+ * checked, when we checked and it passed. So, for gradeable rows:
+ *
+ *   1. a fail still dominates (`fail`/`mixed` unchanged — an outdated pass never
+ *      softens a real failure);
+ *   2. otherwise ≥1 outdated finding yields `pass-outdated`, whether or not
+ *      current-version passes are also present (a supplier still transmitting on
+ *      an older version has something to fix, so the amber verdict wins over a
+ *      clean `pass`);
+ *   3. only then do zero pass findings mean `untested`.
  */
-function deriveStatus(primary: ComplianceClass, counts: FindingCounts): DisplayStatus {
+function deriveStatus(
+  primary: ComplianceClass,
+  counts: FindingCounts,
+  outdated: number,
+): DisplayStatus {
   switch (primary) {
     case 'active-only':
       // 🔌 — always deferred, regardless of any counts that happen to exist.
@@ -185,9 +234,10 @@ function deriveStatus(primary: ComplianceClass, counts: FindingCounts): DisplayS
       return 'not-applicable';
     case 'verified':
     case 'heuristic': {
-      // Gradeable rows: pass/fail/mixed/untested from live counts.
-      if (counts.pass === 0 && counts.fail === 0) return 'untested';
+      // Gradeable rows: pass/fail/mixed/pass-outdated/untested from live counts.
       if (counts.fail > 0) return counts.pass > 0 ? 'mixed' : 'fail';
+      if (outdated > 0) return 'pass-outdated';
+      if (counts.pass === 0) return 'untested';
       return 'pass';
     }
   }
@@ -199,17 +249,22 @@ function deriveStatus(primary: ComplianceClass, counts: FindingCounts): DisplayS
  * inputs. Returns all 27 rows in matrix order; requirements with no entry in
  * `countsByRequirement` are treated as zero findings (→ `untested` when
  * gradeable, never a false pass).
+ *
+ * `outdatedByRequirement` (2kx) is the parallel count of findings carrying the
+ * `outdated` flag; omitting it reproduces the pre-2kx behaviour exactly.
  */
 export function computeComplianceSummary(
   countsByRequirement: FindingCountsByRequirement = {},
+  outdatedByRequirement: OutdatedCountsByRequirement = {},
 ): ComplianceRow[] {
   return COMPLIANCE_MATRIX.map((row) => {
     const live = countsByRequirement[row.requirement];
     const counts: FindingCounts = live
       ? { pass: live.pass, fail: live.fail, info: live.info }
       : { ...ZERO_COUNTS };
+    const outdated = outdatedByRequirement[row.requirement] ?? 0;
     // classes is non-empty by construction; classes[0] is the grading class.
     const primary = row.classes[0]!;
-    return { ...row, counts, status: deriveStatus(primary, counts) };
+    return { ...row, counts, outdated, status: deriveStatus(primary, counts, outdated) };
   });
 }

@@ -19,9 +19,15 @@ export type ComplianceClass =
   | 'enforced'
   | 'none';
 
-/** Derived display status the matrix renders as a badge (no recompute). */
+/**
+ * Derived display status the matrix renders as a badge (no recompute).
+ * `pass-outdated` (2kx) = checked and passed, but against a registered-but-OLDER
+ * schema version; distinct from `pass` so the badge can say so, and never
+ * `untested`, which would claim we did not check at all.
+ */
 export type DisplayStatus =
   | 'pass'
+  | 'pass-outdated'
   | 'fail'
   | 'mixed'
   | 'untested'
@@ -43,6 +49,12 @@ export interface ComplianceRow {
   summary: string;
   classes: ComplianceClass[];
   counts: FindingCounts;
+  /**
+   * How many of this requirement's findings carry the `outdated` flag (2kx) —
+   * a modifier, not a severity, hence its own field beside `counts`. Nonzero is
+   * exactly what makes `status` `pass-outdated`.
+   */
+  outdated: number;
   status: DisplayStatus;
 }
 

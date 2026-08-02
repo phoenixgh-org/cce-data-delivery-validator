@@ -47,6 +47,67 @@ test('ungraded ✅ row with zero findings → untested (not a false pass)', () =
   assert.equal(row(rows, '1.4').status, 'untested');
 });
 
+/* ── the `outdated` modifier (2kx) ───────────────────────────────────────────
+ * §3.2 records a transmission that validated cleanly against a registered-but-
+ * OLDER schema version as severity=info + outdated=true, with NO pass finding
+ * (bd memory schema-registry-0.8.1-current-outdated — info, not pass, is
+ * deliberate). Counting only pass/fail therefore called such a session
+ * "untested", claiming we never checked. These cases pin the fix: the outdated
+ * tally is its own input, never a severity, and yields `pass-outdated`.
+ *
+ * These are FIXTURE-driven: with 0.8.1 the only registered version there is no
+ * live outdated cohort to capture, and registering one is out of scope (fvw). */
+
+test('2kx: §3.2 with ONLY outdated validations → pass-outdated, never untested', () => {
+  // The shape the schema stage actually writes: one info per tx, no pass.
+  const rows = computeComplianceSummary({ '3.2': { pass: 0, fail: 0, info: 3 } }, { '3.2': 3 });
+  const r = row(rows, '3.2');
+  assert.notEqual(r.status, 'untested', 'we DID check — claiming otherwise is the bug');
+  assert.equal(r.status, 'pass-outdated');
+  assert.equal(r.outdated, 3, 'the evidence behind the status travels with the row');
+});
+
+test('2kx: current-version passes only → plain pass, outdated 0', () => {
+  const rows = computeComplianceSummary({ '3.2': { pass: 4, fail: 0, info: 0 } }, {});
+  const r = row(rows, '3.2');
+  assert.equal(r.status, 'pass');
+  assert.equal(r.outdated, 0);
+});
+
+test('2kx: MIXED current + outdated passes → pass-outdated (the amber verdict wins)', () => {
+  // Still transmitting on an older version somewhere, so the row must not read
+  // as a clean pass.
+  const rows = computeComplianceSummary({ '3.2': { pass: 4, fail: 0, info: 2 } }, { '3.2': 2 });
+  assert.equal(row(rows, '3.2').status, 'pass-outdated');
+});
+
+test('2kx: a fail dominates the outdated modifier (fail / mixed unchanged)', () => {
+  const failOnly = computeComplianceSummary({ '3.2': { pass: 0, fail: 2, info: 1 } }, { '3.2': 1 });
+  assert.equal(row(failOnly, '3.2').status, 'fail', 'an outdated pass never softens a failure');
+
+  const withPass = computeComplianceSummary({ '3.2': { pass: 1, fail: 2, info: 1 } }, { '3.2': 1 });
+  assert.equal(row(withPass, '3.2').status, 'mixed');
+});
+
+test('2kx: no findings at all is STILL untested (outdated is not a false pass)', () => {
+  const rows = computeComplianceSummary({}, {});
+  const r = row(rows, '3.2');
+  assert.equal(r.status, 'untested');
+  assert.equal(r.outdated, 0);
+});
+
+test('2kx: outdated on a non-gradeable row does not disturb its status', () => {
+  // 4.6 is 📝 self-attestation; nothing derived from traffic applies.
+  const rows = computeComplianceSummary({ '4.6': { pass: 0, fail: 0, info: 1 } }, { '4.6': 1 });
+  assert.equal(row(rows, '4.6').status, 'self-attestation');
+});
+
+test('2kx: omitting the outdated map reproduces the pre-fix statuses exactly', () => {
+  const rows = computeComplianceSummary({ '3.2': { pass: 2, fail: 0, info: 5 } });
+  assert.equal(row(rows, '3.2').status, 'pass');
+  assert.equal(row(rows, '3.2').outdated, 0);
+});
+
 test('split-class 1.1 grades on the verified side; 4.4 on the active-only side', () => {
   const passOnly = computeComplianceSummary({ '1.1': { pass: 2, fail: 0, info: 0 } });
   assert.deepEqual(row(passOnly, '1.1').classes, ['verified', 'enforced']);

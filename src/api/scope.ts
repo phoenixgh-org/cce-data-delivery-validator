@@ -122,14 +122,18 @@ export interface Rollup {
  * `computeRollup` in src/web/routes/Dashboard.tsx). Counts passing/failing/
  * untested over GRADEABLE rows only (primary class verified or heuristic);
  * self-attested/active/permissive/enforced rows are never counted. `failing`
- * folds `mixed` in with `fail` (a row with any failure is "failing").
+ * folds `mixed` in with `fail` (a row with any failure is "failing"), and
+ * `passing` folds `pass-outdated` in with `pass` (2kx): a row validated only
+ * against an older registered schema version still passed, and must not silently
+ * vanish from all three buckets — the amber pill on the matrix row itself, not
+ * this coarse scorecard, carries the "upgrade your schema version" nuance.
  */
 export function rollup(summary: readonly ComplianceRow[]): Rollup {
   const grade = summary.filter((r) => r.classes[0] === 'verified' || r.classes[0] === 'heuristic');
   return {
     total: summary.length,
     gradeable: grade.length,
-    passing: grade.filter((r) => r.status === 'pass').length,
+    passing: grade.filter((r) => r.status === 'pass' || r.status === 'pass-outdated').length,
     failing: grade.filter((r) => r.status === 'fail' || r.status === 'mixed').length,
     untested: grade.filter((r) => r.status === 'untested').length,
   };

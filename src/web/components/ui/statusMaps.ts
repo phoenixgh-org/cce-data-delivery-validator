@@ -37,6 +37,14 @@ export interface StatusMeta {
  */
 export const STATUS_META: Record<DisplayStatus, StatusMeta> = {
   pass: { label: 'pass', kind: 'pass' },
+  // 2kx: passed, but against a registered-but-OLDER schema version. It borrows
+  // the `mixed` (amber) colour family on purpose — that is the same --mixed
+  // tone as the per-transmission OUTDATED SCHEMA tag and the soft/info
+  // signature bars, so one amber means one thing across the dashboard. The
+  // label stays short enough for the pill column; the row's amber outdated
+  // count and the expanded "validated against an outdated schema" line supply
+  // the detail.
+  'pass-outdated': { label: 'outdated', kind: 'mixed' },
   fail: { label: 'fail', kind: 'fail' },
   mixed: { label: 'mixed', kind: 'mixed' },
   untested: { label: 'untested', kind: 'neutral' },

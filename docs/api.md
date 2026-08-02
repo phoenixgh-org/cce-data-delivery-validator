@@ -447,6 +447,7 @@ this session's live counts:
   "summary": "HTTPS POST, UTF-8 JSON",
   "classes": ["verified", "enforced"],
   "counts": { "pass": 1, "fail": 0, "info": 0 },
+  "outdated": 0,
   "status": "pass"
 }
 ```
@@ -454,11 +455,19 @@ this session's live counts:
 - `classes` — one or more of `verified` (✅), `heuristic` (🟡), `active-only` (🔌),
   `attestation` (📝), `enforced` (🔒), `none`. The **first** entry drives `status`;
   two rows are split-class (§1.1, §4.4).
-- `status` — `pass`, `fail`, `mixed`, `untested` (gradeable, no findings yet — never a
-  false pass), `not-exercised` (🔌), `self-attestation` (📝), `enforced` (🔒), or
-  `not-applicable`.
+- `outdated` — how many of the requirement's findings carry the `outdated` flag. It is a
+  modifier, **not** a severity (so it is not a key of `counts`), and today only §3.2
+  raises it.
+- `status` — `pass`, `pass-outdated`, `fail`, `mixed`, `untested` (gradeable, no findings
+  yet — never a false pass), `not-exercised` (🔌), `self-attestation` (📝), `enforced`
+  (🔒), or `not-applicable`.
+- `pass-outdated` means **checked, and it passed — against an older registered schema
+  version**. Those transmissions are recorded as `info` findings with `outdated: true` and
+  no `pass` finding, so a session that only ever used an older version would otherwise
+  read as `untested`, falsely claiming nothing was checked.
 - `rollup` counts only **gradeable** rows (primary class `verified` or `heuristic`);
-  `failing` folds `mixed` in with `fail`.
+  `failing` folds `mixed` in with `fail`, and `passing` folds `pass-outdated` in with
+  `pass`.
 
 Which requirements are graded versus informational is the point of the matrix: see
 [`DESIGN.md` §7](../DESIGN.md#7-compliance-engine--verifiability-matrix) for the
