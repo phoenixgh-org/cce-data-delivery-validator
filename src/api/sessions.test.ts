@@ -223,6 +223,83 @@ test(
 );
 
 test(
+  'GET /api/sessions/:uuid → a §3.2 info(outdated) finding reports pass-outdated, not untested',
+  { skip },
+  async () => {
+    // f2m: compliance-matrix.test.ts unit-tests deriveStatus, but the ONLY thing
+    // that turns a real session's findings into its `outdatedByRequirement` input
+    // is the tally line in sessions.ts. This is the end-to-end proof of 2kx's
+    // user-visible claim — "a session using only an older-but-valid schema
+    // version no longer displays as untested" — over the real DB → endpoint path.
+    //
+    // The finding is SEEDED rather than produced by a POST: the registry is
+    // deliberately 0.8.1-only (fvw), so no live payload can currently declare a
+    // registered-but-older version. The seed mirrors exactly what
+    // src/ingest/stages/schema.ts emits on that path: severity 'info' (never a
+    // pass, never a fail), `outdated` true, code 'tx.outdated_schema'.
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      const tx = await insertTransmission({
+        sessionUuid: uuid,
+        wireBytes: 120,
+        contentType: 'application/json; charset=utf-8',
+        httpStatus: 200,
+        body: { meta: { transferId: 'T-outdated' } },
+        rawBody: '{"meta":{"transferId":"T-outdated"}}',
+        parseOk: true,
+        schemaOk: true,
+      });
+      await insertFinding(tx.id, {
+        requirement: '3.2',
+        severity: 'info',
+        outdated: true,
+        detail: 'accepted, but validated against an OUTDATED schema (§3.2)',
+        code: 'tx.outdated_schema',
+      });
+
+      const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(res.statusCode, 200);
+
+      const body = res.json() as {
+        transmissions: Array<{ findings: Array<{ outdated: boolean }> }>;
+        summary: Array<{
+          requirement: string;
+          status: string;
+          outdated: number;
+          counts: { pass: number; fail: number; info: number };
+        }>;
+        rollup: { passing: number; failing: number; untested: number };
+      };
+
+      // The flag survives the FindingView projection the tally reads from.
+      assert.equal(body.transmissions[0]?.findings[0]?.outdated, true, 'outdated reaches the wire');
+
+      const row = body.summary.find((r) => r.requirement === '3.2');
+      assert.ok(row, '§3.2 row present');
+      assert.equal(row.status, 'pass-outdated', 'info+outdated grades pass-outdated, not untested');
+      assert.equal(row.outdated, 1, 'the outdated tally counted the finding');
+      assert.equal(row.counts.pass, 0, 'no pass finding was invented');
+      assert.equal(row.counts.info, 1, 'the finding is still counted as info');
+
+      // scope.ts rollup() folds pass-outdated into `passing` — the row must not
+      // vanish from all three scorecard buckets.
+      assert.equal(body.rollup.passing, 1, 'pass-outdated counts as passing in the rollup');
+      assert.equal(body.rollup.failing, 0);
+    } finally {
+      if (uuid) {
+        await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      }
+      await app.close();
+    }
+  },
+);
+
+test(
   'GET /api/sessions/:uuid → per-tx findings ordered ascending by §-number (numeric, not lexical)',
   { skip },
   async () => {

@@ -603,6 +603,19 @@ function replacementDense(s: string): boolean {
 type DecodeState = 'decoded' | 'rejected' | 'unconfirmed';
 
 /**
+ * The §1.6 rejection code this row carries, or null if it carries none.
+ *
+ * WHICH of the three it is decides what the note may say about how the body was
+ * handled (bug xiz): the three paths in src/ingest/stages/encoding.ts differ on
+ * whether a byte was ever read, so a single mechanism sentence cannot be true of
+ * all of them. Only `tx.unsupported_encoding` refuses the token unread.
+ */
+function rejectionCode(tx: TransmissionView): string | null {
+  const hit = tx.findings.find((f) => f.code !== null && ENCODING_REJECTED_CODES.has(f.code));
+  return hit?.code ?? null;
+}
+
+/**
  * Decide, from the row alone, whether the stored copy is decoded payload.
  *
  * The dashboard never sees stage 5's outcome directly, so it must be inferred
@@ -613,17 +626,16 @@ type DecodeState = 'decoded' | 'rejected' | 'unconfirmed';
  *
  *   - a parsed `body` proves it — compressed bytes never parse as JSON, so
  *     whatever was stored had already been decompressed;
- *   - a §1.6 rejection finding disproves it — the encoding was refused before
- *     any decompression, so the copy is the wire body;
+ *   - a §1.6 rejection finding disproves it — no rejection path keeps a decoded
+ *     body (only the success path calls `setDecodedBody`, even where gunzip did
+ *     run), so the copy is the wire body;
  *   - otherwise (decoded but unparseable, say) the copy is presumed decoded
  *     UNLESS it reads as binary, which we cannot resolve either way and must
  *     therefore not present as payload.
  */
 function decodeState(tx: TransmissionView, storedText: string): DecodeState {
   if (tx.body !== null && tx.body !== undefined) return 'decoded';
-  if (tx.findings.some((f) => f.code !== null && ENCODING_REJECTED_CODES.has(f.code))) {
-    return 'rejected';
-  }
+  if (rejectionCode(tx) !== null) return 'rejected';
   return replacementDense(storedText) ? 'unconfirmed' : 'decoded';
 }
 
@@ -674,6 +686,27 @@ function describeStoredCopy(tx: TransmissionView): StoredCopyNote | null {
       const binary = replacementDense(tx.raw_body);
       const grew = wireKnown && stored > wire;
       const intact = wireKnown && stored === wire && !binary;
+      // The intact case also has to say WHY the copy is not payload, and that
+      // mechanism differs per rejection code (bug xiz) — only the unsupported
+      // token is refused before a byte is read; `tx.undecodable_body` ran
+      // gunzipSync over these very bytes and failed, and `tx.double_encoded`
+      // decompressed them and rejected the OUTPUT for being gzip again. The
+      // MISLABELLED reading fits the first two (the body was not really
+      // ${encoding}-encoded) but not the third, which was encoded twice over.
+      const code = rejectionCode(tx);
+      const intactTail =
+        code === 'tx.double_encoded'
+          ? `Every wire byte is present and none reads as undecodable, but the body ` +
+            `decompressed to ANOTHER gzip member and was refused as double-encoded, so ` +
+            `nothing below is graded payload.`
+          : code === 'tx.undecodable_body'
+            ? `Every wire byte is present and none reads as undecodable, so the body appears ` +
+              `to have been MISLABELLED rather than actually ${encoding}-encoded — ` +
+              `decompression was attempted over these very bytes and failed. Nothing below ` +
+              `is graded payload.`
+            : `Every wire byte is present and none reads as undecodable, so the body appears ` +
+              `to have been MISLABELLED rather than actually ${encoding}-encoded. It was ` +
+              `refused unread either way, so nothing below is graded payload.`;
       const tail = binary
         ? `Undecodable bytes were substituted and NUL bytes stripped, and the copy reads as ` +
           `binary — this is NOT readable payload.`
@@ -681,15 +714,13 @@ function describeStoredCopy(tx: TransmissionView): StoredCopyNote | null {
           ? `The copy is larger than the wire body, so undecodable bytes were substituted; ` +
             `read it as the wire body, not as payload.`
           : intact
-            ? `Every wire byte is present and none reads as undecodable, so the body appears ` +
-              `to have been MISLABELLED rather than actually ${encoding}-encoded. It was ` +
-              `refused unread either way, so nothing below is graded payload.`
+            ? intactTail
             : `NUL bytes are stripped when the copy is stored; whether the rest is readable ` +
               `payload is not something this row settles, so read it as the wire body.`;
       return {
         text:
-          `Not decoded: the ${encoding} encoding was rejected before the body was ` +
-          `decompressed, so this copy is the bytes as sent, read as text — ` +
+          `Not decoded: the ${encoding} encoding was rejected and no decoded body was kept, ` +
+          `so this copy is the bytes as sent, read as text — ` +
           `${fmtBytes(stored)} bytes stored from ${wireText} bytes on the wire. ${tail}`,
         warn: true,
       };

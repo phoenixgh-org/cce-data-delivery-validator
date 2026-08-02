@@ -22,7 +22,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { computeComplianceSummary } from './compliance-matrix.js';
-import type { FindingCountsByRequirement } from './compliance-matrix.js';
+import type {
+  FindingCountsByRequirement,
+  OutdatedCountsByRequirement,
+} from './compliance-matrix.js';
 import {
   inScope,
   parseSource,
@@ -401,7 +404,7 @@ export function registerSessionsApi(app: FastifyInstance): void {
       // is what lifts a session that only ever used an older registered version off
       // 'untested' onto 'pass-outdated'.
       const scopedCounts: FindingCountsByRequirement = {};
-      const scopedOutdated: Record<string, number> = {};
+      const scopedOutdated: OutdatedCountsByRequirement = {};
       for (const t of scopedViews) {
         for (const f of t.findings) {
           const counts = (scopedCounts[f.requirement] ??= { pass: 0, fail: 0, info: 0 });
