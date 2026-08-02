@@ -2,7 +2,7 @@
 --
 -- The UUID is both the ingest path (`/i/{uuid}`) and the dashboard key
 -- (`/d/{uuid}`); possession is authority (§3). Minted by `POST /api/sessions`
--- (M3). `last_post_at` drives the 30-day inactivity retention sweep (§11);
+-- (M3). `last_post_at` drives the 7-day inactivity retention sweep (§11);
 -- it is NULL until the first POST arrives, so the retention worker falls back
 -- to `created_at`.
 --
@@ -39,6 +39,6 @@ CREATE TABLE session (
 COMMENT ON TABLE session IS
   'One capability-URL session: ingest path + dashboard key. Possession = authority (§3).';
 COMMENT ON COLUMN session.last_post_at IS
-  'Timestamp of the most recent POST; NULL until first POST. Drives 30-day retention (§11).';
+  'Timestamp of the most recent POST; NULL until first POST. Drives 7-day retention (§11).';
 COMMENT ON COLUMN session.auth_secret_hash IS
   'Hash of the opt-in §1.3 credential; plaintext is never stored (§12).';

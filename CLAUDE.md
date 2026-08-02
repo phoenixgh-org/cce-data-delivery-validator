@@ -116,7 +116,7 @@ npm run build                   # tsc + copy-schemas + web typecheck + vite buil
   compliance/verifiability matrix.
 - `src/db/` — `pg` pool and repository. DDL lives in `db/initdb/*.sql`,
   numbered and heavily commented (`10-session`, `20-transmission`,
-  `30-finding`, `40-indexes`).
+  `30-finding`, `40-indexes`, `50-session-auth-bearer`).
 - `src/web/` — React + Vite dashboard (landing page, per-session report).
 - `src/schemas/` + `schema-registry.ts` — vendored schema versions.
 
