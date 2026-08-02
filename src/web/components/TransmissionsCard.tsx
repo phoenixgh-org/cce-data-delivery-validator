@@ -138,10 +138,15 @@ const mono: CSSProperties = { fontFamily: 'var(--mono)' };
  * the basis of the list-region height cap below. Rows are not fixed-height (the
  * chrome wraps at narrow widths), so `measureElement` corrects the real heights;
  * this is only the pre-measure estimate. It tracks TxRow's chrome:
- * 8px padding top + ~20px line box (11.5px mono) + 8px padding bottom + 1px
- * bottom border = 37.
+ * 8px padding top + a 17.25px line box + 8px padding bottom + 1px bottom border
+ * ≈ 34.
+ *
+ * The line box is the tallest span in TxRow (fontSize 11.5) times the inherited
+ * `line-height: 1.5` from `:root` (src/web/styles.css) — 17.25px, not the ~20px
+ * this comment used to claim. TxRow is a flex row with `alignItems: center`, so
+ * that single line box IS the content height (5bs.7).
  */
-const ROW_ESTIMATE_PX = 37;
+const ROW_ESTIMATE_PX = 34;
 
 /** How many rows the list region shows before it scrolls (5bs.6). */
 const LIST_VISIBLE_ROWS = 10;
@@ -158,14 +163,14 @@ const LIST_VISIBLE_ROWS = 10;
  * master-detail redesign removed.
  *
  * So cap in rows, derived from ROW_ESTIMATE_PX rather than a hardcoded pixel
- * number that would drift if the row chrome changes: 10 × 37 = 370px.
+ * number that would drift if the row chrome changes: 10 × 34 = 340px.
  *
  * Height budget above the detail pane, at 16px root padding:
  *   header ~66 + setup bar ~40 + scorecard ~62 + filter bar ~40  ≈ 208
- *   + body padding 16 + card header ~44 + list 370                = 638
- * so the docked detail starts at ~640px and clears the fold on an 800px-tall
- * viewport (~160px of detail visible, above its own 120px min-height) and
- * comfortably so at 1000px (~360px). An active issue chip adds ~33px, still
+ *   + body padding 16 + card header ~44 + list 340                = 608
+ * so the docked detail starts at ~610px and clears the fold on an 800px-tall
+ * viewport (~190px of detail visible, above its own 120px min-height) and
+ * comfortably so at 1000px (~390px). An active issue chip adds ~33px, still
  * inside the budget. The list keeps its own scrollbar and stays virtualized —
  * this caps the region, it does not page the data.
  */
@@ -637,7 +642,9 @@ function decodeState(tx: TransmissionView, storedText: string): DecodeState {
  * not to describe the copy as size-bounded. We report only what the row itself
  * supports:
  *   - encoded + decoded     -> both sizes stated; no comparison is meaningful.
- *   - encoded + refused     -> the copy is the undecoded wire body, not payload.
+ *   - encoded + refused     -> the copy is the wire body as sent; whether those
+ *                              bytes are mojibake or a merely MISLABELLED plain
+ *                              body is stated only when the row shows it (3b3).
  *   - encoded, decode unproven -> said so; the copy reads as binary.
  *   - copy shorter than wire -> shortened; explicitly NOT the complete payload.
  *   - copy longer than wire  -> undecodable bytes were substituted.
@@ -656,12 +663,34 @@ function describeStoredCopy(tx: TransmissionView): StoredCopyNote | null {
   if (encoded) {
     const state = decodeState(tx, tx.raw_body);
     if (state === 'rejected') {
+      // "Not decoded" is true on every path that reaches here. What those bytes
+      // ARE is not: stage 5 refuses a non-gzip token before reading a single body
+      // byte (src/ingest/stages/encoding.ts), so the commonest producer of this
+      // branch is a supplier who MISLABELLED an ordinary UTF-8 body — nothing was
+      // substituted and the copy below is perfectly readable. Say which case this
+      // is only where the row proves it (bug 3b3): a copy that reads as binary, or
+      // one that outgrew the wire, is mojibake; one that matches the wire size and
+      // does not read as binary went through untouched.
+      const binary = replacementDense(tx.raw_body);
+      const grew = wireKnown && stored > wire;
+      const intact = wireKnown && stored === wire && !binary;
+      const tail = binary
+        ? `Undecodable bytes were substituted and NUL bytes stripped, and the copy reads as ` +
+          `binary — this is NOT readable payload.`
+        : grew
+          ? `The copy is larger than the wire body, so undecodable bytes were substituted; ` +
+            `read it as the wire body, not as payload.`
+          : intact
+            ? `Every wire byte is present and none reads as undecodable, so the body appears ` +
+              `to have been MISLABELLED rather than actually ${encoding}-encoded. It was ` +
+              `refused unread either way, so nothing below is graded payload.`
+            : `NUL bytes are stripped when the copy is stored; whether the rest is readable ` +
+              `payload is not something this row settles, so read it as the wire body.`;
       return {
         text:
           `Not decoded: the ${encoding} encoding was rejected before the body was ` +
-          `decompressed, so this copy is the ${encoding} bytes as sent, read as text — ` +
-          `${fmtBytes(stored)} bytes stored from ${wireText} bytes on the wire, undecodable ` +
-          `bytes substituted and NUL bytes stripped. This is NOT readable payload.`,
+          `decompressed, so this copy is the bytes as sent, read as text — ` +
+          `${fmtBytes(stored)} bytes stored from ${wireText} bytes on the wire. ${tail}`,
         warn: true,
       };
     }
