@@ -132,7 +132,7 @@ groups (`loopback`, `linklocal`, `uniquelocal`).
 | Topology | Value |
 |----------|-------|
 | Caddy on the same host, app on loopback | `127.0.0.1` (the default) |
-| Caddy in the compose `edge` profile | the compose network CIDR (typically inside `172.16.0.0/12`) |
+| Caddy in the compose `edge` profile | the compose network's own subnet — read it off the running network, see below |
 | Caddy on another host | that host's address, e.g. `10.0.2.7` |
 
 Find the compose network's subnet before setting it, rather than guessing:
@@ -143,14 +143,27 @@ docker network inspect "$(docker compose ps -q app \
   -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}'
 ```
 
-Set it in `.env` next to `docker-compose.yml` (compose reads it automatically):
+It prints one CIDR — a single `/16` out of Docker's default address pools
+(`172.17.0.0/16` … `172.31.0.0/16`), so the output looks like:
+
+```
+172.19.0.0/16
+```
+
+Put **that** value — the one your command printed, not the one printed above —
+in `.env` next to `docker-compose.yml` (compose reads it automatically):
 
 ```dotenv
-TRUSTED_PROXY=172.16.0.0/12
+# ← whatever `docker network inspect` printed for THIS deployment
+TRUSTED_PROXY=172.19.0.0/16
 ```
 
 Scope it as tightly as the topology allows: every address you trust is an
-address that can lie to you about the scheme.
+address that can lie to you about the scheme. The compose network's `/16` is
+~65k addresses; the enclosing `172.16.0.0/12` is ~1M, and trusting the whole
+private range to avoid re-reading one value after a `docker compose down -v` is
+not a trade worth making. `DESIGN.md` §4.1 states the contract as trusting
+`X-Forwarded-Proto` scoped to Caddy's address only.
 
 ---
 
