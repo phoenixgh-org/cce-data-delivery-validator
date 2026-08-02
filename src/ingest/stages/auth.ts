@@ -4,9 +4,11 @@
  * §1.3 auth is an OPT-IN compliance layer, not a gate. The zero-friction default
  * (auth disabled) ingests unchanged: this stage CONTINUEs without inspecting any
  * credential. Only once a supplier opts in (`auth_enabled = true`) does a missing
- * or incorrect credential short-circuit with **401** — and, like the 404/405
- * pre-body halts, NO transmission row is persisted (this stage sits before the
- * §6/§8 persistence boundary).
+ * or incorrect credential short-circuit with **401** — and UNLIKE the 404/405
+ * pre-body halts, a transmission row IS persisted. This stage runs before the
+ * §6/§8 persistence boundary, but the 401 is a GRADED §1.3 failure rather than a
+ * bare reject, so src/ingest/route.ts special-cases `haltedAt === 'auth'` and
+ * writes the row plus the §1.3 FAIL finding recorded below.
  *
  * Like {@link sessionStage} (stage 0), this re-fetches the session by uuid with an
  * injectable `db?` rather than threading the row through {@link PipelineContext}.
@@ -24,8 +26,8 @@
  *
  * Ordering wrinkle (kept on purpose): stage 0 bumps `last_post_at` BEFORE this
  * stage runs, so a request that 401s here has still stamped session activity. That
- * is correct for the §11 retention clock — a 401 proves the session is live; the
- * row simply isn't persisted.
+ * is correct for the §11 retention clock — a 401 proves the session is live, and
+ * the persisted row records the failure alongside it.
  */
 
 import {
