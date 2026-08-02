@@ -15,10 +15,30 @@
 name: CI
 
 on:
+  # `push` is scoped to the default branch ON PURPOSE. With `branches: ['**']`
+  # a same-repo PR branch fires TWO identical runs per push — one `push`, one
+  # `pull_request` — and a concurrency group cannot merge them, because the two
+  # events carry different refs (`refs/heads/<branch>` vs `refs/pull/N/merge`)
+  # and therefore land in different groups. Scoping `push` is the only thing
+  # that actually deduplicates. A branch with no open PR gets no automatic run;
+  # `workflow_dispatch` covers that case on demand.
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
+
+# Least privilege. Without this block the job inherits the repository/org
+# default GITHUB_TOKEN scope, which on older repos is contents:write — a
+# public workflow running third-party actions with a write-scoped token. This
+# job only ever reads the checkout.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref: a force-push or a quick follow-up
+# commit should not leave the older run burning a Postgres service container.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ci:
