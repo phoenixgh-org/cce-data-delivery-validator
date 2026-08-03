@@ -14,7 +14,7 @@
   },
   "private": true,
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-schemas.mjs && npm run typecheck:web && vite build",

@@ -122,7 +122,7 @@ npm run build                   # tsc + copy-schemas + web typecheck + vite buil
 
 ## Conventions
 
-- **Node 20+ / TypeScript end-to-end**, ESM (`"type": "module"`). Fastify for
+- **Node 22+ / TypeScript end-to-end**, ESM (`"type": "module"`). Fastify for
   HTTP, **Ajv** for JSON-schema validation, React + Vite for the dashboard.
 - **Tests colocate** with source as `*.test.ts` and run on the Node test runner
   via `tsx --test` — not Jest or Vitest.

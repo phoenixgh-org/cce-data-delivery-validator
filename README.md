@@ -220,7 +220,7 @@ Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
 
 ## Development
 
-Node 20+ and TypeScript end to end; Fastify, Ajv, Postgres, React + Vite.
+Node 22+ and TypeScript end to end; Fastify, Ajv, Postgres, React + Vite.
 
 ```bash
 npm install
