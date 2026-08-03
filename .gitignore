@@ -12,7 +12,9 @@ test-output.tap
 .env.*
 !.env.example
 
-# Beads / Dolt files (added by bd init)
+# Beads / Dolt files (added by bd init). The whole .beads/ tree is untracked:
+# the issue tracker is internal and its exports must not publish (2026-08-03).
+.beads/
 .dolt/
 *.db
 .beads-credential-key

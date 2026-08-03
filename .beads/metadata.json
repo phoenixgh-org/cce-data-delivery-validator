@@ -1,7 +1,0 @@
-{
-  "database": "dolt",
-  "backend": "dolt",
-  "dolt_mode": "embedded",
-  "dolt_database": "cce_data_delivery_validator",
-  "project_id": "5707ec7e-4a8b-4ab2-977e-e064466dad2d"
-}

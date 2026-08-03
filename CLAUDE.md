@@ -76,6 +76,13 @@ This project uses **bd (beads)**. `bd prime` is auto-injected at session start
 authoritative, always-current workflow reference — run it manually if you need
 it mid-session.
 
+- **`.beads/` is untracked and gitignored** (decided 2026-08-03): the tracker's
+  inner deliberations must not publish to the public repo. Do NOT commit
+  `.beads/issues.jsonl` or run an export-and-commit step (loops: skip it), and
+  do not reinstall bd's git hooks (`bd hooks install`) — they re-stage the
+  export on every commit. bd state lives in the local Dolt DB and syncs across
+  machines via syncthing, not git. Referencing bd ids in commit messages and
+  code comments stays fine — they are opaque without the tracker.
 - Use `bd` for task tracking, not TodoWrite or markdown TODO lists.
 - Use `bd remember` / `bd memories` for durable knowledge, not MEMORY.md files.
 - `bd ready` to find work, `bd update <id> --claim`, `bd close <id>`.
