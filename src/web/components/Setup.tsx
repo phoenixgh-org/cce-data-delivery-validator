@@ -57,7 +57,22 @@ export interface SetupProps {
 }
 
 /**
- * A small JSON body suppliers can adapt — keeps the curl one realistic.
+ * The smallest cce-interop transmission that actually earns a 200 — a runnable
+ * request, not a shape sketch. An earlier version rendered
+ * `{"schemaVersion":…,"transferId":"demo-001","records":[]}`, which the service
+ * never accepts: schemaVersion/transferId live under `meta`, there is no root
+ * `records`, and `data` has minItems 1 — so the panel handed a first-run
+ * supplier a guaranteed 422 (beads auu).
+ *
+ * Every field here is REQUIRED by the schema at 0.8.1: `meta` carries the five
+ * `transmission-metadata` fields, and the one `rtmd-report` carries AMID, CID,
+ * DLST (which itself requires a TVC sensor), EDOP, EMFR, EMOD, EPQS, ESER and a
+ * `records` array whose entries require ABST, ALRM, BEMD, EERR. EMSV rides on
+ * the report because `rtmd-report`'s oneOf demands it in EXACTLY one place —
+ * the report or every record, never both. `transferType` is `rtm` because the
+ * RTMD report is the shorter of the two arms; TVC is the one optional reading
+ * kept, since a temperature sample with no temperature would teach the wrong
+ * thing. Same shape as the README quick-start.
  *
  * `schemaVersion` comes from the server-reported `schemas`, never a literal: a
  * hardcoded version would keep the copy-paste sample earning a 200 only until
@@ -69,11 +84,37 @@ export interface SetupProps {
  * With no registered version there is nothing truthful to name, so the field is
  * omitted rather than guessed (same rule as the provenance line, beads 3cq).
  * Cannot happen with the current registry — load() seeds it.
+ *
+ * Rendered multi-line for readability: the callers embed it in a shell snippet
+ * as `-d '<body>'`, so it must stay free of single quotes (it is).
  */
 function sampleBody(schemas: SchemaProvenance[]): string {
   const version = schemas.at(-1)?.version;
-  const schemaField = version === undefined ? '' : `"schemaVersion":"${version}",`;
-  return `{${schemaField}"transferId":"demo-001","records":[]}`;
+  const schemaLine = version === undefined ? '' : `\n    "schemaVersion": "${version}",`;
+  return `{
+  "meta": {${schemaLine}
+    "transferType": "rtm",
+    "transferId": "demo-001",
+    "transferSrc": "com.example.demo",
+    "transferredAt": "2026-01-15T04:06:00Z"
+  },
+  "data": [
+    {
+      "AMID": "demo-appliance-001",
+      "CID": "US",
+      "EDOP": "2024-01-01",
+      "EMFR": "Demo Monitoring Ltd",
+      "EMOD": "DEMO-100",
+      "EPQS": "E006/999",
+      "ESER": "demo-emd-001",
+      "EMSV": "v01.02.123",
+      "DLST": { "TVC": { "SID": "demo-sensor-1", "SMFR": "Demo Sensors", "SMOD": "DS-1" } },
+      "records": [
+        { "ABST": "20260115T040600Z", "ALRM": null, "BEMD": 100, "EERR": null, "TVC": 4.2 }
+      ]
+    }
+  ]
+}`;
 }
 
 const CONTENT_TYPE = 'application/json; charset=utf-8';
