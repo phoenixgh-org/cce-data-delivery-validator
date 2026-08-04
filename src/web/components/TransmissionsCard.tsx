@@ -881,13 +881,20 @@ function RawPayload({
   // (9q4). Runs after the payload has rendered, so `block: 'nearest'` on the
   // whole section puts its top edge at the top of the scrollport rather than
   // merely nudging the heading into view. `nearest` also means we never scroll
-  // when the region is already visible. revealSeq starts at 0 and is never
-  // bumped by the section's own heading row or by onLocate — the former is
-  // already on screen when clicked, and the latter does its own inner scroll.
+  // when the region is already visible.
+  //
+  // `revealSeq` is the ONLY dependency, and that is the whole mechanism (bcb):
+  // it is bumped in exactly one place — the header control, and only when that
+  // control is the one opening the section. Keying on `open` as well would fire
+  // this on every later false->true transition once the header had been used
+  // once, since `revealSeq` never returns to 0 — hijacking the section's own
+  // heading row and onLocate, which are already on screen and do their own
+  // inner scroll respectively. `open` is guaranteed true here without being
+  // read: the same click that bumps `revealSeq` sets it.
   useEffect(() => {
-    if (!open || revealSeq === 0) return;
+    if (revealSeq === 0) return;
     rootRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [open, revealSeq]);
+  }, [revealSeq]);
 
   return (
     <div ref={rootRef}>
