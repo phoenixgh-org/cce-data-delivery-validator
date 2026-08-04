@@ -70,9 +70,11 @@ export interface SetupProps {
  * `records` array whose entries require ABST, ALRM, BEMD, EERR. EMSV rides on
  * the report because `rtmd-report`'s oneOf demands it in EXACTLY one place —
  * the report or every record, never both. `transferType` is `rtm` because the
- * RTMD report is the shorter of the two arms; TVC is the one optional reading
- * kept, since a temperature sample with no temperature would teach the wrong
- * thing. Same shape as the README quick-start.
+ * RTMD report is the shorter of the two arms. TVC is required too, just not via
+ * `required`: `rtmd-record` carries an `anyOf` demanding one of TVC / TFRZ /
+ * TAMB on every record, and TVC is the arm chosen — a temperature sample with no
+ * temperature is not a record the service accepts. Same shape as the README
+ * quick-start.
  *
  * `schemaVersion` comes from the server-reported `schemas`, never a literal: a
  * hardcoded version would keep the copy-paste sample earning a 200 only until
@@ -87,8 +89,13 @@ export interface SetupProps {
  *
  * Rendered multi-line for readability: the callers embed it in a shell snippet
  * as `-d '<body>'`, so it must stay free of single quotes (it is).
+ *
+ * Exported only so Setup.test.ts can hold both claims to account — that the body
+ * still validates against the newest registered schema, and that it carries no
+ * single quote. Twice now the sample drifted into a guaranteed 422 (beads 48h,
+ * auu) and both times only a manual audit caught it (beads lg8).
  */
-function sampleBody(schemas: SchemaProvenance[]): string {
+export function sampleBody(schemas: SchemaProvenance[]): string {
   const version = schemas.at(-1)?.version;
   const schemaLine = version === undefined ? '' : `\n    "schemaVersion": "${version}",`;
   return `{

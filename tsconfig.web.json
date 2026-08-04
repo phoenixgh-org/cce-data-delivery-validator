@@ -12,5 +12,5 @@
     "allowImportingTsExtensions": true
   },
   "include": ["src/web"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist", "src/web/**/*.test.ts"]
 }
