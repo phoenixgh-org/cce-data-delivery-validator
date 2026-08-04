@@ -242,9 +242,10 @@ proxies `/api`, `/i` and `/health` through to the API.
 
 `npm test` **without a database is not a full run.** Eight suites — the repository
 layer, the ingest route, the ingest stages, and the sessions API — probe Postgres
-once and skip themselves entirely when it is unreachable. You get `# pass 232 /
-# fail 0 / # skipped 50`: green, and the whole persistence and ingest-integration
-layer never executed. Treat a bare `npm test` as the pure-logic subset only.
+once and skip themselves entirely when it is unreachable. The run is green with
+roughly a fifth of the tests reported as `# skipped`, and the whole persistence
+and ingest-integration layer never executed. Treat a bare `npm test` as the
+pure-logic subset only.
 
 To run everything, bring up Postgres and point the suite at it:
 
@@ -253,8 +254,9 @@ docker compose up -d postgres   # first boot applies db/initdb/*.sql in order
 npm run test:db                 # npm test with the compose-local DATABASE_URL preset
 ```
 
-That is `# pass 282 / # fail 0 / # skipped 0`. If you see skips, the database is
-not reachable — or its schema predates a DDL file. `db/initdb/` is applied only on
+That must report `# fail 0 / # skipped 0` — every test executes, which is the
+only number worth stating here since the totals move with every test that lands.
+If you see skips, the database is not reachable — or its schema predates a DDL file. `db/initdb/` is applied only on
 **first** boot of the volume, so a database created before a numbered file was
 added never got it; apply the missing files by hand, or `docker compose down -v`
 and let it re-initialize from scratch.

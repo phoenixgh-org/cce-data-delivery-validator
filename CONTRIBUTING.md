@@ -14,7 +14,7 @@ to file there.)
 
 ## Setup
 
-Node **20+**, TypeScript and ESM end to end. Postgres 16 comes from compose.
+Node **22+**, TypeScript and ESM end to end. Postgres 16 comes from compose.
 
 ```bash
 npm install
@@ -35,7 +35,7 @@ npm run build      # tsc + copy-schemas + web typecheck + vite build
 
 **`npm test` without a database is not a full run.** The suites that need
 Postgres probe it once and skip themselves entirely when it is unreachable, so a
-bare `npm test` is green with ~51 skips and the whole persistence and
+bare `npm test` is green with dozens of skips and the whole persistence and
 ingest-integration layer never executed. `npm run test:db` is the same suite with
 `DATABASE_URL` preset; it must report **zero skips**. CI
 (`.github/workflows/ci.yml`) runs against a real Postgres and **fails on any
