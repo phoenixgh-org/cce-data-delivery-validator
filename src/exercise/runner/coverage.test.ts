@@ -147,10 +147,16 @@ test('the shipped case table claims no requirement the matrix lacks', () => {
   assert.deepEqual(computeCoverage(EXERCISE_CASES).unknownClaims, []);
 });
 
-test('the representative table leaves §1.3 and §2.1 uncovered (8qa.3/.5 fill them)', () => {
+test('the table now covers §1.3 in both directions and still leaves §2.1 uncovered (8qa.5)', () => {
   const report = computeCoverage(EXERCISE_CASES);
+  // 8qa.3 landed the transport table, so §1.3 has a pass (the configured Bearer
+  // credential) and a fail (missing/wrong credential) — the runner enables auth
+  // on the session first, which is what makes those cases mean anything.
+  const covered = new Set(report.covered.map((r) => r.requirement));
+  assert.equal(covered.has('1.3'), true);
+  // §2.1 still needs two POSTs genuinely IN FLIGHT at once, which the sequential
+  // player cannot produce (../runner/run.ts header) — 8qa.5's problem.
   const uncovered = new Set(report.uncovered.map((r) => r.requirement));
-  assert.equal(uncovered.has('1.3'), true);
   assert.equal(uncovered.has('2.1'), true);
 });
 

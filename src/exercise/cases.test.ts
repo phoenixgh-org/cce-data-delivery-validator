@@ -44,6 +44,20 @@ import { EXERCISE_CASES, PAYLOAD_CASES, SEQUENCE_CASES, TRANSPORT_CASES } from '
 /** The real registry — load() is synchronous and DB-free. */
 const registry = SchemaRegistry.load();
 
+/**
+ * Materialize a case the way THESE tests need it: with a stand-in for the
+ * show-once §1.3 credential the live runner supplies (8qa.3).
+ *
+ * `bearerCredential()` refuses to materialize without one — deliberately, so a
+ * live §1.3 pass can never go out silently uncredentialed and collapse to a 401
+ * (src/exercise/transforms/transport.ts). Nothing below inspects the token: these
+ * invariants read the payload and the wire request, never the Authorization
+ * header's value, so any non-empty string serves.
+ */
+function materialize(kase: ExerciseCase) {
+  return materializeCase(kase, { transport: { credential: 'exercise-placeholder-credential' } });
+}
+
 const MATRIX_IDS = new Set(COMPLIANCE_MATRIX.map((row) => row.requirement));
 
 /** The §6 status codes an ingest POST can come back with (DESIGN.md §6). */
@@ -112,7 +126,7 @@ test('no two POSTs in the table share a transferId unless the case is a delibera
   for (const kase of EXERCISE_CASES) {
     const exempt = isIntentionalDuplicate(kase);
     const withinCase = new Set<string>();
-    for (const post of materializeCase(kase)) {
+    for (const post of materialize(kase)) {
       const where = `${kase.id}[${post.label}]`;
       const transferId = transferIdOf(post);
       // The repeat this case exists to send: already recorded by its own earlier
@@ -137,7 +151,7 @@ test('a deliberate-replay case really does repeat its transferId across POSTs', 
   const duplicates = EXERCISE_CASES.filter(isIntentionalDuplicate);
   assert.ok(duplicates.length > 0, 'the table still carries a duplicate case');
   for (const kase of duplicates) {
-    const ids = materializeCase(kase).map(transferIdOf);
+    const ids = materialize(kase).map(transferIdOf);
     assert.ok(
       new Set(ids).size < ids.length,
       `${kase.id}: expects a §1.8 fail but its POSTs carry distinct transferIds (${ids.join(', ')})`,
@@ -249,7 +263,7 @@ test('fail-direction cases name their fault and expect a fail finding or a rejec
 
 /** Assert one materialized payload behaves exactly as its case declared. */
 function assertSchemaOutcome(kase: ExerciseCase): void {
-  for (const post of materializeCase(kase)) {
+  for (const post of materialize(kase)) {
     const where = `${kase.id}[${post.label}]`;
     const version = declaredVersion(post.payload);
     const lookup = registry.lookup(version);
@@ -314,7 +328,7 @@ test('the table exercises both directions, both transform families and a multi-P
   assert.ok(layers.has('transport'), 'a transport-layer fault');
   assert.ok(layers.has('sequence'), 'a sequence-layer fault');
   const outcomes = new Set(
-    EXERCISE_CASES.flatMap((c) => materializeCase(c).map((p) => p.schemaOutcome)),
+    EXERCISE_CASES.flatMap((c) => materialize(c).map((p) => p.schemaOutcome)),
   );
   assert.deepEqual(
     [...outcomes].sort(),
