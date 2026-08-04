@@ -22,6 +22,7 @@
     "typecheck:web": "tsc -p tsconfig.web.json",
     "dev": "tsx watch src/index.ts",
     "dev:web": "vite",
+    "exercise": "tsx src/exercise/runner/run.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "test:db": "DATABASE_URL=postgresql://cce_validator:cce_validator@localhost:5432/cce_validator npm test",
     "lint": "eslint . && prettier --check .",
