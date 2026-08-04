@@ -157,3 +157,36 @@ test('GET to an unknown /api path returns a JSON 404, not the SPA shell (bcm)', 
     await app.close();
   }
 });
+
+// beads 4z2: in dev the default webDist resolves to `src/web` — the Vite SOURCE
+// root, whose index.html asks the browser for `/main.tsx`. Serving it produces a
+// page that 404s its own module, so a directory carrying that marker must NOT be
+// registered at all: an honest JSON 404 beats a broken shell.
+test('a Vite source dir (main.tsx present) is not served at all (4z2)', async () => {
+  const sourceDir = mkdtempSync(join(tmpdir(), 'cce-websrc-'));
+  writeFileSync(join(sourceDir, 'index.html'), INDEX_HTML);
+  writeFileSync(join(sourceDir, 'main.tsx'), '// vite entrypoint\n');
+  const app = buildApp({ logger: false, webDist: sourceDir });
+  await app.ready();
+  try {
+    const root = await app.inject({ method: 'GET', url: '/' });
+    assert.equal(root.statusCode, 404);
+    assert.doesNotMatch(root.body, /SPA-SHELL/, 'the untransformed source must not be served');
+
+    // The SPA fallback goes with it — no index.html for deep links either.
+    const deep = await app.inject({
+      method: 'GET',
+      url: '/d/11111111-1111-4111-8111-111111111111',
+    });
+    assert.equal(deep.statusCode, 404);
+    assert.doesNotMatch(deep.body, /SPA-SHELL/);
+
+    // The API is unaffected: the guard only skips static serving.
+    const health = await app.inject({ method: 'GET', url: '/health' });
+    assert.equal(health.statusCode, 200);
+    assert.deepEqual(health.json(), { status: 'ok' });
+  } finally {
+    await app.close();
+    rmSync(sourceDir, { recursive: true, force: true });
+  }
+});

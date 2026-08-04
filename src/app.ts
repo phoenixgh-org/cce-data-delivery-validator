@@ -21,6 +21,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import fastifyStatic from '@fastify/static';
@@ -38,6 +39,21 @@ const DEFAULT_TRUSTED_PROXY = '127.0.0.1';
  * Resolved relative to the compiled module: `dist/app.js` → `dist/web`.
  */
 const DEFAULT_WEB_DIST = fileURLToPath(new URL('./web', import.meta.url));
+
+/**
+ * File whose presence identifies a directory as the Vite SOURCE root (`src/web`)
+ * rather than the build output — `vite build` emits hashed bundles under
+ * `assets/`, never a `.tsx`.
+ *
+ * This matters in dev: `npm run dev` runs `tsx src/index.ts`, so
+ * {@link DEFAULT_WEB_DIST} resolves to `src/web`, which EXISTS but holds the
+ * untransformed `index.html` whose `<script src="/main.tsx">` the browser cannot
+ * load — the SPA fallback would serve a page that 404s its own module. Serving
+ * that is worse than serving nothing, so we skip static registration and say why
+ * (beads 4z2). Use `npm run dev:web` (Vite dev server, proxying the API here) or
+ * `npm run build` to serve the dashboard from this process.
+ */
+const WEB_SOURCE_MARKER = 'main.tsx';
 
 /**
  * Path prefixes owned by the backend API/ingest/health routes. The SPA fallback
@@ -94,8 +110,9 @@ export interface BuildAppOptions {
    * Directory of the built React SPA to serve as static files (DESIGN §13).
    * Defaults to {@link DEFAULT_WEB_DIST} (`dist/web`). Overridable so tests can
    * point at a fixture. If the directory does not exist (e.g. `npm test` with no
-   * prior `vite build`), static serving + the SPA fallback are NOT registered,
-   * keeping the app construct-able without a web build.
+   * prior `vite build`) — or holds the Vite SOURCE rather than a build, see
+   * {@link WEB_SOURCE_MARKER} — static serving + the SPA fallback are NOT
+   * registered, keeping the app construct-able without a web build.
    */
   webDist?: string;
 }
@@ -192,7 +209,15 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   // LAST so it can never shadow /api/*, /i/*, or /health. Guarded on the build
   // dir existing, so `npm test` (no prior `vite build`) stays green.
   const webDist = options.webDist ?? DEFAULT_WEB_DIST;
-  if (existsSync(webDist)) {
+  if (existsSync(join(webDist, WEB_SOURCE_MARKER))) {
+    // Dev (`npm run dev`): this is the Vite source root, not a build. See
+    // WEB_SOURCE_MARKER — serving it hands the browser a page that 404s.
+    app.log.warn(
+      `web: ${webDist} is the Vite SOURCE root, not a build — static serving and the ` +
+        `SPA fallback are disabled. Run \`npm run dev:web\` for the dashboard, or ` +
+        `\`npm run build\` to serve it from this process.`,
+    );
+  } else if (existsSync(webDist)) {
     app.register(fastifyStatic, { root: webDist });
 
     // SPA fallback: a GET that matched no route and is NOT an API/ingest/health

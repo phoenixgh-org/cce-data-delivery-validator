@@ -8,12 +8,29 @@ import { defineConfig } from 'vite';
  * React SPA + Vite + @fastify/static). The app source lives under `src/web`;
  * the build emits to `dist/web`, which `buildApp()` in src/app.ts serves as
  * static files with an SPA fallback so `/d/:uuid` deep-links resolve.
+ *
+ * `server` below is the DEV story (beads 4z2) and affects `npm run dev:web`
+ * only, never `vite build`: the Node process cannot serve the dashboard in dev
+ * (it would be serving this untransformed source), so the UI is served here with
+ * HMR and the backend-owned prefixes are proxied to `npm run dev` on :3000.
+ * Client routes (`/`, `/d/:uuid`) are NOT proxied — Vite's SPA fallback serves
+ * them, exactly as @fastify/static does in production.
  */
+const DEV_API_TARGET = 'http://127.0.0.1:3000';
+
 export default defineConfig({
   plugins: [react()],
   root: fileURLToPath(new URL('./src/web', import.meta.url)),
   build: {
     outDir: fileURLToPath(new URL('./dist/web', import.meta.url)),
     emptyOutDir: true,
+  },
+  server: {
+    // Mirrors API_PREFIXES in src/app.ts — the paths the backend owns.
+    proxy: {
+      '/api': DEV_API_TARGET,
+      '/i': DEV_API_TARGET,
+      '/health': DEV_API_TARGET,
+    },
   },
 });

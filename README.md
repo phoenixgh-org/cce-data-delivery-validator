@@ -226,13 +226,17 @@ Node 22+ and TypeScript end to end; Fastify, Ajv, Postgres, React + Vite.
 npm install
 docker compose up -d postgres   # Postgres 16; db/initdb/*.sql runs on first boot
 npm run dev                     # API with hot reload on :3000
+npm run dev:web                 # dashboard with HMR on :5173, API proxied to :3000
 npm test                        # node test runner via tsx
 npm run build                   # tsc + schemas + web typecheck + vite build
 ```
 
 Tests colocate with their source as `*.test.ts`. The dashboard is served by the same
 Node process from `dist/web`, so a full `npm run build` (or `docker compose up -d`)
-is what puts the UI on `:3000`.
+is what puts the UI on `:3000`. In dev there is no such build, and the Node process
+deliberately serves **no** UI at all (it would otherwise be serving untransformed
+Vite source): run `npm run dev:web` alongside `npm run dev` and use `:5173`, which
+proxies `/api`, `/i` and `/health` through to the API.
 
 ### Tests need a database — `npm test` alone does not tell you so
 
