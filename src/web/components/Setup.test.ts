@@ -27,10 +27,16 @@
  * `tsx --test` runner with no build-config change and no DOM. Nothing here
  * renders a component; only the pure function is called. If src/web ever gains
  * its own tsconfig (jsx: react-jsx), this shim can become a static import.
+ *
+ * The README quick-start (xl7) is guarded here too, in the same file, because it
+ * is the SECOND copy of this body and Setup.tsx's docblock claims the two are
+ * the same shape. Those tests need only the registry, not the panel — see
+ * {@link readmeSampleBody} for why the README copy rots differently.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as React from 'react';
 
 import { SchemaRegistry } from '../../schema-registry.js';
@@ -72,4 +78,84 @@ test('sampleBody() renders a body the newest registered schema accepts', () => {
 
 test('sampleBody() stays free of single quotes for the -d snippet', () => {
   assert.equal(sampleBody(panelSchemas()).includes("'"), false);
+});
+
+/**
+ * The README's copy of the first-run body, lifted out of its fenced shell block.
+ *
+ * Resolved from this file's own URL, never `process.cwd()`, so the test holds
+ * wherever the runner is invoked from.
+ *
+ * Deliberately unclever, and deliberately noisy on a miss: every step that could
+ * silently match nothing asserts instead, because a guard that passes when it
+ * finds no body is worse than no guard at all — it would go on reporting green
+ * through exactly the edit it exists to catch. So it pins the block by the
+ * ingest curl inside it rather than by position, requires EXACTLY one such
+ * block and exactly one `-d '…'` in it, and fails with what it was looking for
+ * if the fence, the flag, or the quoting ever changes.
+ *
+ * The single-quote scan is what makes the lazy `'…'` match sound: the body may
+ * not contain a single quote (the test above holds the panel's copy to that, and
+ * the README's `-d '<body>'` depends on it the same way), so the first `'` after
+ * the flag is necessarily the closing one.
+ */
+function readmeSampleBody(): unknown {
+  const readmePath = new URL('../../../README.md', import.meta.url);
+  const readme = readFileSync(readmePath, 'utf8');
+
+  const blocks = [...readme.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
+  const ingest = blocks.filter((b) => /curl\s+[^\n]*\$BASE\/i\//.test(b));
+  assert.equal(
+    ingest.length,
+    1,
+    `expected exactly 1 fenced bash block POSTing to $BASE/i/ in README.md, found ${ingest.length}` +
+      ' — the quick-start moved, its fence changed, or it was duplicated',
+  );
+
+  const block = ingest[0];
+  const bodies = [...block.matchAll(/-d '([^']*)'/g)].map((m) => m[1]);
+  assert.equal(
+    bodies.length,
+    1,
+    `expected exactly 1 single-quoted -d body in the README quick-start, found ${bodies.length}`,
+  );
+
+  const parsed: unknown = JSON.parse(bodies[0]);
+  assert.equal(
+    typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed),
+    true,
+    'README quick-start -d body did not parse to a JSON object',
+  );
+  return parsed;
+}
+
+/**
+ * Why this is a test and not a fix in the README: README.md hardcodes
+ * `"schemaVersion": "0.8.1"`. The panel deliberately stopped doing that (48h,
+ * 3cq — it derives the version from `SchemaRegistry.provenance()`), but static
+ * markdown cannot derive anything at runtime. So the staleness is designed to
+ * surface HERE, loudly, the moment the registry's current version moves. Fix it
+ * by editing the README's literal; do not make the README dynamic.
+ */
+test('the README quick-start body declares the registry current version', () => {
+  const current = registry.currentVersion();
+  assert.notEqual(current, null, 'registry must register at least one version');
+
+  const body = readmeSampleBody() as { meta?: { schemaVersion?: string } };
+  assert.equal(
+    body.meta?.schemaVersion,
+    current,
+    'README.md hardcodes schemaVersion; the registry current version moved — update the README',
+  );
+});
+
+test('the README quick-start body is one the newest registered schema accepts', () => {
+  const current = registry.currentVersion();
+  assert.notEqual(current, null, 'registry must register at least one version');
+
+  const found = registry.lookup(current!);
+  if (!found.ok) assert.fail(`registry cannot look up its own current version ${current}`);
+
+  const valid = found.entry.validate(readmeSampleBody());
+  assert.ok(valid, `README sample body is invalid: ${JSON.stringify(found.entry.validate.errors)}`);
 });
