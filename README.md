@@ -256,10 +256,10 @@ npm run test:db                 # npm test with the compose-local DATABASE_URL p
 
 That must report `# fail 0 / # skipped 0` — every test executes, which is the
 only number worth stating here since the totals move with every test that lands.
-If you see skips, the database is not reachable — or its schema predates a DDL file. `db/initdb/` is applied only on
-**first** boot of the volume, so a database created before a numbered file was
-added never got it; apply the missing files by hand, or `docker compose down -v`
-and let it re-initialize from scratch.
+If you see skips, the database is not reachable — or its schema predates a DDL
+file. `db/initdb/` is applied only on **first** boot of the volume, so a database
+created before a numbered file was added never got it; apply the missing files by
+hand, or `docker compose down -v` and let it re-initialize from scratch.
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs lint, build and the
 full suite against a real Postgres, applying every `db/initdb/*.sql` in filename

@@ -56,8 +56,25 @@ export interface SetupProps {
   onRequestDelete?: () => void;
 }
 
-/** A small JSON body suppliers can adapt — keeps the curl one realistic. */
-const SAMPLE_BODY = '{"schemaVersion":"0.8.1","transferId":"demo-001","records":[]}';
+/**
+ * A small JSON body suppliers can adapt — keeps the curl one realistic.
+ *
+ * `schemaVersion` comes from the server-reported `schemas`, never a literal: a
+ * hardcoded version would keep the copy-paste sample earning a 200 only until
+ * the registry moved off it, and then hand a first-run supplier the 422 the
+ * "Schema & lifecycle" line one column right already contradicts. `schemas` is
+ * ordered oldest-first (SchemaRegistry.provenance()), so the last entry is the
+ * newest registered version — the one ingest grades as current.
+ *
+ * With no registered version there is nothing truthful to name, so the field is
+ * omitted rather than guessed (same rule as the provenance line, beads 3cq).
+ * Cannot happen with the current registry — load() seeds it.
+ */
+function sampleBody(schemas: SchemaProvenance[]): string {
+  const version = schemas.at(-1)?.version;
+  const schemaField = version === undefined ? '' : `"schemaVersion":"${version}",`;
+  return `{${schemaField}"transferId":"demo-001","records":[]}`;
+}
 
 const CONTENT_TYPE = 'application/json; charset=utf-8';
 
@@ -250,10 +267,13 @@ function MethodPicker({
 function AuthCard({
   session,
   absoluteIngestUrl,
+  body,
   onAuthChange,
 }: {
   session: SessionMeta;
   absoluteIngestUrl: string;
+  /** The sample request body, already derived from the registry (see sampleBody). */
+  body: string;
   onAuthChange: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -406,7 +426,11 @@ function AuthCard({
         )}
 
         {credential && (
-          <AuthCredential credential={credential} absoluteIngestUrl={absoluteIngestUrl} />
+          <AuthCredential
+            credential={credential}
+            absoluteIngestUrl={absoluteIngestUrl}
+            body={body}
+          />
         )}
       </div>
     </div>
@@ -425,9 +449,12 @@ function AuthCard({
 function AuthCredential({
   credential,
   absoluteIngestUrl,
+  body,
 }: {
   credential: EnableAuthResponse;
   absoluteIngestUrl: string;
+  /** The sample request body, already derived from the registry (see sampleBody). */
+  body: string;
 }) {
   let credLine: string;
   let credLabel: string;
@@ -450,7 +477,7 @@ function AuthCredential({
     `curl -X POST '${absoluteIngestUrl}' \\`,
     `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
     `  ${authArg} \\`,
-    `  -d '${SAMPLE_BODY}'`,
+    `  -d '${body}'`,
   ].join('\n');
 
   return (
@@ -494,10 +521,12 @@ export function Setup(props: SetupProps) {
   // the origin so suppliers get a fully-qualified, runnable URL.
   const absoluteIngestUrl = `${window.location.origin}${ingestUrl}`;
 
+  const body = sampleBody(schemas);
+
   const curlExample = [
     `curl -X POST '${absoluteIngestUrl}' \\`,
     `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
-    `  -d '${SAMPLE_BODY}'`,
+    `  -d '${body}'`,
   ].join('\n');
 
   return (
@@ -585,6 +614,7 @@ export function Setup(props: SetupProps) {
             <AuthCard
               session={session}
               absoluteIngestUrl={absoluteIngestUrl}
+              body={body}
               onAuthChange={onAuthChange}
             />
 
