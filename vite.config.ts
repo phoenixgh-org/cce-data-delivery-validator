@@ -3,6 +3,8 @@ import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
+import { API_PREFIXES } from './src/api-prefixes.js';
+
 /**
  * Vite build for the M4 React SPA (DESIGN §13, frontend stack LOCKED to
  * React SPA + Vite + @fastify/static). The app source lives under `src/web`;
@@ -18,6 +20,13 @@ import { defineConfig } from 'vite';
  */
 const DEV_API_TARGET = 'http://127.0.0.1:3000';
 
+/**
+ * Proxy map DERIVED from the single API_PREFIXES list src/app.ts uses for its
+ * SPA fallback, so the two cannot drift (beads 51o); src/app.vite-proxy.test.ts
+ * asserts the equality a future hand-written literal here would break.
+ */
+const devProxy = Object.fromEntries(API_PREFIXES.map((prefix) => [prefix, DEV_API_TARGET]));
+
 export default defineConfig({
   plugins: [react()],
   root: fileURLToPath(new URL('./src/web', import.meta.url)),
@@ -26,11 +35,6 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    // Mirrors API_PREFIXES in src/app.ts — the paths the backend owns.
-    proxy: {
-      '/api': DEV_API_TARGET,
-      '/i': DEV_API_TARGET,
-      '/health': DEV_API_TARGET,
-    },
+    proxy: devProxy,
   },
 });

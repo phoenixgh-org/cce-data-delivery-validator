@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 
+import { API_PREFIXES } from './api-prefixes.js';
 import { registerSessionsApi } from './api/sessions.js';
 import { registerIngestRoute } from './ingest/route.js';
 import { SchemaRegistry } from './schema-registry.js';
@@ -54,13 +55,6 @@ const DEFAULT_WEB_DIST = fileURLToPath(new URL('./web', import.meta.url));
  * `npm run build` to serve the dashboard from this process.
  */
 const WEB_SOURCE_MARKER = 'main.tsx';
-
-/**
- * Path prefixes owned by the backend API/ingest/health routes. The SPA fallback
- * must NEVER serve index.html for these — they get the framework's real
- * 404/405 instead, so e.g. `GET /api/sessions/<bad-uuid>` reaches the API.
- */
-const API_PREFIXES = ['/api', '/i', '/health'];
 
 /** True when `pathname` is owned by a backend route (must not be SPA-fallen-back). */
 function isApiPath(pathname: string): boolean {

@@ -26,6 +26,7 @@ import {
   listTransmissions,
   type ComplianceClass,
   type ListTransmissionsResponse,
+  type SchemaProvenance,
   type SessionResponse,
   type Signature,
   type TransmissionView,
@@ -51,8 +52,17 @@ type State =
  */
 const POLL_INTERVAL_MS = 5000;
 
-/** Fixed schema version surfaced in the header/scorecard copy (README §2). */
-const SCHEMA_VERSION = '0.8.1';
+/**
+ * The header's schema segment, derived from the server's provenance list rather
+ * than a literal (zlo), so it cannot contradict the Setup panel's line one
+ * scroll below when a second version is registered. Empty/multi are handled the
+ * way Setup handles them: never name a version the service did not report, and
+ * list the whole registered set when there is more than one.
+ */
+function schemaLabel(schemas: SchemaProvenance[]): string {
+  if (schemas.length === 0) return 'no schema';
+  return `schema ${schemas.map((s) => s.version).join(', ')}`;
+}
 
 const MS_PER_DAY = 86_400_000;
 
@@ -431,7 +441,7 @@ export function Dashboard() {
           <span style={{ fontSize: 15, fontWeight: 700 }}>Delivery compliance report</span>
           <span style={{ flex: 1 }} />
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>
-            schema {SCHEMA_VERSION} · auth {session.auth_enabled ? 'on' : 'off'} · {days}d left
+            {schemaLabel(schemas)} · auth {session.auth_enabled ? 'on' : 'off'} · {days}d left
           </span>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
