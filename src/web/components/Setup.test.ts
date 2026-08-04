@@ -31,7 +31,9 @@
  * The README quick-start (xl7) is guarded here too, in the same file, because it
  * is the SECOND copy of this body and Setup.tsx's docblock claims the two are
  * the same shape. Those tests need only the registry, not the panel — see
- * {@link readmeSampleBody} for why the README copy rots differently.
+ * {@link readmeSampleBody} for why the README copy rots differently. That "same
+ * shape" claim is itself asserted at the bottom of the file (82p): schema
+ * validity never implied it, and a still-valid divergence passed green.
  */
 
 import { test } from 'node:test';
@@ -158,4 +160,96 @@ test('the README quick-start body is one the newest registered schema accepts', 
 
   const valid = found.entry.validate(readmeSampleBody());
   assert.ok(valid, `README sample body is invalid: ${JSON.stringify(found.entry.validate.errors)}`);
+});
+
+/** What a node is, ignoring what it holds — the only thing "shape" grades. */
+type NodeKind = 'object' | 'array' | 'leaf';
+
+function nodeKind(value: unknown): NodeKind {
+  if (Array.isArray(value)) return 'array';
+  if (typeof value === 'object' && value !== null) return 'object';
+  return 'leaf';
+}
+
+/**
+ * Flatten a parsed body to `path → kind` for every node below the root, e.g.
+ * `meta.transferId → leaf`, `data → array`, `data[0].records[0].TVC → leaf`.
+ *
+ * Values are deliberately not recorded: the two copies legitimately carry
+ * different sample values (transferId demo-001 vs T-001, ALRM null vs "HEAT",
+ * BEMD 100 vs 14.3, different timestamps), and grading those would make the
+ * guard fire on edits it has no business objecting to. `null` is a leaf like any
+ * other scalar, so a null↔string difference is a value difference, not a shape
+ * one.
+ *
+ * ARRAYS ARE ENUMERATED BY INDEX (`data[0]`, `data[1]`, …), which is the whole
+ * array decision, made here rather than left incidental. Both `data` and
+ * `records` hold exactly one element today. Indexing means each element is
+ * compared with its counterpart at the same position, and a length difference —
+ * including one side going empty — surfaces as paths present on one side only,
+ * named individually. The alternative (compare only element 0, or union the
+ * element shapes) would let an extra or emptied element pass unexamined, which
+ * is the silent-green failure this whole guard exists to stop. If the two
+ * samples ever legitimately want different element counts, that is a decision to
+ * take deliberately here, not to discover as a test surprise.
+ *
+ * Recording the KIND alongside the path is what catches an object/array/scalar
+ * swap that happens to keep the same key set (`DLST: {…}` becoming `DLST: 5`).
+ */
+function shapeOf(
+  value: unknown,
+  path = '',
+  into = new Map<string, NodeKind>(),
+): Map<string, NodeKind> {
+  const kind = nodeKind(value);
+  if (path !== '') into.set(path, kind);
+
+  if (kind === 'object') {
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      shapeOf(child, path === '' ? key : `${path}.${key}`, into);
+    }
+  } else if (kind === 'array') {
+    (value as unknown[]).forEach((el, i) => shapeOf(el, `${path}[${i}]`, into));
+  }
+  return into;
+}
+
+/**
+ * The third rot mode (82p): Setup.tsx's docblock claims the panel's sample is the
+ * "Same shape as the README quick-start", and until now nothing asserted it. The
+ * two tests above hold the README copy to being schema-VALID and current-versioned
+ * only, so any divergence that is still valid passed green — measured on bce308d,
+ * an extra `"transferSubject": "cce"` under the README's `meta` left all four
+ * tests green while the panel's copy did not gain it. The docblock was false and
+ * the guard said nothing.
+ *
+ * So this compares key structure, not values, and reports the diverging paths by
+ * name and by side — whoever trips this in a year needs the answer, not two key
+ * trees to diff by eye.
+ */
+test('the panel sample and the README quick-start body are the same shape', () => {
+  const panel = shapeOf(JSON.parse(sampleBody(panelSchemas())));
+  const readme = shapeOf(readmeSampleBody());
+
+  const divergences: string[] = [];
+  for (const [path, kind] of panel) {
+    const other = readme.get(path);
+    if (other === undefined) divergences.push(`${path} — present in the PANEL only`);
+    else if (other !== kind)
+      divergences.push(`${path} — ${kind} in the PANEL, ${other} in the README`);
+  }
+  for (const path of readme.keys()) {
+    if (!panel.has(path)) divergences.push(`${path} — present in the README only`);
+  }
+  divergences.sort();
+
+  assert.equal(
+    divergences.length,
+    0,
+    'Setup.tsx sampleBody() claims "Same shape as the README quick-start", but the two bodies' +
+      ` diverge at ${divergences.length} path(s):\n  ${divergences.join('\n  ')}\n` +
+      'Edit whichever copy drifted (src/web/components/Setup.tsx sampleBody() or the README' +
+      ' quick-start block), or drop the docblock claim if the divergence is deliberate.' +
+      ' Sample VALUES may differ freely; key structure may not.',
+  );
 });
