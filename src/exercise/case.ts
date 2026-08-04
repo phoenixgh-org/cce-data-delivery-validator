@@ -15,7 +15,8 @@
  *   - an ORDERED list of one or more POSTs, each built by applying named
  *     transforms to the pluggable baseline;
  *   - the expected HTTP status per POST;
- *   - the expected findings (requirement + severity) the session should show.
+ *   - the expected findings (requirement + severity) the session must show —
+ *     PRESENCE-based, pooled across the case's POSTs; see `expectedFindings`.
  *
  * A multi-POST case is how the sequence-dependent heuristics (§1.8 duplicates,
  * §2.1 serial delivery, §3.4 cadence across transmissions) get exercised without
@@ -43,7 +44,12 @@ export type ExerciseTransform = PayloadTransform | TransportTransform;
  */
 export type Direction = 'pass' | 'fail';
 
-/** One finding the exercised session should show. */
+/**
+ * One finding the exercised session must show. Matched on `(requirement,
+ * severity)` ONLY: a finding's `detail` is prose the graders are free to reword,
+ * so it is deliberately not part of the contract. See
+ * {@link ExerciseCase.expectedFindings} for the matching rule.
+ */
 export interface ExpectedFinding {
   /** COMPLIANCE_MATRIX requirement id, e.g. '3.2'. */
   readonly requirement: string;
@@ -88,7 +94,37 @@ export interface ExerciseCase {
   readonly fault?: Fault;
   /** One or more POSTs, played in order against the same session. */
   readonly posts: readonly ExercisePost[];
-  /** Findings the session should show once every POST has been played. */
+  /**
+   * Findings the session must show once every POST of this case has been played.
+   *
+   * PRESENCE-BASED, NOT EXHAUSTIVE (decided 2026-08-04; bd 27m). The runner
+   * pools the findings attributable to this case's POSTs and requires each entry
+   * here to appear at least once in that pool, matched on `(requirement,
+   * severity)`. Findings in the pool that this list does not name do NOT fail
+   * the case.
+   *
+   * Exhaustive matching was considered and rejected: an accepted POST
+   * legitimately accumulates findings the case has no interest in — the §1.2,
+   * §1.6 and §1.8 passes every 200 earns, or the extra §3.1 `info` naming
+   * finding a custom object like `zTPCM` draws for breaking clause 4.5's
+   * lower-case rule — so exhaustiveness would make every case brittle against
+   * grader evolution rather than against the defect it targets. The accepted
+   * cost is that a case cannot prove a defect did not LEAK; freedom from stray
+   * fail findings is a property of the whole session, not of one case, and
+   * belongs to the runner's summary if we ever want it.
+   *
+   * ATTRIBUTION IS PER CASE, NOT PER POST. A multi-POST case pools its POSTs, so
+   * `1.8-fail-repeated-transfer-id` listing both a §1.8 pass and a §1.8 fail
+   * asserts "the session shows both across my two POSTs", not which POST carried
+   * which. How the runner attributes a finding to a POST in the first place is
+   * its own business — querying findings by the transmission id the POST
+   * returned is the obvious mechanism. If a case ever needs to pin an expectation
+   * to one POST, add a post-label field to {@link ExpectedFinding}; do not
+   * quietly re-read the pooled entries as per-POST ones.
+   *
+   * MAY BE EMPTY: a POST the §6 pipeline halts before persistence (405) is
+   * graded by status alone and writes no finding to pool.
+   */
   readonly expectedFindings: readonly ExpectedFinding[];
 }
 

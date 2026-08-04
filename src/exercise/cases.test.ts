@@ -22,6 +22,10 @@
  *     consistency of the declaration (direction ↔ fault ↔ expected statuses ↔
  *     expected findings) and that the transforms produce the wire request they
  *     claim (see ./case.test.ts). The live grade belongs to the runner (8qa.2).
+ *
+ * The table-wide invariants also cover SESSION HYGIENE: the runner plays every
+ * case against a single session, so the cases must not collide with each other
+ * there (today: the transferId a POST carries, which §1.8 grades session-wide).
  */
 
 import { test } from 'node:test';
@@ -51,6 +55,60 @@ function declaredVersion(payload: { meta: Record<string, unknown> }): string {
 test('case ids are unique', () => {
   const ids = EXERCISE_CASES.map((c) => c.id);
   assert.equal(new Set(ids).size, ids.length, `duplicate case id in ${ids.join(', ')}`);
+});
+
+/**
+ * A case that expects a §1.8 FAIL is exercising the duplicate heuristic itself,
+ * so its POSTs repeat a transferId on purpose. Every other case must not.
+ */
+function isIntentionalDuplicate(kase: ExerciseCase): boolean {
+  return kase.expectedFindings.some((f) => f.requirement === '1.8' && f.severity === 'fail');
+}
+
+function transferIdOf(post: { payload: { meta: Record<string, unknown> } }): string {
+  const raw = post.payload.meta.transferId;
+  assert.equal(typeof raw, 'string', 'every materialized payload declares a transferId');
+  return raw as string;
+}
+
+test('no two POSTs in the table share a transferId unless the case is a deliberate replay', () => {
+  // The runner plays the WHOLE table against ONE session and §1.8 is
+  // session-scoped, so a transferId shared by unrelated cases would record a
+  // §1.8 fail caused purely by table ordering — on pass-direction cases too
+  // (5xi). Distinct ids also make the serialized bytes distinct, which clears
+  // the content-replay flavour of the same check. (POSTs whose body a transport
+  // wrapper replaces outright — oversize, unparseable — are exempt in practice:
+  // they halt at §6 long before the semantic stage.)
+  const seen = new Map<string, string>();
+  for (const kase of EXERCISE_CASES) {
+    if (isIntentionalDuplicate(kase)) continue;
+    for (const post of materializeCase(kase)) {
+      const where = `${kase.id}[${post.label}]`;
+      const transferId = transferIdOf(post);
+      const prior = seen.get(transferId);
+      assert.equal(
+        prior,
+        undefined,
+        `${where}: transferId "${transferId}" already sent by ${prior}`,
+      );
+      seen.set(transferId, where);
+    }
+  }
+});
+
+test('a deliberate-replay case really does repeat its transferId across POSTs', () => {
+  // The other half of the invariant: the duplicate cases must keep PINNING
+  // their id rather than inheriting whatever the baseline generates, or they
+  // stop exercising §1.8 the moment the baseline changes.
+  const duplicates = EXERCISE_CASES.filter(isIntentionalDuplicate);
+  assert.ok(duplicates.length > 0, 'the table still carries a duplicate case');
+  for (const kase of duplicates) {
+    const ids = materializeCase(kase).map(transferIdOf);
+    assert.ok(
+      new Set(ids).size < ids.length,
+      `${kase.id}: expects a §1.8 fail but its POSTs carry distinct transferIds (${ids.join(', ')})`,
+    );
+  }
 });
 
 test('every requirement a case names exists in COMPLIANCE_MATRIX', () => {

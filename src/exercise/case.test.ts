@@ -62,16 +62,28 @@ function only(transforms: ExerciseCase['posts'][number]['transforms']) {
 
 // ── baseline ────────────────────────────────────────────────────────────────
 
-test('the fixture baseline reproduces the valid ingest fixture', () => {
+test('the fixture baseline reproduces the valid ingest fixture but for its transferId', () => {
   const payload = fixtureBaseline({ caseId: 'x', index: 0 });
-  assert.deepEqual(payload, JSON.parse(JSON.stringify(validTransmission)));
+  const fixture = JSON.parse(JSON.stringify(validTransmission)) as typeof payload;
+  assert.notEqual(payload.meta.transferId, fixture.meta.transferId);
+  payload.meta.transferId = fixture.meta.transferId;
+  assert.deepEqual(payload, fixture, 'nothing but the transferId differs from the fixture');
+});
+
+test('the fixture baseline derives a distinct transferId per case and POST', () => {
+  // The §1.8 duplicate check is session-scoped and the runner plays the whole
+  // table against ONE session, so two POSTs that are not deliberate replays must
+  // never arrive carrying the same transferId (5xi).
+  assert.equal(fixtureBaseline({ caseId: 'alpha', index: 0 }).meta.transferId, 'alpha#0');
+  assert.equal(fixtureBaseline({ caseId: 'alpha', index: 1 }).meta.transferId, 'alpha#1');
+  assert.equal(fixtureBaseline({ caseId: 'beta', index: 0 }).meta.transferId, 'beta#0');
 });
 
 test('the fixture baseline hands out an independent copy each call', () => {
   const first = fixtureBaseline({ caseId: 'x', index: 0 });
-  first.meta.transferId = 'mutated';
-  const second = fixtureBaseline({ caseId: 'x', index: 1 });
-  assert.equal(second.meta.transferId, 'T-baseline', 'the second call is unaffected');
+  first.meta.transferSrc = 'mutated';
+  const second = fixtureBaseline({ caseId: 'x', index: 0 });
+  assert.equal(second.meta.transferSrc, 'com.example', 'the second call is unaffected');
 });
 
 test('the baseline generator is swappable without touching the case', () => {

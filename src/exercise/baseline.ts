@@ -13,11 +13,14 @@
  * it: it is already the repo's single source of truth for "a transmission that
  * reaches the §6 happy-path 200", and a second hand-built copy would drift.
  *
- * A generator receives the ordinal of the POST it is producing within its case,
- * so a future stateful/randomizing generator can vary payload content per POST.
- * The fixture generator ignores it and returns an identical deep clone each
- * time. Cases must NOT rely on that identity — see the note on `setTransferId`
- * in ./transforms/payload.ts for how sequence cases stay generator-agnostic.
+ * A generator receives the case id and the ordinal of the POST it is producing
+ * within that case, so a stateful/randomizing generator can vary payload content
+ * per POST. The fixture generator uses them for exactly one thing — a distinct
+ * `meta.transferId` per POST (see {@link fixtureBaseline}) — and is otherwise a
+ * deep clone of the same fixture every time. Cases must NOT rely on either
+ * property: a case that needs two POSTs to look alike says so with
+ * `setTransferId`, which is how sequence cases stay generator-agnostic (see the
+ * note on that transform in ./transforms/payload.ts).
  */
 
 import { cloneValid } from '../ingest/fixtures/transmissions.js';
@@ -51,10 +54,28 @@ export type BaselineGenerator = (request: BaselineRequest) => TransmissionPayloa
 
 /**
  * The baseline seeded from `src/ingest/fixtures/transmissions.ts` — the valid
- * RTM transmission on the current schema version. Deterministic: every call
- * yields a deep clone of the same payload.
+ * RTM transmission on the current schema version. Deterministic: the same
+ * request always yields the same payload, and every call yields a fresh object.
+ *
+ * The one field NOT taken from the fixture is `meta.transferId`, which is
+ * stamped `<caseId>#<index>` from the request. The fixture's constant
+ * `T-baseline` is fine for a lone POST but poison for a table: the runner plays
+ * the WHOLE table against ONE session, and the §1.8 check flags a repeat when a
+ * prior transmission in that session carries an equal transferId OR equal
+ * content bytes (src/ingest/stages/semantic/duplicate.ts). A shared id would
+ * make unrelated cases — pass-direction ones included — record a §1.8 fail
+ * caused purely by table ordering, and would poison the dashboard the runner
+ * points at (5xi). Deriving the id per POST also makes the serialized bytes
+ * distinct, so the content-replay flavour of the same check cannot trip either.
+ *
+ * Cases that WANT a duplicate pin the id themselves on every POST with
+ * `setTransferId`, which runs after this and overwrites it.
  */
-export const fixtureBaseline: BaselineGenerator = () => cloneValid();
+export const fixtureBaseline: BaselineGenerator = (request) => {
+  const payload = cloneValid();
+  payload.meta.transferId = `${request.caseId}#${request.index}`;
+  return payload;
+};
 
 /** The generator used when a caller does not supply one. */
 export const DEFAULT_BASELINE: BaselineGenerator = fixtureBaseline;
