@@ -21,26 +21,35 @@
  * SYNTHETIC DATA ONLY (DESIGN.md): every byte sent comes from the exercise
  * baseline + transform vocabulary. Nothing here reads real CCE data.
  *
- * ── a known limit, for 8qa.3/.5 ─────────────────────────────────────────────
- * Two gradeable requirements cannot be expressed as an ordered list of POSTs
- * against an already-minted session, and are absent from the coverage the runner
- * can produce today:
+ * ── §1.3 auth setup, and why the order is what it is (ke6) ──────────────────
+ * A §1.3 case cannot be expressed as POSTs alone: the SESSION must first opt into
+ * auth and hand the runner its show-once credential. Cases say so declaratively
+ * (`setup: 'auth-enabled'`, ../case.ts) and {@link runExercise} honors it.
  *
- *   - §1.3 auth needs the SESSION reconfigured mid-run (POST /api/sessions/
- *     {uuid}/auth) and the show-once credential threaded into `TransportContext`
- *     before the case's POSTs are materialized;
- *   - §2.1 serial delivery needs two POSTs genuinely IN FLIGHT at once, which a
- *     sequential player cannot produce.
+ * Enabling auth is STICKY and session-global — `auth_enabled` lives on the
+ * session row, and from then on the ingest pipeline's auth stage 401s every POST
+ * that does not carry the credential, before the body/schema/semantic stages run
+ * (src/ingest/stages/auth.ts). An ordinary case played after that would collapse
+ * to a 401 and miss every finding it expects.
  *
- * Both are per-CASE concerns, not per-run ones, so the seam they will need is a
- * small optional hook on the case (a setup step returning a `TransportContext`,
- * and a "these POSTs go out concurrently" flag). `playCase` below takes the
- * transport context as an argument for exactly that reason — nothing here has to
- * be unpicked to add it. Do not add the hook until the bite that needs it.
+ * So the runner PARTITIONS rather than toggles: every case without a setup is
+ * played first, auth is enabled once, then the `auth-enabled` cases are played,
+ * and auth is left on when the run ends. Authors are therefore free to put a
+ * §1.3 case anywhere in the table (the transport table's natural place is between
+ * §1.2 and §1.4), and the disable route — `DELETE /api/sessions/{uuid}/auth`,
+ * which exists and works — is deliberately NOT used: one transition per run is
+ * fewer moving parts than one per case, and the end state honestly shows the
+ * dashboard reader that §1.3 was exercised.
+ *
+ * ── a known limit, for 8qa.5 ────────────────────────────────────────────────
+ * §2.1 serial delivery still cannot be exercised: it needs two POSTs genuinely IN
+ * FLIGHT at once, which a sequential player cannot produce. That is a per-CASE
+ * concern too ("these POSTs go out concurrently"), and the setup field is the
+ * obvious place to grow — but do not add it until the bite that needs it.
  */
 
 import { COMPLIANCE_MATRIX } from '../../api/compliance-matrix.js';
-import { materializeCase, type ExerciseCase } from '../case.js';
+import { materializeCase, requiresAuthEnabled, type ExerciseCase } from '../case.js';
 import { EXERCISE_CASES } from '../cases.js';
 import type { TransportContext } from '../transforms/transport.js';
 import {
@@ -53,6 +62,7 @@ import {
 import {
   ExerciseHttpError,
   createExerciseSession,
+  enableBearerAuth,
   fetchFindingsByTransmission,
   normalizeBaseUrl,
   playPost,
@@ -105,6 +115,27 @@ async function playCase(
   return outcomes;
 }
 
+/** A table split into the order it must be PLAYED in. */
+export interface PlayOrder {
+  /** Cases needing nothing but a minted session, in table order. */
+  readonly plain: readonly ExerciseCase[];
+  /** Cases needing §1.3 auth enabled, in table order — played after `plain`. */
+  readonly authed: readonly ExerciseCase[];
+}
+
+/**
+ * Split the table so the §1.3 cases go last. Pure and exported for its test: the
+ * ordering is load-bearing (see the module header — enabling auth is sticky, so a
+ * plain case played afterwards would 401), and it must hold however the case
+ * files happen to be concatenated.
+ */
+export function planPlayOrder(cases: readonly ExerciseCase[]): PlayOrder {
+  return {
+    plain: cases.filter((kase) => !requiresAuthEnabled(kase)),
+    authed: cases.filter(requiresAuthEnabled),
+  };
+}
+
 /** Everything one run produced. */
 export interface RunResult {
   readonly session: SessionHandle;
@@ -116,19 +147,36 @@ export interface RunResult {
  * every case against them. The read happens after the whole table has been
  * played rather than per case: findings are attributed by transmission id, so a
  * single read is both cheaper and immune to any ordering surprise.
+ *
+ * Auth-requiring cases are played LAST, after a single opt-in — see the module
+ * header for why enabling §1.3 auth cannot be undone case by case here. A table
+ * with no such case never calls the auth route at all, so the zero-friction
+ * default run is unchanged.
  */
 export async function runExercise(
   baseUrl: string,
   cases: readonly ExerciseCase[] = EXERCISE_CASES,
 ): Promise<RunResult> {
   const session = await createExerciseSession(baseUrl);
-
-  // No credential yet — the §1.3 cases that would need one do not exist (header).
-  const transport: TransportContext = {};
+  const { plain, authed } = planPlayOrder(cases);
 
   const outcomesByCase = new Map<string, PostOutcome[]>();
-  for (const kase of cases) {
-    outcomesByCase.set(kase.id, await playCase(baseUrl, session, kase, transport));
+
+  // Phase 1: auth is off, so every POST reaches the pipeline uncredentialed.
+  for (const kase of plain) {
+    outcomesByCase.set(kase.id, await playCase(baseUrl, session, kase, {}));
+  }
+
+  // Phase 2: opt the session in ONCE, then play the §1.3 cases with the
+  // show-once credential in the transport context (`bearerCredential()` reads it;
+  // `noAuth()`/`badAuth()` deliberately do not).
+  if (authed.length > 0) {
+    const transport: TransportContext = {
+      credential: await enableBearerAuth(baseUrl, session.uuid),
+    };
+    for (const kase of authed) {
+      outcomesByCase.set(kase.id, await playCase(baseUrl, session, kase, transport));
+    }
   }
 
   const findings: FindingsByTransmission = await fetchFindingsByTransmission(baseUrl, session.uuid);

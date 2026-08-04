@@ -111,6 +111,52 @@ export async function createExerciseSession(baseUrl: string): Promise<SessionHan
 }
 
 /**
+ * Opt the session into §1.3 bearer auth through the SAME dashboard API a supplier
+ * would use (`POST /api/sessions/{uuid}/auth`, DS01.3 clause 5.1.5 / RFC 6750),
+ * and return the show-once plaintext token for the runner's `TransportContext`.
+ *
+ * The service echoes the credential EXACTLY ONCE (DESIGN §12) — it stores only a
+ * salted hash — so a lost token means re-POSTing here, which ROTATES it. The
+ * runner therefore enables auth once per run and keeps the value.
+ *
+ * The app registers a single `*` content-type parser that keeps raw bytes for the
+ * §1.4 size stage, so this route parses the JSON body itself; the header is sent
+ * for honesty rather than because Fastify dispatches on it.
+ *
+ * STICKY: this flips `auth_enabled` on the session row, and the ingest pipeline
+ * then 401s every unauthenticated POST to it. See `ExerciseCase.setup`
+ * (../case.ts) and ./run.ts for how the runner orders around that.
+ */
+export async function enableBearerAuth(baseUrl: string, uuid: string): Promise<string> {
+  const url = `${baseUrl}/api/sessions/${uuid}/auth`;
+  const response = await send(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ method: 'bearer' }),
+  });
+  if (response.status !== 201) {
+    throw new ExerciseHttpError(
+      `POST /api/sessions/{uuid}/auth returned HTTP ${response.status} (expected 201) — ` +
+        'the §1.3 exercise cases cannot be played without a credential.',
+    );
+  }
+  const body = (await readJson(response, 'POST /api/sessions/{uuid}/auth')) as {
+    auth_enabled?: unknown;
+    auth_method?: unknown;
+    token?: unknown;
+  };
+  if (body.auth_enabled !== true || body.auth_method !== 'bearer') {
+    throw new ExerciseHttpError(
+      'enabling §1.3 bearer auth did not report an auth-enabled bearer session',
+    );
+  }
+  if (typeof body.token !== 'string' || body.token.length === 0) {
+    throw new ExerciseHttpError('enabling §1.3 bearer auth returned no token');
+  }
+  return body.token;
+}
+
+/**
  * Play one materialized POST at the ingest path, honoring its wire request
  * VERBATIM — method, headers and body bytes exactly as the transport wrappers
  * left them. That fidelity is the whole point: a runner that re-serialized the

@@ -20,6 +20,8 @@ export {
   isAcceptedStatus,
   materializeCase,
   materializePost,
+  requiresAuthEnabled,
+  type CaseSetup,
   type Direction,
   type ExerciseCase,
   type ExercisePost,
@@ -30,6 +32,6 @@ export {
   type MaterializedPost,
   type MaterializeOptions,
 } from './case.js';
-export { EXERCISE_CASES } from './cases.js';
+export { EXERCISE_CASES, PAYLOAD_CASES, SEQUENCE_CASES, TRANSPORT_CASES } from './cases.js';
 export * from './transforms/payload.js';
 export * from './transforms/transport.js';

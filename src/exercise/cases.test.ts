@@ -33,8 +33,13 @@ import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX } from '../api/compliance-matrix.js';
 import { SchemaRegistry } from '../schema-registry.js';
-import { isAcceptedStatus, materializeCase, type ExerciseCase } from './case.js';
-import { EXERCISE_CASES } from './cases.js';
+import {
+  isAcceptedStatus,
+  materializeCase,
+  requiresAuthEnabled,
+  type ExerciseCase,
+} from './case.js';
+import { EXERCISE_CASES, PAYLOAD_CASES, SEQUENCE_CASES, TRANSPORT_CASES } from './cases.js';
 
 /** The real registry — load() is synchronous and DB-free. */
 const registry = SchemaRegistry.load();
@@ -51,6 +56,25 @@ function declaredVersion(payload: { meta: Record<string, unknown> }): string {
 }
 
 // ── table-wide invariants ───────────────────────────────────────────────────
+
+test('the index carries every per-domain case module', () => {
+  // The table is assembled from ./cases/*.ts (ke6). A module the index forgot to
+  // concatenate would silently stop being played AND stop being checked here —
+  // every invariant below reads the aggregate.
+  const modules = { PAYLOAD_CASES, SEQUENCE_CASES, TRANSPORT_CASES };
+  let total = 0;
+  for (const [name, table] of Object.entries(modules)) {
+    assert.ok(table.length > 0, `${name} is empty — a domain module lost its cases`);
+    total += table.length;
+    for (const kase of table) {
+      assert.ok(
+        EXERCISE_CASES.includes(kase),
+        `${name}: ${kase.id} is missing from EXERCISE_CASES`,
+      );
+    }
+  }
+  assert.equal(EXERCISE_CASES.length, total, 'EXERCISE_CASES is exactly the domain modules');
+});
 
 test('case ids are unique', () => {
   const ids = EXERCISE_CASES.map((c) => c.id);
@@ -79,12 +103,21 @@ test('no two POSTs in the table share a transferId unless the case is a delibera
   // the content-replay flavour of the same check. (POSTs whose body a transport
   // wrapper replaces outright — oversize, unparseable — are exempt in practice:
   // they halt at §6 long before the semantic stage.)
+  //
+  // A deliberate-replay case is exempt only WITHIN ITSELF (hn5): its pinned id is
+  // still recorded, so a collision between that id and any other case's — two
+  // replay cases sharing one id, or an unrelated case pinning the same string —
+  // still fails here rather than surfacing live as an unexplained §1.8 fail.
   const seen = new Map<string, string>();
   for (const kase of EXERCISE_CASES) {
-    if (isIntentionalDuplicate(kase)) continue;
+    const exempt = isIntentionalDuplicate(kase);
+    const withinCase = new Set<string>();
     for (const post of materializeCase(kase)) {
       const where = `${kase.id}[${post.label}]`;
       const transferId = transferIdOf(post);
+      // The repeat this case exists to send: already recorded by its own earlier
+      // POST, and the record must keep naming that first POST.
+      if (exempt && withinCase.has(transferId)) continue;
       const prior = seen.get(transferId);
       assert.equal(
         prior,
@@ -92,6 +125,7 @@ test('no two POSTs in the table share a transferId unless the case is a delibera
         `${where}: transferId "${transferId}" already sent by ${prior}`,
       );
       seen.set(transferId, where);
+      withinCase.add(transferId);
     }
   }
 });
@@ -107,6 +141,24 @@ test('a deliberate-replay case really does repeat its transferId across POSTs', 
     assert.ok(
       new Set(ids).size < ids.length,
       `${kase.id}: expects a §1.8 fail but its POSTs carry distinct transferIds (${ids.join(', ')})`,
+    );
+  }
+});
+
+test('a case reaching for a §1.3 credential wrapper declares setup: auth-enabled', () => {
+  // §1.3 means nothing until the SESSION opts in: `bearerCredential()` throws
+  // without a runner-supplied credential, and `noAuth()`/`badAuth()` only provoke
+  // the 401 they expect on an auth-enabled session. The declaration is what makes
+  // the runner enable auth and play the case last (./runner/run.ts). Keyed on the
+  // wrapper's own `targets`, so a new §1.3 wrapper is covered for free.
+  for (const kase of EXERCISE_CASES) {
+    const usesCredentialWrapper = kase.posts.some((post) =>
+      (post.transforms ?? []).some((t) => t.kind === 'transport' && t.targets.includes('1.3')),
+    );
+    if (!usesCredentialWrapper) continue;
+    assert.ok(
+      requiresAuthEnabled(kase),
+      `${kase.id}: uses a §1.3 credential wrapper but does not declare setup: 'auth-enabled'`,
     );
   }
 });

@@ -71,6 +71,34 @@ export interface Fault {
   readonly note: string;
 }
 
+/**
+ * SESSION STATE a case needs the runner to arrange before its POSTs go out —
+ * declarative, so a case stays DATA (no callbacks, nothing a CI test cannot read).
+ *
+ * `auth-enabled` (the only value today, ke6): the session must have opted into
+ * §1.3 auth, and the runner must thread the show-once credential into the
+ * {@link MaterializeOptions.transport} context so `bearerCredential()` can present
+ * it. Every §1.3 case needs it — including the FAIL ones: `noAuth()`/`badAuth()`
+ * only provoke a 401 on a session where auth is actually enabled.
+ *
+ * ── enabling auth is STICKY, and session-global ──────────────────────────────
+ * Measured from the code, not assumed: `POST /api/sessions/{uuid}/auth`
+ * (src/api/sessions.ts) flips `auth_enabled` on the SESSION ROW, and the ingest
+ * pipeline's stage 2 (src/ingest/stages/auth.ts) then runs on EVERY subsequent
+ * POST to that session — a request with no/invalid credential records a §1.3 FAIL
+ * and halts 401, before the body, schema and semantic stages ever run. So any
+ * ordinary case played after auth is enabled would collapse to a 401 and lose the
+ * findings it expects. (`DELETE /api/sessions/{uuid}/auth` clears it, and while
+ * auth is off every transmission simply earns a §1.3 `info` note, which never
+ * grades.)
+ *
+ * The runner's answer is ORDER, not toggling: it plays every case without a setup
+ * first, enables auth once, then plays the `auth-enabled` cases last, leaving auth
+ * on at the end of the run. See ./runner/run.ts, which owns that decision — a case
+ * never has to care where it sits in the table.
+ */
+export type CaseSetup = 'auth-enabled';
+
 /** One POST within a case. */
 export interface ExercisePost {
   /** Short label distinguishing this POST within a multi-POST case. */
@@ -92,6 +120,12 @@ export interface ExerciseCase {
   readonly direction: Direction;
   /** REQUIRED when direction is `fail`; must be absent when it is `pass`. */
   readonly fault?: Fault;
+  /**
+   * Session state the runner must arrange before playing this case. Absent for
+   * the ordinary case, which needs nothing but a minted session. See
+   * {@link CaseSetup} for what each value costs the rest of the run.
+   */
+  readonly setup?: CaseSetup;
   /** One or more POSTs, played in order against the same session. */
   readonly posts: readonly ExercisePost[];
   /**
@@ -240,6 +274,15 @@ export function caseRequirements(kase: ExerciseCase): string[] {
   const ids = new Set<string>(kase.requirements);
   for (const finding of kase.expectedFindings) ids.add(finding.requirement);
   return [...ids].sort();
+}
+
+/**
+ * True when a case needs §1.3 auth enabled on the session before it is played.
+ * The one reader of {@link ExerciseCase.setup} today — kept here so the runner
+ * and the table invariants ask the same question of a case.
+ */
+export function requiresAuthEnabled(kase: ExerciseCase): boolean {
+  return kase.setup === 'auth-enabled';
 }
 
 /** True for the HTTP 2xx range — the statuses that mean the data was accepted. */
