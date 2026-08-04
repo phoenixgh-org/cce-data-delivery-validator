@@ -565,9 +565,14 @@ interface StoredCopyNote {
 
 /**
  * §1.6 finding codes (src/ingest/stages/encoding.ts) that mean stage 5 REJECTED
- * the `Content-Encoding` and halted 400 *before* decoding anything. A row is
- * still persisted on those paths (DESIGN §8), so the copy it carries is the raw
- * wire body — not payload.
+ * the `Content-Encoding` and halted 400 with NO DECODED BODY KEPT — only the
+ * single-layer-gzip success path calls `setDecodedBody`. That is the whole of
+ * what the three share: they differ on how far decoding got (bug xiz), so say
+ * nothing about mechanism without consulting `rejectionCode()` below —
+ * `tx.undecodable_body` ran gunzip over the wire bytes and it threw, and
+ * `tx.double_encoded` decompressed them successfully and rejected the OUTPUT.
+ * A row is still persisted on those paths (DESIGN §8), so the copy it carries
+ * is the raw wire body — not payload.
  */
 const ENCODING_REJECTED_CODES = new Set([
   'tx.unsupported_encoding',
