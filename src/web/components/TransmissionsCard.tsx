@@ -783,24 +783,52 @@ interface LocateRequest {
 }
 
 /**
+ * What the stored payload IS, in three words — `parsed JSON`, raw bytes that
+ * failed to parse, or nothing retained at all.
+ *
+ * Extracted (9q4) because the expand control now lives in TxDetail's meta grid
+ * while the region stays at the bottom of the pane: two components need this
+ * string and neither may recompute it, or the header and the section could
+ * disagree about what is down there.
+ */
+function rawPayloadSummary(tx: TransmissionView): string {
+  if (tx.body !== null && tx.body !== undefined) return 'parsed JSON';
+  if (tx.raw_body !== null) return 'raw bytes — payload did not parse';
+  return 'not retained';
+}
+
+/**
  * Collapsible raw-payload inspector (5bs.3) — the bottom section of TxDetail.
  *
  * Shows the pretty-printed parsed `body` when there is one, and FALLS BACK to
  * the stored `raw_body` text when parsing failed and `body` is null. That
  * failure case is the whole reason the section exists (DESIGN §8, §10), so it
  * must never render nothing while bytes are on hand.
+ *
+ * The PRIMARY expand control now lives in TxDetail's meta grid (9q4); this
+ * section keeps a heading row that doubles as a local collapse affordance for
+ * whoever is already scrolled down here. The summary text moved to the header
+ * control and is deliberately NOT repeated here — see the meta-grid cell.
  */
 function RawPayload({
   tx,
   open,
   onToggle,
   locate,
+  revealSeq,
 }: {
   tx: TransmissionView;
   open: boolean;
   onToggle: () => void;
   locate: LocateRequest | null;
+  /**
+   * Bumped when the header control OPENS the section, to scroll this region
+   * into view. The header sits above the findings and the region stays below
+   * them, so without this the click has no visible effect (9q4).
+   */
+  revealSeq: number;
 }): ReactElement {
+  const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const hasParsed = tx.body !== null && tx.body !== undefined;
@@ -849,13 +877,20 @@ function RawPayload({
     container.scrollTop = Math.max(0, target.offsetTop - 24);
   }, [open, pointer, seq]);
 
-  let summary: string;
-  if (hasParsed) summary = 'parsed JSON';
-  else if (tx.raw_body !== null) summary = 'raw bytes — payload did not parse';
-  else summary = 'not retained';
+  // Bring the region into the pane's viewport when the HEADER control opened it
+  // (9q4). Runs after the payload has rendered, so `block: 'nearest'` on the
+  // whole section puts its top edge at the top of the scrollport rather than
+  // merely nudging the heading into view. `nearest` also means we never scroll
+  // when the region is already visible. revealSeq starts at 0 and is never
+  // bumped by the section's own heading row or by onLocate — the former is
+  // already on screen when clicked, and the latter does its own inner scroll.
+  useEffect(() => {
+    if (!open || revealSeq === 0) return;
+    rootRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [open, revealSeq]);
 
   return (
-    <>
+    <div ref={rootRef}>
       <div
         onClick={onToggle}
         style={{
@@ -872,7 +907,6 @@ function RawPayload({
           style={{ color: 'var(--text-faint)' }}
         />
         <span style={eyebrow}>Raw payload</span>
-        <span style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)' }}>· {summary}</span>
       </div>
 
       {open && (
@@ -973,7 +1007,7 @@ function RawPayload({
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -985,6 +1019,7 @@ function TxDetail({
   onSelectReq: (req: string) => void;
 }): ReactElement {
   const inventory = deriveInventory(tx.body);
+  const rawSummary = rawPayloadSummary(tx);
   const meta: MetaCell[] = [
     { key: 'transferId', value: tx.transfer_id ?? '—' },
     { key: 'schema', value: tx.schema_version ? `v${tx.schema_version}` : '—' },
@@ -997,6 +1032,7 @@ function TxDetail({
   // payloads can be compared row to row); the pending scroll target does not.
   const [rawOpen, setRawOpen] = useState(false);
   const [locate, setLocate] = useState<LocateRequest | null>(null);
+  const [revealSeq, setRevealSeq] = useState(0);
   const seqRef = useRef(0);
   useEffect(() => {
     setLocate(null);
@@ -1008,6 +1044,15 @@ function TxDetail({
     setRawOpen(true);
     setLocate({ pointer: p, seq: seqRef.current });
   }, []);
+
+  // Toggle from the header control. Opening from up here also asks the region
+  // to scroll itself into view (9q4): the region intentionally stays below the
+  // findings, so otherwise the click would appear to do nothing. Closing does
+  // not scroll — the user is looking at the header, not the region.
+  const toggleRawFromHeader = useCallback(() => {
+    if (!rawOpen) setRevealSeq((n) => n + 1);
+    setRawOpen(!rawOpen);
+  }, [rawOpen]);
 
   return (
     <div style={{ padding: '14px 16px 18px' }}>
@@ -1026,6 +1071,17 @@ function TxDetail({
         </span>
       </div>
 
+      {/*
+        Six cells over four columns: the five meta cells, then the raw-payload
+        expander as the sixth. It sits immediately after `compression` on the
+        second row because that cell is already the "what shape were the bytes
+        in" signal — "and here are the bytes" is the same question one step
+        further in (9q4).
+
+        NOTE: frk adds a `reports` cell to this same grid, which would make
+        SEVEN — `repeat(4, 1fr)` then leaves a three-wide orphan row, so the
+        template needs revisiting when that lands.
+      */}
       <div
         style={{
           display: 'grid',
@@ -1057,6 +1113,59 @@ function TxDetail({
             </div>
           </div>
         ))}
+
+        {/*
+          The expand control, shaped like a meta cell so the grid stays even.
+
+          The summary text ('parsed JSON' / 'raw bytes …' / 'not retained')
+          TRAVELS WITH THE CONTROL rather than staying beside the section
+          heading: it is what tells you whether opening is worth it, and that
+          decision is now made from up here. Repeating it below would be the
+          duplication the shared rawPayloadSummary() exists to prevent.
+
+          It reflects state as well as toggling it — chevron direction plus a
+          full-strength text tone when open — because with the region off-screen
+          below the findings the control is often the only visible evidence that
+          the inspector is already open.
+        */}
+        <button
+          type="button"
+          aria-expanded={rawOpen}
+          title={rawOpen ? 'Collapse the raw payload' : 'Show the raw payload below the findings'}
+          onClick={toggleRawFromHeader}
+          style={{
+            minWidth: 0,
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            margin: 0,
+            textAlign: 'left',
+            cursor: 'pointer',
+            font: 'inherit',
+          }}
+        >
+          <div style={eyebrow}>raw payload</div>
+          <div
+            style={{
+              ...mono,
+              fontSize: 11.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              minWidth: 0,
+              color: rawOpen ? 'var(--text)' : 'var(--text-muted)',
+              fontWeight: rawOpen ? 600 : undefined,
+            }}
+          >
+            <Icon name={rawOpen ? 'chevronDown' : 'chevron'} size={11} style={{ flexShrink: 0 }} />
+            <span
+              style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              title={rawSummary}
+            >
+              {rawSummary}
+            </span>
+          </div>
+        </button>
       </div>
 
       <div style={{ ...eyebrow, marginBottom: 7 }}>Findings · click § to open the requirement</div>
@@ -1095,7 +1204,13 @@ function TxDetail({
         </>
       )}
 
-      <RawPayload tx={tx} open={rawOpen} onToggle={() => setRawOpen((o) => !o)} locate={locate} />
+      <RawPayload
+        tx={tx}
+        open={rawOpen}
+        onToggle={() => setRawOpen((o) => !o)}
+        locate={locate}
+        revealSeq={revealSeq}
+      />
     </div>
   );
 }
