@@ -247,6 +247,19 @@ export interface SessionResponse {
   scoped: ScopeTotals;
   /** ISO timestamp string when the session expires (DESIGN §11). */
   expiresAt: string;
+  /**
+   * The schema versions the service grades against, oldest first, each with the
+   * sha256 the server computed over its vendored bytes at boot. The Setup
+   * panel's provenance line renders THIS — never a literal of its own (3cq).
+   */
+  schemas: SchemaProvenance[];
+}
+
+/** One registered schema — mirrors `SchemaProvenance` in src/schema-registry.ts. */
+export interface SchemaProvenance {
+  version: string;
+  /** Lowercase hex SHA-256 of the vendored bytes, computed server-side. */
+  sha256: string;
 }
 
 /**

@@ -15,8 +15,11 @@
  *
  * `GET /api/sessions/:uuid` reads back everything the dashboard surfaces
  * (DESIGN.md §10): session metadata, the reverse-chron transmission list with
- * each transmission's findings + drill-down bytes, and the §7 compliance summary
- * derived from the session's findings. JSON-only — no HTML/web UI (that's M4).
+ * each transmission's findings + drill-down bytes, the §7 compliance summary
+ * derived from the session's findings, and the registered schema set as
+ * {version, sha256} so the dashboard can name the bytes it is graded against
+ * without keeping its own copy of the hash (beads 3cq). JSON-only — no HTML/web
+ * UI (that's M4).
  */
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -439,6 +442,13 @@ export function registerSessionsApi(app: FastifyInstance): void {
         sources,
         scoped: scopeTotals(scopedViews, signatures.length),
         expiresAt,
+        // Which schema bytes this endpoint grades against (beads 3cq). Service-
+        // global, not session-scoped, but it rides on the response the dashboard
+        // ALREADY fetches rather than costing a second endpoint + round trip —
+        // the panel that displays it renders from this payload. Straight off the
+        // registry, so the hash the supplier reads is the hash of the bytes in
+        // force; the dashboard previously carried it as a literal and drifted.
+        schemas: app.schemaRegistry.provenance(),
       });
     },
   );

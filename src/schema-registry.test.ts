@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -83,6 +84,46 @@ test('each vendored schema self-identifies as its registered version', () => {
         `${version}: embedded example ${i} must declare its own version`,
       );
     }
+  }
+});
+
+/**
+ * The provenance surface the API serves (beads 3cq). The property that matters
+ * is that the reported hash is HASHED FROM THE VENDORED BYTES, not restated: the
+ * dashboard's old hardcoded literal was once a hash of nothing at all. Written
+ * as a loop that re-hashes each vendored file, so it stays true for whatever set
+ * is registered rather than pinning today's single version.
+ */
+test('provenance reports every registered version with the hash of its bytes', () => {
+  const registry = SchemaRegistry.load();
+  const provenance = registry.provenance();
+
+  assert.deepEqual(
+    provenance.map((p) => p.version),
+    [...registry.supportedVersions()],
+    'provenance covers exactly the registered set, in the same order',
+  );
+
+  for (const { version, sha256 } of provenance) {
+    const bytes = readFileSync(
+      fileURLToPath(new URL(`./schemas/cce-interop-${version}.json`, import.meta.url)),
+    );
+    assert.equal(
+      sha256,
+      createHash('sha256').update(bytes).digest('hex'),
+      `${version}: reported sha256 must be the hash of the vendored bytes`,
+    );
+    assert.equal(registry.get(version)?.sha256, sha256, `${version}: same hash the registry uses`);
+  }
+});
+
+test('provenance carries no compiled validator (safe to serialize)', () => {
+  for (const entry of SchemaRegistry.load().provenance()) {
+    assert.deepEqual(
+      Object.keys(entry).sort(),
+      ['sha256', 'version'],
+      'provenance entries are exactly {version, sha256}',
+    );
   }
 });
 

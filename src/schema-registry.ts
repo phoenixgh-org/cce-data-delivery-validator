@@ -55,6 +55,21 @@ export interface RegistryEntry {
   readonly validate: ValidateFunction;
 }
 
+/**
+ * The publishable half of a {@link RegistryEntry}: what a registered schema IS,
+ * with no compiled validator attached — the shape safe to serialize to clients.
+ *
+ * `sha256` is always the hash computed over the vendored bytes at load(), which
+ * is the entire point of surfacing it: the dashboard used to state the schema
+ * provenance as a hardcoded literal and once shipped a fabricated hash (beads
+ * 3cq). A hash that travels from the bytes is a hash that cannot drift.
+ */
+export interface SchemaProvenance {
+  readonly version: string;
+  /** Lowercase hex SHA-256 of the vendored bytes, computed at load(). */
+  readonly sha256: string;
+}
+
 /** Result of a registry lookup. */
 export type LookupResult =
   | { readonly ok: true; readonly entry: RegistryEntry }
@@ -179,6 +194,22 @@ export class SchemaRegistry {
   currentVersion(): string | null {
     const versions = this.supportedVersions();
     return versions.length === 0 ? null : versions[versions.length - 1]!;
+  }
+
+  /**
+   * Every registered schema as {@link SchemaProvenance}, oldest first — what the
+   * API serves so the dashboard can state which bytes it grades against.
+   *
+   * Derived from the SAME entries `lookup()` validates with, so the reported
+   * hash is by construction the hash of the bytes actually in force; there is no
+   * second copy of the value to fall out of step. Reports the registered set
+   * exactly as it is (currently 0.8.1 alone, beads fvw) — it never asserts how
+   * many versions there ought to be.
+   */
+  provenance(): readonly SchemaProvenance[] {
+    return [...this.byVersion.values()]
+      .map(({ version, sha256 }) => ({ version, sha256 }))
+      .sort((a, b) => compareVersions(a.version, b.version));
   }
 
   /** Direct entry access for an already-canonical version key. */

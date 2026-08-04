@@ -356,11 +356,20 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
   "trend":     [ { "tot": 1, "fail": 0, "rate": 1 } /* 30 buckets, or [] when empty */ ],
   "sources":   [ { "source": "com.example", "sourceCode": "EXA", "sourceLabel": "com.example", "count": 1 } ],
   "scoped":    { "scoped": 1, "withFailures": 0, "distinctIssues": 0 },
-  "expiresAt": "2026-08-08T05:50:33.722Z"
+  "expiresAt": "2026-08-08T05:50:33.722Z",
+  "schemas":   [ { "version": "0.8.1", "sha256": "290290fd4623d25c…" } ]
 }
 ```
 
 The stored credential hash is never returned — only `auth_enabled` and `auth_method`.
+
+`schemas` is service-global, not session-specific: every registered schema version,
+oldest first, with the full 64-char lowercase-hex SHA-256 the service computed over
+its vendored bytes at boot (abbreviated above). It is what a transmission's
+`schemaVersion` is matched against, and it is the honest answer to "which bytes am I
+being graded against?" — compare it with the published artifact at
+`https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-{version}.json`. Schemas
+are never fetched at runtime.
 
 `transmissions` is **not** scoped by `window`/`source` (the full list ships for the
 detail pane); `summary`, `rollup`, `signatures`, `trend`, and `scoped` **are**.

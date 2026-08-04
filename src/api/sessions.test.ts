@@ -11,9 +11,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { buildApp } from '../app.js';
+import { SchemaRegistry } from '../schema-registry.js';
 import { closePool, getPool } from '../db/pool.js';
 import { createSession, insertFinding, insertTransmission } from '../db/repository.js';
 import { sigKey } from './signatures.js';
@@ -217,6 +220,51 @@ test(
         // Cascade removes this session's transmissions + findings.
         await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
       }
+      await app.close();
+    }
+  },
+);
+
+/**
+ * beads 3cq: the dashboard's schema-provenance line used to be a hardcoded
+ * literal and once shipped a hash of nothing. It now renders THIS field, so the
+ * response must carry the registered set with the hash the registry computed
+ * over the vendored bytes at boot — asserted against a re-hash of those bytes,
+ * never against a constant copied from the source (which is the bug returning).
+ */
+test(
+  'GET /api/sessions/:uuid → schemas carry the registry-computed sha256 (3cq)',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    const session = await createSession();
+    try {
+      const res = await app.inject({ method: 'GET', url: `/api/sessions/${session.uuid}` });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as { schemas: Array<{ version: string; sha256: string }> };
+
+      const registry = SchemaRegistry.load();
+      assert.deepEqual(
+        body.schemas,
+        registry.provenance().map((p) => ({ version: p.version, sha256: p.sha256 })),
+        'the response reports exactly the registered set',
+      );
+      assert.ok(body.schemas.length > 0, 'at least one schema is registered');
+
+      for (const { version, sha256 } of body.schemas) {
+        assert.match(sha256, /^[0-9a-f]{64}$/, `${version}: full lowercase-hex sha256`);
+        const bytes = readFileSync(
+          fileURLToPath(new URL(`../schemas/cce-interop-${version}.json`, import.meta.url)),
+        );
+        assert.equal(
+          sha256,
+          createHash('sha256').update(bytes).digest('hex'),
+          `${version}: served hash is the hash of the vendored bytes`,
+        );
+      }
+    } finally {
+      await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
       await app.close();
     }
   },

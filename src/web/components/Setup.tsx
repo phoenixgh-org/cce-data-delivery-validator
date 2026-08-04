@@ -20,13 +20,14 @@
  * The supplier picks WHICH of the three DS01.3 methods to enable (5bs.4/dav) —
  * before, the panel silently took the service's `header` default.
  */
-import { useState, type CSSProperties } from 'react';
+import { Fragment, useState, type CSSProperties } from 'react';
 
 import {
   disableAuth,
   enableAuth,
   type AuthMethod,
   type EnableAuthResponse,
+  type SchemaProvenance,
   type SessionMeta,
 } from '../api';
 import { Icon } from './ui/Icon';
@@ -37,6 +38,12 @@ export interface SetupProps {
   session: SessionMeta;
   /** Relative ingest path, e.g. `/i/{uuid}`. Compose origin in the component. */
   ingestUrl: string;
+  /**
+   * The registered schema set, straight off the API (GET /api/sessions/:uuid).
+   * The "Schema & lifecycle" line renders it; it must never be restated as a
+   * literal here, which is how a fabricated hash once shipped (beads 3cq).
+   */
+  schemas: SchemaProvenance[];
   /** Refetch the session so the dashboard reflects the new auth state. */
   onAuthChange: () => void;
   /** Controlled open state. When omitted, the component manages its own. */
@@ -53,6 +60,18 @@ export interface SetupProps {
 const SAMPLE_BODY = '{"schemaVersion":"0.8.1","transferId":"demo-001","records":[]}';
 
 const CONTENT_TYPE = 'application/json; charset=utf-8';
+
+/**
+ * Leading hex chars of a sha256 shown in the provenance line — enough to check
+ * against the published artifact at a glance. The full 64 are in the API
+ * response (and the service's boot log) for anyone verifying properly.
+ */
+const SHA256_PREFIX_CHARS = 8;
+
+/** `290290fd…` — a sha256 abbreviated for display only, never for comparison. */
+function shortSha(sha256: string): string {
+  return `${sha256.slice(0, SHA256_PREFIX_CHARS)}…`;
+}
 
 /**
  * The three §1.3 / DS01.3 clause 5.1.5 authentication methods, as the picker
@@ -455,7 +474,16 @@ function AuthCredential({
 }
 
 export function Setup(props: SetupProps) {
-  const { session, ingestUrl, onAuthChange, open, onToggleOpen, hasData, onRequestDelete } = props;
+  const {
+    session,
+    ingestUrl,
+    schemas,
+    onAuthChange,
+    open,
+    onToggleOpen,
+    hasData,
+    onRequestDelete,
+  } = props;
 
   // Controlled when `open` is supplied; else manage internally (default open).
   const [internalOpen, setInternalOpen] = useState(true);
@@ -569,10 +597,29 @@ export function Setup(props: SetupProps) {
                 marginBottom: 16,
               }}
             >
-              Validating against official <strong style={{ color: 'var(--text)' }}>0.8.1</strong>{' '}
-              <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>(sha256 290290fd…)</span> —
-              our vendored copy, byte-identical to the bytes published upstream, and the only
-              registered version. Schemas are never fetched at runtime: the{' '}
+              {schemas.length === 0 ? (
+                // Should not happen — SchemaRegistry.load() seeds itself — but a
+                // provenance line is the wrong place to guess. Say what the
+                // service reported, never a version it did not.
+                <>No schema version is registered, so nothing can be graded against one.</>
+              ) : (
+                <>
+                  Validating against official{' '}
+                  {schemas.map((s, i) => (
+                    <Fragment key={s.version}>
+                      {i > 0 && ', '}
+                      <strong style={{ color: 'var(--text)' }}>{s.version}</strong>{' '}
+                      <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
+                        (sha256 {shortSha(s.sha256)})
+                      </span>
+                    </Fragment>
+                  ))}{' '}
+                  — {schemas.length === 1 ? 'our vendored copy' : 'our vendored copies'},
+                  byte-identical to the bytes published upstream, and the{' '}
+                  {schemas.length === 1 ? 'only registered version' : 'whole registered set'}.
+                </>
+              )}{' '}
+              Schemas are never fetched at runtime: the{' '}
               <code style={{ fontFamily: 'var(--mono)' }}>$id</code> inside the schema names the
               version, it is not a download location. Inactive endpoints are purged after 7 days;
               the clock resets on each POST.
