@@ -614,7 +614,7 @@ export function Setup(props: SetupProps) {
           {ingestUrl}
         </span>
         {hasData === false && (
-          <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>
+          <span style={{ fontSize: 11, color: 'var(--accent-text)', fontWeight: 600 }}>
             Start here →
           </span>
         )}

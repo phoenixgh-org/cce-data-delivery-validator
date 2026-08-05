@@ -332,7 +332,7 @@ function FindingItem({
           style={{
             ...mono,
             fontSize: 11,
-            color: 'var(--accent)',
+            color: 'var(--accent-text)',
             background: 'none',
             border: 'none',
             padding: 0,
@@ -1437,7 +1437,7 @@ export function TransmissionsCard({
               fontSize: 10.5,
               textTransform: 'uppercase',
               letterSpacing: '.05em',
-              color: 'var(--accent)',
+              color: 'var(--accent-text)',
               fontWeight: 700,
             }}
           >

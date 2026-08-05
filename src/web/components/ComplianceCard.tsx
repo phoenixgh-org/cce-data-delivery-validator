@@ -229,7 +229,7 @@ function SigRow({
       <Icon
         name="arrowRight"
         size={13}
-        style={{ color: active ? 'var(--accent)' : 'var(--text-faint)' }}
+        style={{ color: active ? 'var(--accent-text)' : 'var(--text-faint)' }}
       />
     </button>
   );
@@ -336,7 +336,7 @@ function SignatureSummary({
               style={{
                 alignSelf: 'flex-start',
                 fontSize: 11,
-                color: 'var(--accent)',
+                color: 'var(--accent-text)',
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',

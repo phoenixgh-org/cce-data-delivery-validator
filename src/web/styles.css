@@ -1,6 +1,6 @@
-/* Design tokens — ported from design_handoff_validator_redesign/redesign/themes.css
- * `.theme-brief` (the chosen, MUTED palette). Single standardized theme; no
- * theme-toggle / Tweaks panel. See README §Design Tokens. */
+/* Design tokens — ported from the design handoff prototype's themes.css,
+ * `.theme-console` (light neutral canvas + indigo accent). Single standardized
+ * theme; no theme-toggle / Tweaks panel. */
 :root {
   color-scheme: light;
 
@@ -8,34 +8,37 @@
   --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* ---- Color (.theme-brief) ---- */
-  --canvas: #e7e5de; /* page behind the pane cards */
-  --bg: #f4f3f0; /* base */
-  --surface: #fcfbf9; /* compliance pane, cards, header */
-  --surface-tx: #f3f1ec; /* transmissions pane (distinct from compliance) */
-  --surface-2: #f4f3f0; /* expanded setup panel */
-  --surface-3: #ecebe7; /* setup bar, non-gradeable group headers, chips */
-  --detail: #efece4; /* recessed drill-down / detail background */
-  --detail-accent: #cdb27a; /* left rule on opened detail */
-  --border: #e4e2dc; /* hairlines */
-  --border-strong: #d3d0c8; /* card borders, inputs */
-  --text: #1a1a18; /* primary text */
-  --text-muted: #5e5d57; /* secondary */
-  --text-faint: #918f87; /* tertiary / metadata */
-  --accent: #2b2a27; /* primary buttons, links (ink, not a brand color) */
-  --accent-weak: #ecebe7; /* accent fill */
+  /* ---- Color (.theme-console) ---- */
+  --canvas: #e1e4e9; /* page behind the pane cards */
+  --bg: #eef0f3; /* base */
+  --surface: #ffffff; /* compliance pane, cards, header */
+  --surface-tx: #f4f6f8; /* transmissions pane (distinct from compliance) */
+  --surface-2: #f6f7f9; /* expanded setup panel */
+  --surface-3: #eceef1; /* setup bar, non-gradeable group headers, chips */
+  --detail: #f1f3f7; /* recessed drill-down / detail background */
+  --detail-accent: #7b84a0; /* left rule on opened detail — a recessed slate,
+    deliberately NOT the prototype's #4b56c8, which would collide with --accent
+    on the active-signature rows sharing the expanded region (8qc) */
+  --border: #e1e4e8; /* hairlines */
+  --border-strong: #cdd2d8; /* card borders, inputs */
+  --text: #1f2329; /* primary text */
+  --text-muted: #5b626c; /* secondary */
+  --text-faint: #8b929c; /* tertiary / metadata */
+  --accent: #4b56c8; /* primary buttons, accent fills and borders */
+  --accent-text: #3a44a8; /* accent-coloured text/glyphs — darker than the fill */
+  --accent-weak: #eceefb; /* accent fill */
 
   /* Status pairs — muted */
-  --pass: #4a6b50;
-  --pass-bg: #eef1ec;
-  --fail: #9c5247; /* + danger zone */
-  --fail-bg: #f3e9e6;
-  --mixed: #8a7434; /* + OUTDATED SCHEMA */
-  --mixed-bg: #f1ecdc;
-  --neutral: #6f6e68; /* untested/enforced */
-  --neutral-bg: #efeeea;
+  --pass: #3f7a5a;
+  --pass-bg: #e8f1ec;
+  --fail: #b15a4e; /* + danger zone */
+  --fail-bg: #f6e8e6;
+  --mixed: #9a7a36; /* + OUTDATED SCHEMA */
+  --mixed-bg: #f4eedd;
+  --neutral: #6b727c; /* untested/enforced */
+  --neutral-bg: #eef0f3;
 
-  --shadow: 0 1px 2px rgba(26, 26, 24, 0.05); /* card shadow */
+  --shadow: 0 1px 2px rgba(20, 24, 30, 0.05), 0 1px 1px rgba(20, 24, 30, 0.04); /* card shadow */
   --shadow-modal: 0 20px 50px rgba(0, 0, 0, 0.25); /* modal */
 
   /* ---- Radius ---- */
