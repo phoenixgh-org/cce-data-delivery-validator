@@ -7,6 +7,18 @@ Point a cold chain equipment (CCE) data supplier's transmission at a test endpoi
 and get back an honest read on what conforms, what does not, and — just as
 importantly — what a receiving system **cannot** determine at all.
 
+> ### ℹ Requirements under PQS review
+>
+> The requirements this validator grades against are sourced from the **CCE Data
+> Delivery industry consultation, convened by UNICEF in Q1 2025**. **WHO PQS has
+> taken stewardship of these requirements** and is reviewing them for publication
+> as part of the EMS Data Standard (`E006/DS01.x`). That review is anticipated to
+> conclude in **Q3 or Q4 2026**, and this project will be updated as soon as
+> possible following finalization by PQS. Until then, expect requirement
+> numbering and wording to shift —
+> [`docs/clause-mapping.md`](docs/clause-mapping.md) tracks how the IDs used here
+> map onto the forthcoming revision.
+
 > ### ⚠ Synthetic test data only
 >
 > This is a sandbox. Send synthetic or test payloads only. **Never** point a live
