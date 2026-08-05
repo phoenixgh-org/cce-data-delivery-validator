@@ -26,6 +26,11 @@
  * The table-wide invariants also cover SESSION HYGIENE: the runner plays every
  * case against a single session, so the cases must not collide with each other
  * there (today: the transferId a POST carries, which §1.8 grades session-wide).
+ *
+ * They also hold the two DECLARATIVE CAPABILITIES honest — `setup: 'auth-enabled'`
+ * and `delivery: 'concurrent'` — by checking that a case expecting the finding
+ * only that capability can produce actually declares it. Those are the checks that
+ * keep a marker from being dropped without the case visibly changing meaning.
  */
 
 import { test } from 'node:test';
@@ -155,6 +160,39 @@ test('a deliberate-replay case really does repeat its transferId across POSTs', 
     assert.ok(
       new Set(ids).size < ids.length,
       `${kase.id}: expects a §1.8 fail but its POSTs carry distinct transferIds (${ids.join(', ')})`,
+    );
+  }
+});
+
+test('a case expecting a §2.1 fail declares concurrent delivery of more than one POST', () => {
+  // Added with the concurrency capability (8qa.5), and the mirror of the
+  // deliberate-replay tripwire above: §2.1's fail branch is reachable ONLY from a
+  // genuinely overlapping request — the grader reads the in-flight count captured
+  // at handler entry (src/ingest/concurrency-tracker.ts), which a sequential
+  // player can never push above 1. A case that lost its `delivery: 'concurrent'`
+  // marker, or was trimmed to a single POST, would still LOOK like a §2.1 exercise
+  // while quietly asserting something the runner cannot produce.
+  const concurrentFails = EXERCISE_CASES.filter((kase) =>
+    kase.expectedFindings.some((f) => f.requirement === '2.1' && f.severity === 'fail'),
+  );
+  assert.ok(concurrentFails.length > 0, 'the table still exercises the §2.1 fail direction');
+  for (const kase of concurrentFails) {
+    assert.equal(
+      kase.delivery,
+      'concurrent',
+      `${kase.id}: expects a §2.1 fail but its POSTs go out sequentially`,
+    );
+    assert.ok(kase.posts.length >= 2, `${kase.id}: nothing overlaps a single POST`);
+  }
+});
+
+test('a concurrent case has POSTs to overlap', () => {
+  // The other half: `delivery: 'concurrent'` on a one-POST case is a marker that
+  // does nothing, which reads as an exercise of §2.1 and is not one.
+  for (const kase of EXERCISE_CASES.filter((c) => c.delivery === 'concurrent')) {
+    assert.ok(
+      kase.posts.length >= 2,
+      `${kase.id}: declares concurrent delivery but sends one POST`,
     );
   }
 });

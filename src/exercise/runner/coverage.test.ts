@@ -6,9 +6,11 @@
  * synthetic matrix (to pin the RULES) and against the real
  * COMPLIANCE_MATRIX + EXERCISE_CASES (to pin the join's actual shape).
  *
- * NOTE ON THE LIVE TABLE: with only the 8qa.1 representative cases, gradeable
- * requirements are EXPECTED to show up uncovered — 8qa.3–.5 fill them. The
- * assertions below therefore check the join's mechanics, not a coverage target.
+ * NOTE ON THE LIVE TABLE: this used to say gradeable requirements were EXPECTED to
+ * show up uncovered while 8qa.3–.5 filled them in. They are all filled in now, so
+ * the real-table test below asserts the epic's target outright — no gradeable row
+ * left partial or uncovered. The synthetic-matrix tests still check the join's
+ * MECHANICS, which is why both halves are here.
  */
 
 import { test } from 'node:test';
@@ -147,17 +149,28 @@ test('the shipped case table claims no requirement the matrix lacks', () => {
   assert.deepEqual(computeCoverage(EXERCISE_CASES).unknownClaims, []);
 });
 
-test('the table now covers §1.3 in both directions and still leaves §2.1 uncovered (8qa.5)', () => {
+test('every gradeable requirement is exercised in BOTH directions (8qa.5)', () => {
+  // The epic's acceptance criterion, stated as a computed fact rather than as a
+  // checklist someone maintains: with 8qa.5's sequence cases landed there is no
+  // gradeable matrix row left without a pass case AND a fail case.
+  //
+  // The last holdout was §2.1, which needs POSTs genuinely IN FLIGHT at once —
+  // now expressible as `delivery: 'concurrent'` (../case.ts, ./run.ts).
+  //
+  // A row that becomes gradeable later (its primary class flipping to
+  // verified|heuristic in COMPLIANCE_MATRIX) lands here as a failure with its own
+  // id named, which is the point: the gap surfaces in CI rather than as a quiet
+  // line in the runner's report.
   const report = computeCoverage(EXERCISE_CASES);
-  // 8qa.3 landed the transport table, so §1.3 has a pass (the configured Bearer
-  // credential) and a fail (missing/wrong credential) — the runner enables auth
-  // on the session first, which is what makes those cases mean anything.
-  const covered = new Set(report.covered.map((r) => r.requirement));
-  assert.equal(covered.has('1.3'), true);
-  // §2.1 still needs two POSTs genuinely IN FLIGHT at once, which the sequential
-  // player cannot produce (../runner/run.ts header) — 8qa.5's problem.
-  const uncovered = new Set(report.uncovered.map((r) => r.requirement));
-  assert.equal(uncovered.has('2.1'), true);
+  const describe = (rows: typeof report.partial) =>
+    rows.map((r) => `§${r.requirement} (${r.summary})`).join(', ');
+  assert.deepEqual(
+    report.partial,
+    [],
+    `exercised in one direction only: ${describe(report.partial)}`,
+  );
+  assert.deepEqual(report.uncovered, [], `no exercise at all: ${describe(report.uncovered)}`);
+  assert.equal(report.covered.length, report.gradeable.length);
 });
 
 test('formatCoverage names every gap it found', () => {

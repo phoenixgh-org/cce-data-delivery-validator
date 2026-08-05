@@ -99,6 +99,44 @@ export interface Fault {
  */
 export type CaseSetup = 'auth-enabled';
 
+/**
+ * HOW a case's POSTs go out on the wire — the second declarative case capability
+ * (8qa.5), mirroring {@link CaseSetup}: a marker the runner reads, never a
+ * callback, so the table stays data a CI test can read.
+ *
+ * `sequential` (the default, and what every case got before this existed): each
+ * POST completes before the next is sent. Load-bearing for §1.8, whose duplicate
+ * lookup only sees transmissions that have already persisted.
+ *
+ * `concurrent`: the case's POSTs are fired together (`Promise.all`) and are in
+ * flight at the same time. This exists for ONE heuristic — §2.1 serial delivery —
+ * and it is the only way to reach its fail branch. Measured from the grader, not
+ * assumed: `src/ingest/route.ts` calls `enterSession(uuid)` once the request has
+ * a valid session + POST method and releases it in a `finally` after persistence,
+ * and `stages/semantic/concurrency.ts` grades the snapshot that INCLUDES the
+ * current request — ≤1 is a §2.1 pass, ≥2 a §2.1 fail. So the only observable
+ * that can produce a fail is a genuinely overlapping request on the SAME session:
+ * no burst rate, no inter-arrival gap, nothing a sequential player can fake.
+ *
+ * SCOPE IS THE CASE. Concurrency never spans cases — the runner finishes one case
+ * before starting the next — so a concurrent case cannot leak a §2.1 fail into a
+ * neighbour's pool, and the §2.1 pass cases stay honest without any ordering rule.
+ *
+ * ORTHOGONAL TO {@link CaseSetup}. Delivery says how a case's POSTs are sent;
+ * setup says what state the session needs first. A concurrent case is partitioned
+ * for play order exactly like any other (auth-enabled cases still play last), and
+ * a concurrent auth-enabled case would work — each request carries its own
+ * credential. Nothing needs both today.
+ *
+ * WHAT IS AND IS NOT DETERMINISTIC. Within a concurrent group the FIRST request to
+ * enter always sees a snapshot of 1, so a §2.1 pass is guaranteed; the fail
+ * depends on a later request entering before the first one leaves. That window is
+ * the whole body/schema/semantic/persist path including database I/O, so against a
+ * local instance the overlap is reliable — but it is a timing fact, not a
+ * guarantee, and a case using this must say so (see ./cases/sequence.ts).
+ */
+export type Delivery = 'sequential' | 'concurrent';
+
 /** One POST within a case. */
 export interface ExercisePost {
   /** Short label distinguishing this POST within a multi-POST case. */
@@ -126,7 +164,15 @@ export interface ExerciseCase {
    * {@link CaseSetup} for what each value costs the rest of the run.
    */
   readonly setup?: CaseSetup;
-  /** One or more POSTs, played in order against the same session. */
+  /**
+   * How this case's POSTs are delivered. Absent means `sequential`, which is what
+   * every case wants unless it is exercising §2.1. See {@link Delivery}.
+   */
+  readonly delivery?: Delivery;
+  /**
+   * One or more POSTs against the same session — played in declaration order, or
+   * fired together when {@link ExerciseCase.delivery} says `concurrent`.
+   */
   readonly posts: readonly ExercisePost[];
   /**
    * Findings the session must show once every POST of this case has been played.
@@ -283,6 +329,16 @@ export function caseRequirements(kase: ExerciseCase): string[] {
  */
 export function requiresAuthEnabled(kase: ExerciseCase): boolean {
   return kase.setup === 'auth-enabled';
+}
+
+/**
+ * True when a case's POSTs must be delivered concurrently rather than one after
+ * the other. The one reader of {@link ExerciseCase.delivery} — kept beside
+ * {@link requiresAuthEnabled} so the runner and the table invariants ask the same
+ * question of a case, and so `sequential`-by-default lives in exactly one place.
+ */
+export function isConcurrentDelivery(kase: ExerciseCase): boolean {
+  return kase.delivery === 'concurrent';
 }
 
 /** True for the HTTP 2xx range — the statuses that mean the data was accepted. */

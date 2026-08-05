@@ -41,17 +41,29 @@
  * fewer moving parts than one per case, and the end state honestly shows the
  * dashboard reader that §1.3 was exercised.
  *
- * ── a known limit, for 8qa.5 ────────────────────────────────────────────────
- * §2.1 serial delivery still cannot be exercised: it needs two POSTs genuinely IN
- * FLIGHT at once, which a sequential player cannot produce. That is a per-CASE
- * concern too ("these POSTs go out concurrently"), and the setup field is the
- * obvious place to grow — but do not add it until the bite that needs it.
+ * ── §2.1 concurrent delivery (8qa.5) ────────────────────────────────────────
+ * The limit this header used to record — that §2.1 needs two POSTs genuinely IN
+ * FLIGHT at once, which a sequential player cannot produce — is lifted. A case
+ * declares `delivery: 'concurrent'` (../case.ts) and {@link playCase} fires its
+ * POSTs with `Promise.all` instead of awaiting each one; sequential stays the
+ * default and every other case is byte-for-byte unchanged.
+ *
+ * The two capabilities compose without interacting: `delivery` decides how ONE
+ * case's POSTs go out, `setup` decides what the session needs first, and
+ * {@link planPlayOrder} still partitions on `setup` alone. Concurrency never spans
+ * cases — a case is played to completion before the next starts — so the §2.1 pass
+ * cases cannot be poisoned by the fail case's overlap.
  */
 
 import { COMPLIANCE_MATRIX } from '../../api/compliance-matrix.js';
-import { materializeCase, requiresAuthEnabled, type ExerciseCase } from '../case.js';
+import {
+  isConcurrentDelivery,
+  materializeCase,
+  requiresAuthEnabled,
+  type ExerciseCase,
+} from '../case.js';
 import { EXERCISE_CASES } from '../cases.js';
-import type { TransportContext } from '../transforms/transport.js';
+import type { TransportContext, WireRequest } from '../transforms/transport.js';
 import {
   judgeCase,
   tally,
@@ -66,6 +78,7 @@ import {
   fetchFindingsByTransmission,
   normalizeBaseUrl,
   playPost,
+  type IngestResult,
   type SessionHandle,
 } from './client.js';
 import { computeCoverage, formatCoverage } from './coverage.js';
@@ -90,27 +103,55 @@ export function resolveBaseUrl(argv: readonly string[], env: Record<string, stri
 }
 
 /**
- * Play every POST of one case, in declaration order, against the session. The
- * POSTs of a case are sequential and so are the cases: order is load-bearing for
- * the sequence heuristics (§1.8 sees the earlier transmission of the same
- * session), and the §2.1 concurrency case that would want otherwise is not
- * expressible here yet (see the module header).
+ * How a POST is put on the wire. Injected so ./run.test.ts can watch {@link
+ * playCase} honor `delivery` without opening a socket; the runner always passes
+ * the real {@link playPost}.
  */
-async function playCase(
+export type PostPlayer = (
+  baseUrl: string,
+  ingestUrl: string,
+  request: WireRequest,
+) => Promise<IngestResult>;
+
+/**
+ * Play every POST of one case against the session, and return one outcome per
+ * POST in DECLARATION order (both branches below preserve it — `Promise.all`
+ * resolves positionally — because the status assertions are per POST).
+ *
+ * SEQUENTIAL by default: each POST completes before the next goes out. Order is
+ * load-bearing for §1.8, whose duplicate lookup only sees rows that have already
+ * persisted, so a replay case must not race itself.
+ *
+ * CONCURRENT when the case says so: the POSTs are fired together and overlap in
+ * flight, which is the only thing that can drive the §2.1 grader's snapshot above
+ * 1 (see the `Delivery` doc in ../case.ts for what that grader observes). The cases
+ * themselves stay sequential relative to each other either way.
+ */
+export async function playCase(
   baseUrl: string,
   session: SessionHandle,
   kase: ExerciseCase,
   transport: TransportContext,
+  play: PostPlayer = playPost,
 ): Promise<PostOutcome[]> {
+  const posts = materializeCase(kase, { transport });
+  const record = (post: (typeof posts)[number], result: IngestResult): PostOutcome => ({
+    label: post.label,
+    expectedStatus: post.expectedStatus,
+    status: result.status,
+    transmissionId: result.transmissionId,
+  });
+
+  if (isConcurrentDelivery(kase)) {
+    const results = await Promise.all(
+      posts.map((post) => play(baseUrl, session.ingestUrl, post.request)),
+    );
+    return posts.map((post, i) => record(post, results[i]!));
+  }
+
   const outcomes: PostOutcome[] = [];
-  for (const post of materializeCase(kase, { transport })) {
-    const result = await playPost(baseUrl, session.ingestUrl, post.request);
-    outcomes.push({
-      label: post.label,
-      expectedStatus: post.expectedStatus,
-      status: result.status,
-      transmissionId: result.transmissionId,
-    });
+  for (const post of posts) {
+    outcomes.push(record(post, await play(baseUrl, session.ingestUrl, post.request)));
   }
   return outcomes;
 }
