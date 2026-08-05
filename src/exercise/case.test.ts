@@ -16,17 +16,20 @@ import { JSON_UTF8, validTransmission } from '../ingest/fixtures/transmissions.j
 import { SchemaRegistry } from '../schema-registry.js';
 import {
   BASELINE_GENERATORS,
+  DEFAULT_BASELINE,
   emsBaseline,
   fixtureBaseline,
   type BaselineGenerator,
   type TransmissionPayload,
 } from './baseline.js';
-import { materializeCase, materializePost, type ExerciseCase } from './case.js';
+import { materializeCase, materializePost, resolveBaseline, type ExerciseCase } from './case.js';
 import { deleteAtPointer, setAtPointer } from './pointer.js';
 import {
   addCustomDataObject,
+  addSolarPowerToMainsRecord,
   declareCustomDataSchema,
   dropRequiredField,
+  duplicateVersionStringsIntoRecords,
   irregularCadence,
   regularCadence,
   setSchemaVersion,
@@ -119,6 +122,36 @@ test('the baseline generator is swappable without touching the case', () => {
   // The case's own transform still applies on top of whatever the generator made.
   assert.equal(posts[0]?.payload.meta.transferId, 'pinned');
   assert.equal(posts[1]?.payload.meta.transferId, 'pinned');
+});
+
+test('a case DECLARING a baseline gets it, from a caller that passes none', () => {
+  // The selection gap 1m8 closed: `materializeCase(kase, { transport })` is what
+  // ./runner/run.ts calls and what ../cases.test.ts calls, neither naming a
+  // baseline — so a case that needs a non-default payload has to be able to say
+  // so itself, or it silently gets the rtm fixture.
+  const kase: ExerciseCase = { ...caseWith([]), baseline: emsBaseline };
+  const posts = materializeCase(kase);
+  assert.equal(posts[0]?.payload.meta.transferType, 'ems');
+});
+
+test('a case declaration BEATS the caller-supplied baseline', () => {
+  // Precedence runs case-first on purpose (see ExerciseCase.baseline): the option
+  // substitutes for the DEFAULT, so it can retarget cases that declared nothing
+  // but can never quietly downgrade one that named its branch.
+  const kase: ExerciseCase = { ...caseWith([]), baseline: emsBaseline };
+  const posts = materializeCase(kase, { baseline: fixtureBaseline });
+  assert.equal(
+    posts[0]?.payload.meta.transferType,
+    'ems',
+    'the caller must not be able to override a declared baseline',
+  );
+  assert.equal(resolveBaseline(kase, { baseline: fixtureBaseline }), emsBaseline);
+});
+
+test('with no declaration, the caller-supplied baseline stands in for the default', () => {
+  const kase: ExerciseCase = caseWith([]);
+  assert.equal(resolveBaseline(kase, { baseline: emsBaseline }), emsBaseline);
+  assert.equal(resolveBaseline(kase), DEFAULT_BASELINE);
 });
 
 // ── the generator CONTRACT, asserted over every registered generator ────────
@@ -376,6 +409,57 @@ test('regularCadence and irregularCadence restamp ABST from the first record', (
   // series stays schema-valid — §3.4 is a heuristic, not a schema violation.
   const first = (irregular.payload.data[0]?.records as { TVC: number }[])[0];
   assert.equal(first?.TVC, 3.2);
+});
+
+// ── the EMS-branch mutators (1m8) ───────────────────────────────────────────
+
+/** Materialize a single-POST ad-hoc case on the EMS baseline. */
+function onlyEms(transforms: ExerciseCase['posts'][number]['transforms']) {
+  return materializePost({ ...caseWith(transforms), baseline: emsBaseline }, 0);
+}
+
+/** Assert Ajv's verdict on a materialized payload, against its declared version. */
+function ajvAccepts(post: { payload: TransmissionPayload }): boolean {
+  const lookup = registry.lookup(post.payload.meta.schemaVersion as string);
+  assert.ok(lookup.ok);
+  return lookup.entry.validate(post.payload) as boolean;
+}
+
+test('addSolarPowerToMainsRecord makes a record match NEITHER power branch', () => {
+  const post = onlyEms([addSolarPowerToMainsRecord()]);
+  const records = post.payload.data[0]?.records as Record<string, unknown>[];
+  // All three objects present: the mains branch's `not` and the solar branch's
+  // `not` each reject it, so the `oneOf` sees zero matches.
+  assert.equal(records[0]?.SVA, 900);
+  assert.equal(records[0]?.DCSV, 19.2);
+  assert.equal(records[0]?.DCCD, 3.8);
+  assert.equal(records[1]?.DCSV, undefined, 'only the named record is touched');
+  assert.equal(ajvAccepts(post), false);
+});
+
+test('addSolarPowerToMainsRecord refuses a record with no SVA to contradict', () => {
+  // Applied to a record that is already solar (or to the rtm baseline, which has
+  // no power objects at all) the mutation would produce a CONFORMANT payload
+  // while still declaring `invalid`. Better to say so than to let the declaration
+  // decay into a lie ../cases.test.ts can only report as a mystery.
+  assert.throws(() => only([addSolarPowerToMainsRecord()]), /carries no SVA/);
+});
+
+test('duplicateVersionStringsIntoRecords makes a report match BOTH placement branches', () => {
+  const post = onlyEms([duplicateVersionStringsIntoRecords()]);
+  const report = post.payload.data[0] as Record<string, unknown>;
+  const records = report.records as Record<string, unknown>[];
+  assert.equal(report.LSV, 'v01.02.008', 'the report keeps its version strings');
+  assert.equal(report.EMSV, 'v01.02.123');
+  for (const record of records) {
+    assert.equal(record.LSV, 'v01.02.008', 'every record gets a copy');
+    assert.equal(record.EMSV, 'v01.02.123');
+  }
+  assert.equal(ajvAccepts(post), false);
+});
+
+test('duplicateVersionStringsIntoRecords refuses a report with nothing to copy', () => {
+  assert.throws(() => only([duplicateVersionStringsIntoRecords()]), /is not on the report/);
 });
 
 // ── transport transforms ────────────────────────────────────────────────────

@@ -10,13 +10,22 @@
  * Grouping here is by REQUIREMENT DOMAIN, not by `fault.layer`: §3.4's cadence
  * cases also carry a payload-layer fault but belong to the sequence heuristics
  * (§1.8/§2.1/§3.4) and so live in ./sequence.ts.
+ *
+ * Nor is it by PAYLOAD TYPE. The EMS cases added in 1m8 sit in the §3.2 section
+ * below rather than in a module of their own: they grade schema conformance like
+ * every other §3.2 case, and the only thing that distinguishes them is which
+ * baseline they declare. Which schema branch a case exercises is a property to
+ * read off the case (`baseline`), not a directory layout.
  */
 
+import { emsBaseline } from '../baseline.js';
 import type { ExerciseCase } from '../case.js';
 import {
   addCustomDataObject,
+  addSolarPowerToMainsRecord,
   declareCustomDataSchema,
   dropRequiredField,
+  duplicateVersionStringsIntoRecords,
   setInvalidValue,
   setSchemaVersion,
   setUnsupportedSchemaVersion,
@@ -121,6 +130,95 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     // adjustment in this case rather than quietly skipping the older version.
     posts: [{ transforms: [setSchemaVersion('0.8.0')], expectedStatus: 200 }],
     expectedFindings: [{ requirement: '3.2', severity: 'info' }],
+  },
+
+  // ── §3.2 the EMS branch of the schema (1m8) ───────────────────────────────
+  //
+  // Everything above sends an rtm-typed payload, because the default baseline is
+  // the rtm ingest fixture. The root `if/then/else` on `meta.transferType` means
+  // those cases only ever reach `$defs/rtmd-report` and `$defs/rtmd-record`, so
+  // until these three cases landed the ems branch — the LARGER one, and the one
+  // EMS manufacturers (the primary E006 audience) are graded by — was validated
+  // nowhere in this repo, live or in CI.
+  //
+  // The switch is one declared field: `baseline: emsBaseline` (../case.ts). The
+  // transforms are unchanged in kind — these are still "the conformant payload,
+  // minus one thing" — but the two things they take away exist ONLY on this
+  // branch, which is the point. Both are `oneOf` violations, and deliberately the
+  // two OPPOSITE ways a `oneOf` can fail: the power case matches no branch, the
+  // placement case matches both. Neither error shape had been produced before, by
+  // any case, so this is also the first look at how a multi-branch Ajv error set
+  // renders in a finding detail and on the dashboard.
+  //
+  // WHAT IS NOT HERE: a mixed-type payload (rtm and ems reports in one
+  // transmission). Dropped from this bite 2026-08-05; the design question is bd
+  // dal. Do not add one here without settling that first.
+  {
+    id: '3.2-pass-ems-baseline',
+    title: 'A conformant EMS transmission validates against the current schema',
+    requirements: ['3.2'],
+    direction: 'pass',
+    baseline: emsBaseline,
+    posts: [{ expectedStatus: 200 }],
+    // The §3.2 pass is what this case CLAIMS. The other two are incidental
+    // observations of the EMS baseline's own shape, asserted because they are
+    // free (expectedFindings is presence-based) and because they pin behaviour
+    // the rtm baseline cannot show:
+    //
+    //   §3.4 pass — the baseline carries THREE records 15 minutes apart, so the
+    //     interval check has two intervals to grade and a CV of 0. The rtm
+    //     fixture has a single record, which the check declines to judge at all
+    //     (fewer than 2 parseable timestamps → no finding), so this is the only
+    //     §3.4 grade the untransformed table earns without a cadence transform.
+    //   §3.1 pass — every key in the payload is a declared DS01 code, so the
+    //     custom-object scan finds nothing: the conditional does not apply, and
+    //     there is no clause-4.5 naming note to muddy the signal either.
+    //
+    // Neither is added to `requirements`: coverage counts what a case TARGETS,
+    // not what it happens to observe (./runner/coverage.ts), and an EMS payload
+    // that quietly counted as a §3.4 exercise would be exactly the kind of
+    // inflated coverage this suite refuses to print.
+    expectedFindings: [
+      { requirement: '3.2', severity: 'pass' },
+      { requirement: '3.4', severity: 'pass' },
+      { requirement: '3.1', severity: 'pass' },
+    ],
+  },
+  {
+    id: '3.2-fail-ems-mains-and-solar-power',
+    title: 'An EMS record carrying both the mains and the solar power objects is rejected 422',
+    requirements: ['3.2'],
+    direction: 'fail',
+    baseline: emsBaseline,
+    // `ems-record`'s power `oneOf` describes an appliance that is mains-powered
+    // (SVA) XOR solar-powered (DCSV + DCCD), and each branch carries an explicit
+    // `not` against the other's fields — so a record claiming both matches
+    // NEITHER branch. Zero matches violates a `oneOf` just as two do, and the
+    // resulting error set names both branches at once.
+    fault: {
+      layer: 'payload',
+      note: 'DCSV+DCCD added to a record that keeps SVA, so it matches neither power branch',
+    },
+    posts: [{ transforms: [addSolarPowerToMainsRecord()], expectedStatus: 422 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'fail' }],
+  },
+  {
+    id: '3.2-fail-ems-version-strings-in-both-places',
+    title: 'An EMS report carrying LSV/EMSV both on the report and in every record is rejected 422',
+    requirements: ['3.2'],
+    direction: 'fail',
+    baseline: emsBaseline,
+    // `ems-report` lets a supplier put each version string EITHER on the report
+    // OR on every record — two branches of a `oneOf` per string. The baseline
+    // takes the report-level branch; copying the strings into the records as well
+    // satisfies BOTH branches, and a `oneOf` matched twice is violated. The
+    // opposite failure mode to the case above, and the reason both are here.
+    fault: {
+      layer: 'payload',
+      note: 'LSV and EMSV copied into every record while left on the report, matching both branches',
+    },
+    posts: [{ transforms: [duplicateVersionStringsIntoRecords()], expectedStatus: 422 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'fail' }],
   },
 
   // ── §3.1 manufacturer-specific data objects ───────────────────────────────

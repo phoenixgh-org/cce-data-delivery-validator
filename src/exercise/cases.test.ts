@@ -27,10 +27,12 @@
  * case against a single session, so the cases must not collide with each other
  * there (today: the transferId a POST carries, which §1.8 grades session-wide).
  *
- * They also hold the two DECLARATIVE CAPABILITIES honest — `setup: 'auth-enabled'`
- * and `delivery: 'concurrent'` — by checking that a case expecting the finding
- * only that capability can produce actually declares it. Those are the checks that
- * keep a marker from being dropped without the case visibly changing meaning.
+ * They also hold the three DECLARATIVE CAPABILITIES honest — `setup:
+ * 'auth-enabled'`, `delivery: 'concurrent'` and `baseline` — by checking that a
+ * case expecting what only that capability can produce actually declares it, and
+ * that declaring it actually produces it. Those are the checks that keep a marker
+ * from being dropped without the case visibly changing meaning: a case that lost
+ * its `baseline` would still look like an EMS exercise while sending rtm.
  */
 
 import { test } from 'node:test';
@@ -38,10 +40,12 @@ import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX } from '../api/compliance-matrix.js';
 import { SchemaRegistry } from '../schema-registry.js';
+import { DEFAULT_BASELINE, emsBaseline } from './baseline.js';
 import {
   isAcceptedStatus,
   materializeCase,
   requiresAuthEnabled,
+  resolveBaseline,
   type ExerciseCase,
 } from './case.js';
 import { EXERCISE_CASES, PAYLOAD_CASES, SEQUENCE_CASES, TRANSPORT_CASES } from './cases.js';
@@ -213,6 +217,64 @@ test('a case reaching for a §1.3 credential wrapper declares setup: auth-enable
       `${kase.id}: uses a §1.3 credential wrapper but does not declare setup: 'auth-enabled'`,
     );
   }
+});
+
+// ── the declared BASELINE, and the silent cap it exists to prevent (1m8) ────
+
+function transferTypeOf(post: { payload: { meta: Record<string, unknown> } }): unknown {
+  return post.payload.meta.transferType;
+}
+
+test('a case declaring the EMS baseline really materializes an EMS-typed payload', () => {
+  // THE ANTI-SILENT-CAP CHECK. Before `ExerciseCase.baseline` existed, both
+  // consumers materialized with no baseline at all — ./runner/run.ts passes only
+  // the transport context and `materialize()` above only the credential — so a
+  // case meaning to exercise the schema's ems branch would have been played, and
+  // checked right here, against the rtm baseline: still green, still titled EMS,
+  // exercising `rtmd-record`. That is the failure this suite is least willing to
+  // ship, since the coverage report would go on printing EMS coverage nobody has.
+  //
+  // Keyed on the DECLARATION rather than on ids or titles, so it holds for any
+  // case that reaches for the generator however it is named or filed. The other
+  // direction — an EMS case that FORGETS the declaration — is caught structurally
+  // instead: the EMS-only mutators throw when handed a payload without the
+  // mains/report-level shape they mutate (../transforms/payload.ts), so such a
+  // case cannot materialize at all.
+  const emsCases = EXERCISE_CASES.filter((kase) => kase.baseline === emsBaseline);
+  assert.ok(
+    emsCases.length > 0,
+    'the table no longer exercises the schema ems branch — the EMS group must be reworked, ' +
+      'not deleted (bd 1m8)',
+  );
+  for (const kase of emsCases) {
+    for (const post of materialize(kase)) {
+      assert.equal(
+        transferTypeOf(post),
+        'ems',
+        `${kase.id}[${post.label}]: declares the EMS baseline but materialized a ` +
+          `${String(transferTypeOf(post))} payload — it is not exercising the ems branch`,
+      );
+    }
+  }
+});
+
+test('a case that declares no baseline gets the default one', () => {
+  // The other half of the precedence rule (../case.ts): declaring nothing must
+  // stay exactly what every pre-1m8 case did, so adding the field churned no
+  // existing case.
+  for (const kase of EXERCISE_CASES.filter((k) => k.baseline === undefined)) {
+    assert.equal(resolveBaseline(kase), DEFAULT_BASELINE, `${kase.id}: unexpected baseline`);
+  }
+});
+
+test('the table exercises both branches of the root transferType conditional', () => {
+  // The root `if/then/else` on `meta.transferType` picks rtmd-report/rtmd-record
+  // or ems-report/ems-record, and the two are materially different — the ems side
+  // requires a far larger admin set and carries three `oneOf`s the rtmd side has
+  // none of. A table that sends only one type validates only half the schema.
+  const types = new Set(EXERCISE_CASES.flatMap((kase) => materialize(kase).map(transferTypeOf)));
+  assert.ok(types.has('rtm'), 'the table still sends rtm payloads');
+  assert.ok(types.has('ems'), 'the table still sends ems payloads');
 });
 
 test('every requirement a case names exists in COMPLIANCE_MATRIX', () => {

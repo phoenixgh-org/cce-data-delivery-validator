@@ -180,6 +180,133 @@ export function setInvalidValue(pointer: string, value: unknown): PayloadTransfo
   });
 }
 
+// ── §3.2 violations of the EMS branch's `oneOf`s (1m8) ──────────────────────
+//
+// The two mutators below exist because the ems branch of the schema constrains
+// things the rtmd branch has no analogue for, so no pointer-level mutation
+// expresses them: both violations are about a COMBINATION of fields being
+// present, not about any one field's value. They are also the shape of Ajv error
+// the suite had never produced — a failed `oneOf` reports every branch's
+// complaints at once, unlike the single `required`/`maximum` errors the rtm cases
+// trigger (1m8's second gap).
+//
+// Both are `invalid` and both THROW when the payload they are handed does not
+// have the precondition their invalidity depends on. That is deliberate: a
+// declared `schemaOutcome` is only checked against Ajv for whatever the case
+// actually materializes, so a mutator silently applied to the wrong baseline
+// could turn its declaration into a lie that ../cases.test.ts would report as an
+// unhelpful "declared invalid but validated clean". Failing at the point of the
+// wrong assumption says what is really wrong.
+
+/** The record pointer prefix of the report these mutators operate on. */
+function recordsPointer(reportIndex: number): string {
+  return `/data/${reportIndex}/records`;
+}
+
+function reportOf(payload: TransmissionPayload, reportIndex: number, name: string) {
+  const report = payload.data[reportIndex];
+  if (report === undefined) throw new Error(`${name}: /data/${reportIndex} is missing`);
+  const records = report.records;
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new Error(`${name}: /data/${reportIndex}/records is missing or empty`);
+  }
+  return { report, records: records as Record<string, unknown>[] };
+}
+
+/**
+ * Add the SOLAR power objects (`DCSV` + `DCCD`) to a record that already carries
+ * the MAINS one (`SVA`) — an `ems-record` violation with no rtmd counterpart.
+ *
+ * WHAT THE SCHEMA SAYS. `$defs/ems-record` carries `allOf[0].oneOf` with a mains
+ * branch (`required: [SVA]`, `not: { required: [DCSV, DCCD] }`) and a solar branch
+ * (`required: [DCSV, DCCD]`, `not: { required: [SVA] }`). Each branch excludes the
+ * other's fields explicitly, so a record carrying all three matches NEITHER — and
+ * a `oneOf` is violated by zero matches exactly as it is by two. (One of the pair
+ * alone would NOT break it: `DCSV` without `DCCD` leaves the mains branch's `not`
+ * unsatisfied and still matches once. Both objects are therefore required to make
+ * the mutation bite, which is why this is one transform and not two.)
+ *
+ * Applied to the FIRST record only by default: one non-conformant record is
+ * enough, and leaving the rest conformant keeps the Ajv error set pointed at a
+ * single `/data/0/records/0`.
+ */
+export function addSolarPowerToMainsRecord(
+  recordIndex = 0,
+  reportIndex = 0,
+  values: { DCSV: number; DCCD: number } = { DCSV: 19.2, DCCD: 3.8 },
+): PayloadTransform {
+  const name = `addSolarPowerToMainsRecord(${reportIndex}/${recordIndex})`;
+  return payloadTransform({
+    name,
+    targets: ['3.2'],
+    schemaOutcome: 'invalid',
+    apply: (payload) => {
+      const { records } = reportOf(payload, reportIndex, name);
+      const record = records[recordIndex];
+      if (record === undefined) {
+        throw new Error(`${name}: ${recordsPointer(reportIndex)}/${recordIndex} is missing`);
+      }
+      if (record.SVA === undefined) {
+        throw new Error(
+          `${name}: the record carries no SVA, so adding DCSV+DCCD makes it a CONFORMANT ` +
+            `solar record, not a violation — this mutator wants a mains baseline`,
+        );
+      }
+      record.DCSV = values.DCSV;
+      record.DCCD = values.DCCD;
+      return payload;
+    },
+  });
+}
+
+/**
+ * Copy a report's `LSV` and `EMSV` into EVERY record while leaving them on the
+ * report — the placement violation, again `ems-report`-only.
+ *
+ * WHAT THE SCHEMA SAYS. `$defs/ems-report` carries two `oneOf`s of the same shape,
+ * one per version string: branch A requires it on the report, branch B requires it
+ * on every entry of `records`. Either placement alone matches exactly one branch;
+ * BOTH placements match both, and a `oneOf` matched twice is violated. So this is
+ * the mirror of {@link addSolarPowerToMainsRecord}'s zero-match violation, and
+ * between them the suite sees both ways a `oneOf` can fail.
+ *
+ * Throws unless the report carries both strings and no record already does —
+ * "copy" must mean the report keeps them, or the payload is merely a conformant
+ * per-record placement.
+ */
+export function duplicateVersionStringsIntoRecords(reportIndex = 0): PayloadTransform {
+  const name = `duplicateVersionStringsIntoRecords(${reportIndex})`;
+  const KEYS = ['LSV', 'EMSV'] as const;
+  return payloadTransform({
+    name,
+    targets: ['3.2'],
+    schemaOutcome: 'invalid',
+    apply: (payload) => {
+      const { report, records } = reportOf(payload, reportIndex, name);
+      for (const key of KEYS) {
+        if (typeof report[key] !== 'string') {
+          throw new Error(
+            `${name}: /data/${reportIndex}/${key} is not on the report, so copying it into the ` +
+              `records is a conformant per-record placement, not a violation`,
+          );
+        }
+      }
+      for (const [i, record] of records.entries()) {
+        for (const key of KEYS) {
+          if (record[key] !== undefined) {
+            throw new Error(
+              `${name}: ${recordsPointer(reportIndex)}/${i}/${key} is already set — this payload ` +
+                `does not have the single-placement baseline the mutation needs`,
+            );
+          }
+          record[key] = report[key];
+        }
+      }
+      return payload;
+    },
+  });
+}
+
 // ── §3.1 manufacturer-specific data objects ─────────────────────────────────
 
 /** Where a custom data object is added when no pointer is given. */

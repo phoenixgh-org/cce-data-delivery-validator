@@ -1,8 +1,9 @@
 /**
  * Unit tests for the runner's PURE half of ./run.ts — target resolution is
  * covered by the CLI's own usage, so what matters here is {@link planPlayOrder}
- * (the §1.3 play ordering, ke6) and {@link playCase}'s honouring of
- * `delivery: 'concurrent'` (§2.1, 8qa.5).
+ * (the §1.3 play ordering, ke6) and {@link playCase}'s honouring of the case's
+ * declarative capabilities: `delivery: 'concurrent'` (§2.1, 8qa.5) and
+ * `baseline` (the schema branch a case sends, 1m8).
  *
  * Nothing here opens a socket: `playCase` takes its POST player as a parameter, so
  * the overlap it is supposed to create can be OBSERVED with a fake player instead
@@ -13,6 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { emsBaseline } from '../baseline.js';
 import type { ExerciseCase } from '../case.js';
 import { EXERCISE_CASES } from '../cases.js';
 import type { SessionHandle } from './client.js';
@@ -136,4 +138,32 @@ test('delivery: sequential is spelled out to the same effect as omitting it', as
   const { play, peakInFlight } = recordingPlayer();
   await playCase('http://stub', SESSION, burst('sequential'), {}, play);
   assert.equal(peakInFlight(), 1);
+});
+
+test('the runner sends the baseline a case DECLARES, not the default one', async () => {
+  // The live half of the anti-silent-cap check (1m8). `playCase` materializes with
+  // `{ transport }` and names no baseline, so before the case model carried the
+  // field, an EMS case would have gone out over the wire as rtm — green in CI,
+  // green in the run, and exercising the wrong half of the schema. Asserted on the
+  // BYTES the player is handed, which is the only place the claim is really cashed.
+  const bodies: string[] = [];
+  const play: PostPlayer = async (_baseUrl, _ingestUrl, request) => {
+    bodies.push(new TextDecoder().decode(request.body));
+    return Promise.resolve({ status: 200, transmissionId: 'tx-1' });
+  };
+
+  await playCase(
+    'http://stub',
+    SESSION,
+    { ...stub('declares-ems'), baseline: emsBaseline },
+    {},
+    play,
+  );
+  const sent = JSON.parse(bodies[0]!) as { meta: { transferType: string } };
+  assert.equal(sent.meta.transferType, 'ems');
+
+  bodies.length = 0;
+  await playCase('http://stub', SESSION, stub('declares-nothing'), {}, play);
+  const fallback = JSON.parse(bodies[0]!) as { meta: { transferType: string } };
+  assert.equal(fallback.meta.transferType, 'rtm', 'an undeclared case is unchanged');
 });

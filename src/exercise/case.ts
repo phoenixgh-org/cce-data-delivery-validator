@@ -13,7 +13,9 @@
  *     coverage is a mechanical join rather than a stale annotation;
  *   - a direction, `pass` or `fail`;
  *   - an ORDERED list of one or more POSTs, each built by applying named
- *     transforms to the pluggable baseline;
+ *     transforms to the pluggable baseline — and, when the case needs a payload
+ *     the default baseline does not produce (an EMS-typed one, say), WHICH
+ *     baseline generator to build them from;
  *   - the expected HTTP status per POST;
  *   - the expected findings (requirement + severity) the session must show —
  *     PRESENCE-based, pooled across the case's POSTs; see `expectedFindings`.
@@ -159,6 +161,32 @@ export interface ExerciseCase {
   /** REQUIRED when direction is `fail`; must be absent when it is `pass`. */
   readonly fault?: Fault;
   /**
+   * WHICH BASELINE this case is built on — the third declarative capability
+   * (1m8), alongside {@link CaseSetup} and {@link Delivery}, and the same shape:
+   * the case DECLARES what it needs and every consumer honours it, rather than a
+   * caller remembering to pass the right thing.
+   *
+   * Absent means {@link DEFAULT_BASELINE} (the rtm fixture), which is every case
+   * written before this field existed.
+   *
+   * WHY IT LIVES ON THE CASE. The generator seam was always pluggable, but
+   * nothing SELECTED a non-default generator: both consumers materialized with no
+   * baseline — `./runner/run.ts` calls `materializeCase(kase, { transport })` and
+   * `./cases.test.ts` supplies only the §1.3 credential — so a case meaning to
+   * exercise the schema's ems branch would have been played, and CI-checked, with
+   * the rtm baseline and silently stopped being an EMS exercise. A payload type is
+   * a property OF the case, so the case is where it belongs; a caller-side option
+   * cannot be forgotten if the case carries it.
+   *
+   * PRECEDENCE, and why the case wins: {@link resolveBaseline} takes this field
+   * first, then {@link MaterializeOptions.baseline}, then the default. The option
+   * therefore changes the baseline for cases that DECLARE NONE — it substitutes
+   * for the default — and can never quietly downgrade a case that named one. That
+   * asymmetry is the whole point: "declared ems, materialized rtm" is exactly the
+   * silent cap ./cases.test.ts now makes impossible.
+   */
+  readonly baseline?: BaselineGenerator;
+  /**
    * Session state the runner must arrange before playing this case. Absent for
    * the ordinary case, which needs nothing but a minted session. See
    * {@link CaseSetup} for what each value costs the rest of the run.
@@ -237,10 +265,29 @@ export interface MaterializedPost {
 
 /** Options for {@link materializeCase}. */
 export interface MaterializeOptions {
-  /** Baseline generator; defaults to the fixture-seeded one (../baseline.ts). */
+  /**
+   * Baseline generator for cases that do not declare one of their own. A
+   * FALLBACK, not an override — see {@link ExerciseCase.baseline} for the
+   * precedence rule and why it runs that way round.
+   */
   readonly baseline?: BaselineGenerator;
   /** Runtime facts transport wrappers may need (today: the §1.3 credential). */
   readonly transport?: TransportContext;
+}
+
+/**
+ * The baseline generator a case will actually be materialized with: the case's
+ * own declaration, else the caller's, else {@link DEFAULT_BASELINE}.
+ *
+ * Exported because it is the ONE place that decides, and because a consumer that
+ * wants to know what a case will send (which schema branch, which transferType)
+ * must ask the same question `materializePost` asks rather than re-deriving it.
+ */
+export function resolveBaseline(
+  kase: ExerciseCase,
+  options: MaterializeOptions = {},
+): BaselineGenerator {
+  return kase.baseline ?? options.baseline ?? DEFAULT_BASELINE;
 }
 
 function isPayloadTransform(t: ExerciseTransform): t is PayloadTransform {
@@ -278,7 +325,7 @@ export function materializePost(
     throw new Error(`case ${kase.id}: no POST at index ${index}`);
   }
 
-  const generate = options.baseline ?? DEFAULT_BASELINE;
+  const generate = resolveBaseline(kase, options);
   const transportContext = options.transport ?? {};
   const transforms = post.transforms ?? [];
   const payloadTransforms = transforms.filter(isPayloadTransform);

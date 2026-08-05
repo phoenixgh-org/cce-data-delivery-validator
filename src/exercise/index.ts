@@ -23,6 +23,7 @@ export {
   materializeCase,
   materializePost,
   requiresAuthEnabled,
+  resolveBaseline,
   type CaseSetup,
   type Direction,
   type ExerciseCase,
