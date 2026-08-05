@@ -453,6 +453,106 @@ function compressionCell(contentEncoding: string | null): MetaCell {
   return { key: 'compression', value: contentEncoding.trim(), warn: true };
 }
 
+/** A non-empty `transferType` string off an object-shaped node, else null. */
+function readTransferType(node: unknown): string | null {
+  if (node === null || typeof node !== 'object' || Array.isArray(node)) return null;
+  const value = (node as Record<string, unknown>).transferType;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * The `type` meta cell's value (j1s): what KIND of transmission this was —
+ * `rtm`, `ems`, or `mixed` — derived from the parsed body.
+ *
+ * WHERE THE FIELD LIVES. In cce-interop the type is `meta.transferType`, ONE
+ * per transmission (enum `rtm`|`ems`), and the reports under `data[]` carry no
+ * type of their own — the root if/then/else picks the report `$ref` off the
+ * meta value. Verified against the vendored 0.8.0/0.8.1 and the authoring
+ * 0.8.2/0.8.3: no version has ever put a type on a report. So for a CONFORMANT
+ * payload this cell always reads the single meta value and `mixed` is
+ * unreachable.
+ *
+ * WHY `mixed` EXISTS ANYWAY. Report objects are `additionalProperties: true`,
+ * and this panel renders what a supplier ACTUALLY sent, conformant or not — a
+ * transmission whose reports carry their own `transferType` disagreeing with
+ * each other or with `meta` is exactly the kind of thing the detail pane is
+ * for, and collapsing it to one value would hide it.
+ *
+ * THE RULE: collect every type CLAIMED anywhere in the payload — the meta one
+ * plus any a report states for itself. One distinct value (the conformant case)
+ * renders it; more than one renders `mixed`. A report that states nothing
+ * claims nothing, so an all-untyped `data[]` under `meta.transferType: "ems"`
+ * is plain `ems`. The verdict stays with the findings; this cell only makes the
+ * value visible.
+ *
+ * Comparison is case-insensitive (`RTM` and `rtm` are one type, not two) but
+ * the value is DISPLAYED as sent, like the compression cell — a supplier who
+ * sent the wrong casing should see it.
+ *
+ * Degrades to `—` rather than throwing: `body` is null whenever the pipeline
+ * halted before the parse stage (or nothing was retained), and the type is
+ * simply not known then.
+ */
+export function deriveTransmissionType(body: unknown): string {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return '—';
+  const root = body as Record<string, unknown>;
+
+  // token -> the value AS SENT for that token, first claim wins.
+  const claimed = new Map<string, string>();
+  const claim = (type: string | null): void => {
+    if (type !== null && !claimed.has(type.toLowerCase())) claimed.set(type.toLowerCase(), type);
+  };
+
+  claim(readTransferType(root.meta));
+  if (Array.isArray(root.data)) for (const report of root.data) claim(readTransferType(report));
+
+  // Nothing claimed -> unknown; one claim -> it, as sent; two or more -> mixed.
+  const [first, second] = claimed.values();
+  if (first === undefined) return '—';
+  return second === undefined ? first : 'mixed';
+}
+
+/** The fields the meta grid reads — a structural subset of TransmissionView. */
+type MetaSource = Pick<
+  TransmissionView,
+  'transfer_id' | 'schema_version' | 'wire_bytes' | 'content_encoding' | 'body'
+>;
+
+/**
+ * The meta grid's cells IN RENDER ORDER (j1s). With
+ * {@link META_GRID_COLUMNS} columns and the raw-payload control appended as the
+ * sixth cell, this reads:
+ *
+ *   transferId · schema · type
+ *   bytes      · compression · raw payload
+ *
+ * Top row is WHAT WAS SENT (its id, the schema it claims, the kind of data);
+ * bottom row is HOW IT ARRIVED (size, encoding, and the bytes themselves).
+ *
+ * `type` used to be the request `Content-Type`, which sat oddly next to the
+ * §1.5 finding that already grades it; it now names the transmission type from
+ * the payload — see {@link deriveTransmissionType}.
+ */
+export function metaCells(tx: MetaSource): MetaCell[] {
+  return [
+    { key: 'transferId', value: tx.transfer_id ?? '—' },
+    { key: 'schema', value: tx.schema_version ? `v${tx.schema_version}` : '—' },
+    { key: 'type', value: deriveTransmissionType(tx.body) },
+    { key: 'bytes', value: tx.wire_bytes ?? '—' },
+    compressionCell(tx.content_encoding),
+  ];
+}
+
+/**
+ * Column count of the detail meta grid. Six cells (the five {@link metaCells}
+ * plus the raw-payload control) over three columns = two even rows; the row
+ * split is the layout decision j1s made, so it lives here rather than inline in
+ * the style.
+ */
+export const META_GRID_COLUMNS = 3;
+
 /**
  * Height cap for the raw-payload scroll region (5bs.3).
  *
@@ -1027,13 +1127,7 @@ function TxDetail({
 }): ReactElement {
   const inventory = deriveInventory(tx.body);
   const rawSummary = rawPayloadSummary(tx);
-  const meta: MetaCell[] = [
-    { key: 'transferId', value: tx.transfer_id ?? '—' },
-    { key: 'schema', value: tx.schema_version ? `v${tx.schema_version}` : '—' },
-    { key: 'bytes', value: tx.wire_bytes ?? '—' },
-    { key: 'type', value: tx.content_type ?? '—' },
-    compressionCell(tx.content_encoding),
-  ];
+  const meta = metaCells(tx);
 
   // Raw-payload inspector state. Open/closed PERSISTS across row selections (so
   // payloads can be compared row to row); the pending scroll target does not.
@@ -1079,20 +1173,24 @@ function TxDetail({
       </div>
 
       {/*
-        Six cells over four columns: the five meta cells, then the raw-payload
-        expander as the sixth. It sits immediately after `compression` on the
-        second row because that cell is already the "what shape were the bytes
-        in" signal — "and here are the bytes" is the same question one step
-        further in (9q4).
+        Six cells over three columns — two even rows (j1s):
+
+          transferId · schema      · type
+          bytes      · compression · raw payload
+
+        The five meta cells come from metaCells() in that order; the raw-payload
+        expander is the sixth, still immediately after `compression` because
+        that cell is already the "what shape were the bytes in" signal — "and
+        here are the bytes" is the same question one step further in (9q4).
 
         NOTE: frk adds a `reports` cell to this same grid, which would make
-        SEVEN — `repeat(4, 1fr)` then leaves a three-wide orphan row, so the
-        template needs revisiting when that lands.
+        SEVEN — three columns then leave a one-wide orphan row, so the template
+        needs revisiting when that lands.
       */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: `repeat(${META_GRID_COLUMNS}, 1fr)`,
           gap: 8,
           marginBottom: 13,
         }}
