@@ -184,6 +184,42 @@ function httpTone(status: number | null): string {
   return 'var(--fail)';
 }
 
+/** The far-right findings cell's rendered decision: text, color, and tooltip. */
+export interface FindingsCell {
+  text: string;
+  color: string;
+  title: string;
+}
+
+/**
+ * Decide the transmission row's far-right cell from its findings alone (7hz).
+ *
+ * It used to show the TOTAL finding count (`{n}f`), tinted red on any failure
+ * and muted otherwise, with a separate faint `ok` for zero findings — three
+ * visual states for what is really a binary question. A user reading `11f` in
+ * different colors on different rows had no way to tell "11 failed" from "11
+ * total, none failed" apart. So: no fail-severity findings (zero findings, or
+ * findings that are all pass/info) collapses to one affirmative green OK, and
+ * only a genuine failure switches the cell to the FAIL count (not the total).
+ */
+export function findingsCell(findings: FindingView[]): FindingsCell {
+  const findingCount = findings.length;
+  const failCount = findings.filter((f) => f.severity === 'fail').length;
+  const plural = (n: number): string => (n === 1 ? 'finding' : 'findings');
+
+  if (failCount === 0) {
+    const title =
+      findingCount === 0 ? 'No findings' : `${findingCount} ${plural(findingCount)}, none failed`;
+    return { text: 'OK', color: 'var(--pass)', title };
+  }
+
+  return {
+    text: `${failCount}f`,
+    color: 'var(--fail)',
+    title: `${failCount} of ${findingCount} ${plural(findingCount)} failed`,
+  };
+}
+
 function TxRow({
   tx,
   selected,
@@ -195,8 +231,7 @@ function TxRow({
 }): ReactElement {
   const tone = dotTone(tx.findings);
   const outdated = tx.findings.some((f) => f.outdated);
-  const failCount = tx.findings.filter((f) => f.severity === 'fail').length;
-  const findingCount = tx.findings.length;
+  const findings = findingsCell(tx.findings);
 
   return (
     <div
@@ -256,31 +291,18 @@ function TxRow({
       <span style={{ ...mono, fontSize: 11, color: 'var(--text-faint)' }}>
         {tx.wire_bytes ?? '—'} bytes
       </span>
-      {findingCount > 0 ? (
-        <span
-          style={{
-            ...mono,
-            fontSize: 10.5,
-            color: failCount > 0 ? 'var(--fail)' : 'var(--text-muted)',
-            width: 28,
-            textAlign: 'right',
-          }}
-        >
-          {findingCount}f
-        </span>
-      ) : (
-        <span
-          style={{
-            ...mono,
-            fontSize: 10.5,
-            color: 'var(--text-faint)',
-            width: 28,
-            textAlign: 'right',
-          }}
-        >
-          ok
-        </span>
-      )}
+      <span
+        title={findings.title}
+        style={{
+          ...mono,
+          fontSize: 10.5,
+          color: findings.color,
+          width: 28,
+          textAlign: 'right',
+        }}
+      >
+        {findings.text}
+      </span>
     </div>
   );
 }

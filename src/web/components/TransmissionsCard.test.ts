@@ -28,11 +28,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as React from 'react';
 
+import type { FindingView, Severity } from '../api';
+
 (globalThis as unknown as { React: typeof React }).React = React;
 
 // Dynamic + awaited so the assignment above runs BEFORE the component graph
 // evaluates (static imports are all hoisted, which would defeat it).
-const { metaCells, deriveTransmissionType, META_GRID_COLUMNS } =
+const { metaCells, deriveTransmissionType, META_GRID_COLUMNS, findingsCell } =
   await import('./TransmissionsCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
@@ -139,4 +141,66 @@ test('the type cell renders what deriveTransmissionType() says', () => {
   assert.equal(value(bodyWith('rtm', null)), 'rtm');
   assert.equal(value(bodyWith('rtm', 'rtm', 'ems')), 'mixed');
   assert.equal(value(null), '—');
+});
+
+/**
+ * The row's far-right findings cell (7hz): the total finding count used to
+ * render there (`{n}f`, red on any failure, muted otherwise, with a separate
+ * faint `ok` for zero findings) gave no way to tell "N failed" from "N total,
+ * none failed" apart. `findingsCell` collapses every no-failure case to one
+ * green OK and switches to the FAIL count — never the total — only when a
+ * failure is actually present.
+ */
+function finding(severity: Severity): FindingView {
+  return {
+    requirement: '1.1',
+    severity,
+    detail: null,
+    pointer: null,
+    outdated: false,
+    keyword: null,
+    instancePath: null,
+    param: null,
+    code: null,
+  };
+}
+
+test('no findings at all reads as a green OK with a "No findings" tooltip', () => {
+  const cell = findingsCell([]);
+  assert.equal(cell.text, 'OK');
+  assert.equal(cell.color, 'var(--pass)');
+  assert.equal(cell.title, 'No findings');
+});
+
+test('all-pass findings read as OK, not the total count', () => {
+  const cell = findingsCell([finding('pass'), finding('pass'), finding('pass')]);
+  assert.equal(cell.text, 'OK');
+  assert.equal(cell.color, 'var(--pass)');
+  assert.equal(cell.title, '3 findings, none failed');
+});
+
+test('info-only findings read as OK too — info is not a failure', () => {
+  const cell = findingsCell([finding('info'), finding('info')]);
+  assert.equal(cell.text, 'OK');
+  assert.equal(cell.color, 'var(--pass)');
+  assert.equal(cell.title, '2 findings, none failed');
+});
+
+test('a pass+fail mix shows the FAIL count, not the total', () => {
+  const cell = findingsCell([finding('pass'), finding('pass'), finding('fail'), finding('pass')]);
+  assert.equal(cell.text, '1f');
+  assert.equal(cell.color, 'var(--fail)');
+  assert.equal(cell.title, '1 of 4 findings failed');
+});
+
+test('fail-only findings show every one as the fail count', () => {
+  const cell = findingsCell([finding('fail'), finding('fail'), finding('fail')]);
+  assert.equal(cell.text, '3f');
+  assert.equal(cell.color, 'var(--fail)');
+  assert.equal(cell.title, '3 of 3 findings failed');
+});
+
+test('singular wording: one finding total reads "1 finding", not "1 findings"', () => {
+  assert.equal(findingsCell([finding('pass')]).title, '1 finding, none failed');
+  assert.equal(findingsCell([finding('fail')]).title, '1 of 1 finding failed');
 });
