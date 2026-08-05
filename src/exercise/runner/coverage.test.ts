@@ -17,6 +17,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX, type MatrixRow } from '../../api/compliance-matrix.js';
+import { emsBaseline } from '../baseline.js';
 import type { ExerciseCase } from '../case.js';
 import { EXERCISE_CASES } from '../cases.js';
 import { computeCoverage, formatCoverage, isGradeable } from './coverage.js';
@@ -133,6 +134,75 @@ test('a claim the matrix does not carry is surfaced rather than silently dropped
   assert.deepEqual(report.unknownClaims, ['9.9']);
 });
 
+// ── the payload-type dimension (1m8) ────────────────────────────────────────
+
+function emsKase(overrides: Partial<ExerciseCase> & Pick<ExerciseCase, 'id'>): ExerciseCase {
+  return { ...kase(overrides), baseline: emsBaseline };
+}
+
+test('a row carries the payload types of the cases claiming it', () => {
+  const report = computeCoverage(
+    [
+      kase({ id: 'rtm-pass' }),
+      emsKase({ id: 'ems-pass' }),
+      kase({
+        id: 'rtm-fail',
+        direction: 'fail',
+        fault: { layer: 'payload', note: 'synthetic' },
+      }),
+    ],
+    MATRIX,
+  );
+  const row = report.rows.find((r) => r.requirement === '3.2')!;
+  assert.deepEqual(row.passTypes, ['ems', 'rtm']);
+  assert.deepEqual(row.failTypes, ['rtm']);
+  // ems is exercised in ONE direction, so it is not a type this row covers…
+  assert.deepEqual(row.coveredTypes, ['rtm']);
+  // …while the row's own status stays direction-based, as the epic defines it.
+  assert.equal(row.status, 'covered');
+  assert.deepEqual(report.payloadTypes, ['ems', 'rtm']);
+});
+
+test('a requirement exercised only with ems does not read as covered for rtm', () => {
+  // The silent cap, in the small: counting requirements alone, this row is
+  // "covered (both directions)" and says nothing about which branch of the schema
+  // either direction actually reached.
+  const report = computeCoverage(
+    [
+      emsKase({ id: 'ems-pass' }),
+      emsKase({ id: 'ems-fail', direction: 'fail', fault: { layer: 'payload', note: 'x' } }),
+    ],
+    MATRIX,
+  );
+  const row = report.rows.find((r) => r.requirement === '3.2')!;
+  assert.deepEqual(row.coveredTypes, ['ems']);
+  assert.match(formatCoverage(report).join('\n'), /covered \(both directions\)\s+3\.2\[ems\]/);
+});
+
+test('formatCoverage marks a type that only one direction exercises', () => {
+  const report = computeCoverage(
+    [
+      kase({ id: 'rtm-pass' }),
+      kase({ id: 'rtm-fail', direction: 'fail', fault: { layer: 'payload', note: 'x' } }),
+      emsKase({ id: 'ems-fail', direction: 'fail', fault: { layer: 'payload', note: 'x' } }),
+    ],
+    MATRIX,
+  );
+  assert.match(formatCoverage(report).join('\n'), /3\.2\[ems\(fail-only\),rtm\]/);
+});
+
+test('a partial row lists its types plainly — its line already names the direction', () => {
+  const report = computeCoverage([emsKase({ id: 'ems-pass' })], MATRIX);
+  const text = formatCoverage(report).join('\n');
+  assert.match(text, /partial \(one direction\)\s+3\.2\[ems\]/);
+  assert.doesNotMatch(text, /pass-only/);
+});
+
+test('rows no case claims are printed without a type annotation', () => {
+  const text = formatCoverage(computeCoverage([], MATRIX)).join('\n');
+  assert.match(text, /UNCOVERED\s+1\.1 1\.8 3\.2$/m);
+});
+
 // ── the real table ──────────────────────────────────────────────────────────
 
 test('every row of the real matrix is classified exactly once', () => {
@@ -171,6 +241,41 @@ test('every gradeable requirement is exercised in BOTH directions (8qa.5)', () =
   );
   assert.deepEqual(report.uncovered, [], `no exercise at all: ${describe(report.uncovered)}`);
   assert.equal(report.covered.length, report.gradeable.length);
+});
+
+test('the printed report never states coverage without saying for which payload type', () => {
+  // THE ANTI-SILENT-CAP INVARIANT (1m8). Direction-only coverage printed
+  // "covered (both directions) … 3.2 …" for rows exercised with one payload type,
+  // which reads as coverage of the whole schema and is not. Asserted as a
+  // property of the OUTPUT rather than as today's type list, so adding EMS cases
+  // to another requirement improves the report without failing this test — what
+  // must never come back is an unqualified claim.
+  const report = computeCoverage(EXERCISE_CASES);
+  const text = formatCoverage(report).join('\n');
+  for (const row of [...report.covered, ...report.partial]) {
+    const annotation = [...new Set([...row.passTypes, ...row.failTypes])].length;
+    assert.ok(annotation > 0, `§${row.requirement} is claimed but names no payload type`);
+    assert.match(
+      text,
+      new RegExp(`${row.requirement.replace('.', '\\.')}\\[[^\\]]+\\]`),
+      `§${row.requirement} is printed without its payload types`,
+    );
+  }
+  assert.ok(report.payloadTypes.length > 0, 'the header names the types the table sends');
+});
+
+test('§3.2 is the requirement exercised with BOTH schema branches (1m8)', () => {
+  // The EMS cases all target §3.2, so it is the one row whose pass AND fail sides
+  // both reach `ems-report`/`ems-record` as well as the rtmd pair. Pinned because
+  // it is the whole reason the type dimension exists: if the EMS group is ever
+  // reworked away, this fails rather than the report quietly going rtm-only again.
+  const report = computeCoverage(EXERCISE_CASES);
+  const row = report.rows.find((r) => r.requirement === '3.2')!;
+  assert.deepEqual(row.coveredTypes, ['ems', 'rtm']);
+  assert.ok(
+    report.gradeable.some((r) => r.requirement !== '3.2' && !r.coveredTypes.includes('ems')),
+    'if every gradeable row now covers ems, say so in docs/exercise-suite.md and drop this',
+  );
 });
 
 test('formatCoverage names every gap it found', () => {

@@ -290,6 +290,28 @@ export function resolveBaseline(
   return kase.baseline ?? options.baseline ?? DEFAULT_BASELINE;
 }
 
+/**
+ * WHICH SCHEMA BRANCH a case exercises: the `meta.transferType` of the baseline
+ * it is built on — `'rtm'` or `'ems'` today, whatever a later generator names.
+ *
+ * Read off the BASELINE, before any payload mutator runs, and deliberately so: a
+ * case may set `meta.transferType` to something that is not a branch at all
+ * (`3.2-fail-invalid-transfer-type` sends `'thermometer'` to prove the enum
+ * bites), and counting that as a payload type the suite exercises would be
+ * noise. The branch a case is written against is the one its baseline picks.
+ *
+ * Goes through {@link resolveBaseline} rather than reading `kase.baseline`, so
+ * the declaration precedence is asked exactly once and a consumer can never
+ * answer "which type is this?" differently from what materialization sends.
+ *
+ * The coverage join is the reader (./runner/coverage.ts): counting requirements
+ * alone would report a row exercised for EMS when only its rtm half exists.
+ */
+export function payloadTypeOf(kase: ExerciseCase, options: MaterializeOptions = {}): string {
+  const { meta } = resolveBaseline(kase, options)({ caseId: kase.id, index: 0 });
+  return typeof meta.transferType === 'string' ? meta.transferType : 'unknown';
+}
+
 function isPayloadTransform(t: ExerciseTransform): t is PayloadTransform {
   return t.kind === 'payload';
 }

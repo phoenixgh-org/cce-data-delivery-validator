@@ -22,6 +22,7 @@ export {
   isAcceptedStatus,
   materializeCase,
   materializePost,
+  payloadTypeOf,
   requiresAuthEnabled,
   resolveBaseline,
   type CaseSetup,

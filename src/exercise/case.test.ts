@@ -22,7 +22,13 @@ import {
   type BaselineGenerator,
   type TransmissionPayload,
 } from './baseline.js';
-import { materializeCase, materializePost, resolveBaseline, type ExerciseCase } from './case.js';
+import {
+  materializeCase,
+  materializePost,
+  payloadTypeOf,
+  resolveBaseline,
+  type ExerciseCase,
+} from './case.js';
 import { deleteAtPointer, setAtPointer } from './pointer.js';
 import {
   addCustomDataObject,
@@ -32,6 +38,7 @@ import {
   duplicateVersionStringsIntoRecords,
   irregularCadence,
   regularCadence,
+  setInvalidValue,
   setSchemaVersion,
   setTransferId,
   setUnsupportedSchemaVersion,
@@ -152,6 +159,21 @@ test('with no declaration, the caller-supplied baseline stands in for the defaul
   const kase: ExerciseCase = caseWith([]);
   assert.equal(resolveBaseline(kase, { baseline: emsBaseline }), emsBaseline);
   assert.equal(resolveBaseline(kase), DEFAULT_BASELINE);
+});
+
+test('payloadTypeOf reports the BRANCH a case exercises, not what it mutates', () => {
+  // What the coverage join asks each case (./runner/coverage.ts): it must follow
+  // the declaration, and it must not be fooled by a mutator that writes a
+  // transferType which is no branch at all — `3.2-fail-invalid-transfer-type`
+  // sends 'thermometer' precisely to prove the enum bites, and reporting that as
+  // a payload type the suite exercises would be noise.
+  assert.equal(payloadTypeOf(caseWith([])), 'rtm');
+  assert.equal(payloadTypeOf({ ...caseWith([]), baseline: emsBaseline }), 'ems');
+  assert.equal(payloadTypeOf(caseWith([]), { baseline: emsBaseline }), 'ems');
+  assert.equal(
+    payloadTypeOf(caseWith([setInvalidValue('/meta/transferType', 'thermometer')])),
+    'rtm',
+  );
 });
 
 // ── the generator CONTRACT, asserted over every registered generator ────────
@@ -296,8 +318,9 @@ test('the EMS baseline is validated by ems-record, not waved through', () => {
   // A tripwire, not a case (the EMS case group is its own bite): prove the ems
   // branch is genuinely the one Ajv selected, by breaking a constraint that
   // exists ONLY there. Adding the solar objects to a record that already has SVA
-  // matches both branches of the power `oneOf` — which a `oneOf` rejects — and
-  // has no analogue in rtmd-record. If this ever passes validation, the payload
+  // matches NEITHER branch of the power `oneOf` — each branch carries an explicit
+  // `not` against the other's fields, and zero matches violates a `oneOf` exactly
+  // as two do — and has no analogue in rtmd-record. If this ever passes, the payload
   // is being graded against something other than ems-record.
   const payload = emsBaseline({ caseId: 'x', index: 0 });
   const record = (payload.data[0] as { records: Record<string, unknown>[] }).records[0]!;
@@ -308,7 +331,7 @@ test('the EMS baseline is validated by ems-record, not waved through', () => {
   assert.equal(
     lookup.entry.validate(payload),
     false,
-    'SVA together with DCSV+DCCD matches both branches of the ems-record power oneOf',
+    'SVA together with DCSV+DCCD matches neither branch of the ems-record power oneOf',
   );
 });
 
