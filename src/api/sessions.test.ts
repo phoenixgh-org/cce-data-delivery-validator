@@ -19,6 +19,7 @@ import { buildApp } from '../app.js';
 import { SchemaRegistry } from '../schema-registry.js';
 import { closePool, getPool } from '../db/pool.js';
 import { createSession, insertFinding, insertTransmission } from '../db/repository.js';
+import { advisory } from '../ingest/stages/semantic/advisory.js';
 import { sigKey } from './signatures.js';
 import type { SignatureFinding } from './signatures.js';
 
@@ -806,6 +807,143 @@ test(
         'signatureKey selects the outdated-schema info tx (info+outdated isIssue), excludes the non-outdated info tx',
       );
       assert.equal(body.scoped, 1, 'scoped denominator counts only the outdated soft-issue tx');
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+/* ── Advisories: the round trip, and matrix immunity through the REAL read path
+ * (pwd / bva slice A) ────────────────────────────────────────────────────────
+ *
+ * src/api/compliance-matrix.test.ts pins the pure join. This pins the whole
+ * path a supplier actually sees: an advisory built by the emission helper is
+ * persisted as an ordinary `finding` row (NO DDL — `finding.requirement` is
+ * plain `text`), read back through GET /api/sessions/:uuid, and shown to leave
+ * every scope-relative aggregate in that response untouched — the 27-row §7
+ * summary, the gradeable rollup, the pass trend and the scope totals alike.
+ *
+ * The session is seeded 100% CONFORMANT first (a pass on all ten gradeable §7
+ * rows), because that is pwd's acceptance sentence: a supplier at 100% must
+ * still be able to carry advisories. */
+
+/** The ten gradeable §7 rows (primary class ✅ verified or 🟡 heuristic). */
+const GRADEABLE_REQUIREMENTS = [
+  '1.1',
+  '1.2',
+  '1.3',
+  '1.4',
+  '1.6',
+  '1.8',
+  '2.1',
+  '3.1',
+  '3.2',
+  '3.4',
+];
+
+test(
+  'GET /api/sessions/:uuid → advisories round-trip and move NOTHING in the §7 read path',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      const tx = await insertTransmission({
+        sessionUuid: uuid,
+        wireBytes: 4096,
+        contentType: 'application/json; charset=utf-8',
+        httpStatus: 200,
+        body: { meta: { transferId: 'T-adv' } },
+        rawBody: '{"meta":{"transferId":"T-adv"}}',
+        parseOk: true,
+        schemaOk: true,
+      });
+
+      // A fully conformant supplier: every gradeable row green.
+      for (const requirement of GRADEABLE_REQUIREMENTS) {
+        await insertFinding(tx.id, { requirement, severity: 'pass' });
+      }
+
+      interface AdvResp {
+        transmissions: Array<{
+          findings: Array<{
+            requirement: string;
+            severity: string;
+            detail: string | null;
+            pointer: string | null;
+            outdated: boolean;
+            code: string | null;
+          }>;
+        }>;
+        summary: Array<{ requirement: string; status: string; counts: unknown; outdated: number }>;
+        rollup: unknown;
+        trend: unknown;
+        scoped: unknown;
+        signatures: unknown[];
+      }
+
+      const first = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(first.statusCode, 200);
+      const before = first.json() as AdvResp;
+
+      assert.deepEqual(
+        before.rollup,
+        { total: 27, gradeable: 10, passing: 10, failing: 0, untested: 0 },
+        'the seeded session really is 100% conformant',
+      );
+
+      // Now raise advisories on that same transmission, built ONLY through the
+      // emission helper — the shape under test is the one production emits.
+      const advisories = [
+        advisory({
+          id: 'adv.null_identity',
+          detail:
+            'ASER and AMID were both null in this report, so the equipment it describes ' +
+            'cannot be matched to a unit in the national inventory',
+          pointer: '/data/0/ASER',
+        }),
+        advisory({
+          id: 'adv.null_padding',
+          detail:
+            'TCON was null in all 480 records of this transmission — if the equipment has ' +
+            'no condenser sensor, omitting the property communicates that more clearly ' +
+            'than sending null, and costs you bytes against the 1 MB limit',
+          pointer: '/data/0/records/0/TCON',
+        }),
+      ];
+      for (const f of advisories) await insertFinding(tx.id, f);
+
+      const second = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(second.statusCode, 200);
+      const after = second.json() as AdvResp;
+
+      // ── THE PIN: every verdict-bearing aggregate is unchanged. ──────────────
+      assert.deepEqual(after.summary, before.summary, 'the §7 matrix moved');
+      assert.deepEqual(after.rollup, before.rollup, 'the gradeable rollup moved');
+      assert.deepEqual(after.trend, before.trend, 'the pass-rate trend moved');
+      assert.deepEqual(after.scoped, before.scoped, 'the scope totals moved');
+      assert.deepEqual(after.signatures, before.signatures, 'an advisory entered the issue list');
+      assert.deepEqual(after.signatures, [], 'a conformant session has no distinct issues');
+
+      // ── the round trip itself: the advisories came back intact. ─────────────
+      const returned = after.transmissions[0]?.findings.filter((f) =>
+        f.requirement.startsWith('adv.'),
+      );
+      assert.equal(returned?.length, 2, 'both advisories persisted and read back');
+      for (const f of returned ?? []) {
+        assert.equal(f.severity, 'info', 'advisories are always info');
+        assert.equal(f.code, f.requirement, 'code carries the same adv.* id');
+        assert.equal(f.outdated, false, 'never outdated — an advisory is not a defect');
+        assert.ok(f.pointer?.startsWith('/data/0'), 'pointer survives for the drill-down');
+        assert.ok((f.detail?.length ?? 0) > 0, 'the observation travels with the finding');
+      }
+      // No advisory leaked into the §7 findings, and none was dropped.
+      assert.equal(after.transmissions[0]?.findings.length, GRADEABLE_REQUIREMENTS.length + 2);
     } finally {
       if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
       await app.close();

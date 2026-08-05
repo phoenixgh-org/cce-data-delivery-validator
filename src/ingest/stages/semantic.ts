@@ -22,10 +22,15 @@
  *
  * Subagents B/C/D fill the per-check stub bodies under `stages/semantic/*.ts`
  * WITHOUT editing this file. The signatures below are frozen.
+ *
+ * The one later addition to `BODY_CHECKS` is `advisoriesCheck` (pwd/bva), which
+ * fans out to its own registry so the Advisories catalogue can grow without
+ * further edits here. See `semantic/advisory.ts`.
  */
 
 import type { PriorTransmission } from '../../db/repository.js';
 import { CONTINUE, type Finding, type PipelineContext, type Stage } from '../pipeline.js';
+import { advisoriesCheck } from './semantic/advisory.js';
 import { concurrencyCheck } from './semantic/concurrency.js';
 import { customDataSchemaCheck } from './semantic/custom-schema.js';
 import { duplicateCheck } from './semantic/duplicate.js';
@@ -58,12 +63,22 @@ export type SemanticCheck = (
   deps: SemanticDeps,
 ) => Finding[] | Promise<Finding[]>;
 
-/** The body-inspecting checks: skipped when there is no parse+schema-valid body. */
+/**
+ * The body-inspecting checks: skipped when there is no parse+schema-valid body.
+ *
+ * `advisoriesCheck` is the WHOLE Advisories category behind one entry (pwd/bva):
+ * it runs every check registered in `semantic/advisory.ts` `ADVISORY_CHECKS`, so
+ * growing the advisory catalogue never touches this file. Advisories are
+ * observations, not verdicts — they emit `severity: 'info'` under their own
+ * `adv.*` id namespace and provably cannot move any §7 requirement's status; see
+ * that module's header for how that is enforced rather than merely intended.
+ */
 const BODY_CHECKS: readonly SemanticCheck[] = [
   duplicateCheck,
   intervalCheck,
   inventoryCheck,
   customDataSchemaCheck,
+  advisoriesCheck,
 ];
 
 /**

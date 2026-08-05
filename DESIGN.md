@@ -215,6 +215,36 @@ pass/fail alone would report **untested** and claim we never checked (`cce-data-
 This table is the source for `COMPLIANCE_MATRIX` in `src/api/compliance-matrix.ts`, which
 encodes the same 27 rows verbatim — change them together.
 
+### 7.1 Advisories
+
+Some payloads are fully schema-compliant *and* fully requirement-compliant, yet obviously
+unhelpful to the country receiving them — a report whose `ASER` and `AMID` are both `null`;
+every DS01 property emitted with `null` where no sensor is fitted. **Advisories** are the
+category for saying so (`cce-data-delivery-validator-pwd`).
+
+An advisory **never changes a requirement's pass/fail status.** The proposition is an
+independent read on conformance; the moment house opinion moves a verdict, the grade stops
+being trustworthy. A supplier must be able to sit at 100 % conformant and still carry
+advisories — which is why this is a separate category rather than extra findings on
+existing requirements.
+
+Mechanically it reuses the existing plumbing with **no DDL**: `severity` is always `info`
+(no fourth severity, `2kx`), and the id lives in its own `adv.*` namespace — `adv.null_identity`,
+`adv.null_padding` — carried in **both** `finding.requirement` and `finding.code`. Named codes
+rather than numbers: unlike the §7 ids, which take their numbering from the 2025 requirements
+document, an advisory catalogue has no external document to number against. The §7 matrix is
+immune **by construction**, because the join iterates the 27 static rows and never looks up an
+unknown id; that guarantee is invisible in the code, so it is pinned by tests in
+`src/api/compliance-matrix.test.ts` and `src/api/sessions.test.ts`.
+
+Advisories emit **per transmission** from the stage-8 semantic check `advisoriesCheck`
+(`src/ingest/stages/semantic/advisory.ts`, which is also the registration point for new
+checks); the session-level view aggregates findings the dashboard already fetches, so there
+is no new read path. Wording must **observe, never conclude** — a null cannot prove "no
+sensor fitted", since a broken sensor looks identical — and should lead with the payload-size
+argument, which is actionable self-interest rather than a judgement about the supplier's
+hardware.
+
 ## 8. Data model
 
 **PostgreSQL** is the datastore, converging with the sibling project `tremble` (which ingests
