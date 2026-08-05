@@ -232,9 +232,23 @@ test('pass-direction cases declare no fault, expect only 2xx and no fail finding
     }
     const fails = kase.expectedFindings.filter((f) => f.severity === 'fail');
     assert.deepEqual(fails, [], `${kase.id}: a pass-direction case expects no fail findings`);
+    // POSITIVE EVIDENCE, not necessarily a `pass` finding (relaxed 2026-08-04,
+    // bd 8qa.4). This used to demand severity `pass`, which was right while every
+    // conformant transmission earned one. It is not right for the outdated-but-
+    // valid grade: a body validating against a registered-but-older schema is
+    // ACCEPTED, but §3.2 records `info` + `outdated` and deliberately NO pass
+    // (2kx — the modifier, not the severity, is what makes the matrix row read
+    // `pass-outdated` instead of `untested`). Demanding a pass finding there
+    // would force the case to assert something the validator does not do.
+    //
+    // What survives is the property that mattered: a pass-direction case must
+    // name at least one finding the session is required to SHOW, so it proves the
+    // requirement was graded rather than merely not-failed. The stricter check
+    // that an outdated case really is outdated lives below, where it can consult
+    // the registry.
     assert.ok(
-      kase.expectedFindings.some((f) => f.severity === 'pass'),
-      `${kase.id}: a pass-direction case must expect at least one pass finding`,
+      kase.expectedFindings.length > 0,
+      `${kase.id}: a pass-direction case must expect at least one finding as positive evidence`,
     );
   }
 });
@@ -306,6 +320,86 @@ for (const kase of EXERCISE_CASES) {
     assertSchemaOutcome(kase);
   });
 }
+
+/* ── schema CURRENCY: which side of currentVersion() a case sits on ──────────
+ *
+ * `schemaOutcome` says whether Ajv accepts the payload; it deliberately says
+ * nothing about whether the version is the newest one (see the note on
+ * SchemaOutcome in ./transforms/payload.ts). But the §3.2 grade forks on exactly
+ * that: src/ingest/stages/schema.ts records a `pass` when the resolved version IS
+ * `registry.currentVersion()` and `info` + `outdated` when it is older, and those
+ * are the two branches the cases below claim. Currency is decidable in CI — it is
+ * a registry fact — so it is checked here.
+ *
+ * This is also the replacement tripwire for bd aur. The old one hung off
+ * `setUnsupportedSchemaVersion('0.8.0')` and asserted only that 0.8.0 was NOT
+ * registered, so it trapped exactly one of the ways the registry could move:
+ * registering 0.8.2 would have made 0.8.1 outdated, silently broken
+ * '3.2-pass-baseline' live, and never tripped anything in CI. These two
+ * assertions trip by name on ANY change to the registered set that moves a case
+ * to the wrong side of current — in either direction.
+ */
+
+/**
+ * A case claiming the outdated-but-valid grade. Keyed on the §3.2 `info` it
+ * expects: schema.ts is the only producer of §3.2 findings and the outdated
+ * branch is its only `info` one, so §3.2 info means outdated and nothing else.
+ */
+function expectsOutdatedGrade(kase: ExerciseCase): boolean {
+  return kase.expectedFindings.some((f) => f.requirement === '3.2' && f.severity === 'info');
+}
+
+/** A case claiming the ordinary current-version §3.2 pass. */
+function expectsCurrentSchemaPass(kase: ExerciseCase): boolean {
+  return kase.expectedFindings.some((f) => f.requirement === '3.2' && f.severity === 'pass');
+}
+
+test('a case expecting the §3.2 outdated grade declares a registered version older than current', () => {
+  const outdatedCases = EXERCISE_CASES.filter(expectsOutdatedGrade);
+  assert.ok(
+    outdatedCases.length > 0,
+    'the table still exercises the outdated-but-valid grade — if the registry lost its older ' +
+      'version, the pass-outdated case must be reworked, not deleted (bd 8qa.4)',
+  );
+  const current = registry.currentVersion();
+  for (const kase of outdatedCases) {
+    for (const post of materialize(kase)) {
+      const version = declaredVersion(post.payload);
+      const where = `${kase.id}[${post.label}]`;
+      assert.ok(
+        registry.lookup(version).ok,
+        `${where}: expects the outdated grade but ${version} is not registered — that is a 422, ` +
+          `not an accepted-with-info transmission`,
+      );
+      assert.notEqual(
+        version,
+        current,
+        `${where}: expects the outdated grade but ${version} IS the current version — ` +
+          `the stage would record a §3.2 pass instead`,
+      );
+    }
+  }
+});
+
+test('a case expecting a §3.2 pass declares the CURRENT registered version', () => {
+  const passCases = EXERCISE_CASES.filter(expectsCurrentSchemaPass);
+  assert.ok(passCases.length > 0, 'the table still exercises the current-version §3.2 pass');
+  const current = registry.currentVersion();
+  for (const kase of passCases) {
+    for (const post of materialize(kase)) {
+      // Only POSTs that reach stage 7 can earn the pass; a body a transport
+      // wrapper replaced outright (oversize, unparseable) halts long before, and
+      // its payload's declared version is not what the session grades on.
+      if (post.schemaOutcome !== 'valid') continue;
+      assert.equal(
+        declaredVersion(post.payload),
+        current,
+        `${kase.id}[${post.label}]: expects a §3.2 pass, but the current registered version is ` +
+          `${current} — an older one is graded info+outdated, with no pass finding at all`,
+      );
+    }
+  }
+});
 
 test('the table exercises both directions, both transform families and a multi-POST case', () => {
   // The representative set exists to prove the MODEL, so assert the model's

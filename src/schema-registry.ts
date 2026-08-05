@@ -1,15 +1,28 @@
 /**
  * Schema registry (content-hash pinned).
  *
- * Hosts the *vendored* transmission JSON Schemas, currently 0.8.1 only.
+ * Hosts the *vendored* transmission JSON Schemas: 0.8.0 and 0.8.1, with 0.8.1
+ * the CURRENT (newest) version and 0.8.0 registered as outdated-but-valid.
  *
- * DIALECT: 0.8.1 as published declares JSON Schema **2020-12**, so the registry
- * compiles with Ajv's 2020 build (`ajv/dist/2020`), NOT the draft-07 default
- * export. The pre-release 0.8.0 was draft-07 and is deliberately no longer
- * registered (see VENDORED) — nothing outside this machine ever used it, and
- * carrying it would mean selecting an Ajv build per entry for no benefit. If a
- * future version ever reintroduces a second dialect, that per-entry selection
- * is the seam to add: each version already compiles in its own Ajv instance.
+ * DIALECT IS PER ENTRY. The two registered versions do not share a dialect:
+ * 0.8.1 as published declares JSON Schema **2020-12** (Ajv's `ajv/dist/2020`
+ * build), while 0.8.0 declares **draft-07** (Ajv's default export). Neither
+ * build validates the other's `$schema`, so each entry names its dialect and
+ * {@link buildAjv} selects the build — the seam this header used to describe as
+ * hypothetical, made real by the decision below. Each version already compiled
+ * in its own Ajv instance, which is what made the seam cheap.
+ *
+ * WHY 0.8.0 IS BACK. Registering it was decided on 2026-08-04 (bd 8qa.4),
+ * amending bd fvw's 2026-08-02 stance that nothing further would register until
+ * instructed ("this decision creates no outdated cohort"). The instruction came:
+ * an outdated cohort is wanted deliberately, because with a single registered
+ * version the outdated-but-valid branch of the schema stage
+ * (src/ingest/stages/schema.ts) is unreachable by construction and so is the
+ * dashboard's OUTDATED SCHEMA signal — neither could be exercised end to end.
+ * 0.8.0 is the version a supplier is most likely to still be sending, which
+ * makes it the honest choice of cohort. The decision was narrowed: 0.7.x and
+ * earlier stay out entirely, and 0.8.2/0.8.3 (present upstream in the authoring
+ * folder) stay out for now, so CURRENT remains 0.8.1.
  *
  * Design constraints (DESIGN.md §9):
  *   - Never fetched at runtime: `meta.schemaVersion` is an opaque lookup key.
@@ -26,10 +39,19 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import type { AnySchema, ValidateFunction } from 'ajv';
-// The 2020-12 build, not the draft-07 default export — see the dialect note
-// above. Named import (not default) so it resolves under NodeNext ESM: the
-// default export of this CJS build types as a namespace, not a constructor.
+// BOTH builds, one per dialect — see the dialect note above. Named imports (not
+// defaults) so they resolve under NodeNext ESM: the default export of these CJS
+// builds types as a namespace, not a constructor.
+import { Ajv } from 'ajv';
 import { Ajv2020 } from 'ajv/dist/2020.js';
+
+/**
+ * The JSON Schema dialect a vendored file declares in its `$schema`, and hence
+ * the Ajv build that can compile it. Not inferred from the bytes: which build a
+ * blessed file compiles under is part of what "blessed" means, so it is stated
+ * here and would have to be changed deliberately.
+ */
+export type SchemaDialect = 'draft-07' | '2020-12';
 
 /** A schema version vendored into the registry. */
 interface VendoredSchema {
@@ -37,14 +59,21 @@ interface VendoredSchema {
   version: string;
   /** Path to the byte-identical published bytes, relative to this module. */
   file: string;
+  /** The dialect its `$schema` declares — selects the Ajv build. */
+  dialect: SchemaDialect;
 }
 
 /**
  * The blessed set of vendored schemas. The file is loaded as raw bytes so the
  * SHA-256 is taken over exactly the published artifact (not a re-serialization).
+ *
+ * Order does not matter — every consumer sorts by {@link compareVersions} — but
+ * oldest-first matches how the set is read aloud, and the LAST entry by version
+ * (not by position) is what `currentVersion()` reports.
  */
 const VENDORED: readonly VendoredSchema[] = [
-  { version: '0.8.1', file: './schemas/cce-interop-0.8.1.json' },
+  { version: '0.8.0', file: './schemas/cce-interop-0.8.0.json', dialect: 'draft-07' },
+  { version: '0.8.1', file: './schemas/cce-interop-0.8.1.json', dialect: '2020-12' },
 ];
 
 /** A compiled, ready-to-use registry entry. */
@@ -115,16 +144,20 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-function buildAjv(): Ajv2020 {
-  // 2020-12 is the dialect declared by the vendored schema's $schema. Ajv's
-  // DEFAULT export validates draft-07 and rejects a 2020-12 schema outright
-  // ("no schema with key or ref .../draft/2020-12/schema"), which took the whole
-  // process down at boot when 0.8.1 was republished — SchemaRegistry.load() runs
-  // inside buildApp(). Use the 2020 build.
+function buildAjv(dialect: SchemaDialect): Ajv | Ajv2020 {
+  // The build MUST match the dialect the file declares. Ajv's DEFAULT export
+  // validates draft-07 and rejects a 2020-12 schema outright ("no schema with
+  // key or ref .../draft/2020-12/schema") — which took the whole process down at
+  // boot when 0.8.1 was republished, since SchemaRegistry.load() runs inside
+  // buildApp(). The 2020 build refuses draft-07's `$schema` for the mirror-image
+  // reason. Neither is a superset of the other, so this is a switch, not a
+  // default with an exception.
   //
-  // `strict: false` is kept from the draft-07 configuration: the published bytes
-  // are not ours to adjust, so schema-authoring warnings must never fail a boot.
-  return new Ajv2020({ allErrors: true, strict: false });
+  // `allErrors` so a §3.2 rejection can list every violation at once, and
+  // `strict: false` because the published bytes are not ours to adjust —
+  // schema-authoring warnings must never fail a boot. Both apply to both builds.
+  const options = { allErrors: true, strict: false };
+  return dialect === '2020-12' ? new Ajv2020(options) : new Ajv(options);
 }
 
 export class SchemaRegistry {
@@ -139,7 +172,7 @@ export class SchemaRegistry {
   static load(): SchemaRegistry {
     const registry = new SchemaRegistry();
 
-    for (const { version, file } of VENDORED) {
+    for (const { version, file, dialect } of VENDORED) {
       const path = fileURLToPath(new URL(file, import.meta.url));
       let bytes: Buffer;
       try {
@@ -160,16 +193,17 @@ export class SchemaRegistry {
         // `$id`. That was never true of the *published* schemas — every release
         // carries a version-specific `$id` — it was true only of our vendored
         // 0.8.1, which was a copy of 0.8.0's bytes with the `$id` left stale
-        // (fixed 2026-07-25). Isolation is kept deliberately: it means a future
-        // vendored file with a duplicate or malformed `$id` degrades to "that
-        // one version fails to compile" rather than poisoning the whole
-        // registry at boot.
-        const ajv = buildAjv();
+        // (fixed 2026-07-25). Isolation is kept deliberately, and now earns its
+        // keep twice over: the instances are no longer even the same CLASS
+        // (draft-07 vs 2020-12 builds), and a future vendored file with a
+        // duplicate or malformed `$id` still degrades to "that one version fails
+        // to compile" rather than poisoning the whole registry at boot.
+        const ajv = buildAjv(dialect);
         const schema = JSON.parse(bytes.toString('utf8')) as AnySchema;
         validate = ajv.compile(schema);
       } catch (err) {
         throw new Error(
-          `schema registry: failed to compile ${version} (sha256 ${sha256}): ${String(err)}`,
+          `schema registry: failed to compile ${version} as ${dialect} (sha256 ${sha256}): ${String(err)}`,
         );
       }
 
@@ -203,8 +237,9 @@ export class SchemaRegistry {
    * Derived from the SAME entries `lookup()` validates with, so the reported
    * hash is by construction the hash of the bytes actually in force; there is no
    * second copy of the value to fall out of step. Reports the registered set
-   * exactly as it is (currently 0.8.1 alone, beads fvw) — it never asserts how
-   * many versions there ought to be.
+   * exactly as it is (0.8.0 and 0.8.1 today) — it never asserts how many versions
+   * there ought to be, which is why the dashboard survived the set growing from
+   * one entry to two without a code change.
    */
   provenance(): readonly SchemaProvenance[] {
     return [...this.byVersion.values()]

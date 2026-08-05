@@ -279,14 +279,19 @@ a migration runner is deferred until the schema needs to evolve in production.
 
 ## 9. Schema registry and versioning
 
-- The service hosts a registry of **vendored** schema versions, currently **0.8.1** only
-  (`src/schemas/cce-interop-0.8.1.json`). Multi-version support is a feature, not a
-  complication — the registry is a *policy* about which versions we accept, and the
-  pre-release 0.8.0 was deliberately dropped once 0.8.1 was published (nothing outside
-  this machine had used it). Its bytes are still on disk at
-  `src/schemas/cce-interop-0.8.0.json` but are absent from the registry's `VENDORED` list, so
-  they are never compiled and a payload declaring 0.8.0 is not accepted. A payload declaring any
-  unregistered version gets `422` with the supported list, never a silent fallback.
+- The service hosts a registry of **vendored** schema versions: **0.8.1** (current) and
+  **0.8.0** (registered, outdated-but-valid). Multi-version support is a feature, not a
+  complication — the registry is a *policy* about which versions we accept. 0.8.0 was
+  dropped from that policy once 0.8.1 was published, then **restored on 2026-08-04**
+  (bd 8qa.4) because a single registered version leaves the outdated-but-valid grade
+  (§7) unreachable by construction: with nothing older than current, no transmission can
+  earn the OUTDATED SCHEMA signal and neither the grade nor the dashboard tag can be
+  exercised end to end. 0.8.0 is also the version a supplier is likeliest to still be
+  sending. **Registration is per-dialect**: 0.8.0 declares draft-07 and 0.8.1 declares
+  2020-12, so each entry names its dialect and compiles under the matching Ajv build in
+  its own instance. 0.7.x and earlier stay out entirely; 0.8.2/0.8.3 exist upstream but
+  stay out for now, so current remains 0.8.1. A payload declaring any unregistered
+  version gets `422` with the supported list, never a silent fallback.
 - **Never fetched at runtime.** `meta.schemaVersion` is a *lookup key*, not a locator. We validate
   only against pre-registered copies — runtime fetching would (a) couple our ingest path to an
   external host's uptime, (b) be an SSRF foot-gun (a URL pulled from request data), and (c) destroy
@@ -363,8 +368,9 @@ in the dashboard so it's never a surprise.
 - **Runtime/language:** Node + TypeScript.
 - **HTTP:** Fastify (fast, schema-friendly, first-class `Content-Type`/raw-body control). Locked.
 - **Validation:** Ajv running the published schema directly, using the build that
-  matches the schema's declared dialect — currently **2020-12** (`ajv/dist/2020`),
-  since 0.8.1 as published declares 2020-12. The pre-release 0.8.0 was draft-07.
+  matches each schema's declared dialect — **2020-12** (`ajv/dist/2020`) for 0.8.1,
+  **draft-07** (Ajv's default export) for the registered-but-outdated 0.8.0. Neither
+  build accepts the other's `$schema`, so the choice is per registry entry.
 - **Storage:** PostgreSQL via `node-postgres` (`pg`), behind a thin repository layer; schema
   adopts `tremble`'s content-addressed `source_artifact` / `jsonb`-body patterns.
 - **Frontend:** React + Vite SPA (with `react-router-dom`), built to `dist/web` and served by the
@@ -377,7 +383,7 @@ in the dashboard so it's never a surprise.
 ## 14. Build order (v1 milestones)
 
 1. **Skeleton** — Node/TS project, Fastify server, Postgres via docker-compose with first-boot
-   schema, schema registry loading the vendored version (0.8.1 today); Ajv compiles.
+   schema, schema registry loading the vendored versions (0.8.0 + 0.8.1 today); Ajv compiles.
 2. **Ingest core** — `POST /i/{uuid}`: size/content-type/encoding/parse/schema stages → persist transmission + findings → correct status codes.
 3. **Sessions + dashboard read** — `POST /api/sessions`, `GET /api/sessions/{uuid}` (transmissions, findings, summary).
 4. **Web UI** — Create button, setup page with copy-paste examples, transmission list + drill-down, the §7 matrix.

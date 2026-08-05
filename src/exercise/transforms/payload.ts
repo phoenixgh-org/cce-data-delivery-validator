@@ -20,6 +20,18 @@
  *                           version the registry does not carry, which stage 7
  *                           grades as a §3.2 fail before validating anything.
  *
+ * CURRENCY IS NOT AN OUTCOME. The vocabulary describes what happens at stage 7's
+ * VALIDATION step, not the currency verdict that follows it. A payload declaring
+ * a registered-but-OLDER version (0.8.0 today) is plainly `valid` — the registry
+ * resolves it and its own compiled validator accepts the body — even though the
+ * stage then records `info` + `outdated` rather than a §3.2 pass. Considered and
+ * rejected: a fourth `outdated` value. It would conflate "did Ajv accept this?"
+ * with "is this the newest version we know?", make `combineSchemaOutcomes` rank
+ * two unrelated axes, and leave ../cases.test.ts unable to state the thing worth
+ * stating — that the payload validates against the OLD schema's actual bytes.
+ * Currency is expressed where it belongs: in the case's expected findings and
+ * expected status, checked live by the runner.
+ *
  * That declaration is not an annotation someone must remember to keep true:
  * ../cases.test.ts runs every materialized payload through the real registry and
  * the real Ajv validator and asserts the declared outcome, so a vocabulary entry
@@ -94,11 +106,16 @@ export function setTransferId(transferId: string): PayloadTransform {
 }
 
 /**
- * Declare a REGISTERED `meta.schemaVersion`. Benign: the registry resolves it
- * and Ajv runs. Use it to exercise the outdated-but-valid path once a second
- * version is registered again; ../cases.test.ts asserts the version named here
- * really is registered, so this cannot silently become an unsupported-version
- * case.
+ * Declare a REGISTERED `meta.schemaVersion`. Benign: the registry resolves it and
+ * Ajv runs, so the outcome stays `valid` however OLD the named version is.
+ *
+ * This is how the outdated-but-valid path is exercised now that a second version
+ * is registered (0.8.0 alongside the current 0.8.1, bd 8qa.4): pointing it at the
+ * older entry leaves the payload schema-valid while making the schema stage grade
+ * §3.2 `info` + `outdated` instead of `pass`. ../cases.test.ts asserts the version
+ * named here really is registered — and, for a case expecting that info finding,
+ * that it really is older than current — so this cannot silently decay into an
+ * unsupported-version case or into an ordinary current-version pass.
  */
 export function setSchemaVersion(version: string): PayloadTransform {
   return payloadTransform({

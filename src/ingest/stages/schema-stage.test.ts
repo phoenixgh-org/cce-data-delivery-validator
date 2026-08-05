@@ -34,31 +34,22 @@ import { schemaStage } from './schema.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
 
-/** A synthetic version, newer than anything real, used only to exercise the
- *  outdated-but-valid path. Deliberately not a plausible real release number. */
-const SYNTHETIC_NEWER = '9.9.9';
-
 /**
- * A registry that behaves exactly like the live one but reports
- * {@link SYNTHETIC_NEWER} as its current version, so the REAL current version
- * (0.8.1) resolves as "valid but outdated".
+ * The registered version that is NOT current — the outdated-but-valid cohort.
  *
- * Needed because the registry now vendors a single version: with nothing older
- * than current, the §3.2 outdated path has no live case and would otherwise go
- * untested. Delegating to the real registry keeps the actual compiled 0.8.1
- * validator in play — only the currency verdict is synthesized. Restore this to
- * a plain `SchemaRegistry.load()` once two real versions are registered again.
+ * These tests used to synthesize that cohort: a stub registry reported a fake
+ * `9.9.9` as current so the real 0.8.1 would resolve as outdated, because the
+ * registry then vendored a single version and the outdated branch had no live
+ * case at all. 0.8.0 is registered again as of bd 8qa.4 (2026-08-04) precisely so
+ * that branch has a real one, so the stub is gone and these tests now drive the
+ * genuine article: the real registry, the real currency comparison, and a body
+ * validated by 0.8.0's own compiled draft-07 validator rather than 0.8.1's.
+ *
+ * Named rather than inlined so the day 0.8.0 stops being the oldest registered
+ * version, the fix is one constant — and so `npm test` states the assumption it
+ * is making about the registry's shape (../../schema-registry.test.ts pins it).
  */
-function registryWithNewerCurrent(): SchemaRegistry {
-  const real = SchemaRegistry.load();
-  const stub: Pick<SchemaRegistry, 'lookup' | 'currentVersion' | 'supportedVersions' | 'get'> = {
-    lookup: (raw: string) => real.lookup(raw),
-    get: (version: string) => real.get(version),
-    supportedVersions: () => [...real.supportedVersions(), SYNTHETIC_NEWER],
-    currentVersion: () => SYNTHETIC_NEWER,
-  };
-  return stub as SchemaRegistry;
-}
+const OUTDATED_VERSION = '0.8.0';
 
 /** A genuinely-valid RTM transmission on the CURRENT version (verified against the live registry). */
 function validPayload(): Record<string, unknown> {
@@ -85,6 +76,18 @@ function validPayload(): Record<string, unknown> {
       },
     ],
   };
+}
+
+/**
+ * The same transmission, declaring {@link OUTDATED_VERSION}. Valid against that
+ * version's own bytes too — the releases differ on bounds for data objects this
+ * body does not carry (ACCD, BLOG), so only the currency verdict changes.
+ */
+function outdatedPayload(): Record<string, unknown> {
+  const payload = validPayload();
+  (payload.meta as Record<string, unknown>).schemaVersion = OUTDATED_VERSION;
+  (payload.meta as Record<string, unknown>).transferId = 'T-outdated-1';
+  return payload;
 }
 
 // ── stage-unit harness ──────────────────────────────────────────────────────
@@ -235,16 +238,20 @@ test('schema: genuinely-valid current-version transmission → continue, schemaO
 });
 
 test('schema: valid-but-OUTDATED version → continue, schemaOk true, one 3.2 info(outdated)', () => {
-  // A valid 0.8.1 body against a registry whose current version is NEWER, so
-  // 0.8.1 resolves as outdated-but-valid: the body is ACCEPTED (continue,
-  // schemaOk true) and recorded as a §3.2 info finding flagged `outdated` —
-  // never a pass/fail. See registryWithNewerCurrent() for why this is synthetic.
-  const ctx = makeCtx(validPayload(), registryWithNewerCurrent());
+  // A body declaring the OLDER registered version against the REAL registry, so
+  // it resolves as outdated-but-valid: 0.8.0's own compiled validator accepts it
+  // and the body is ACCEPTED (continue, schemaOk true), but the stage records a
+  // §3.2 info finding flagged `outdated` — never a pass/fail. This is the branch
+  // the live pass-outdated exercise case rides (src/exercise/cases/payload.ts).
+  const current = registry.currentVersion();
+  assert.notEqual(OUTDATED_VERSION, current, 'the fixture version really is not current');
+
+  const ctx = makeCtx(outdatedPayload());
   const outcome = schemaStage().run(ctx) as StageOutcome;
 
   assert.equal(outcome.kind, 'continue', 'outdated-but-valid payload is still accepted');
   assert.equal(ctx.schemaOk, true);
-  assert.equal(ctx.normalizedSchemaVersion, '0.8.1');
+  assert.equal(ctx.normalizedSchemaVersion, OUTDATED_VERSION);
   assert.equal(
     findingsBy(ctx.findings, '3.2', 'pass').length,
     0,
@@ -255,10 +262,14 @@ test('schema: valid-but-OUTDATED version → continue, schemaOk true, one 3.2 in
   assert.equal(infos.length, 1, 'one §3.2 info finding');
   assert.equal(infos[0]?.outdated, true, 'flagged outdated for the dashboard tag');
   assert.equal(infos[0]?.code, 'tx.outdated_schema', 'stable code for the soft signature');
-  assert.match(infos[0]?.detail ?? '', /0\.8\.1/, 'names the declared version');
   assert.match(
     infos[0]?.detail ?? '',
-    new RegExp(SYNTHETIC_NEWER.replace(/\./g, '\\.')),
+    new RegExp(OUTDATED_VERSION.replace(/\./g, '\\.')),
+    'names the declared version',
+  );
+  assert.match(
+    infos[0]?.detail ?? '',
+    new RegExp((current ?? '').replace(/\./g, '\\.')),
     'names the current version to upgrade to',
   );
 });
@@ -278,18 +289,17 @@ async function dbReachable(): Promise<boolean> {
 const reachable = await dbReachable();
 const skip = reachable ? false : 'no Postgres reachable (DATABASE_URL/PG* unset or DB down)';
 
-async function postToSession(
-  payload: Buffer,
-  registry?: SchemaRegistry,
-): Promise<{
+async function postToSession(payload: Buffer): Promise<{
   statusCode: number;
   body: { transmissionId: string | null; status: number; findings: number };
   sessionUuid: string;
 }> {
   const session = await createSession();
-  // `registry` overrides the app's own SchemaRegistry.load() — the only way to
-  // drive the outdated-but-valid path now that a single version is vendored.
-  const app = buildApp({ logger: false, ...(registry ? { registry } : {}) });
+  // Always the app's OWN SchemaRegistry.load(). This used to accept a registry
+  // override, needed only to fake an outdated cohort into existence; with 0.8.0
+  // registered there is a real one, so every full-flow test now runs against the
+  // registry the service actually boots with.
+  const app = buildApp({ logger: false });
   await app.ready();
   try {
     const res = await app.inject({
@@ -431,12 +441,13 @@ test(
   'full-flow: valid-but-outdated payload → accepted, schema_ok true, §3.2 info(outdated) persisted',
   { skip },
   async () => {
-    // A valid 0.8.1 payload against a registry reporting a NEWER current
-    // version, so 0.8.1 grades as outdated-but-valid end to end.
-    const payload = Buffer.from(JSON.stringify(validPayload()), 'utf8');
+    // A payload declaring the older registered version, against the app's own
+    // registry: it grades outdated-but-valid end to end, with no fake current
+    // version anywhere in the flow.
+    const payload = Buffer.from(JSON.stringify(outdatedPayload()), 'utf8');
     let sessionUuid: string | undefined;
     try {
-      const out = await postToSession(payload, registryWithNewerCurrent());
+      const out = await postToSession(payload);
       sessionUuid = out.sessionUuid;
 
       assert.notEqual(out.statusCode, 422, 'outdated-but-valid payload is still accepted');
@@ -444,7 +455,11 @@ test(
 
       const rows = await rowFor(sessionUuid);
       assert.equal(rows[0]?.schema_ok, true, 'schema_ok persisted true');
-      assert.equal(rows[0]?.schema_version, '0.8.1', 'declared (outdated) version recorded');
+      assert.equal(
+        rows[0]?.schema_version,
+        OUTDATED_VERSION,
+        'declared (outdated) version recorded',
+      );
 
       const all = await findingsFor(sessionUuid);
       assert.equal(

@@ -117,8 +117,12 @@ The endpoint under test. One POST = one transmission = one graded row.
 | §1.3 credential    | only when the session has opted in                   | See [Authorization](#post-apisessionsuuidauth--enable-or-rotate-13-auth) for the per-method header.                                               |
 
 Body: the `cce-interop` transmission JSON. `meta.schemaVersion` selects the validating
-schema; **`0.8.1` is the only registered version**, and any other value is a `422`
-listing what is supported (never a silent fallback).
+schema; the registered versions are **`0.8.1` (current)** and **`0.8.0`**, which is
+still accepted but graded *outdated* — a `200` carrying a §3.2 `info` finding with
+`outdated: true`, never a rejection. Any other value is a `422` listing what is
+supported (never a silent fallback). Ask the API for the authoritative list rather
+than trusting this sentence: `schemas` in the session read below is the registered
+set, oldest first, so its last entry is current.
 
 The §1.4 cap is **1 MiB of wire bytes, measured after content-encoding** — the bytes
 actually transmitted, not the decompressed size.
@@ -357,7 +361,8 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
   "sources":   [ { "source": "com.example", "sourceCode": "EXA", "sourceLabel": "com.example", "count": 1 } ],
   "scoped":    { "scoped": 1, "withFailures": 0, "distinctIssues": 0 },
   "expiresAt": "2026-08-08T05:50:33.722Z",
-  "schemas":   [ { "version": "0.8.1", "sha256": "290290fd4623d25c…" } ]
+  "schemas":   [ { "version": "0.8.0", "sha256": "e6614cc7d749be2e…" },
+                 { "version": "0.8.1", "sha256": "290290fd4623d25c…" } ]
 }
 ```
 

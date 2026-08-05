@@ -55,8 +55,12 @@ test('ungraded ✅ row with zero findings → untested (not a false pass)', () =
  * "untested", claiming we never checked. These cases pin the fix: the outdated
  * tally is its own input, never a severity, and yields `pass-outdated`.
  *
- * These are FIXTURE-driven: with 0.8.1 the only registered version there is no
- * live outdated cohort to capture, and registering one is out of scope (fvw). */
+ * These stay FIXTURE-driven even though a live outdated cohort now exists (0.8.0
+ * is registered alongside 0.8.1, bd 8qa.4): what is under test here is
+ * `computeComplianceSummary`'s arithmetic over counts, so feeding it counts
+ * directly is the honest unit. The end-to-end path from a real 0.8.0 POST to
+ * these tallies is covered by src/ingest/stages/schema-stage.test.ts and the
+ * live exercise case '3.2-pass-outdated-schema-version'. */
 
 test('2kx: §3.2 with ONLY outdated validations → pass-outdated, never untested', () => {
   // The shape the schema stage actually writes: one info per tx, no pass.

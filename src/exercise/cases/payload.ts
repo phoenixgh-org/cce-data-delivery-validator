@@ -18,6 +18,7 @@ import {
   declareCustomDataSchema,
   dropRequiredField,
   setInvalidValue,
+  setSchemaVersion,
   setUnsupportedSchemaVersion,
 } from '../transforms/payload.js';
 
@@ -78,49 +79,48 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     expectedFindings: [{ requirement: '3.2', severity: 'fail' }],
   },
   {
-    id: '3.2-fail-superseded-schema-version',
-    title: 'The superseded 0.8.0 is rejected 422 like any other unregistered version',
+    id: '3.2-pass-outdated-schema-version',
+    title:
+      'A valid transmission on the older registered 0.8.0 is accepted 200 and flagged outdated',
     requirements: ['3.2'],
-    direction: 'fail',
-    // ── WHERE THE PASS-OUTDATED CASE WOULD GO (8qa.4; 2kx) ───────────────────
+    direction: 'pass',
+    // ── THE PASS-OUTDATED CASE (8qa.4; 2kx) ──────────────────────────────────
     //
-    // 8qa.4 asks for a third §3.2 case: a schema-VALID transmission declaring an
-    // outdated-but-registered version, which the schema stage grades `info` +
-    // `outdated` (src/ingest/stages/schema.ts) and the matrix renders
-    // `pass-outdated` (src/api/compliance-matrix.ts deriveStatus).
+    // Was '3.2-fail-superseded-schema-version', which asserted 0.8.0 got a 422
+    // for missing the registry. That is no longer what happens: 0.8.0 is
+    // registered again (bd 8qa.4, 2026-08-04, amending fvw), specifically so an
+    // OUTDATED COHORT exists and this third §3.2 case can be written honestly.
     //
-    // THAT CASE IS NOT EXPRESSIBLE TODAY, and encoding it would be a lie about
-    // what this validator does. `currentVersion()` is the newest REGISTERED
-    // version, and the registry carries exactly one entry — 0.8.1
-    // (src/schema-registry.ts VENDORED). With one entry, current === every
-    // registered version, so no payload can reach the outdated branch: there is
-    // no outdated cohort to exercise. 0.8.0's bytes are still vendored in
-    // src/schemas/, but 0.8.0 was deliberately DE-registered (draft-07 dialect),
-    // and beads fvw resolved on 2026-08-02 to register nothing newer than 0.8.1
-    // until instructed — "this decision creates no outdated cohort", in as many
-    // words.
+    // The branch it exercises: a body that validates cleanly against a
+    // REGISTERED-but-older version is ACCEPTED. src/ingest/stages/schema.ts sets
+    // schemaOk, then compares the resolved version against
+    // `registry.currentVersion()` and — because they differ — records severity
+    // `info` carrying `outdated: true` (code `tx.outdated_schema`) INSTEAD of the
+    // §3.2 pass a current-version transmission earns. src/api/compliance-matrix.ts
+    // then renders the row `pass-outdated` off that modifier, which is the whole
+    // point: an outdated-but-valid session must not read as `untested` (2kx).
     //
-    // So this case encodes what the grader ACTUALLY does with 0.8.0: the version
-    // stage's registry lookup misses and halts 422 with a §3.2 fail, exactly as
-    // for 0.7.0 above — the difference being that this one is pointed at the
-    // version a supplier is most likely to still be sending.
+    // WHY `severity: 'info'` IS THE OUTDATED ASSERTION. expectedFindings matches
+    // on (requirement, severity) only, so it cannot name the `outdated` flag
+    // directly — but schema.ts is the sole producer of §3.2 findings and its ONLY
+    // `info` branch is the outdated one (every other branch is pass or fail). A
+    // §3.2 info therefore cannot arise except from `outdated: true`. Pair that
+    // with the 200 and this case pins accepted-and-flagged rather than merely
+    // accepted. The CI half — that 0.8.0 really is registered, really is NOT
+    // current, and really does validate this payload under its own draft-07
+    // bytes — is asserted in ../cases.test.ts, which is also what now trips if
+    // the registry's shape changes under this case (bd aur).
     //
-    // It is also the tripwire. `setUnsupportedSchemaVersion` declares
-    // `schemaOutcome: 'unsupported-version'`, and ../cases.test.ts asserts the
-    // registry really does NOT carry the named version. The day a second version
-    // registers and 0.8.0 or 0.8.1 becomes outdated-but-valid, this case fails CI
-    // by name — at which point convert it into the pass-outdated case with
-    // `setSchemaVersion(<older registered version>)` and
-    // `expectedFindings: [{ requirement: '3.2', severity: 'info' }]` plus a POST
-    // that still expects 200. (Note it would be a PASS-direction case expecting
-    // no `pass` finding on §3.2 — the outdated branch records info, not pass — so
-    // check the pass-direction invariant in ../cases.test.ts when you do.)
-    fault: {
-      layer: 'payload',
-      note: 'meta.schemaVersion names 0.8.0, which is vendored but no longer registered',
-    },
-    posts: [{ transforms: [setUnsupportedSchemaVersion('0.8.0')], expectedStatus: 422 }],
-    expectedFindings: [{ requirement: '3.2', severity: 'fail' }],
+    // The baseline is sent UNMODIFIED apart from the version string, having been
+    // verified to validate against 0.8.0's draft-07 bytes as well as 0.8.1's
+    // 2020-12 ones. The two releases do differ on numeric bounds — ACCD moved
+    // from `0.01–49.99` to `0–50` and BLOG's ceiling from 9999.9 to 9999 — but
+    // the fixture carries neither object, and 0.8.0 constrains `schemaVersion`
+    // only as a string (no enum), so no baseline tweak was needed and none is
+    // declared here. A future baseline that DOES trip a bound must declare the
+    // adjustment in this case rather than quietly skipping the older version.
+    posts: [{ transforms: [setSchemaVersion('0.8.0')], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'info' }],
   },
 
   // ── §3.1 manufacturer-specific data objects ───────────────────────────────

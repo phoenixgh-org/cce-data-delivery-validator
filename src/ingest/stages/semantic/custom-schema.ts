@@ -177,8 +177,8 @@ export function scanDataObjects(parsedBody: unknown): ScanResult {
  *
  *   - BY REFERENCE — a string, `minLength: 1`. Blank/whitespace names no schema.
  *   - INLINE — an object with `required: ["$id"]`, itself `minLength: 1`. We
- *     accept a non-empty inline schema whose `$id` is missing as well: 0.8.1 is
- *     the only registered version and never carried this field at all, so an
+ *     accept a non-empty inline schema whose `$id` is missing as well: neither
+ *     registered version (0.8.0, 0.8.1) carries this field at all, so an
  *     inline schema lacking `$id` has still made a declaration, and §3.1 grades
  *     whether one was made — not whether it is well-formed. But an `$id` that IS
  *     present and empty/non-string names nothing, and `{}` is not a schema.
