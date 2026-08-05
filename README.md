@@ -1,74 +1,60 @@
 # CCE Data Delivery Validator
 
-An independent, receiving-side conformance check for **WHO/PQS E006/DS01, Clause 5
-— Data Delivery to External Systems**.
+This project is an independent, receiving-side conformance check for **WHO/PQS E006/DS01, Clause 5
+— Data Delivery to External Systems**. It is informed by cold chain equipment (CCE) data delivery
+requirements published by UNICEF following the industry consultation in Q1, 2025
+(see [this page](https://docs.2to8.cc/cce-data-interop/requirements/)).
 
-Point a cold chain equipment (CCE) data supplier's transmission at a test endpoint
-and get back an honest read on what conforms, what does not, and — just as
-importantly — what a receiving system **cannot** determine at all.
+It was developed to allow CCE suppliers to point a stream of CCE data transmissions
+at a test endpoint and get back an independent evaluation on what conforms, what does not.
 
-> ### ℹ Requirements under PQS review
->
-> The requirements this validator grades against are sourced from the **CCE Data
-> Delivery industry consultation, convened by UNICEF in Q1 2025**. **WHO PQS has
-> taken stewardship of these requirements** and is reviewing them for publication
-> as part of the EMS Data Standard (`E006/DS01.x`). That review is anticipated to
-> conclude in **Q3 or Q4 2026**, and this project will be updated as soon as
-> possible following finalization by PQS. Until then, expect requirement
-> numbering and wording to shift —
-> [`docs/clause-mapping.md`](docs/clause-mapping.md) tracks how the IDs used here
-> map onto the forthcoming revision.
-
-> ### ⚠ Synthetic test data only
->
-> This is a sandbox. Send synthetic or test payloads only. **Never** point a live
-> CCE fleet at an endpoint here, and never send real facility, device, or personal
-> data. The endpoint URL is a **bearer capability** — anyone holding it can read
-> everything you send, and URLs leak through logs, proxies, and browser history.
-> Receiving real production data is an explicit non-goal (`DESIGN.md` §2, §12).
+> [!IMPORTANT]
+> Following the **UNICEF CCE Data Delivery industry consultation**, WHO PQS took
+> responsibilty for incorporating these requirements within the EMS Data Standard 
+> (E006/DS01.x). The PQS review process is anticipated to conclude in **Q3 or Q4 2026**.
+> This project will be updated as soon as new requirements are published.
 
 ## What this is
 
 Clause 5 obliges CCE data suppliers — the manufacturers and resellers of RTMDs and
 EMS-compliant equipment — to deliver performance data over HTTPS to the countries
-that own the equipment. This project is a **public service that plays the
-employer/country (receiving) side** of that interface, plus a web dashboard where a
+that own the equipment. This project is a **plays the
+employer/country (receiving) side** of that interface, and provides a web dashboard where a
 supplier gets an independent read on their conformance, "to the extent possible"
 from the receiving vantage point.
 
-A supplier mints a test endpoint in one click (no signup, no account), POSTs real
-transmissions from their own stack, and reads the findings — per transmission and
+A supplier creates a new test endpoint in one click (no signup, no account), POSTs real
+transmissions from their own data platform, and reads the findings — per transmission and
 rolled up per requirement.
 
 ## Why it exists
 
 PQS test labs prequalify the **equipment**. Nobody tests the **data delivery
 implementation**. So today suppliers self-grade against a prose requirements
-document and a JSON Schema, and the first party to discover a defect is usually the
-country that is missing its data.
+document and a JSON Schema, which can lead to implementation gaps.
 
-This gives them a second opinion before that happens — from something that behaves
-like a receiver, because it is one.
+This gives suppliers a second opinion before that happens — from something that behaves
+like a country receiver.
 
 ## Who it is for
 
-- **Supplier engineers** integrating Clause 5 delivery, who want a real endpoint to
+- **Supplier engineers** integrating Clause 5 data delivery, who want a real endpoint to
   test against rather than a checklist.
 - **Ministry and country technologists** evaluating what a receiving system can
   actually establish about a supplier's conformance.
 - **PQS and standards stakeholders** interested in where the standard is
   mechanically checkable and where it is not.
 
-## What we can and cannot prove
+## What the system can and cannot prove
 
-This is the part that makes the tool worth trusting. Every requirement is
-classified by **what a passive receiver can establish**, and a requirement we cannot
-grade is labelled as such rather than quietly counted as a pass:
+Every requirement is classified by **what a passive receiver can establish**,
+and a requirement that cannot be graded is labelled as such rather than quietly
+counted as a pass. Details below.
 
 | | Class | Meaning | Rows |
 |---|---|---|---|
 | ✅ | Passively verified | Graded from the supplier's own traffic | 7 |
-| 🟡 | Heuristic / partial | Observable, but we cannot judge intent or justification | 3 |
+| 🟡 | Heuristic / partial | Observable, but the system cannot judge intent or justification | 3 |
 | 🔌 | Active-only (deferred) | Needs deliberate error injection or a guided scenario; out of v1 scope | 8 |
 | 📝 | Self-attestation | Not provable from the receiving side at all | 9 |
 | 🔒 | Enforced by us | Guaranteed by the endpoint, so not a test of the supplier's choice | 1 |
@@ -82,11 +68,6 @@ is [`DESIGN.md` §7](DESIGN.md#7-compliance-engine--verifiability-matrix). It is
 mirrored in `src/api/compliance-matrix.ts` and rendered live in the dashboard.
 
 ## Quick start
-
-**There is no hosted instance.** Nothing is running at a public URL today, and
-whether there ever will be is an open question — a supplier testing their own stack
-mostly wants an endpoint they control, not a shared host. **Running it yourself is
-the supported path**, and it is a one-liner:
 
 ```bash
 docker compose up -d          # Postgres 16 + the app; the app serves :3000
@@ -133,7 +114,7 @@ curl -sX POST "$BASE/i/<uuid>" \
 # 3. Open the dashboard: $BASE/d/<uuid>
 ```
 
-The HTTP response is itself a teaching surface — a supplier should understand the
+The HTTP response is itself an information surface, allowing a supplier to understand the
 outcome without opening the dashboard (findings abridged here):
 
 ```json
@@ -193,6 +174,7 @@ an optional compose profile:
 docker compose --profile edge up -d
 deploy/smoke-proxy-contract.sh https://your.host
 ```
+(not extensively tested at present; feedback welcome)
 
 **Read [`docs/deployment.md`](docs/deployment.md) before deploying.** The proxy
 contract there is a correctness concern, not plumbing: an edge that caps, buffers,
@@ -211,7 +193,7 @@ Source: <https://github.com/phoenixgh-org/cce-data-delivery-validator>.
 
 Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
 
-- **Passive validation only.** We grade what arrives; we do not probe.
+- **Passive validation only.** The system grades what arrives; it does not probe the client.
 - **No active conformance harness** — nothing deliberately returns 429/503/5xx to
   measure a supplier's retry count, backoff shape, or `Retry-After` handling. That
   is why §4.1–4.5 sit in the 🔌 column (§4.4 is dual-classed 🔌/📝). §4.6–4.9 are a
@@ -219,8 +201,7 @@ Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
   them provable from the receiving side.
 - **No guided retransmission scenarios** for §5 (6-month retransmit, time-range
   filters, all-vs-never-sent).
-- **No real production data**, ever, in this mode. Synthetic test payloads only.
-- **7-day retention** after POST inactivity, then the endpoint and its data are gone.
+- **7-day retention** after POST inactivity; after that time, the endpoint and its data are automatically deleted.
 
 ## Further reading
 
@@ -311,7 +292,7 @@ Each run **mints its own session** and prints a per-case verdict, run counts, th
 requirement-coverage report, and that session's dashboard URL. The console output is
 a summary; **the dashboard is the detailed report**.
 
-Two honest caveats:
+Two caveats for the `run exercise` activity:
 
 - **The exercised session ends with §1.3 auth enabled.** Opting in is sticky and
   session-global, so the §1.3 cases are played last after a single opt-in, and the
