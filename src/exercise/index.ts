@@ -9,7 +9,9 @@
  */
 
 export {
+  BASELINE_GENERATORS,
   DEFAULT_BASELINE,
+  emsBaseline,
   fixtureBaseline,
   type BaselineGenerator,
   type BaselineRequest,

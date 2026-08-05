@@ -14,7 +14,13 @@ import { gunzipSync } from 'node:zlib';
 
 import { JSON_UTF8, validTransmission } from '../ingest/fixtures/transmissions.js';
 import { SchemaRegistry } from '../schema-registry.js';
-import { fixtureBaseline, type BaselineGenerator } from './baseline.js';
+import {
+  BASELINE_GENERATORS,
+  emsBaseline,
+  fixtureBaseline,
+  type BaselineGenerator,
+  type TransmissionPayload,
+} from './baseline.js';
 import { materializeCase, materializePost, type ExerciseCase } from './case.js';
 import { deleteAtPointer, setAtPointer } from './pointer.js';
 import {
@@ -113,6 +119,164 @@ test('the baseline generator is swappable without touching the case', () => {
   // The case's own transform still applies on top of whatever the generator made.
   assert.equal(posts[0]?.payload.meta.transferId, 'pinned');
   assert.equal(posts[1]?.payload.meta.transferId, 'pinned');
+});
+
+// ── the generator CONTRACT, asserted over every registered generator ────────
+//
+// One test per clause of the contract documented on `BaselineGenerator`, each
+// looping over `BASELINE_GENERATORS` rather than naming a generator (b8r). The
+// failure b8r describes is a generator added LATER — e.g. one seeded from
+// ../ems-data-simulator output, which would naturally carry a constant
+// transferId and so reintroduce 5xi in full — and no test written against
+// today's two generators can catch that. Registering the new generator is what
+// enrolls it here.
+
+/** Sample requests spanning two cases and two POST ordinals within each. */
+const CONTRACT_REQUESTS = [
+  { caseId: 'alpha', index: 0 },
+  { caseId: 'alpha', index: 1 },
+  { caseId: 'beta', index: 0 },
+  { caseId: 'beta', index: 1 },
+] as const;
+
+/** Every registered generator as `[exportName, generator]`, for a loop body. */
+const REGISTERED = Object.entries(BASELINE_GENERATORS);
+
+test('every registered generator is a distinct function and the list is not empty', () => {
+  assert.ok(REGISTERED.length > 0, 'BASELINE_GENERATORS carries at least one generator');
+  const fns = REGISTERED.map(([, generate]) => generate);
+  assert.equal(new Set(fns).size, fns.length, 'a generator is registered under two names');
+  assert.ok(
+    fns.includes(fixtureBaseline) && fns.includes(emsBaseline),
+    'both shipped generators are registered — an unregistered one is an unchecked one',
+  );
+});
+
+test('contract 1: every registered generator produces a schema-VALID payload', () => {
+  // The real registry and the real Ajv build for the version the payload itself
+  // names — the same mechanism ../cases.test.ts uses on the case table. A
+  // baseline that does not validate makes every case built on it meaningless,
+  // since a case is "the conformant payload, minus one thing".
+  for (const [name, generate] of REGISTERED) {
+    for (const request of CONTRACT_REQUESTS) {
+      const payload: TransmissionPayload = generate(request);
+      const version = payload.meta.schemaVersion;
+      assert.equal(typeof version, 'string', `${name}: the payload must name a schemaVersion`);
+      const lookup = registry.lookup(version as string);
+      assert.ok(lookup.ok, `${name}: schemaVersion ${String(version)} is not registered`);
+      const valid = lookup.entry.validate(payload);
+      const errors = lookup.entry.validate.errors ?? [];
+      assert.equal(
+        valid,
+        true,
+        `${name}: baseline for ${request.caseId}#${request.index} is not schema-valid against ` +
+          `${String(version)}: ` +
+          errors.map((e) => `${e.instancePath || '(root)'} ${e.message ?? ''}`).join('; '),
+      );
+    }
+  }
+});
+
+test('contract 2: every registered generator hands out a fresh, fully owned payload', () => {
+  // Transforms mutate what they are given, so two POSTs must never share
+  // structure — a shared record array would let one case's mutant leak into the
+  // next case's payload.
+  for (const [name, generate] of REGISTERED) {
+    const request = CONTRACT_REQUESTS[0];
+    const first = generate(request);
+    first.meta.transferSrc = 'com.example.mutated';
+    (first.data[0] as Record<string, unknown>).CID = 'ZZ';
+    const second = generate(request);
+    assert.notEqual(second.meta.transferSrc, 'com.example.mutated', `${name}: meta is shared`);
+    assert.notEqual(
+      (second.data[0] as Record<string, unknown>).CID,
+      'ZZ',
+      `${name}: data is shared`,
+    );
+  }
+});
+
+test('contract 3: every registered generator gives each (caseId, index) a distinct transferId', () => {
+  // The obligation b8r asks for, stated on the type and enforced here. §1.8 is
+  // session-scoped and the runner plays the whole table against ONE session, so
+  // a generator that repeats an id makes unrelated cases — pass-direction ones
+  // included — record a §1.8 fail from table ordering alone (5xi).
+  for (const [name, generate] of REGISTERED) {
+    const ids = CONTRACT_REQUESTS.map((request) => {
+      const id = generate(request).meta.transferId;
+      assert.equal(typeof id, 'string', `${name}: the payload must carry a string transferId`);
+      return id as string;
+    });
+    assert.equal(
+      new Set(ids).size,
+      ids.length,
+      `${name}: distinct (caseId, index) requests produced a repeated transferId (${ids.join(', ')})`,
+    );
+  }
+});
+
+test('contract 3, across generators: two generators never claim the same transferId', () => {
+  // The runner plays one session; if the table ever mixes generators, an id
+  // collision BETWEEN them is the same §1.8 poisoning as a collision within one.
+  // Case ids are unique table-wide (../cases.test.ts), so per-(caseId, index)
+  // ids collide across generators only if a generator ignores the request.
+  const seen = new Map<string, string>();
+  for (const [name, generate] of REGISTERED) {
+    for (const request of CONTRACT_REQUESTS) {
+      const id = generate(request).meta.transferId as string;
+      const key = `${id}@${request.caseId}#${request.index}`;
+      // Same request, different generator: the id SHOULD match — that is the
+      // shared scheme. The collision that matters is one id for two requests.
+      const prior = seen.get(id);
+      assert.ok(
+        prior === undefined || prior === key,
+        `${name}: transferId "${id}" is already claimed by ${String(prior)}`,
+      );
+      seen.set(id, key);
+    }
+  }
+});
+
+// ── the EMS baseline specifically ───────────────────────────────────────────
+
+test('the EMS baseline takes the schema ems branch, not the rtmd one', () => {
+  const payload = emsBaseline({ caseId: 'x', index: 0 });
+  assert.equal(payload.meta.transferType, 'ems');
+  const report = payload.data[0] as Record<string, unknown>;
+  const records = report.records as Record<string, unknown>[];
+  // Report-level LSV/EMSV, and NOT in the records: the ems-report `oneOf` offers
+  // one placement XOR the other, so satisfying both would fail validation.
+  assert.equal(typeof report.LSV, 'string');
+  assert.equal(typeof report.EMSV, 'string');
+  for (const record of records) {
+    assert.equal(record.LSV, undefined, 'LSV is at report level only');
+    assert.equal(record.EMSV, undefined, 'EMSV is at report level only');
+    // Mains branch of the power `oneOf`, and the numeric branch of the TVC one.
+    assert.equal(typeof record.SVA, 'number');
+    assert.equal(record.DCSV, undefined, 'a mains record carries no solar objects');
+    assert.equal(record.DCCD, undefined, 'a mains record carries no solar objects');
+    assert.equal(typeof record.TVC, 'number');
+  }
+});
+
+test('the EMS baseline is validated by ems-record, not waved through', () => {
+  // A tripwire, not a case (the EMS case group is its own bite): prove the ems
+  // branch is genuinely the one Ajv selected, by breaking a constraint that
+  // exists ONLY there. Adding the solar objects to a record that already has SVA
+  // matches both branches of the power `oneOf` — which a `oneOf` rejects — and
+  // has no analogue in rtmd-record. If this ever passes validation, the payload
+  // is being graded against something other than ems-record.
+  const payload = emsBaseline({ caseId: 'x', index: 0 });
+  const record = (payload.data[0] as { records: Record<string, unknown>[] }).records[0]!;
+  record.DCSV = 19.2;
+  record.DCCD = 3.8;
+  const lookup = registry.lookup(payload.meta.schemaVersion as string);
+  assert.ok(lookup.ok);
+  assert.equal(
+    lookup.entry.validate(payload),
+    false,
+    'SVA together with DCSV+DCCD matches both branches of the ems-record power oneOf',
+  );
 });
 
 // ── materialization ─────────────────────────────────────────────────────────
