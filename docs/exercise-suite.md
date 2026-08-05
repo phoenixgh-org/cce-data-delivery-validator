@@ -166,7 +166,7 @@ colocated tests — which **do** run in CI — check the half that needs no serv
 
 | Checked in CI (`npm test`) | Only checkable live (`npm run exercise`) |
 |---|---|
-| Every fail-direction payload really fails the vendored Ajv, and every pass-direction one really passes (`cases.test.ts`) | The HTTP status each POST actually returns |
+| Every materialized payload really behaves as its case DECLARED: `invalid` rejected by the vendored Ajv, `unsupported-version` unresolvable in the registry, `valid` clean (`cases.test.ts`). Direction is not the test — most fail-direction cases carry a schema-valid payload whose defect is transport or sequence | The HTTP status each POST actually returns |
 | A case expecting the §3.2 outdated grade names a registered version that really is older than current | That the finding the grader records is the one expected |
 | Transport wrappers really produce the method/headers/bytes they claim | The §2.1 overlap (a timing fact — see below) |
 | Table invariants: unique ids, distinct transferIds outside deliberate replays, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery | The end-to-end pipeline, database and dashboard API |
