@@ -3,7 +3,7 @@ import { fileURLToPath, URL } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-import { API_PREFIXES } from './src/api-prefixes.js';
+import { API_PREFIXES, apiProxyContext } from './src/api-prefixes.js';
 
 /**
  * Vite build for the M4 React SPA (DESIGN §13, frontend stack LOCKED to
@@ -24,8 +24,18 @@ const DEV_API_TARGET = 'http://127.0.0.1:3000';
  * Proxy map DERIVED from the single API_PREFIXES list src/app.ts uses for its
  * SPA fallback, so the two cannot drift (beads 51o); src/app.vite-proxy.test.ts
  * asserts the equality a future hand-written literal here would break.
+ *
+ * Each prefix becomes a regex context via `apiProxyContext` rather than being
+ * used raw, because a raw context is matched with `startsWith`: `/api` then also
+ * claimed `/api.ts`, this app's own API-client module, which Vite must transform
+ * and serve itself. It was proxied instead, came back as the backend's SPA
+ * fallback HTML, and the browser's strict MIME check took the whole module graph
+ * down with it (bug 5cb). The contexts now match on segment boundaries, exactly
+ * as the Fastify side does.
  */
-const devProxy = Object.fromEntries(API_PREFIXES.map((prefix) => [prefix, DEV_API_TARGET]));
+const devProxy = Object.fromEntries(
+  API_PREFIXES.map((prefix) => [apiProxyContext(prefix), DEV_API_TARGET]),
+);
 
 export default defineConfig({
   plugins: [react()],

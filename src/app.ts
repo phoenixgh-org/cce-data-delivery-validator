@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import { API_PREFIXES } from './api-prefixes.js';
+import { isApiPath } from './api-prefixes.js';
 import { registerSessionsApi } from './api/sessions.js';
 import { registerIngestRoute } from './ingest/route.js';
 import { SchemaRegistry } from './schema-registry.js';
@@ -55,11 +55,6 @@ const DEFAULT_WEB_DIST = fileURLToPath(new URL('./web', import.meta.url));
  * `npm run build` to serve the dashboard from this process.
  */
 const WEB_SOURCE_MARKER = 'main.tsx';
-
-/** True when `pathname` is owned by a backend route (must not be SPA-fallen-back). */
-function isApiPath(pathname: string): boolean {
-  return API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
-}
 
 /**
  * Outer hard ceiling on the request body Fastify will buffer, set ABOVE the §1.4
