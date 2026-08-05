@@ -280,9 +280,13 @@ test(
     // user-visible claim — "a session using only an older-but-valid schema
     // version no longer displays as untested" — over the real DB → endpoint path.
     //
-    // The finding is SEEDED rather than produced by a POST: the registry is
-    // deliberately 0.8.1-only (fvw), so no live payload can currently declare a
-    // registered-but-older version. The seed mirrors exactly what
+    // The finding is SEEDED rather than produced by a POST, which keeps this
+    // test independent of the registry's SHAPE. A live payload can produce it —
+    // 0.8.0 is registered as the outdated cohort again (798d12e, bd 8qa.4), and
+    // src/ingest/stages/schema-stage.test.ts drives that path against the app's
+    // own registry — but what is under test here is the tally line in
+    // sessions.ts, not which versions the registry happens to carry, so the
+    // fixture states the finding directly. The seed mirrors exactly what
     // src/ingest/stages/schema.ts emits on that path: severity 'info' (never a
     // pass, never a fail), `outdated` true, code 'tx.outdated_schema'.
     const app = makeApp();

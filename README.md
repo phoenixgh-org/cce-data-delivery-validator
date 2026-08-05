@@ -218,6 +218,7 @@ Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
 | [`docs/api.md`](docs/api.md) | The HTTP API reference: every route, request and response shape, and status code — what you need to integrate server-side without reading source. |
 | [`docs/deployment.md`](docs/deployment.md) | Operating it behind a TLS edge: the proxy contract, the environment surface, and how each violation fails silently. |
 | [`docs/clause-mapping.md`](docs/clause-mapping.md) | How the 2025 requirement numbers used throughout this project map to the DS01.3 rewrite. |
+| [`docs/exercise-suite.md`](docs/exercise-suite.md) | Internals of the `npm run exercise` conformance suite: the case model, the transform vocabulary, the coverage join, and how to add a case. |
 | `src/schemas/` + `src/schema-registry.ts` | The vendored transmission schemas and the registry that pins them by content hash. Schemas are never fetched at runtime — `schemaVersion` is a lookup key, not a locator. |
 
 ## Development
@@ -269,6 +270,49 @@ order first. It **fails on any skip**, because in CI a skipped test means the
 database gating broke rather than that a database was unavailable. (Nothing has been
 pushed to the remote yet, so the workflow is checked in and starts running on the
 first push.)
+
+### Exercising a running instance — `npm run exercise`
+
+`npm test` checks the graders in isolation. `npm run exercise` checks the **whole
+service**: it drives a live instance through every gradeable requirement in the §7
+matrix, once with a transmission that should pass it and once with one that should
+fail it, then asserts the HTTP statuses and the findings that came back. Synthetic
+payloads only, built from the suite's own baseline.
+
+It needs a server and a database, which is why it is deliberately outside `npm
+test`:
+
+```bash
+docker compose up -d postgres         # or `docker compose up -d` for the whole app
+npm run dev                           # in another shell; API on :3000
+
+npm run exercise                      # http://localhost:3000
+npm run exercise -- https://your.host # an explicit target
+EXERCISE_BASE_URL=https://your.host npm run exercise
+```
+
+The target resolves argument → `EXERCISE_BASE_URL` → `http://localhost:3000`. Exit
+codes are `0` (every case passed), `1` (a case failed) and `2` (could not run — the
+target was unreachable, or is not a validator).
+
+Each run **mints its own session** and prints a per-case verdict, run counts, the
+requirement-coverage report, and that session's dashboard URL. The console output is
+a summary; **the dashboard is the detailed report**.
+
+Two honest caveats:
+
+- **The exercised session ends with §1.3 auth enabled.** Opting in is sticky and
+  session-global, so the §1.3 cases are played last after a single opt-in, and the
+  runner does not turn it back off — the dashboard has the disable control if you
+  want to keep POSTing to that session by hand.
+- **The §2.1 fail case is a live timing assertion.** It fires three POSTs at once and
+  needs two of them genuinely in flight together, which is reliable against a local
+  instance but is a measured fact rather than a guarantee — which is exactly why it
+  lives here and never in `npm test`.
+
+[`docs/exercise-suite.md`](docs/exercise-suite.md) covers the internals: the case
+model, the transform vocabulary, what CI can check without a server, and how to add
+a case.
 
 ## License
 
