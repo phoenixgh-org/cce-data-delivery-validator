@@ -245,6 +245,23 @@ sensor fitted", since a broken sensor looks identical — and should lead with t
 argument, which is actionable self-interest rather than a judgement about the supplier's
 hardware.
 
+**The catalogue.** Two checks today, each in its own module under `stages/semantic/`:
+
+- **`adv.null_identity`** — no appliance identifier on a report. The identifiers are `AMID`,
+  `ASER` and `AID`; blank means `null`, absent, **or an empty/whitespace string**. The branches
+  are not symmetric and are handled on their own terms: `ems-report` has no `AMID` property at
+  all (absent ≠ null — we never count it against an EMS report, though a non-branch `AMID` sent
+  anyway still identifies), while `rtmd-report` makes `AMID` required *and* non-nullable, so an
+  empty string is the only blank it permits — which is why blank strings count at all. `ESER`
+  and `LSER` name the monitoring device, not the appliance, so they never identify it.
+- **`adv.null_padding`** — a record property `null` in **every** record that carried it, over
+  at least **12 records** (three hours at the 15-minute period DS01's per-period objects are
+  defined over — long enough to be a pattern and to be worth bytes; the repo's own conformant
+  EMS baseline is 3 records, well clear of it). One finding per transmission naming every
+  padded property, since the dashboard folds recurring advisories to a single detail. `ALRM`,
+  `EERR` and `LERR` are excluded: there `null` is the schema's *defined* value for "no
+  condition present", so a device that raised no alarm is correctly shaped that way.
+
 **The dashboard surface.** Advisories get a surface of their own, labelled **Advisories**:
 a card between the filter strip and the two verdict panes (`src/web/components/AdvisoriesCard.tsx`),
 plus a separate block under each transmission's findings. It folds the advisories out of the

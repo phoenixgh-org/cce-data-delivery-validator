@@ -65,6 +65,8 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck, SemanticDeps } from '../semantic.js';
+import { nullIdentityCheck } from './null-identity.js';
+import { nullPaddingCheck } from './null-padding.js';
 
 /** Namespace prefix separating advisory ids from the §7 requirement ids. */
 export const ADVISORY_PREFIX = 'adv.';
@@ -119,10 +121,14 @@ export function advisory(input: AdvisoryInput): Finding {
  * stage-8 orchestrator runs the whole list via {@link advisoriesCheck}, so
  * adding a check means adding a module under `semantic/` and one entry below.
  *
- * Empty today: the plumbing landed (bva slice A) ahead of the first checks
- * (`adv.null_identity`, `adv.null_padding`, slice C).
+ * The two checks below are the whole catalogue today (bva slice C); it grows
+ * from here. Each is a HOISTED FUNCTION DECLARATION in its own module, not the
+ * `const check: SemanticCheck =` idiom the §7 checks use — the checks import
+ * {@link advisory} from here while this array names them, which is an ESM cycle
+ * that a `const` binding would resolve into a temporal-dead-zone throw under one
+ * of the two possible load orders. See the note above each declaration.
  */
-export const ADVISORY_CHECKS: readonly SemanticCheck[] = [];
+export const ADVISORY_CHECKS: readonly SemanticCheck[] = [nullIdentityCheck, nullPaddingCheck];
 
 /**
  * Run `checks` against the context and collect their advisories. `checks`
