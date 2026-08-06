@@ -23,15 +23,16 @@ proposing architecture changes. Highlights: passive validation only in v1
 (no active 429/503 probing, no guided retransmission scenarios); synthetic
 test/sandbox data only, never real CCE data or PII; capability-URL onboarding
 with no signup, where a single UUID is both the ingest path and the dashboard
-key; 7-day retention after POST inactivity.
+key; retention keyed to POST inactivity (`RETENTION_MS` in
+`src/db/repository.ts` is the single source of truth for the window).
 
 ## Important references
 
 | Location | Content |
 |----------|---------|
 | `DESIGN.md` | Scope, locked decisions, ingest pipeline, verifiability matrix. Start here. |
-| `src/schemas/cce-interop-*.json` | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts`; 0.8.1 (JSON Schema 2020-12) is current, and 0.8.0 (draft-07, compiled per-entry with the matching Ajv build) is registered as the deliberate outdated cohort (decided 2026-08-04, amending fvw — upstream 0.8.2/0.8.3 stay unregistered until instructed). |
-| `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. **Local-only**: `docs/internal/` is gitignored (reference material kept out of the repo — e.g. unconfirmed redistribution rights), so it is absent from a fresh clone. |
+| `src/schemas/cce-interop-*.json` | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts`; 0.8.1 (JSON Schema 2020-12) is current, and 0.8.0 (draft-07, compiled per-entry with the matching Ajv build) is registered as the deliberate outdated cohort. Registering a further version is a spec decision, not mechanical work — ask before vendoring one. |
+| `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. **Local-only**: `docs/internal/` is gitignored, so it is absent from a fresh clone. |
 | `../WHO_PQS_E006_EMS_specifications` | **Authoritative** source for the spec and schema: PQS E006 DS01 PDF, the draft DS01.3 `.docx`, the Annex-1 data-object spreadsheet, and the schema authoring folder under `data_delivery/`. |
 | `../ems-data-simulator` | Produces `cce-interop`-conformant EMS/RTMD payloads with realistic faults and edge values. The first producer to deliver here; the two evolve together. |
 | `../ColdchainDB` | Downstream store/query layer. Reuses this project's schema and validation logic on its ingest path, and treats `db/initdb/*.sql` as the house DB-schema style. |
@@ -39,21 +40,16 @@ key; 7-day retention after POST inactivity.
 **When prose and schema disagree, the schema wins** — except for data-object
 bounds and units, where Annex 1 is authoritative over the schema.
 
-This came from 2025 requirement §3.2 ("the JSON schema shall take precedence").
-**DS01.3 removes that rule**, replacing it with a duty to notify the employer of
-discrepancies and supplying no tiebreaker. **We keep schema-precedence anyway**
-(decided 2026-07-31): a schema is less ambiguous than prose and will prevail as a
-practical matter of enforcement, and a supplier who believes the two conflict
-should resolve it through PQS channels rather than expect the validator to grade
-against prose. Do NOT "correct" this when DS01.3 publishes — it is a deliberate
-house rule that outlives its original citation. See `docs/clause-mapping.md`.
+This is a deliberate house rule, not a restatement of current spec text: a
+schema is less ambiguous than prose and prevails as a practical matter of
+enforcement, and a supplier who believes the two conflict should resolve it
+through PQS channels rather than expect the validator to grade against prose.
+Keep it even where the published spec supplies no tiebreaker. Clause-by-clause
+mapping lives in `docs/clause-mapping.md`.
 
-**Schema provenance.** Verified 2026-07-31: `src/schemas/cce-interop-0.8.1.json`
-is byte-identical to the live published artifact (sha256 `290290fd…`), as is
-0.8.0 (`e6614cc7…`). Earlier drift — including a 0.8.1 that carried 0.8.0's
-`$id`, and a 0.8.0 that disagreed with the published bytes — has been repaired
-upstream. Re-verify before trusting a vendored copy, and **flag disagreements
-rather than silently "correcting" them** — reconciliation is a spec decision.
+**Schema provenance.** A vendored copy must be byte-identical to the published
+artifact. Re-verify before trusting one, and **flag disagreements rather than
+silently "correcting" them** — reconciliation is a spec decision.
 
 ```bash
 curl -sL https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-0.8.1.json | sha256sum
@@ -66,8 +62,6 @@ host does not resolve**. The artifact lives at
 `https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-<version>.json` —
 different host, different path. This is the live proof of DESIGN §9's rule that
 `$id` is an *identifier*, never a locator, and that we never fetch at runtime.
-The `$id` is expected to become a URN upstream; `normalizeVersion()` already
-resolves URN forms carrying a semver triple, so that change needs no code here.
 
 ## Issue tracking
 
@@ -76,13 +70,13 @@ This project uses **bd (beads)**. `bd prime` is auto-injected at session start
 authoritative, always-current workflow reference — run it manually if you need
 it mid-session.
 
-- **`.beads/` is untracked and gitignored** (decided 2026-08-03): the tracker's
-  inner deliberations must not publish to the public repo. Do NOT commit
-  `.beads/issues.jsonl` or run an export-and-commit step (loops: skip it), and
-  do not reinstall bd's git hooks (`bd hooks install`) — they re-stage the
-  export on every commit. bd state lives in the local Dolt DB and syncs across
-  machines via syncthing, not git. Referencing bd ids in commit messages and
-  code comments stays fine — they are opaque without the tracker.
+- **`.beads/` is untracked and gitignored**: tracker state is not published to
+  this repo. Do NOT commit `.beads/issues.jsonl` or add an export-and-commit
+  step (including inside automated loops), and do not install bd's git hooks
+  (`bd hooks install`) — they re-stage the export on every commit. bd state
+  lives in the local Dolt DB and syncs across machines out of band. Referencing
+  bd ids in commit messages and code comments stays fine — they are opaque
+  without the tracker.
 - Use `bd` for task tracking, not TodoWrite or markdown TODO lists.
 - Use `bd remember` / `bd memories` for durable knowledge, not MEMORY.md files.
 - `bd ready` to find work, `bd update <id> --claim`, `bd close <id>`.
