@@ -641,7 +641,7 @@ type MetaSource = Pick<
  * bottom row is HOW IT ARRIVED (size, encoding, and the bytes themselves).
  *
  * `type` used to be the request `Content-Type`, which sat oddly next to the
- * §1.5 finding that already grades it; it now names the transmission type from
+ * §1.2 finding that already grades it; it now names the transmission type from
  * the payload — see {@link deriveTransmissionType}.
  */
 export function metaCells(tx: MetaSource): MetaCell[] {
