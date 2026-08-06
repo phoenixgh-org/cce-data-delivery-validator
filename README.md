@@ -282,6 +282,7 @@ npm run dev                           # in another shell; API on :3000
 npm run exercise                      # http://localhost:3000
 npm run exercise -- https://your.host # an explicit target
 EXERCISE_BASE_URL=https://your.host npm run exercise
+npm run exercise -- --help            # print usage
 ```
 
 The target resolves argument → `EXERCISE_BASE_URL` → `http://localhost:3000`. Exit

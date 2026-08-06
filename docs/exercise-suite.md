@@ -28,7 +28,7 @@ The code is `src/exercise/`:
 | `runner/client.ts` | The only module that opens a socket. |
 | `runner/assertions.ts` | Pure grading of a case from statuses + findings. |
 | `runner/coverage.ts` | The join onto `COMPLIANCE_MATRIX`. |
-| `runner/run.ts` | The CLI: resolve target, play, print, exit code. |
+| `runner/run.ts` | The CLI: resolve target, play, print, exit code, and --help. |
 
 ## The case model: data, not code
 
