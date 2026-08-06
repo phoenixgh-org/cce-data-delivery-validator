@@ -245,6 +245,19 @@ sensor fitted", since a broken sensor looks identical — and should lead with t
 argument, which is actionable self-interest rather than a judgement about the supplier's
 hardware.
 
+**The dashboard surface.** Advisories get a surface of their own, labelled **Advisories**:
+a card between the filter strip and the two verdict panes (`src/web/components/AdvisoriesCard.tsx`),
+plus a separate block under each transmission's findings. It folds the advisories out of the
+transmissions the dashboard already fetches, keyed `requirement|code` in the browser
+(`src/web/advisories.ts`) — *not* through `computeSignatures`, which excludes them by design so
+they never enter the "distinct issues" list or its headline count. Nothing it shows feeds a
+pass/fail number, the conformance rollup, or that headline, and no advisory is counted in a
+transmission row's findings cell or highlighted in the raw-payload inspector. It renders
+nothing at all when there are none. The palette is deliberate: **accent and neutrals, never a
+status colour, and never the `--mixed` amber**, which already means *warning / outdated*
+everywhere else on the dashboard — borrowing it would say "a lesser defect" on the one surface
+that must not say defect at all.
+
 ## 8. Data model
 
 **PostgreSQL** is the datastore, converging with the sibling project `tremble` (which ingests

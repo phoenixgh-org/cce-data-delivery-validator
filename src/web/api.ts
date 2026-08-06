@@ -89,6 +89,30 @@ export interface FindingView {
   code: string | null;
 }
 
+/**
+ * Namespace prefix that separates ADVISORY ids from §7 requirement ids
+ * (`adv.null_padding` versus `3.2`). MIRRORED from `ADVISORY_PREFIX` in
+ * src/ingest/stages/semantic/advisory.ts rather than imported — this file is
+ * browser code and imports no backend module (see the header), the same rule
+ * that re-declares the §7 unions above. Keep the two in step; the prefix is
+ * unambiguous because every §7 id is digits and dots, so no requirement can
+ * ever start with `adv.`.
+ */
+export const ADVISORY_PREFIX = 'adv.';
+
+/**
+ * Whether a finding is an ADVISORY — an observation the service holds no verdict
+ * on — rather than a §7 compliance finding. Advisories carry their `adv.*` id in
+ * BOTH `requirement` (which is why the §7 matrix ignores them) and `code`.
+ *
+ * Every consumer that renders, counts, or colours findings must branch on this:
+ * an advisory has no requirement to cross-link to and no verdict to display, and
+ * it must never reach a pass/fail tally. See src/web/advisories.ts.
+ */
+export function isAdvisory(f: Pick<FindingView, 'requirement'>): boolean {
+  return f.requirement.startsWith(ADVISORY_PREFIX);
+}
+
 /** One transmission as the dashboard sees it (drill-down + findings). */
 export interface TransmissionView {
   id: string;

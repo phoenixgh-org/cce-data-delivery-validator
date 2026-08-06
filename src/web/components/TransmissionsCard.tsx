@@ -25,6 +25,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { FindingView, Severity, Signature, TransmissionView } from '../api';
 import type { DisplayStatus } from '../api';
+import { isAdvisory } from '../api';
+import { ADVISORY_COPY, advisoryLabel, splitFindings } from '../advisories';
 import { Icon } from './ui/Icon';
 import { StatusPill } from './ui/StatusPill';
 
@@ -201,10 +203,19 @@ export interface FindingsCell {
  * total, none failed" apart. So: no fail-severity findings (zero findings, or
  * findings that are all pass/info) collapses to one affirmative green OK, and
  * only a genuine failure switches the cell to the FAIL count (not the total).
+ *
+ * ADVISORIES ARE EXCLUDED OUTRIGHT (pwd/bva) — from the fail count, which they
+ * could never have joined, AND from the total, which they could. This cell is
+ * the row's verdict cell; an advisory is not a verdict, and letting one inflate
+ * "N findings, none failed" would give a 100 %-conformant transmission a number
+ * to explain. They are rendered in the detail pane's own Advisories block
+ * instead. A transmission carrying advisories and nothing else therefore reads
+ * "No findings" here, which is true of the graded ones.
  */
 export function findingsCell(findings: FindingView[]): FindingsCell {
-  const findingCount = findings.length;
-  const failCount = findings.filter((f) => f.severity === 'fail').length;
+  const graded = findings.filter((f) => !isAdvisory(f));
+  const findingCount = graded.length;
+  const failCount = graded.filter((f) => f.severity === 'fail').length;
   const plural = (n: number): string => (n === 1 ? 'finding' : 'findings');
 
   if (failCount === 0) {
@@ -314,6 +325,111 @@ const eyebrow: CSSProperties = {
   color: 'var(--text-faint)',
 };
 
+/**
+ * The `pointer: …` line under a finding or an advisory — a button that opens the
+ * raw-payload inspector at that JSON Pointer when one is locatable, and plain
+ * text when it is not. Shared by {@link FindingItem} and {@link AdvisoryItem} so
+ * the drill-down cannot work in one and quietly rot in the other.
+ */
+function PointerLine({
+  finding,
+  onLocate,
+}: {
+  finding: FindingView;
+  onLocate?: (pointer: string) => void;
+}): ReactElement | null {
+  if (finding.pointer === null) return null;
+  // Ajv's instancePath is the pointer into the payload; `pointer` is the same
+  // value normalized to null at the root. Prefer the former, fall back.
+  const locatable = finding.instancePath ?? finding.pointer;
+  if (!onLocate || locatable === null || locatable === '') {
+    return (
+      <div style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>
+        pointer: {finding.pointer}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      title="Show this location in the raw payload"
+      onClick={() => onLocate(locatable)}
+      style={{
+        ...mono,
+        display: 'block',
+        fontSize: 10.5,
+        color: 'var(--text-muted)',
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        marginTop: 2,
+        cursor: 'pointer',
+        textAlign: 'left',
+        textDecoration: 'underline',
+      }}
+    >
+      pointer: {finding.pointer}
+    </button>
+  );
+}
+
+/**
+ * One ADVISORY in the transmission detail (pwd/bva) — deliberately NOT a
+ * {@link FindingItem}.
+ *
+ * FindingItem renders every finding as `§{requirement}` and cross-links it to a
+ * row of the §7 matrix. An advisory's `requirement` is its own `adv.*` id, which
+ * is not a clause of anything and has no matrix row to open, so rendering one
+ * through FindingItem would print `§adv.null_padding` and link nowhere. It also
+ * carries no verdict, so there is no StatusPill here either.
+ *
+ * The tone is the accent, never a status colour and never the --mixed amber that
+ * means warning/outdated elsewhere on this dashboard — see AdvisoriesCard's
+ * header for the full reasoning. The pointer drill-down is kept: it is the one
+ * piece of FindingItem that applies unchanged, and it is how a supplier sees
+ * what the observation is about.
+ */
+function AdvisoryItem({
+  finding,
+  onLocate,
+}: {
+  finding: FindingView;
+  onLocate?: (pointer: string) => void;
+}): ReactElement {
+  return (
+    <div
+      style={{
+        padding: '8px 10px',
+        borderRadius: 6,
+        fontSize: 12,
+        lineHeight: 1.5,
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderLeft: '2px solid var(--accent)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 7,
+          flexWrap: 'wrap',
+          marginBottom: finding.detail ? 3 : 0,
+        }}
+      >
+        <span style={{ fontWeight: 600, color: 'var(--text)' }}>
+          {advisoryLabel(finding.requirement)}
+        </span>
+        <span style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)' }}>
+          {finding.requirement}
+        </span>
+      </div>
+      {finding.detail && <div style={{ color: 'var(--text-muted)' }}>{finding.detail}</div>}
+      <PointerLine finding={finding} onLocate={onLocate} />
+    </div>
+  );
+}
+
 function FindingItem({
   finding,
   onSelectReq,
@@ -324,9 +440,6 @@ function FindingItem({
   /** Open the raw-payload inspector at this finding's JSON Pointer (5bs.3). */
   onLocate?: (pointer: string) => void;
 }): ReactElement {
-  // Ajv's instancePath is the pointer into the payload; `pointer` is the same
-  // value normalized to null at the root. Prefer the former, fall back.
-  const locatable = finding.instancePath ?? finding.pointer;
   return (
     <div
       style={{
@@ -380,33 +493,7 @@ function FindingItem({
         )}
       </div>
       {finding.detail && <div style={{ color: 'var(--text-muted)' }}>{finding.detail}</div>}
-      {finding.pointer !== null &&
-        (onLocate && locatable !== null && locatable !== '' ? (
-          <button
-            type="button"
-            title="Show this location in the raw payload"
-            onClick={() => onLocate(locatable)}
-            style={{
-              ...mono,
-              display: 'block',
-              fontSize: 10.5,
-              color: 'var(--text-muted)',
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              marginTop: 2,
-              cursor: 'pointer',
-              textAlign: 'left',
-              textDecoration: 'underline',
-            }}
-          >
-            pointer: {finding.pointer}
-          </button>
-        ) : (
-          <div style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>
-            pointer: {finding.pointer}
-          </div>
-        ))}
+      <PointerLine finding={finding} onLocate={onLocate} />
     </div>
   );
 }
@@ -898,6 +985,28 @@ function describeStoredCopy(tx: TransmissionView): StoredCopyNote | null {
   return { text: `Complete: all ${fmtBytes(wire)} wire bytes are stored.`, warn: false };
 }
 
+/**
+ * The JSON Pointers whose payload lines the inspector HIGHLIGHTS — schema errors
+ * use Ajv's `instancePath`, other findings fall back to the normalized `pointer`.
+ * `''` is the root pointer and would select the whole document, so it is dropped.
+ *
+ * ADVISORIES ARE EXCLUDED (pwd/bva). The highlight paints the matching lines in
+ * --mixed-bg with a --mixed inset rule — the warning tone this dashboard uses
+ * for outdated schemas and odd encodings — so flagging an advisory's pointer
+ * would mark a 100 %-conformant payload as though something in it were wrong.
+ * The drill-down still works: the `pointer:` button scrolls by `data-path`, not
+ * by membership of this set.
+ */
+export function flaggedPointers(findings: readonly FindingView[]): Set<string> {
+  const set = new Set<string>();
+  for (const f of findings) {
+    if (isAdvisory(f)) continue;
+    const p = f.instancePath ?? f.pointer;
+    if (p !== null && p !== '') set.add(p);
+  }
+  return set;
+}
+
 /** A request to scroll the inspector to a pointer; `seq` re-fires a repeat click. */
 interface LocateRequest {
   pointer: string;
@@ -964,17 +1073,9 @@ function RawPayload({
   const lines = all === null ? null : all.slice(0, MAX_RENDERED_LINES);
   const clipped = all !== null && all.length > MAX_RENDERED_LINES;
 
-  // Pointers carried by this transmission's findings — schema errors use the
-  // Ajv instancePath; other findings fall back to the normalized pointer. '' is
-  // the root pointer and would select the whole document, so it is dropped.
-  const pointers = useMemo(() => {
-    const set = new Set<string>();
-    for (const f of tx.findings) {
-      const p = f.instancePath ?? f.pointer;
-      if (p !== null && p !== '') set.add(p);
-    }
-    return set;
-  }, [tx.findings]);
+  // Pointers this transmission's findings flag for highlighting (advisories are
+  // deliberately not among them) — see flaggedPointers.
+  const pointers = useMemo(() => flaggedPointers(tx.findings), [tx.findings]);
 
   const isFlagged = useCallback(
     (path: string): boolean => {
@@ -1150,6 +1251,11 @@ function TxDetail({
   const inventory = deriveInventory(tx.body);
   const rawSummary = rawPayloadSummary(tx);
   const meta = metaCells(tx);
+  // Advisories get their own block below the findings (pwd/bva) — they carry no
+  // verdict and no §7 requirement, so they must not sit in a list the user reads
+  // as this transmission's grades. The split is explicit rather than relying on
+  // advisories sorting to the tail of tx.findings, which is incidental.
+  const { verdicts, advisories } = splitFindings(tx.findings);
 
   // Raw-payload inspector state. Open/closed PERSISTS across row selections (so
   // payloads can be compared row to row); the pending scroll target does not.
@@ -1296,16 +1402,32 @@ function TxDetail({
       </div>
 
       <div style={{ ...eyebrow, marginBottom: 7 }}>Findings · click § to open the requirement</div>
-      {tx.findings.length === 0 ? (
+      {verdicts.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           No findings for this transmission.
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {tx.findings.map((f, i) => (
+          {verdicts.map((f, i) => (
             <FindingItem key={i} finding={f} onSelectReq={onSelectReq} onLocate={onLocate} />
           ))}
         </div>
+      )}
+
+      {/* Advisories (pwd/bva) — a separate block with its own heading, below the
+          findings and outside them, so nothing here reads as one of this
+          transmission's verdicts. Absent entirely when there are none. */}
+      {advisories.length > 0 && (
+        <>
+          <div style={{ ...eyebrow, margin: '13px 0 7px' }}>
+            {ADVISORY_COPY.transmissionEyebrow}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {advisories.map((f, i) => (
+              <AdvisoryItem key={i} finding={f} onLocate={onLocate} />
+            ))}
+          </div>
+        </>
       )}
 
       {inventory.length > 0 && (

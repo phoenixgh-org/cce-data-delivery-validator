@@ -34,7 +34,7 @@ import type { FindingView, Severity } from '../api';
 
 // Dynamic + awaited so the assignment above runs BEFORE the component graph
 // evaluates (static imports are all hoisted, which would defeat it).
-const { metaCells, deriveTransmissionType, META_GRID_COLUMNS, findingsCell } =
+const { metaCells, deriveTransmissionType, META_GRID_COLUMNS, findingsCell, flaggedPointers } =
   await import('./TransmissionsCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
@@ -203,4 +203,56 @@ test('fail-only findings show every one as the fail count', () => {
 test('singular wording: one finding total reads "1 finding", not "1 findings"', () => {
   assert.equal(findingsCell([finding('pass')]).title, '1 finding, none failed');
   assert.equal(findingsCell([finding('fail')]).title, '1 of 1 finding failed');
+});
+
+/**
+ * ADVISORIES in the transmission row and the raw-payload inspector (pwd/bva).
+ *
+ * An advisory is raised against a payload that broke no rule, so a supplier at
+ * 100 % conformance must be able to carry them with nothing on the row reading
+ * as a failure — which means the two places a finding leaks a tone or a number
+ * have to ignore them: the row's verdict cell, and the inspector's amber
+ * line-highlight (--mixed, the dashboard's warning tone).
+ */
+function advisoryFinding(id: string, pointer: string | null = null): FindingView {
+  // The shape slice A's advisory() helper emits: severity info, the adv.* id in
+  // both requirement and code, outdated left false.
+  return { ...finding('info'), requirement: id, code: id, pointer };
+}
+
+test('advisories are counted nowhere in the row’s findings cell', () => {
+  // Three passes plus two advisories: still an unqualified OK, and the tooltip
+  // counts the graded findings only — an advisory must not give a conformant
+  // transmission a number to explain.
+  const cell = findingsCell([
+    finding('pass'),
+    finding('pass'),
+    finding('pass'),
+    advisoryFinding('adv.null_padding'),
+    advisoryFinding('adv.null_identity'),
+  ]);
+  assert.equal(cell.text, 'OK');
+  assert.equal(cell.color, 'var(--pass)');
+  assert.equal(cell.title, '3 findings, none failed');
+});
+
+test('advisories never join the fail count or its denominator', () => {
+  const cell = findingsCell([
+    finding('fail'),
+    finding('pass'),
+    advisoryFinding('adv.null_padding'),
+  ]);
+  assert.equal(cell.text, '1f');
+  assert.equal(cell.title, '1 of 2 findings failed');
+});
+
+test('the inspector highlights finding pointers but never an advisory’s', () => {
+  const flagged = flaggedPointers([
+    { ...finding('fail'), pointer: '/data/0/TVC', instancePath: '/data/0/TVC' },
+    advisoryFinding('adv.null_padding', '/data/0/TCON'),
+  ]);
+
+  // The highlight paints in --mixed, the warning tone — an advisory's lines must
+  // stay untouched. Its `pointer:` button still scrolls there by data-path.
+  assert.deepEqual([...flagged], ['/data/0/TVC']);
 });

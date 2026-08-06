@@ -31,6 +31,7 @@ import {
   type Signature,
   type TransmissionView,
 } from '../api';
+import { AdvisoriesCard } from '../components/AdvisoriesCard';
 import { ComplianceCard } from '../components/ComplianceCard';
 import { DeleteModal } from '../components/DeleteModal';
 import { FilterBar, type WindowValue } from '../components/FilterBar';
@@ -567,6 +568,16 @@ export function Dashboard() {
         onWindowChange={setWindow}
         onSourceChange={setSource}
       />
+
+      {/* Advisories (pwd/bva) — the NON-VERDICT surface, and deliberately not
+          inside either verdict pane. It folds the advisories out of the summary
+          read's scoped transmissions (no new read path, no session-level
+          endpoint) and renders nothing at all when there are none, so a session
+          without advisories looks exactly as it did. Nothing it shows reaches
+          the scorecard, the rollup, or the distinct-issues count above: those
+          come from the server, which excludes advisories from the §7 matrix and
+          from the signature fold. */}
+      <AdvisoriesCard transmissions={transmissions} />
 
       {/* Two-pane body */}
       <div
