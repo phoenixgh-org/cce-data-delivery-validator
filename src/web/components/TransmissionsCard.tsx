@@ -1120,7 +1120,7 @@ function RawPayload({
   }, [revealSeq]);
 
   return (
-    <div ref={rootRef}>
+    <div ref={rootRef} id="raw-payload-region">
       <div
         onClick={onToggle}
         style={{
@@ -1364,6 +1364,7 @@ function TxDetail({
         <button
           type="button"
           aria-expanded={rawOpen}
+          aria-controls="raw-payload-region"
           title={rawOpen ? 'Collapse the raw payload' : 'Show the raw payload below the findings'}
           onClick={toggleRawFromHeader}
           style={{
@@ -1377,8 +1378,8 @@ function TxDetail({
             font: 'inherit',
           }}
         >
-          <div style={eyebrow}>raw payload</div>
-          <div
+          <span style={eyebrow}>raw payload</span>
+          <span
             style={{
               ...mono,
               fontSize: 11.5,
@@ -1397,7 +1398,7 @@ function TxDetail({
             >
               {rawSummary}
             </span>
-          </div>
+          </span>
         </button>
       </div>
 
