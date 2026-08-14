@@ -134,3 +134,4 @@ npm run build                   # tsc + copy-schemas + web typecheck + vite buil
 - Findings are the output unit: be explicit about what the receiving side can
   and cannot prove. `DESIGN.md` §7 is the verifiability matrix — respect the
   "cannot prove passively" column rather than inventing confident verdicts.
+- **Commit messages should be clear and concise**
