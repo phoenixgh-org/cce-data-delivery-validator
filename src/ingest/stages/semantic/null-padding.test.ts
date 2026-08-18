@@ -209,19 +209,20 @@ test('it fires through the real §6 body stages on a 200 with zero fail findings
   assert.equal(raised[0]?.pointer, '/data/0/records/0/HAMB', 'points at the first padded value');
 });
 
-test('it names every padded property, its nulls, and the bytes they cost', () => {
+test('it names every padded property and pins the full prose', () => {
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
   assert.ok(finding);
 
-  // 3 properties × 16 records = 48 nulls; `"KEY":null,` is key length + 8, so
-  // 16 × 3 × 12 = 576 bytes.
+  // The exact user-facing sentences, record count up front (52r).
   assert.equal(
     finding.detail,
-    'HAMB, TCON and TFRZ arrived as null in every record that carried them — 48 nulls ' +
-      'across the 16 records in this transmission, about 576 bytes of the 1 MB limit in §1.4 ' +
-      'carrying no reading. A null cannot tell the country receiving it whether a reading was ' +
-      'unavailable at that moment or is never produced at all; leaving the property out says ' +
-      'the second one plainly, and gives those bytes back.',
+    'Across the 16 records in this transmission, HAMB, TCON and TFRZ arrived as null in ' +
+      'every record that carried them. A consistent null is acceptable for a property the ' +
+      'device will sometimes populate with a real value or measurement. But a property that ' +
+      'never carries a value should generally be omitted — unless the record schema requires ' +
+      'it. Sending null says "this device sometimes produces a value for this property (just ' +
+      'not right now)", while omission says "this device never produces a value for this ' +
+      'property".',
   );
 });
 
@@ -267,6 +268,29 @@ test('a payload with nothing padded raises nothing at all', () => {
   assert.deepEqual(advisories(checkOnly(emsPayload(16, []))), []);
 });
 
+// ── required-nullable properties: flagged, and the advice stays legal (52r) ───
+
+test('a required-nullable property (BEMD) still fires, and the remedy stays legal', () => {
+  // BEMD is required by ems-record AND nullable, so a supplier padding it
+  // cannot legally omit it — yet the old prose recommended exactly that (52r).
+  // The check still flags the padding (the null-vs-omission distinction is
+  // real either way); the "unless the record schema requires it" hedge is what
+  // keeps the advice legal.
+  const entry = registry.get('0.8.1');
+  assert.ok(entry, '0.8.1 is registered');
+  const payload = emsPayload(MIN_RECORDS, ['BEMD']);
+  assert.equal(
+    entry.validate(payload),
+    true,
+    `BEMD null in every record is schema-legal: ${JSON.stringify(entry.validate.errors)}`,
+  );
+
+  const [finding] = advisories(checkOnly(payload));
+  assert.ok(finding, 'required properties are not exempt — the distinction still holds');
+  assert.match(finding.detail ?? '', /BEMD arrived as null in every record that carried it/);
+  assert.match(finding.detail ?? '', /unless the record schema requires it/);
+});
+
 // ── the governing constraint: it moves no requirement's status ───────────────
 
 test('PIN: the §7 summary is identical with and without this advisory', async () => {
@@ -292,9 +316,12 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 test('the detail carries no defect vocabulary and no synonym for the category', () => {
   // Same bar slice B holds ADVISORY_COPY to (src/web/advisories.test.ts): the
   // payload broke no rule, so any of these would be a false statement about the
-  // supplier rather than merely a harsh tone.
+  // supplier rather than merely a harsh tone. One deliberate departure (52r):
+  // prescriptive "should" left the banned list, because the detail now carries
+  // an explicit, hedged recommendation — that is the advisory doing its job,
+  // not defect vocabulary.
   const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i;
+    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
   const detail = finding?.detail ?? '';
 
@@ -304,8 +331,9 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
 
 test('the detail concludes nothing about the supplier’s equipment', () => {
   // A 100 %-null rate is strong evidence, never proof — a genuinely broken
-  // sensor looks identical from the receiving side, so the prose states the
-  // count and the bytes and leaves the meaning to the party that knows.
+  // sensor looks identical from the receiving side, so the prose states what
+  // arrived and what each encoding says, and leaves the meaning to the party
+  // that knows.
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
   const detail = finding?.detail ?? '';
 
@@ -314,19 +342,19 @@ test('the detail concludes nothing about the supplier’s equipment', () => {
     /sensor|fitted|hardware|equipment is/i,
     `detail concludes: ${detail}`,
   );
-  // The claim it DOES make is symmetric and hedged: it names both readings a
-  // null could stand for rather than picking one.
-  assert.match(detail, /cannot tell/i);
-  assert.match(detail, /unavailable at that moment or is never produced/i);
+  // The claim it DOES make is symmetric: it spells out what each encoding
+  // says rather than asserting which one is true of this device.
+  assert.match(detail, /sometimes produces a value for this property/);
+  assert.match(detail, /never produces a value for this property/);
 });
 
-test('the detail states the observation and frames it as payload size', () => {
+test('the detail states the observation and the record count', () => {
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
   const detail = finding?.detail ?? '';
 
   assert.match(detail, /arrived as null in every record that carried them/, 'states what arrived');
-  assert.match(detail, /48 nulls across the 16 records in this transmission/, 'and how much');
-  assert.match(detail, /1 MB limit in §1\.4/, 'the actionable framing is the supplier’s bytes');
+  assert.match(detail, /Across the 16 records in this transmission/, 'record count up front (52r)');
+  assert.match(detail, /unless the record schema requires it/, 'the remedy carries its hedge');
 });
 
 test('the detail stands alone per transmission', () => {

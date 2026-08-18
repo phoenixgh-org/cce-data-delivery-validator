@@ -1,12 +1,16 @@
 /**
  * ADVISORY — `adv.null_padding`: a property sent as `null` in every record that
- * carried it (owning issue: pwd, bite bva slice C).
+ * carried it (owning issue: pwd, bite bva slice C; remedy wording decided in
+ * 52r).
  *
  * The motivating habit (pwd): a supplier emits EVERY property the schema
  * defines and sets to JSON `null` everything they have no reading for. It is
- * schema-legal (most DS01 objects are nullable), it is requirement-legal, and it
- * costs twice — bytes against the §1.4 1 MB cap, and the receiving country's
- * ability to tell "reading unavailable right now" from "this never produces one".
+ * schema-legal (most DS01 objects are nullable) and requirement-legal, but it
+ * erases a distinction the receiving country cares about: a null reads as
+ * "this device sometimes produces a value for this property (just not right
+ * now)", while omission reads as "this device never produces a value for this
+ * property". A device that pads every defined property says the first thing
+ * when it means the second.
  *
  * An ADVISORY, never a verdict: `severity: 'info'` under the `adv.*` namespace
  * via {@link advisory}, so it provably cannot move any §7 requirement's
@@ -18,43 +22,51 @@
  * transmission. It emits ONE finding naming every padded property rather than
  * one per property: the dashboard folds advisories by id and shows only the most
  * recent occurrence's detail, so a finding-per-property would render as a count
- * with a single arbitrary property's prose behind it.
+ * with a single arbitrary property's prose behind it. The detail names EVERY
+ * padded property (52r retired the old six-name cap): the list is the
+ * actionable part, and it is bounded by the schema's property count.
  *
  * ── THE FLOOR ON N — 12 RECORDS ──────────────────────────────────────────────
  * A property null in both records of a 2-record transmission proves nothing, so
  * a property qualifies only once at least {@link MIN_RECORDS} records carried
- * it. 12 was chosen (bva leaves the value open, asking for a defensible default)
- * because the same number is defensible from two directions:
- *
- *   - EVIDENCE. DS01's per-period objects (CMPR, DORV, SVA…) are defined over a
- *     15-minute sampling period, so 12 records is three hours of continuous
- *     monitoring. A property null through every one of those is a pattern rather
- *     than a quiet stretch. For scale, the repo's own fully conformant EMS
- *     baseline (src/exercise/baseline.ts) is 3 records — four times under the
- *     floor, so short well-behaved transmissions stay silent.
- *   - THE CHECK'S OWN ARGUMENT. The advisory's actionable claim is bytes. Below
- *     roughly this many records the bytes at stake are tens, not thousands, and
- *     an advisory a supplier cannot act on is noise.
+ * it. DS01's per-period objects (CMPR, DORV, SVA…) are defined over a 15-minute
+ * sampling period, so 12 records is three hours of continuous monitoring — a
+ * property null through every one of those is a pattern rather than a quiet
+ * stretch. For scale, the repo's own fully conformant EMS baseline
+ * (src/exercise/baseline.ts) is 3 records — four times under the floor, so
+ * short well-behaved transmissions stay silent. (An earlier revision also
+ * argued the floor from wire bytes; 52r retired the byte-cost framing, and the
+ * evidence argument stands on its own.)
  *
  * ── WHAT IS EXCLUDED, AND WHY ────────────────────────────────────────────────
  * {@link CONDITION_CODES} — ALRM, EERR, LERR — are skipped. For those three the
  * schema defines `null` as the value MEANING "no condition present" ("Presence
  * of defined alarm conditions"; "codes corresponding to conditions that may
  * impair normal operation"). A device that raised no alarm and logged no error
- * all period correctly sends null in every record, so counting them would report
- * a healthy device as a padded one. The repo's own conformant EMS baseline is
- * exactly that shape.
+ * all period correctly sends null in every record — an explicit "all's well" —
+ * so counting them would report a healthy device as a padded one. The repo's
+ * own conformant EMS baseline is exactly that shape.
  *
- * Only RECORD-level properties are considered. Report-level nulls exist too, but
- * they occur once per device rather than once per reading, so they are worth a
- * few bytes rather than thousands — and the report-level identity case has its
- * own advisory (`adv.null_identity`).
+ * Only RECORD-level properties are considered. Report-level nulls exist too,
+ * but they occur once per device rather than once per reading, and the
+ * report-level identity case has its own advisory (`adv.null_identity`).
  *
  * ── WORDING ──────────────────────────────────────────────────────────────────
- * Observe, never conclude. A 100 %-null rate is strong evidence, never proof: a
- * genuinely broken sensor looks identical from here. So the detail states the
- * count and the byte cost — actionable self-interest — and leaves what the nulls
- * MEAN to the only party that knows.
+ * Observe, then teach the two encodings — never conclude. A 100 %-null rate is
+ * strong evidence, never proof: a genuinely broken sensor looks identical from
+ * here, so the detail states what arrived and what each encoding says, and
+ * leaves what the nulls MEAN to the only party that knows.
+ *
+ * The remedy is hedged ON PURPOSE: "should generally be omitted — unless the
+ * record schema requires it" (52r). Several DS01 objects (BEMD, CMPR, DORV on
+ * the EMS branch) are required AND nullable, so an unconditional "leave it out"
+ * would coach a supplier into failing `required` and losing §3.2 — the bug 52r
+ * fixed. The hedge keeps the advice legal for every property WITHOUT this
+ * check learning per-branch, per-version required sets: `schemaVersion` stays
+ * an opaque registry key project-wide, and the supplier — who knows which
+ * record branch they send — resolves the hedge. For a required-nullable
+ * property the closing sentence still earns its place: a steady null is
+ * exactly how such a property says "no reading".
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -72,17 +84,6 @@ export const MIN_RECORDS = 12;
  * not an absent reading. Skipped — see the header.
  */
 const CONDITION_CODES = new Set<string>(['ALRM', 'EERR', 'LERR']);
-
-/** How many properties the detail names before it summarizes the rest. */
-const MAX_NAMED = 6;
-
-/**
- * Wire cost of one padded property in one record: `"KEY":null,` — two quotes, a
- * colon, four characters of `null` and a separator, so the key length plus 8.
- * An estimate, and reported as one: real payloads carry whitespace and the last
- * property in an object has no trailing comma.
- */
-const BYTES_PER_NULL_OVERHEAD = 8;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -156,32 +157,21 @@ export function nullPaddingCheck(ctx: PipelineContext): Finding[] {
 
   if (padded.length === 0) return [];
 
-  const totalNulls = padded.reduce((sum, [, s]) => sum + s.nulls, 0);
-  const bytes = padded.reduce(
-    (sum, [key, s]) => sum + s.nulls * (key.length + BYTES_PER_NULL_OVERHEAD),
-    0,
-  );
-
-  const names = padded.map(([key]) => key);
-  const listed = joinPhrases(names.slice(0, MAX_NAMED));
-  const rest = names.length - MAX_NAMED;
-  const list = rest > 0 ? `${listed} and ${rest} more` : listed;
-
-  const nullNoun = totalNulls === 1 ? 'null' : 'nulls';
-  const recordNoun = totalRecords === 1 ? 'record' : 'records';
-  const carried = names.length === 1 ? 'it' : 'them';
+  const list = joinPhrases(padded.map(([key]) => key));
+  const carried = padded.length === 1 ? 'it' : 'them';
 
   return [
     advisory({
       id: 'adv.null_padding',
       pointer: padded[0]![1].firstPointer,
       detail:
-        `${list} arrived as null in every record that carried ${carried} — ` +
-        `${group(totalNulls)} ${nullNoun} across the ${group(totalRecords)} ${recordNoun} in ` +
-        `this transmission, about ${group(bytes)} bytes of the 1 MB limit in §1.4 carrying no ` +
-        `reading. A null cannot tell the country receiving it whether a reading was ` +
-        `unavailable at that moment or is never produced at all; leaving the property out says ` +
-        `the second one plainly, and gives those bytes back.`,
+        `Across the ${group(totalRecords)} records in this transmission, ${list} arrived as ` +
+        `null in every record that carried ${carried}. A consistent null is acceptable for a ` +
+        `property the device will sometimes populate with a real value or measurement. But a ` +
+        `property that never carries a value should generally be omitted — unless the record ` +
+        `schema requires it. Sending null says "this device sometimes produces a value for ` +
+        `this property (just not right now)", while omission says "this device never produces ` +
+        `a value for this property".`,
     }),
   ];
 }
