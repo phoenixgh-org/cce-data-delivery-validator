@@ -144,6 +144,14 @@ function rtmPayload(identity: Record<string, unknown>): Record<string, unknown> 
 const EMS_UNIDENTIFIED = emsPayload({ ASER: null });
 /** The RTMD report that names nothing: AMID present but empty (the only blank it allows). */
 const RTM_UNIDENTIFIED = rtmPayload({ AMID: '' });
+/** The same report cut to ONE record — `records` has minItems 1, and the repo's rtm baseline
+ * (src/ingest/fixtures/transmissions.ts) sends exactly one, so this is the ordinary shape. */
+const RTM_ONE_RECORD = ((): Record<string, unknown> => {
+  const payload = rtmPayload({ AMID: '' });
+  const [report] = payload.data as Record<string, unknown>[];
+  report!.records = records('rtm').slice(0, 1);
+  return payload;
+})();
 
 // ── harnesses ────────────────────────────────────────────────────────────────
 
@@ -318,16 +326,38 @@ test('EMS: AMID is never reported as missing on a branch that never defined it',
 });
 
 test('RTMD: the detail names AMID and the narrow surface the schema leaves it', () => {
+  // NOT "no appliance identifier" (67tf). This advisory reads AMID alone, and
+  // fires while ASER and AID may be populated — see the RTMD case below — so the
+  // claim is scoped to the supplier's own platform handle and nothing wider.
   assert.equal(
     detailOf(RTM_UNIDENTIFIED),
-    '1 of 1 report in this transmission carries no appliance identifier — AMID is empty. AMID ' +
-      "is the handle the supplier's own platform holds the appliance under, and an rtmd-report " +
-      'carries it as a required, non-null string, so a blank value is the only form of this ' +
-      'the schema itself lets through. ASER and AID are frequently never captured where the ' +
-      'monitoring device was added to an appliance already in service, so neither is read as ' +
-      'standing in for AMID. The 3 records under it arrive complete and fully conformant, and ' +
-      'the country receiving them cannot tie those ' +
+    '1 of 1 report in this transmission carries no supplier-platform appliance identifier — ' +
+      "AMID is empty. AMID is the handle the supplier's own platform holds the appliance " +
+      'under, and an rtmd-report carries it as a required, non-null string, so a blank value ' +
+      'is the only form of this the schema itself lets through. ASER and AID are frequently ' +
+      'never captured where the monitoring device was added to an appliance already in ' +
+      'service, so neither is read as standing in for AMID. The 3 records under it arrive ' +
+      'complete and fully conformant, and the country receiving them cannot tie those ' +
       "readings to an appliance in the supplier's platform.",
+  );
+});
+
+test('RTMD: a single record reads "The 1 record under it arrives", not "arrive"', () => {
+  // THE COMMON PATH, not an edge case (iphh): `records` has minItems 1 and the
+  // repo's own rtm baseline sends exactly one, so the singular noun built for
+  // `under` is rendered as often as the plural and its verb has to agree.
+  const detail = detailOf(RTM_ONE_RECORD);
+  assert.match(detail, /The 1 record under it arrives complete and fully conformant/);
+  assert.doesNotMatch(detail, /record under it arrive complete/);
+});
+
+test('RTMD: the one-record report the singular is rendered for really is conformant', () => {
+  const entry = registry.get('0.8.1');
+  assert.ok(entry);
+  assert.equal(
+    entry.validate(RTM_ONE_RECORD),
+    true,
+    `one record is legal: ${JSON.stringify(entry.validate.errors)}`,
   );
 });
 

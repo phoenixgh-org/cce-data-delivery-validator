@@ -184,6 +184,10 @@ export function nullIdentityCheck(ctx: PipelineContext): Finding[] {
     recordsUnderThem > 0
       ? `The ${recordsUnderThem} ${recordsUnderThem === 1 ? 'record' : 'records'} under ${pronoun}`
       : `The records under ${pronoun}`;
+  // The verb has to agree with the noun `under` just built. A single record is
+  // the ordinary case, not an edge one — `records` has minItems 1 and the rtm
+  // baseline sends exactly one — so the singular is rendered as often as not.
+  const arrive = recordsUnderThem === 1 ? 'arrives' : 'arrive';
 
   // Each branch says what is true of ITS identifier, and why the other two are
   // not read as substitutes for it. Neither claims the report names nothing at
@@ -193,16 +197,15 @@ export function nullIdentityCheck(ctx: PipelineContext): Finding[] {
       `appliance's manufacturer assigned, and nothing else on an ems-report stands in for it: ` +
       `an ems-report has no AMID property, AID is an asset identifier a programme assigns, and ` +
       `ESER and LSER name the monitoring device and the logger rather than the appliance they ` +
-      `watch. ${under} arrive complete and fully conformant, and the country receiving them ` +
+      `watch. ${under} ${arrive} complete and fully conformant, and the country receiving them ` +
       `cannot tie those readings to the appliance by its manufacturer's serial number.`
-    : `no appliance identifier — ${lead}${firstBlank}. AMID is the handle the supplier's own ` +
-      `platform holds the appliance under, and an rtmd-report carries it as a required, ` +
-      `non-null string, so a blank value is the only form of this the schema itself lets ` +
-      `through. ASER and AID are frequently never captured where the monitoring device was ` +
+    : `no supplier-platform appliance identifier — ${lead}${firstBlank}. AMID is the handle the ` +
+      `supplier's own platform holds the appliance under, and an rtmd-report carries it as a ` +
+      `required, non-null string, so a blank value is the only form of this the schema itself ` +
+      `lets through. ASER and AID are frequently never captured where the monitoring device was ` +
       `added to an appliance already in service, so neither is read as standing in for AMID. ` +
-      `${under} arrive complete and fully conformant, and the ` +
-      `country receiving them cannot tie those readings to an appliance in the supplier's ` +
-      `platform.`;
+      `${under} ${arrive} complete and fully conformant, and the country receiving them cannot ` +
+      `tie those readings to an appliance in the supplier's platform.`;
 
   return [
     advisory({
