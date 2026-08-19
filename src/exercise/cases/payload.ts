@@ -28,6 +28,7 @@ import {
   duplicateVersionStringsIntoRecords,
   longSamplePeriod,
   nullApplianceSerial,
+  repeatRecord,
   setInvalidValue,
   setCompressorAboveSupply,
   setMinutesShapedCompressor,
@@ -425,6 +426,35 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
       // advisory reads a question §3.4 cannot see rather than second-guessing a
       // verdict §3.4 already owns.
       { requirement: '3.4', severity: 'pass' },
+    ],
+  },
+
+  // The duplicate advisory, on the DEFAULT (rtm) baseline: its report carries a
+  // single record, so cloning it produces the smallest honest form of PQS's
+  // shape — a two-record report holding one reading twice — while every §7
+  // verdict stays where it was. §1.8 is the one this case is really measured
+  // against: it grades the ENVELOPE (body sha256, transferId) against earlier
+  // transmissions, so this payload is novel to it and keeps its pass.
+  {
+    id: 'adv.duplicate_records-fail-record-delivered-twice',
+    title: 'The same reading delivered twice inside one transmission',
+    requirements: [],
+    direction: 'fail',
+    fault: {
+      layer: 'payload',
+      note:
+        'the report’s only record is re-appended to its own records array — a second copy ' +
+        'identical in full, sharing the ABST of the first, inside a transmission §1.8 has ' +
+        'never seen before',
+    },
+    posts: [{ transforms: [repeatRecord()], expectedStatus: 200 }],
+    expectedFindings: [
+      { requirement: 'adv.duplicate_records', severity: 'info' },
+      // BOTH observations are owed on this payload and neither is suppressed for
+      // the other (agj.8): the record arrived twice, and the series stops
+      // stepping forward where the copy lands. Together they reconstruct the
+      // assembly that produced them; alone, neither does.
+      { requirement: 'adv.time_not_increasing', severity: 'info' },
     ],
   },
 

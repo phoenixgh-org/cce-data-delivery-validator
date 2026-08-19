@@ -651,3 +651,44 @@ export function longSamplePeriod(count = 4, everyMinutes = 60, reportIndex = 0):
   const offsets = Array.from({ length: count }, (_, i) => i * everyMinutes);
   return withCadence(`longSamplePeriod(${count}×${everyMinutes}min)`, [], offsets, reportIndex);
 }
+
+/**
+ * Append a deep clone of one of a report's records to the END of that report's
+ * `records` array, so the same reading is delivered twice inside one
+ * transmission — which is what `adv.duplicate_records` observes.
+ *
+ * PQS's shape in miniature: "a chunk of records were placed at the end of the
+ * previous data file", which leaves the file carrying records it already had and
+ * a series that stops stepping forward at the join. Cloning rather than
+ * synthesizing is what makes the copy IDENTICAL IN FULL — the stronger of the two
+ * signals the advisory distinguishes — and the shared `ABST` raises the weaker
+ * one at the same time.
+ *
+ * Schema-VALID by design, and that is the point: each record is validated against
+ * `ems-record`/`rtmd-record` on its own and the schema has no vocabulary for a
+ * record's relationship to its siblings, so a repeated record validates exactly
+ * like the baseline. §1.8 does not see it either — ./duplicate.ts compares the
+ * sha256 of the whole body and `meta.transferId` against EARLIER transmissions,
+ * both properties of the envelope, so a payload that repeats a record inside
+ * itself is byte-novel and keeps its §1.8 pass (that is the gap agj.8 covers).
+ *
+ * On the single-record rtm baseline the result is a two-record report, which also
+ * keeps §3.4's cadence pass intact: a repeat contributes an interval of ZERO to
+ * the sorted series, and one interval has no spread for §3.4 to grade. The
+ * advisories are the only thing the session shows for this payload.
+ */
+export function repeatRecord(index = 0, reportIndex = 0): PayloadTransform {
+  const name = `repeatRecord(${reportIndex}: records/${index})`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const records = payload.data[reportIndex]?.records;
+      const source = Array.isArray(records) ? (records[index] as unknown) : undefined;
+      if (source === undefined) {
+        throw new Error(`${name}: /data/${reportIndex}/records/${index} is missing`);
+      }
+      (records as unknown[]).push(structuredClone(source));
+      return payload;
+    },
+  });
+}
