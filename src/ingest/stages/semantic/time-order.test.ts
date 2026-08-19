@@ -315,6 +315,40 @@ test('the seconds reading stands alone when the step is not a whole minute', () 
   assert.doesNotMatch(finding.detail ?? '', /min\)/, 'no fractional minutes invented');
 });
 
+test('a sub-second reversal is a step BACK, not a repeat (1dda)', () => {
+  // ABST's pattern admits a fractional part and parseAbst resolves it to
+  // milliseconds, so these are two DIFFERENT timestamps 300 ms apart. Rounding
+  // the gap to whole seconds would call them the same ABST — a statement about
+  // a payload that was never sent, which is exactly what an advisory may not do.
+  const payload = emsPayload(['20240115T033000.500Z', '20240115T033000.200Z']);
+  assert.equal(
+    registry.get('0.8.1')?.validate(payload),
+    true,
+    "sub-second ABST is schema-valid — the precision is the supplier's to use",
+  );
+
+  const [finding] = advisories(checkOnly(payload));
+  assert.ok(finding, 'a reversal under one second still raised nothing');
+  assert.equal(finding.pointer, '/data/0/records/1/ABST');
+  assert.match(finding.detail ?? '', /300 ms earlier than the record before it/);
+  assert.match(finding.detail ?? '', /furthest any of them steps back is 300 ms/);
+  assert.doesNotMatch(finding.detail ?? '', /same ABST/, 'the two values differ');
+  assert.doesNotMatch(finding.detail ?? '', /No timestamp steps back/, 'one did step back');
+});
+
+test('only an exactly equal epoch value reads as a repeat', () => {
+  // The same instant written two ways is a tie; anything else is a step.
+  const [tie] = advisories(checkOnly(emsPayload(['20240115T033000.000Z', '20240115T033000Z'])));
+  assert.ok(tie);
+  assert.match(tie.detail ?? '', /carries the same ABST as the record before it/);
+  assert.match(tie.detail ?? '', /No timestamp steps back/);
+
+  // And a step of one millisecond is named rather than rounded away.
+  const [step] = advisories(checkOnly(emsPayload(['20240115T033000.001Z', '20240115T033000Z'])));
+  assert.ok(step);
+  assert.match(step.detail ?? '', /1 ms earlier than the record before it/);
+});
+
 // ── reports are independent series ──────────────────────────────────────────
 
 test('the walk never crosses a report boundary', () => {

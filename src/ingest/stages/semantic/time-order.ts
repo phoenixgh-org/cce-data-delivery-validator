@@ -61,7 +61,8 @@
  * folds advisories by id and shows only the most recent occurrence's detail, so
  * a finding per pair would render as a count with one arbitrary pair's prose
  * behind it). It carries the three things agj.4 asks for: HOW MANY positions are
- * not forward of their predecessor, the WORST backward step in seconds, and a
+ * not forward of their predecessor, the WORST backward step (in seconds, or in
+ * milliseconds when ABST's sub-second precision puts it under one), and a
  * pointer to the FIRST such record in document order.
  *
  * ── WORDING ──────────────────────────────────────────────────────────────────
@@ -87,10 +88,15 @@ interface NotForward {
   /** JSON Pointer to the ABST at that position. */
   pointer: string;
   /**
-   * How far back it steps from the previous parseable ABST, in whole seconds.
-   * Zero means the timestamp REPEATS rather than reverses.
+   * How far back it steps from the previous parseable ABST, in MILLISECONDS —
+   * the resolution {@link parseAbst} resolves ABST to, kept unrounded because
+   * the repeat-vs-reversal distinction is made on this value. Zero, and only
+   * exactly zero, means the timestamp REPEATS rather than reverses: ABST's
+   * pattern admits a fractional part, so a step back of a few hundred
+   * milliseconds is two DIFFERENT timestamps in the payload as sent, and
+   * rounding it to a whole second would let us describe it as a tie it is not.
    */
-  backwardSeconds: number;
+  backwardMs: number;
 }
 
 /**
@@ -111,7 +117,7 @@ function scanReport(report: unknown, reportIndex: number): NotForward[] {
     if (previous !== null && epochMs <= previous) {
       found.push({
         pointer: `/data/${reportIndex}/records/${recordIndex}/ABST`,
-        backwardSeconds: Math.round((previous - epochMs) / 1000),
+        backwardMs: previous - epochMs,
       });
     }
     previous = epochMs;
@@ -119,18 +125,25 @@ function scanReport(report: unknown, reportIndex: number): NotForward[] {
   return found;
 }
 
-/** `900 s (15 min)` — seconds always, with the minutes reading when it is exact. */
-function describeSeconds(seconds: number): string {
-  const exactMinutes = seconds >= 60 && seconds % 60 === 0;
+/**
+ * `900 s (15 min)` — seconds always, with the minutes reading when it is exact.
+ * A step finer than a second is read in milliseconds (`300 ms`) rather than as a
+ * fraction of a second nobody wrote, and a step that is neither whole seconds
+ * nor sub-second keeps its fraction (`1.5 s`). Callers pass a strictly positive
+ * step: zero is a repeat and gets its own wording.
+ */
+function describeStep(ms: number): string {
+  if (ms < 1000) return `${ms} ms`;
+  const seconds = ms / 1000;
+  const exactMinutes = ms % 60_000 === 0;
   return exactMinutes ? `${seconds} s (${seconds / 60} min)` : `${seconds} s`;
 }
 
 /** What the FIRST such position did, in the supplier's terms. */
 function describeFirst(first: NotForward): string {
-  return first.backwardSeconds === 0
+  return first.backwardMs === 0
     ? `carries the same ABST as the record before it`
-    : `carries an ABST ${describeSeconds(first.backwardSeconds)} earlier than the record ` +
-        `before it`;
+    : `carries an ABST ${describeStep(first.backwardMs)} earlier than the record before it`;
 }
 
 /**
@@ -154,15 +167,17 @@ export function timeOrderCheck(ctx: PipelineContext): Finding[] {
   if (found.length === 0) return [];
 
   const first = found[0]!;
-  const worstSeconds = found.reduce((max, one) => Math.max(max, one.backwardSeconds), 0);
+  const worstMs = found.reduce((max, one) => Math.max(max, one.backwardMs), 0);
   const positionNoun = found.length === 1 ? 'record' : 'records';
 
-  // Every one of them repeats a timestamp rather than reversing: there is no
-  // step back to name, so naming one would be naming a zero.
+  // A zero worst step means every one of them repeats a timestamp rather than
+  // reversing — there is no step back to name, so naming one would be naming a
+  // zero. It takes an EXACTLY equal epoch value to get here: a sub-second
+  // reversal is a positive number of milliseconds and is named as one.
   const worstPhrase =
-    worstSeconds === 0
+    worstMs === 0
       ? `No timestamp steps back — each of these repeats the one before it.`
-      : `The furthest any of them steps back is ${describeSeconds(worstSeconds)}.`;
+      : `The furthest any of them steps back is ${describeStep(worstMs)}.`;
 
   return [
     advisory({
