@@ -151,7 +151,7 @@ test('a 100 %-conformant session folds to its advisories and nothing else', () =
     tx('t1', '2026-08-05T12:00:01Z', [
       finding({ requirement: '1.5' }),
       finding({ requirement: '3.2' }),
-      advisory('adv.null_identity', { detail: 'ASER and AMID were both null.' }),
+      advisory('adv.null_identity', { detail: 'only advisory' }),
     ]),
     tx('t2', '2026-08-05T12:00:02Z', [
       finding({ requirement: '1.5' }),

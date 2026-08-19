@@ -902,10 +902,19 @@ test(
       const advisories = [
         advisory({
           id: 'adv.null_identity',
+          // Verbatim current output of the ems branch of nullIdentityCheck (1o64):
+          // the advisory reads ASER alone there, and never claims the report names
+          // no appliance at all.
           detail:
-            'ASER and AMID were both null in this report, so the equipment it describes ' +
-            'cannot be matched to a unit in the national inventory',
-          pointer: '/data/0/ASER',
+            '1 of 1 report in this transmission carries no appliance serial number — ASER is ' +
+            "null. ASER is the serial number the appliance's manufacturer assigned, and " +
+            'nothing else on an ems-report stands in for it: an ems-report has no AMID ' +
+            'property, AID is an asset identifier a programme assigns, and ESER and LSER name ' +
+            'the monitoring device and the logger rather than the appliance they watch. The ' +
+            '480 records under it arrive complete and fully conformant, and the country ' +
+            "receiving them cannot tie those readings to the appliance by its manufacturer's " +
+            'serial number.',
+          pointer: '/data/0',
         }),
         advisory({
           id: 'adv.null_padding',
