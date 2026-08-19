@@ -65,6 +65,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck, SemanticDeps } from '../semantic.js';
+import { cmprMinutesCheck } from './cmpr-minutes.js';
 import { compressorSupplyCheck } from './compressor-supply.js';
 import { dateFormatCheck } from './date-format.js';
 import { nullIdentityCheck } from './null-identity.js';
@@ -126,8 +127,9 @@ export function advisory(input: AdvisoryInput): Finding {
  *
  * The checks below are the catalogue today — the two the category shipped with
  * (bva slice C) plus `adv.date_format` (agj.1), `adv.time_not_increasing`
- * (agj.4) and `adv.compressor_exceeds_supply` (agj.3); it grows from here. Each
- * is a HOISTED FUNCTION DECLARATION in its own module, not the
+ * (agj.4), `adv.compressor_exceeds_supply` (agj.3) and `adv.cmpr_minutes`
+ * (agj.7); it grows from here. Each is a HOISTED FUNCTION DECLARATION in its own
+ * module, not the
  * `const check: SemanticCheck =` idiom the §7 checks use — the checks import
  * {@link advisory} from here while this array names them, which is an ESM cycle
  * that a `const` binding would resolve into a temporal-dead-zone throw under one
@@ -139,6 +141,7 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   dateFormatCheck,
   timeOrderCheck,
   compressorSupplyCheck,
+  cmprMinutesCheck,
 ];
 
 /**

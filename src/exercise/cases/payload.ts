@@ -28,6 +28,7 @@ import {
   duplicateVersionStringsIntoRecords,
   setInvalidValue,
   setCompressorAboveSupply,
+  setMinutesShapedCompressor,
   setNonIsoDate,
   setSchemaVersion,
   setUnsupportedSchemaVersion,
@@ -374,5 +375,27 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [setCompressorAboveSupply(420, 200)], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.compressor_exceeds_supply', severity: 'info' }],
+  },
+
+  // The other CMPR advisory, and the pair is complementary rather than
+  // overlapping: this payload's CMPR never approaches SVA, so
+  // adv.compressor_exceeds_supply cannot see it, which is exactly why agj.7
+  // exists alongside agj.3. The transform synthesizes 12 records because the
+  // advisory's floor is null-padding's MIN_RECORDS and the EMS baseline is 3.
+  {
+    id: 'adv.cmpr_minutes-fail-minutes-valued-compressor',
+    title: 'Compressor runtimes that never cross 15 — a feed still on the pre-0.8.0 unit',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        '12 records whose CMPR never exceeds 15, six of them at exactly 15 against SVA 900 — ' +
+        'legal on 0.8.1 because the 0.7.2 → 0.8.0 unit correction widened CMPR from 0–15 ' +
+        'minutes to 0–900 seconds',
+    },
+    posts: [{ transforms: [setMinutesShapedCompressor()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.cmpr_minutes', severity: 'info' }],
   },
 ];

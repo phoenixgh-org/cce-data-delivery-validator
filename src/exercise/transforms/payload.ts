@@ -543,3 +543,57 @@ export function setCompressorAboveSupply(
     },
   });
 }
+
+/**
+ * Replace a report's `records` with `count` minutes-shaped ones: clones of the
+ * first record stamped at 15-minute intervals, each carrying a `CMPR` at or
+ * below 15, at least one above 0, and several at exactly 15 while `SVA` stays at
+ * the baseline's 900 — which is what `adv.cmpr_minutes` observes.
+ *
+ * SYNTHESIZING RECORDS IS THE POINT. The advisory needs at least
+ * `MIN_RECORDS` (12) readings before a ceiling says anything, and the EMS
+ * baseline is 3 records; extending the series here is what keeps that floor
+ * where the check set it instead of weakening it to fit a fixture.
+ *
+ * Schema-VALID by design, and that is the whole gap the advisory covers: the
+ * pre-0.8.0 correction WIDENED CMPR from `maximum: 15` (minutes) to
+ * `maximum: 900` (seconds), so every minutes value is a legal seconds value and
+ * a minutes-valued feed validates cleanly on a 0.8.x envelope. ../cases.test.ts
+ * runs the materialized payload through the real validator, so this declaration
+ * is checked rather than asserted.
+ *
+ * The 15-minute stamping keeps §3.4's cadence pass intact (CV 0), and CMPR stays
+ * far below `SVA`, so `adv.compressor_exceeds_supply` stays silent — the two
+ * CMPR advisories are complementary, and this case shows one of them alone.
+ *
+ * EMS-only by construction: `SVA` lives on the mains branch of
+ * `ems-record.allOf[0]`, so a case using this declares `emsBaseline`.
+ */
+export function setMinutesShapedCompressor(count = 12, reportIndex = 0): PayloadTransform {
+  // At or below 15, at least one above 0, and six sitting at exactly 15 — the
+  // saturation signature, since the baseline record's SVA is 900.
+  const walk = [15, 12, 15, 9, 15, 0, 14, 15, 11, 15, 7, 15];
+  const name = `setMinutesShapedCompressor(${reportIndex}: ${count} records)`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const report = payload.data[reportIndex];
+      const records = report?.records;
+      const first = Array.isArray(records) ? (records[0] as Record<string, unknown>) : undefined;
+      if (first === undefined) {
+        throw new Error(`${name}: /data/${reportIndex}/records/0 is missing`);
+      }
+      const start = parseAbst(first.ABST);
+      if (start === null) {
+        throw new Error(`${name}: /data/${reportIndex}/records/0/ABST is not a parseable ABST`);
+      }
+      const stamped = Array.from({ length: count }, (_, i) => ({
+        ...structuredClone(first),
+        ABST: formatAbst(start + i * 15 * 60_000),
+        CMPR: walk[i % walk.length],
+      }));
+      setAtPointer(payload, `/data/${reportIndex}/records`, stamped);
+      return payload;
+    },
+  });
+}
