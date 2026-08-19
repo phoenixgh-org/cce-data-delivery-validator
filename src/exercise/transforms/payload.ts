@@ -624,3 +624,30 @@ export function nullApplianceSerial(assetId = 'asset-tag-9', reportIndex = 0): P
     },
   });
 }
+
+/**
+ * Re-stamp a report's readings onto a cadence WIDER than DS01's 15-minute
+ * sampling period — `count` records spaced `everyMinutes` apart, hourly by
+ * default — which is what `adv.sample_gap` observes.
+ *
+ * Schema-VALID by design, and that is the point: `ABST` carries a `pattern` per
+ * VALUE and the schema has no vocabulary for how far apart two values sit, so an
+ * hourly series validates exactly like the quarter-hourly baseline.
+ *
+ * REGULAR ON PURPOSE, and this is the case rather than scaffolding. §3.4 grades
+ * the coefficient of variation of the intervals, which is scale-free BY DESIGN
+ * (src/ingest/stages/semantic/interval.ts), so an evenly spaced hourly series
+ * scores CV 0 and keeps its §3.4 PASS while every one of its periods is four
+ * times the one the accumulators are defined over. The advisory is the only
+ * thing the session shows for it — which is exactly why agj.6 put the absolute
+ * cap in its own check instead of tightening §3.4.
+ *
+ * Built on the same `withCadence` engine as {@link regularCadence}, so every
+ * other field is a clone of the baseline record and only the spacing varies. It
+ * declares NO targets: `adv.sample_gap` is not a COMPLIANCE_MATRIX id, and the
+ * §3.4 pass this payload keeps is not something the case is claiming to exercise.
+ */
+export function longSamplePeriod(count = 4, everyMinutes = 60, reportIndex = 0): PayloadTransform {
+  const offsets = Array.from({ length: count }, (_, i) => i * everyMinutes);
+  return withCadence(`longSamplePeriod(${count}×${everyMinutes}min)`, [], offsets, reportIndex);
+}

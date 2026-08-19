@@ -26,6 +26,7 @@ import {
   declareCustomDataSchema,
   dropRequiredField,
   duplicateVersionStringsIntoRecords,
+  longSamplePeriod,
   nullApplianceSerial,
   setInvalidValue,
   setCompressorAboveSupply,
@@ -398,6 +399,33 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [setMinutesShapedCompressor()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.cmpr_minutes', severity: 'info' }],
+  },
+
+  // The cadence advisory, and the ONLY case in the table where a §3.4 PASS and an
+  // advisory ride on the same payload — which is the whole argument for agj.6
+  // existing separately from §3.4. It stays on the DEFAULT (rtm) baseline: the
+  // 15-minute period is a property of the standard rather than of the EMS record
+  // branch, so the rtm branch is where it is worth showing.
+  {
+    id: 'adv.sample_gap-fail-hourly-readings',
+    title: 'Readings taken once an hour — evenly spaced, and four times the DS01 period',
+    requirements: [],
+    direction: 'fail',
+    fault: {
+      layer: 'payload',
+      note:
+        'four readings spaced 60 minutes apart — three consecutive ABST deltas of 3600 s ' +
+        'against the 900 s period the per-period accumulators are defined over, while the ' +
+        'perfectly even spacing keeps the §3.4 cadence pass (CV 0)',
+    },
+    posts: [{ transforms: [longSamplePeriod(4, 60)], expectedStatus: 200 }],
+    expectedFindings: [
+      { requirement: 'adv.sample_gap', severity: 'info' },
+      // The §3.4 pass is CASE, not scaffolding: it is the live proof that the
+      // advisory reads a question §3.4 cannot see rather than second-guessing a
+      // verdict §3.4 already owns.
+      { requirement: '3.4', severity: 'pass' },
+    ],
   },
 
   // ASER is a property of the EMS branch and the rtm baseline does not carry it,

@@ -70,6 +70,7 @@ import { compressorSupplyCheck } from './compressor-supply.js';
 import { dateFormatCheck } from './date-format.js';
 import { nullIdentityCheck } from './null-identity.js';
 import { nullPaddingCheck } from './null-padding.js';
+import { sampleGapCheck } from './sample-gap.js';
 import { timeOrderCheck } from './time-order.js';
 
 /** Namespace prefix separating advisory ids from the §7 requirement ids. */
@@ -127,13 +128,13 @@ export function advisory(input: AdvisoryInput): Finding {
  *
  * The checks below are the catalogue today — the two the category shipped with
  * (bva slice C) plus `adv.date_format` (agj.1), `adv.time_not_increasing`
- * (agj.4), `adv.compressor_exceeds_supply` (agj.3) and `adv.cmpr_minutes`
- * (agj.7); it grows from here. Each is a HOISTED FUNCTION DECLARATION in its own
- * module, not the
- * `const check: SemanticCheck =` idiom the §7 checks use — the checks import
- * {@link advisory} from here while this array names them, which is an ESM cycle
- * that a `const` binding would resolve into a temporal-dead-zone throw under one
- * of the two possible load orders. See the note above each declaration.
+ * (agj.4), `adv.compressor_exceeds_supply` (agj.3), `adv.cmpr_minutes` (agj.7)
+ * and `adv.sample_gap` (agj.6); it grows from here. Each is a HOISTED FUNCTION
+ * DECLARATION in its own module, not the `const check: SemanticCheck =` idiom
+ * the §7 checks use — the checks import {@link advisory} from here while this
+ * array names them, which is an ESM cycle that a `const` binding would resolve
+ * into a temporal-dead-zone throw under one of the two possible load orders. See
+ * the note above each declaration.
  */
 export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   nullIdentityCheck,
@@ -142,6 +143,7 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   timeOrderCheck,
   compressorSupplyCheck,
   cmprMinutesCheck,
+  sampleGapCheck,
 ];
 
 /**
