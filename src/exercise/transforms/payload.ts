@@ -466,3 +466,42 @@ export function setNonIsoDate(pointer: string, value: string): PayloadTransform 
     },
   });
 }
+
+/**
+ * Swap the `ABST` of two records inside one report, leaving every other field
+ * where it was — so the same readings arrive in an order that steps BACKWARDS,
+ * which is what `adv.time_not_increasing` observes.
+ *
+ * Schema-VALID by design, and again that is the point: `ABST` carries a
+ * `pattern` per VALUE and the schema has no vocabulary for a value's
+ * relationship to its neighbours, so a swapped pair validates exactly like the
+ * baseline. Nothing else notices either — §3.4's interval check sorts the
+ * timestamps before grading cadence (src/ingest/stages/semantic/interval.ts), so
+ * this payload keeps its §3.4 pass and the advisory is the ONLY thing the
+ * session shows for it.
+ *
+ * Swapping rather than re-stamping is deliberate: it holds the set of readings
+ * and their spacing constant, so the case varies order and nothing else.
+ */
+export function swapRecordTimestamps(
+  indexA: number,
+  indexB: number,
+  reportIndex = 0,
+): PayloadTransform {
+  const name = `swapRecordTimestamps(${reportIndex}: ${indexA} ↔ ${indexB})`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const records = payload.data[reportIndex]?.records;
+      const a = Array.isArray(records) ? (records[indexA] as Record<string, unknown>) : undefined;
+      const b = Array.isArray(records) ? (records[indexB] as Record<string, unknown>) : undefined;
+      if (a === undefined || b === undefined) {
+        throw new Error(`${name}: /data/${reportIndex}/records is shorter than the swap needs`);
+      }
+      const held = a.ABST;
+      a.ABST = b.ABST;
+      b.ABST = held;
+      return payload;
+    },
+  });
+}

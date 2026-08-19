@@ -30,6 +30,7 @@ import {
   setNonIsoDate,
   setSchemaVersion,
   setUnsupportedSchemaVersion,
+  swapRecordTimestamps,
 } from '../transforms/payload.js';
 
 export const PAYLOAD_CASES: readonly ExerciseCase[] = [
@@ -334,5 +335,24 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [setNonIsoDate('/data/0/ADOP', '2026-7-4')], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.date_format', severity: 'info' }],
+  },
+
+  // The EMS baseline is also what carries a MULTI-RECORD series (the rtm
+  // baseline has a single record, and one record has no order to observe), so an
+  // advisory case about record order declares it.
+  {
+    id: 'adv.time_not_increasing-fail-swapped-readings',
+    title: 'Two readings delivered in the reverse of the order they were logged',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        'the first two records swap ABST, so the series steps 15 minutes backwards at ' +
+        '/data/0/records/1 while every value stays a well-formed ABST',
+    },
+    posts: [{ transforms: [swapRecordTimestamps(0, 1)], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.time_not_increasing', severity: 'info' }],
   },
 ];

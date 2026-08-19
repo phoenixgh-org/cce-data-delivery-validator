@@ -68,6 +68,7 @@ import type { SemanticCheck, SemanticDeps } from '../semantic.js';
 import { dateFormatCheck } from './date-format.js';
 import { nullIdentityCheck } from './null-identity.js';
 import { nullPaddingCheck } from './null-padding.js';
+import { timeOrderCheck } from './time-order.js';
 
 /** Namespace prefix separating advisory ids from the §7 requirement ids. */
 export const ADVISORY_PREFIX = 'adv.';
@@ -123,8 +124,9 @@ export function advisory(input: AdvisoryInput): Finding {
  * adding a check means adding a module under `semantic/` and one entry below.
  *
  * The checks below are the catalogue today — the two the category shipped with
- * (bva slice C) plus `adv.date_format` (agj.1); it grows from here. Each is a
- * HOISTED FUNCTION DECLARATION in its own module, not the
+ * (bva slice C) plus `adv.date_format` (agj.1) and `adv.time_not_increasing`
+ * (agj.4); it grows from here. Each is a HOISTED FUNCTION DECLARATION in its own
+ * module, not the
  * `const check: SemanticCheck =` idiom the §7 checks use — the checks import
  * {@link advisory} from here while this array names them, which is an ESM cycle
  * that a `const` binding would resolve into a temporal-dead-zone throw under one
@@ -134,6 +136,7 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   nullIdentityCheck,
   nullPaddingCheck,
   dateFormatCheck,
+  timeOrderCheck,
 ];
 
 /**
