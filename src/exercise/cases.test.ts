@@ -39,6 +39,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX } from '../api/compliance-matrix.js';
+import { isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
 import { SchemaRegistry } from '../schema-registry.js';
 import { DEFAULT_BASELINE, emsBaseline } from './baseline.js';
 import {
@@ -278,13 +279,30 @@ test('the table exercises both branches of the root transferType conditional', (
 });
 
 test('every requirement a case names exists in COMPLIANCE_MATRIX', () => {
+  // TWO DIFFERENT RULES, deliberately (agj.1):
+  //
+  //   `requirements` is MATRIX-ONLY. It is what the coverage join reads
+  //   (./runner/coverage.ts), and that join is onto COMPLIANCE_MATRIX — an id the
+  //   matrix does not carry is a claim nobody joins to, which is indistinguishable
+  //   from no claim at all. So an `adv.*` id is not admissible here, and a case
+  //   exercising an advisory declares no requirements at all.
+  //
+  //   `expectedFindings` ALSO admits `adv.*` ids. Advisories are findings a
+  //   session really shows — the runner matches expectations on (requirement,
+  //   severity) presence over the pooled findings, and an advisory carries its
+  //   `adv.*` id in `requirement` exactly like a §7 finding carries '3.2'. They
+  //   are simply not matrix rows, by construction: `computeComplianceSummary` maps
+  //   over the static §7 rows and ignores every other id, which is HOW an advisory
+  //   is guaranteed never to move a verdict (src/ingest/stages/semantic/
+  //   advisory.ts). Admitting them here is what lets a case assert that the
+  //   observation was made.
   for (const kase of EXERCISE_CASES) {
     for (const requirement of kase.requirements) {
       assert.ok(MATRIX_IDS.has(requirement), `${kase.id}: unknown requirement ${requirement}`);
     }
     for (const finding of kase.expectedFindings) {
       assert.ok(
-        MATRIX_IDS.has(finding.requirement),
+        MATRIX_IDS.has(finding.requirement) || isAdvisoryId(finding.requirement),
         `${kase.id}: expected finding names unknown requirement ${finding.requirement}`,
       );
     }
@@ -361,9 +379,20 @@ test('fail-direction cases name their fault and expect a fail finding or a rejec
 
     const expectsFail = kase.expectedFindings.some((f) => f.severity === 'fail');
     const rejects = kase.posts.some((p) => !isAcceptedStatus(p.expectedStatus));
+    // THE ADVISORY EXEMPTION (agj.1). An advisory case plants a payload the
+    // validator is meant to NOTICE while breaking no rule at all: the schema
+    // accepts the value and no §7 requirement covers it, which is the entire
+    // reason the Advisories category exists. Such a case can therefore never
+    // expect a fail finding (an advisory is built `severity: 'info'` and provably
+    // cannot be anything else) nor a rejection (it is a 200). Its positive
+    // evidence is the advisory itself — the same standard, met by the only
+    // finding this defect can produce. An ordinary fail case is unaffected: an
+    // `adv.*` expectation is the ONLY thing this admits.
+    const expectsAdvisory = kase.expectedFindings.some((f) => isAdvisoryId(f.requirement));
     assert.ok(
-      expectsFail || rejects,
-      `${kase.id}: a fail-direction case must expect a fail finding or a non-2xx status`,
+      expectsFail || rejects || expectsAdvisory,
+      `${kase.id}: a fail-direction case must expect a fail finding, an advisory, or a ` +
+        `non-2xx status`,
     );
 
     // A sequence fault is one no single POST carries, so it needs ≥2 POSTs.

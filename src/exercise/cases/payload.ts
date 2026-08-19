@@ -27,6 +27,7 @@ import {
   dropRequiredField,
   duplicateVersionStringsIntoRecords,
   setInvalidValue,
+  setNonIsoDate,
   setSchemaVersion,
   setUnsupportedSchemaVersion,
 } from '../transforms/payload.js';
@@ -293,5 +294,45 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
       { requirement: '3.1', severity: 'fail' },
       { requirement: '3.1', severity: 'info' },
     ],
+  },
+
+  // ── advisories (adv.*) — observations that grade nothing (agj.1) ───────────
+  //
+  // THE ADVISORY CASE PATTERN. Every later advisory case copies this shape, so
+  // read it before adding one:
+  //
+  //   requirements: []          an advisory is NOT a §7 requirement and can never
+  //                             move one (src/ingest/stages/semantic/advisory.ts).
+  //                             `requirements` feeds the coverage join, which is a
+  //                             join onto COMPLIANCE_MATRIX — naming an `adv.*` id
+  //                             there would be a claim nobody joins to. The advisory
+  //                             is named in `expectedFindings` instead, which
+  //                             ../cases.test.ts admits `adv.*` ids into precisely
+  //                             for this.
+  //   direction: 'fail'         the case sends traffic the validator is meant to
+  //     + fault {layer}         NOTICE, and it names what it planted — the same
+  //                             contract every fail-direction case carries. The
+  //                             payload is schema- and requirement-CONFORMANT, so
+  //                             the "show your work" evidence is the advisory
+  //                             itself, not a fail finding (../cases.test.ts spells
+  //                             that exemption out).
+  //   expectedStatus: 200       an advisory never changes the response code.
+  //   expectedFindings          exactly `severity: 'info'` — the only severity an
+  //                             advisory is ever built with.
+  //
+  // The EMS baseline is what carries ADOP (the rtm baseline has only EDOP), so an
+  // advisory case that wants a report-level date declares it.
+  {
+    id: 'adv.date_format-fail-unpadded-production-date',
+    title: 'An appliance production date sent as 2026-7-4 is observed, and grades nothing',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note: "ADOP set to '2026-7-4' — a real date, without the ISO-8601 fixed field widths",
+    },
+    posts: [{ transforms: [setNonIsoDate('/data/0/ADOP', '2026-7-4')], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.date_format', severity: 'info' }],
   },
 ];

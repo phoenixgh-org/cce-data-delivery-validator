@@ -432,3 +432,37 @@ export function irregularCadence(
     reportIndex,
   );
 }
+
+// ── advisory-provoking payloads (adv.*) ─────────────────────────────────────
+//
+// A mutator here produces a payload that is fully schema-VALID and fully
+// requirement-conformant, and still gives the receiving country something to
+// observe. That is the whole shape of the Advisories category
+// (src/ingest/stages/semantic/advisory.ts): an advisory can never move a §7
+// requirement's status, so a case built on one of these expects a 200, an `info`
+// finding under an `adv.*` id, and no fail anywhere.
+//
+// `targets` stays EMPTY on these. It lists COMPLIANCE_MATRIX ids and an advisory
+// id is not one — the coverage join reads §7 rows only. A case names the advisory
+// in its `expectedFindings` instead (../cases/payload.ts).
+
+/**
+ * Write a production date in a form other than ISO-8601's `YYYY-MM-DD` — e.g.
+ * `2026-7-4` at `/data/0/ADOP` — which is what `adv.date_format` observes.
+ *
+ * Schema-VALID by design, and that is the point: cce-interop-0.8.1 declares the
+ * DS01 date objects (ADOP, LDOP, EDOP, CDAT, CDAT2) as bare strings with no
+ * `format` and no `pattern`, so Ajv accepts any text at all. ../cases.test.ts
+ * runs the materialized payload through the real validator, so this declaration
+ * is checked rather than asserted: if a future schema learns to express dates,
+ * this stops being `valid` and the case fails in CI instead of live.
+ */
+export function setNonIsoDate(pointer: string, value: string): PayloadTransform {
+  return payloadTransform({
+    name: `setNonIsoDate(${pointer}, ${value})`,
+    apply: (payload) => {
+      setAtPointer(payload, pointer, value);
+      return payload;
+    },
+  });
+}
