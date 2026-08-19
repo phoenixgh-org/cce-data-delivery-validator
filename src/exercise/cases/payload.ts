@@ -26,6 +26,7 @@ import {
   declareCustomDataSchema,
   dropRequiredField,
   duplicateVersionStringsIntoRecords,
+  nullApplianceSerial,
   setInvalidValue,
   setCompressorAboveSupply,
   setMinutesShapedCompressor,
@@ -397,5 +398,27 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [setMinutesShapedCompressor()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.cmpr_minutes', severity: 'info' }],
+  },
+
+  // ASER is a property of the EMS branch and the rtm baseline does not carry it,
+  // so this one declares emsBaseline. It plants a populated AID alongside the
+  // null ASER deliberately: on the ems branch the advisory reads ASER ALONE
+  // (2km), and AID — a programme asset-tracking identifier rather than the
+  // manufacturer's serial — is not read as standing in for it. A payload that
+  // was silent under the old any-of-three rule is the sharpest thing to pin.
+  {
+    id: 'adv.null_identity-fail-null-appliance-serial',
+    title: 'An appliance serial sent as null, with only a programme asset id alongside it',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        "ASER set to null with AID set to 'asset-tag-9' — legal because ems-report requires " +
+        'the ASER key and the shared $defs types it ["string","null"]',
+    },
+    posts: [{ transforms: [nullApplianceSerial()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.null_identity', severity: 'info' }],
   },
 ];

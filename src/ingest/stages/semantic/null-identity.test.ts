@@ -9,13 +9,16 @@
  * zero fail findings, and the §7 summary is computed with and without the
  * advisory findings and compared.
  *
- * THE BRANCH ASYMMETRY IS THE POINT of half these cases. pwd states the case as
- * "ASER and AMID both null", but the two report branches do not carry the same
- * identity fields: `ems-report` has no AMID property at all, and `rtmd-report`
- * makes AMID REQUIRED and non-nullable. So the tests below pin what each branch
- * looks at, that an absent field on a branch that never defined it is not
- * counted as missing, and that an empty AMID — the only blank AMID the rtmd
- * branch permits — is enough.
+ * ONE IDENTIFIER PER BRANCH IS THE POINT of half these cases (2km, 38p). pwd
+ * states the case as "ASER and AMID both null", but the two report branches do
+ * not carry the same identity fields and the other identifiers are not
+ * substitutes: on `ems-report` the advisory reads ASER ALONE (AID is a
+ * programme asset id, and the branch has no AMID property at all), and on
+ * `rtmd-report` it reads AMID ALONE (ASER and AID are frequently never captured
+ * on a retrofitted device). So the tests below pin each branch's single trigger
+ * across null / absent / blank / populated, pin that populating the OTHER
+ * identifiers no longer buys silence, and pin that on rtmd a blank AMID is the
+ * advisory's whole conformant surface.
  *
  * The copy assertions are acceptance, not polish: slice B's tests guard
  * `ADVISORY_COPY` only, so the finding prose is held to the same bar here.
@@ -248,60 +251,123 @@ test('RTMD: it fires through the real §6 body stages on a 200 with zero fail fi
   assert.equal(advisories(result.findings).length, 1);
 });
 
-// ── the ems/rtmd asymmetry ───────────────────────────────────────────────────
+// ── one identifier per branch (2km, 38p) ─────────────────────────────────────
 
-test('EMS: it names ASER and AID, and says why AMID is not among them', () => {
+test('EMS: the detail names ASER and what nothing else on the branch can stand in for', () => {
   assert.equal(
     detailOf(EMS_UNIDENTIFIED),
-    '1 of 1 report in this transmission carries no appliance identifier — ASER is null; AID was ' +
-      'not sent (an ems-report has no AMID property, so ASER and AID are the only appliance ' +
-      'identifiers this branch carries). The 3 records under it arrive complete and fully ' +
-      'conformant, and the country receiving them has no appliance to file those readings ' +
-      'under — ESER and LSER identify the monitoring device rather than the appliance it watches.',
+    '1 of 1 report in this transmission carries no appliance serial number — ASER is null. ' +
+      "ASER is the serial number the appliance's manufacturer assigned, and nothing else on an " +
+      'ems-report stands in for it: an ems-report has no AMID property, AID is an asset ' +
+      'identifier a programme assigns, and ESER and LSER name the monitoring device and the ' +
+      'logger rather than the appliance they watch. The 3 records under it arrive complete and ' +
+      'fully conformant, and the country receiving them cannot tie those readings to the ' +
+      "appliance by its manufacturer's serial number.",
   );
 });
 
-test('EMS: an AMID the branch never defined is never reported as missing', () => {
+test('EMS: a populated AID does NOT silence it — AID is not the manufacturer serial', () => {
+  // THE BEHAVIOUR CHANGE (2km). Before this, any one of AMID/ASER/AID kept the
+  // advisory quiet. AID is a programme asset-tracking identifier the employer
+  // assigns; it is not what the appliance's manufacturer programmed, so it is
+  // not a substitute for ASER and no longer buys silence.
+  assert.equal(advisories(checkOnly(emsPayload({ ASER: null, AID: 'asset-tag-9' }))).length, 1);
+});
+
+test('EMS: an AMID sent as an extra property does NOT silence it either', () => {
+  // ems-report is additionalProperties: true, so a supplier MAY send AMID here.
+  // It is still not the branch's appliance serial, and the branch does not
+  // define it at all, so it is neither counted against them nor read as ASER.
+  assert.equal(
+    advisories(checkOnly(emsPayload({ ASER: null, AMID: 'cloud-appliance-7' }))).length,
+    1,
+  );
+});
+
+test('EMS: null, absent and blank ASER all fire; a populated ASER is silence', () => {
+  for (const identity of [
+    { ASER: null },
+    {},
+    { ASER: '' },
+    { ASER: '   ' },
+    // Every other identifier populated, and it still fires: only ASER is read.
+    { ASER: null, AID: 'asset-tag-9', AMID: 'cloud-appliance-7' },
+  ]) {
+    assert.equal(
+      advisories(checkOnly(emsPayload(identity))).length,
+      1,
+      `expected a firing for ${JSON.stringify(identity)}`,
+    );
+  }
+  for (const identity of [
+    { ASER: 'A-SerialNum' },
+    // Silent even when everything else on the report is blank.
+    { ASER: 'A-SerialNum', AID: null },
+  ]) {
+    assert.deepEqual(advisories(checkOnly(emsPayload(identity))), []);
+  }
+});
+
+test('EMS: AMID is never reported as missing on a branch that never defined it', () => {
   // ABSENT IS NOT NULL. ems-report does not carry AMID (measured on
   // src/schemas/cce-interop-0.8.1.json), so a supplier who does not send one has
-  // said nothing — claiming they left it null would be a statement about them
-  // that the schema, not the supplier, is responsible for.
+  // said nothing. The prose may explain that the property does not exist here;
+  // it may never state that the supplier left it blank.
   const detail = detailOf(EMS_UNIDENTIFIED);
   assert.doesNotMatch(detail, /AMID is null|AMID is empty|AMID was not sent/);
 });
 
-test('EMS: an AMID sent anyway still names the appliance, and silences the advisory', () => {
-  // ems-report is additionalProperties: true, so a supplier MAY send AMID on
-  // this branch. A stable appliance reference is one wherever it rides.
+test('RTMD: the detail names AMID and the narrow surface the schema leaves it', () => {
+  assert.equal(
+    detailOf(RTM_UNIDENTIFIED),
+    '1 of 1 report in this transmission carries no appliance identifier — AMID is empty. AMID ' +
+      "is the handle the supplier's own platform holds the appliance under, and an rtmd-report " +
+      'carries it as a required, non-null string, so a blank value is the only form of this ' +
+      'the schema itself lets through. ASER and AID are frequently never captured where the ' +
+      'monitoring device was added to an appliance already in service, so neither is read as ' +
+      'standing in for AMID. The 3 records under it arrive complete and fully conformant, and ' +
+      'the country receiving them cannot tie those ' +
+      "readings to an appliance in the supplier's platform.",
+  );
+});
+
+test('RTMD: a populated ASER or AID does NOT silence it', () => {
+  // THE BEHAVIOUR CHANGE (38p). Most RTMDs are retrofitted rather than
+  // integrated at the factory, so appliance-side identifiers were often never
+  // captured and are not reliable. AMID is the one graded, alone.
+  assert.equal(advisories(checkOnly(rtmPayload({ AMID: '', ASER: 'A-SerialNum' }))).length, 1);
+  assert.equal(
+    advisories(checkOnly(rtmPayload({ AMID: '   ', ASER: 'A-SerialNum', AID: 'asset-tag-9' })))
+      .length,
+    1,
+  );
+});
+
+test('RTMD: null, absent and blank AMID all fire; a populated AMID is silence', () => {
+  for (const identity of [{ AMID: '' }, { AMID: '   ' }, { AMID: null }, {}]) {
+    assert.equal(
+      advisories(checkOnly(rtmPayload(identity))).length,
+      1,
+      `expected a firing for ${JSON.stringify(identity)}`,
+    );
+  }
+  assert.deepEqual(advisories(checkOnly(rtmPayload({ AMID: 'appliance-1' }))), []);
   assert.deepEqual(
-    advisories(checkOnly(emsPayload({ ASER: null, AMID: 'cloud-appliance-7' }))),
+    advisories(checkOnly(rtmPayload({ AMID: 'appliance-1', ASER: null, AID: null }))),
     [],
   );
 });
 
-test('RTMD: it names all three identifiers, and adds no branch note', () => {
-  assert.equal(
-    detailOf(RTM_UNIDENTIFIED),
-    '1 of 1 report in this transmission carries no appliance identifier — AMID is empty; ASER ' +
-      'and AID were not sent. The 3 records under it arrive complete and fully conformant, and ' +
-      'the country receiving them has no appliance to file those readings under — ESER and LSER ' +
-      'identify the monitoring device rather than the appliance it watches.',
-  );
-});
-
-test('RTMD: a blank AMID is reachable ONLY as an empty string, which is why blanks count', () => {
-  // rtmd-report requires AMID and types it ["string"] — non-nullable. If only a
-  // literal null counted as blank, this advisory could never fire on the rtmd
-  // branch at all; an empty AMID identifies exactly as much equipment as a null
-  // one would. Whitespace-only is the same value with a space in it.
-  assert.equal(advisories(checkOnly(rtmPayload({ AMID: '   ' }))).length, 1);
-  assert.equal(advisories(checkOnly(rtmPayload({ AMID: 'appliance-1' }))).length, 0);
-});
-
-test('a named appliance keeps it silent even when the other identifiers are null', () => {
-  assert.deepEqual(advisories(checkOnly(rtmPayload({ AMID: 'appliance-1', ASER: null }))), []);
-  assert.deepEqual(advisories(checkOnly(emsPayload({ ASER: 'A-SerialNum' }))), []);
-  assert.deepEqual(advisories(checkOnly(emsPayload({ ASER: null, AID: 'asset-tag-9' }))), []);
+test('RTMD: a blank AMID is the advisory’s ONLY conformant surface on this branch', () => {
+  // rtmd-report requires AMID and types it ["string"] — non-nullable — so null
+  // and absent are already §3.2 failures and can only be reached by a payload
+  // the schema stage rejects. That leaves the empty/whitespace string as the
+  // whole conformant surface here (38p), which is why blanks count at all.
+  const entry = registry.get('0.8.1');
+  assert.ok(entry);
+  assert.equal(entry.validate(rtmPayload({ AMID: '   ' })), true, 'whitespace-only is legal');
+  assert.equal(entry.validate(rtmPayload({ AMID: null })), false, 'null is a §3.2 failure');
+  assert.equal(entry.validate(rtmPayload({})), false, 'absent is a §3.2 failure');
 });
 
 test('ESER and LSER are not appliance identifiers', () => {
@@ -348,7 +414,7 @@ test('the detail concludes nothing about the supplier’s equipment or their rec
     assert.doesNotMatch(detail, /sensor|fitted|hardware|equipment is/i, `concludes: ${detail}`);
     // It says what the RECEIVING side cannot do, which is the only thing we can
     // speak to — never that the supplier lost track of the appliance.
-    assert.match(detail, /the country receiving them has no appliance to file those readings/);
+    assert.match(detail, /the country receiving them cannot tie those readings to/);
     assert.match(detail, /arrive complete and fully conformant/, 'the payload is not faulted');
   }
 });

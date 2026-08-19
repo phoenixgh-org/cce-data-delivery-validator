@@ -597,3 +597,30 @@ export function setMinutesShapedCompressor(count = 12, reportIndex = 0): Payload
     },
   });
 }
+
+/**
+ * Null the appliance serial on one EMS report and give it a populated `AID` —
+ * which is what `adv.null_identity` observes on the ems branch (2km).
+ *
+ * Schema-VALID by design, and again that is the point: `ems-report` REQUIRES
+ * `ASER` but the shared `$defs` types it `["string","null"]`, so the key is
+ * satisfied by a null and Ajv has nothing to say. ../cases.test.ts runs the
+ * materialized payload through the real validator, so this declaration is
+ * checked rather than asserted.
+ *
+ * The `AID` is the CASE, not scaffolding: it is a programme asset-tracking
+ * identifier the employer assigns rather than the serial the appliance's
+ * manufacturer programmed, so it is not read as standing in for `ASER` and does
+ * not silence the advisory. Before 2km a populated `AID` did silence it, which
+ * is exactly why the case plants one.
+ */
+export function nullApplianceSerial(assetId = 'asset-tag-9', reportIndex = 0): PayloadTransform {
+  return payloadTransform({
+    name: `nullApplianceSerial(${reportIndex}, AID=${assetId})`,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/ASER`, null);
+      setAtPointer(payload, `/data/${reportIndex}/AID`, assetId);
+      return payload;
+    },
+  });
+}
