@@ -126,6 +126,7 @@ outcome without opening the dashboard (findings abridged here):
   "findingDetails": [
     { "requirement": "3.2", "severity": "pass", "detail": "validated against official 0.8.1 (sha256 290290fd…) (§3.2)" }
   ],
+  "advisories": [],
   "notice": "Synthetic test data only: this is a sandbox endpoint. …"
 }
 ```

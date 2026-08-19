@@ -17,6 +17,7 @@ import {
   type PipelineContext,
   type Stage,
 } from './pipeline.js';
+import { advisory } from './stages/semantic/advisory.js';
 
 /** A bare context sufficient for runner tests (stages here ignore most fields). */
 function fakeCtx(): PipelineContext {
@@ -106,6 +107,52 @@ test('buildResponseBody echoes id, status, count, and per-finding details (teach
   ]);
 });
 
+test('buildResponseBody: advisories are carried in their own field, out of the tally (7rv)', () => {
+  // An advisory never moves a requirement's status (DESIGN §7.1), so it must not
+  // move the one number the response reports as the outcome either — the same
+  // exclusion the dashboard's verdict cell makes (`findingsCell`). It is carried
+  // rather than dropped: this body is the only surface some integrators read.
+  const body = buildResponseBody(
+    200,
+    [
+      { requirement: '1.2', severity: 'pass' },
+      advisory({ id: 'adv.null_padding', detail: 'TCON was null in all 480 records' }),
+    ],
+    'tx-adv',
+  );
+
+  assert.equal(body.findings, 1, 'graded findings only');
+  assert.deepEqual(
+    body.findingDetails.map((f) => f.requirement),
+    ['1.2'],
+  );
+  assert.deepEqual(body.advisories, [
+    {
+      requirement: 'adv.null_padding',
+      severity: 'info',
+      detail: 'TCON was null in all 480 records',
+    },
+  ]);
+  // The tally is what a lone graded pass would have produced, plus a separate
+  // sentence for the advisory — never "2 findings (1 info)".
+  assert.match(body.message, /^Accepted \(200\): data recorded; 1 finding\./);
+  assert.match(body.message, /1 advisory, not graded and not counted above\.$/);
+});
+
+test('buildResponseBody: advisories alone leave a zero tally and no info count (7rv)', () => {
+  const body = buildResponseBody(
+    200,
+    [advisory({ id: 'adv.date_format', detail: 'd' })],
+    'tx-adv2',
+  );
+
+  assert.equal(body.findings, 0);
+  assert.deepEqual(body.findingDetails, []);
+  assert.equal(body.advisories.length, 1);
+  assert.match(body.message, /^Accepted \(200\): data recorded; 0 findings\. /);
+  assert.doesNotMatch(body.message, /info/, 'an advisory is never counted as an info finding');
+});
+
 test('buildResponseBody carries the synthetic-data-only notice on accepted AND rejected bodies', () => {
   // dkz.1 — the sandbox constraint has to reach an integrator who never opens
   // the dashboard, so it rides every response, not just the 2xx path.
@@ -148,6 +195,7 @@ test('buildResponseBody: no-row pre-body halt (404) → null id, empty details, 
   assert.equal(body.status, 404);
   assert.equal(body.findings, 0);
   assert.deepEqual(body.findingDetails, []);
+  assert.deepEqual(body.advisories, []);
   assert.match(body.message, /Rejected \(404\): 0 findings\./);
 });
 

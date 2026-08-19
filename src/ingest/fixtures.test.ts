@@ -48,6 +48,7 @@ import { semanticStage, type SemanticDeps } from './stages/semantic.js';
 import { sizeStage } from './stages/size.js';
 import {
   JSON_UTF8,
+  cloneValid,
   doubleEncodedBytes,
   duplicateBytes,
   oversizeBytes,
@@ -138,6 +139,48 @@ test('fixture valid → 200, no fail findings, accepted message', async () => {
   );
   assert.ok(hasFinding(body.findingDetails, '3.2', 'pass'), 'schema validated clean');
   assert.equal(body.findings, body.findingDetails.length, 'count matches details');
+  assert.deepEqual(body.advisories, [], 'the baseline raises no advisories');
+});
+
+/**
+ * The baseline with its EDOP sent in another date form — a payload that is FULLY
+ * conformant (the schema types EDOP as `["string","null"]` with no `format`, so
+ * nothing grades its shape) yet raises `adv.date_format`. Exactly the case the
+ * advisory category exists for, and the one 7rv is about.
+ */
+function advisoryOnlyBytes(): Buffer {
+  const payload = cloneValid();
+  payload.data[0]!.EDOP = '01/06/2021';
+  return toBytes(payload);
+}
+
+test('a conformant payload raising an advisory tallies exactly as the baseline (7rv)', async () => {
+  const baseline = await runFixture(makeCtx(validBytes(), { contentType: JSON_UTF8 }));
+  const advised = await runFixture(makeCtx(advisoryOnlyBytes(), { contentType: JSON_UTF8 }));
+
+  // Precondition: the payload really does raise an advisory, and no fail.
+  assert.equal(advised.status, 200);
+  assert.equal(advised.advisories.length, 1, 'adv.date_format raised');
+  assert.equal(advised.advisories[0]?.requirement, 'adv.date_format');
+  assert.equal(
+    advised.findingDetails.filter((f) => f.severity === 'fail').length,
+    0,
+    '100 % conformant: no fail findings',
+  );
+
+  // THE CONTRACT: the graded count, the graded echo and the message tally read
+  // exactly as they would had the advisory never been raised.
+  const graded = (b: IngestResponseBody) =>
+    b.findingDetails.map((f) => `${f.requirement}:${f.severity}`);
+  assert.equal(advised.findings, baseline.findings, 'advisory does not inflate the count');
+  assert.deepEqual(graded(advised), graded(baseline), 'advisory is absent from findingDetails');
+  assert.ok(
+    advised.message.startsWith(baseline.message),
+    `tally must read as the no-advisory one: ${advised.message}`,
+  );
+  assert.doesNotMatch(baseline.message, /advisor/i);
+  // Carried, not dropped: the response says they exist, outside the tally.
+  assert.match(advised.message, /1 advisory, not graded and not counted above\.$/);
 });
 
 test('fixture oversize → 413, 1.4 fail (size stage)', async () => {

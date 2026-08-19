@@ -161,7 +161,9 @@ Success: `200` — the single success status; `202` is not used. It carries a sm
 summarizing what was recorded. The body is a
 deliberate **teaching surface** — a supplier should understand the outcome from the HTTP response
 alone, without opening the dashboard. It carries the persisted `transmissionId`, the `status`, a
-one-line `message` with the fail/info tally, the per-finding `findingDetails` echo, and a standing
+one-line `message` with the fail/info tally, the per-finding `findingDetails` echo, an
+`advisories` array (§7.1 — kept out of `findings`, `findingDetails` and the tally, so a
+conformant payload is never handed a number to explain), and a standing
 `notice` restating that this is a synthetic-data-only sandbox (§2, §12). The same shape is
 returned on rejection, so a 4xx is just as self-explanatory as a 2xx.
 
@@ -237,6 +239,11 @@ immune **by construction**, because the join iterates the 27 static rows and nev
 unknown id; that guarantee is invisible in the code, so it is pinned by tests in
 `src/api/compliance-matrix.test.ts` and `src/api/sessions.test.ts`.
 
+The ingest response honours the same separation as the dashboard (`cce-data-delivery-validator-7rv`):
+`POST /i/{uuid}` returns advisories in their own `advisories` field and counts none of them in
+`findings`, `findingDetails` or the `message` tally, exactly as the dashboard's verdict cell
+excludes them from both its fail count and its total.
+
 Advisories emit **per transmission** from the stage-8 semantic check `advisoriesCheck`
 (`src/ingest/stages/semantic/advisory.ts`, which is also the registration point for new
 checks); the session-level view aggregates findings the dashboard already fetches, so there
@@ -247,13 +254,19 @@ hardware.
 
 **The catalogue.** Two checks today, each in its own module under `stages/semantic/`:
 
-- **`adv.null_identity`** — no appliance identifier on a report. The identifiers are `AMID`,
-  `ASER` and `AID`; blank means `null`, absent, **or an empty/whitespace string**. The branches
-  are not symmetric and are handled on their own terms: `ems-report` has no `AMID` property at
-  all (absent ≠ null — we never count it against an EMS report, though a non-branch `AMID` sent
-  anyway still identifies), while `rtmd-report` makes `AMID` required *and* non-nullable, so an
-  empty string is the only blank it permits — which is why blank strings count at all. `ESER`
-  and `LSER` name the monitoring device, not the appliance, so they never identify it.
+- **`adv.null_identity`** — the report does not carry the identifier that names the appliance
+  on its branch. **One identifier per branch, and the others are not substitutes** (`2km`,
+  `38p`): on `ems-report` it reads **`ASER` alone**, on `rtmd-report` **`AMID` alone**. Blank
+  means `null`, absent, **or an empty/whitespace string**. `ASER` is programmed at the factory
+  or at commissioning and an EMS's whole proposition is that the logger and the appliance are
+  integrated, so nothing else on that branch stands in — `ems-report` has no `AMID` property at
+  all, and `AID` is a programme asset-tracking identifier rather than the manufacturer's serial,
+  so a populated `AID` does **not** silence it. On RTMD the reverse: the device is usually added
+  to an appliance already in service, so `ASER`/`AID` were often never captured and `AMID` — the
+  supplier platform's own handle — is the one graded. Because `rtmd-report` makes `AMID`
+  required *and* non-nullable, an empty string is that branch's **entire conformant surface**,
+  which is why blank strings count at all. `ESER` and `LSER` name the monitoring device, not the
+  appliance, so they never identify it.
 - **`adv.null_padding`** — a record property `null` in **every** record that carried it, over
   at least **12 records** (three hours at the 15-minute period DS01's per-period objects are
   defined over — long enough to be a pattern and to be worth bytes; the repo's own conformant

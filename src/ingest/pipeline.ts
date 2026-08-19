@@ -16,6 +16,7 @@ import type { FastifyRequest } from 'fastify';
 
 import type { InsertFindingInput, Severity } from '../db/repository.js';
 import type { SchemaRegistry } from '../schema-registry.js';
+import { isAdvisoryId } from './stages/semantic/advisory.js';
 
 /**
  * One finding accumulated as the pipeline runs. Shape matches
@@ -164,10 +165,24 @@ export interface ResponseFinding {
  * persisted `transmissionId` and HTTP `status`, it carries:
  *   - `message` — a one-line human summary ("Accepted: …" / "Rejected (NNN): …")
  *     including a fail/info breakdown so the headline result is self-explanatory.
- *   - `findings` — the COUNT of findings recorded (kept from the original shape).
+ *   - `findings` — the COUNT of graded findings recorded (kept from the original
+ *     shape).
  *   - `findingDetails` — the per-finding `{requirement, severity, detail}` echo,
  *     so every recorded observation is readable straight from the response.
+ *   - `advisories` — the same echo for the `adv.*` findings, in a field of their
+ *     own (see below).
  *   - `notice` — the standing synthetic-data-only warning (§2/§12).
+ *
+ * ADVISORIES ARE SEPARATE, NOT COUNTED (7rv; DESIGN §7.1). An advisory never
+ * changes a requirement's status, so it must not appear in the one number a
+ * supplier reads as the outcome either: `findings`, `findingDetails` and the
+ * `message` tally are GRADED findings only — exactly what the dashboard's
+ * verdict cell does (`findingsCell`, src/web/components/TransmissionsCard.tsx),
+ * for the same reason: letting one inflate "N findings, none failed" hands a
+ * 100 %-conformant transmission a number to explain. They are carried rather
+ * than dropped because this body is the teaching surface for an integrator who
+ * never opens the dashboard — the browser puts them in their own Advisories
+ * block, and this puts them in their own field.
  */
 export interface IngestResponseBody {
   /** Persisted transmission id, or null when no row was written (404/405). */
@@ -175,10 +190,16 @@ export interface IngestResponseBody {
   status: number;
   /** One-line human summary of the outcome (teaching surface, §6). */
   message: string;
-  /** Count of findings recorded — a teaching surface (§6). */
+  /** Count of GRADED findings recorded — advisories excluded (§7.1). */
   findings: number;
-  /** Per-finding human-readable echo so results are visible from the response. */
+  /** Per-finding human-readable echo of the graded findings (no advisories). */
   findingDetails: ResponseFinding[];
+  /**
+   * The advisories raised on this transmission, same echo shape. Never counted
+   * in `findings` and never listed in `findingDetails`; empty on the vast
+   * majority of transmissions and on every pre-body halt.
+   */
+  advisories: ResponseFinding[];
   /**
    * Standing sandbox warning (dkz.1). Receiving real production data is an
    * explicit non-goal (DESIGN §2) and the capability-URL design is only safe
@@ -196,6 +217,17 @@ export const SYNTHETIC_DATA_NOTICE =
   'Synthetic test data only: this is a sandbox endpoint. Never send real CCE data or PII — ' +
   'the endpoint URL is a bearer capability that anyone holding it can read.';
 
+/**
+ * Whether a finding is an advisory rather than a graded §7 observation. Keyed
+ * off the `adv.*` namespace via {@link isAdvisoryId} — the one definition of
+ * what an advisory is — checking `requirement` first because that is the field
+ * the §7 matrix and the dashboard both key off; `code` is checked too so a
+ * hand-built advisory that only set one of them can never slip into the tally.
+ */
+function isAdvisoryFinding(f: Finding): boolean {
+  return isAdvisoryId(f.requirement) || isAdvisoryId(f.code);
+}
+
 /** True for the HTTP 2xx status range (success — the data was accepted). */
 function isAccepted(status: number): boolean {
   return status >= 200 && status < 300;
@@ -205,11 +237,20 @@ function isAccepted(status: number): boolean {
  * Compose the one-line teaching summary. Accepted runs lead with "Accepted",
  * short-circuits with "Rejected (NNN)"; both append the finding tally (with a
  * fail/info breakdown when present) so the headline conveys the result alone.
+ *
+ * `graded` excludes advisories, so the tally reads exactly as it would had none
+ * been raised (7rv). Advisories get their own trailing sentence when there are
+ * any — never a term inside the tally — echoing the dashboard's own wording
+ * ("not graded, and not counted in the findings above", `ADVISORY_COPY`).
  */
-function summarize(status: number, findings: readonly Finding[]): string {
-  const total = findings.length;
-  const fails = findings.filter((f) => f.severity === 'fail').length;
-  const infos = findings.filter((f) => f.severity === 'info').length;
+function summarize(
+  status: number,
+  graded: readonly Finding[],
+  advisories: readonly Finding[],
+): string {
+  const total = graded.length;
+  const fails = graded.filter((f) => f.severity === 'fail').length;
+  const infos = graded.filter((f) => f.severity === 'info').length;
 
   const plural = (n: number) => (n === 1 ? 'finding' : 'findings');
   let tally = `${total} ${plural(total)}`;
@@ -218,30 +259,44 @@ function summarize(status: number, findings: readonly Finding[]): string {
   if (infos > 0) parts.push(`${infos} info`);
   if (parts.length > 0) tally += ` (${parts.join(', ')})`;
 
-  return isAccepted(status)
+  const headline = isAccepted(status)
     ? `Accepted (${status}): data recorded; ${tally}.`
     : `Rejected (${status}): ${tally}.`;
+
+  if (advisories.length === 0) return headline;
+  const n = advisories.length;
+  return `${headline} ${n} ${n === 1 ? 'advisory' : 'advisories'}, not graded and not counted above.`;
 }
 
 /**
  * Build the small summary body returned to the supplier (DESIGN.md §6 teaching
- * surface). See {@link IngestResponseBody} for the field contract.
+ * surface). See {@link IngestResponseBody} for the field contract — in
+ * particular, advisories are partitioned out of `findings`/`findingDetails` and
+ * carried in `advisories` (7rv).
  */
 export function buildResponseBody(
   status: number,
   findings: readonly Finding[],
   transmissionId: string | null,
 ): IngestResponseBody {
+  const echo = (f: Finding): ResponseFinding => ({
+    requirement: f.requirement,
+    severity: f.severity,
+    detail: f.detail,
+  });
+  // Partitioned on the id namespace, not on position: findings arrive in stage
+  // order, which puts stage-8 advisories at the tail today, but nothing may rely
+  // on that (the dashboard's `splitFindings` makes the same point).
+  const graded = findings.filter((f) => !isAdvisoryFinding(f));
+  const advisories = findings.filter((f) => isAdvisoryFinding(f));
+
   return {
     transmissionId,
     status,
-    message: summarize(status, findings),
-    findings: findings.length,
-    findingDetails: findings.map((f) => ({
-      requirement: f.requirement,
-      severity: f.severity,
-      detail: f.detail,
-    })),
+    message: summarize(status, graded, advisories),
+    findings: graded.length,
+    findingDetails: graded.map(echo),
+    advisories: advisories.map(echo),
     notice: SYNTHETIC_DATA_NOTICE,
   };
 }

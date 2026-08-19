@@ -188,6 +188,7 @@ The same shape on success and on rejection, so a `4xx` is as self-explanatory as
       "detail": "schema violation at /data/0: must have required property 'AMID' (§3.2)"
     }
   ],
+  "advisories": [],
   "notice": "Synthetic test data only: this is a sandbox endpoint. …"
 }
 ```
@@ -196,10 +197,18 @@ The same shape on success and on rejection, so a `4xx` is as self-explanatory as
 | ---------------- | ------------------- | ------------------------------------------------------------------------------------------- |
 | `transmissionId` | `string \| null`    | Id of the persisted row; `null` on the `404`/`405` rejections, which record nothing.        |
 | `status`         | `number`            | Same as the HTTP status.                                                                    |
-| `message`        | `string`            | One-line summary: `Accepted (200): data recorded; N findings (…)` or `Rejected (NNN): …`, with the fail/info tally. |
-| `findings`       | `number`            | Count of findings recorded for this transmission.                                           |
+| `message`        | `string`            | One-line summary: `Accepted (200): data recorded; N findings (…)` or `Rejected (NNN): …`, with the fail/info tally. A trailing `N advisories, not graded and not counted above.` is appended when any were raised. |
+| `findings`       | `number`            | Count of **graded** findings recorded for this transmission — advisories excluded.        |
 | `findingDetails` | `array`             | Each `{ requirement, severity, detail }`. `severity` is `pass`, `fail`, or `info`. The JSON pointer and structured signature fields are omitted here — read them from the dashboard routes. |
+| `advisories`     | `array`             | Advisories (`adv.*` ids) in the same shape, in a field of their own. Usually empty. |
 | `notice`         | `string`            | The standing synthetic-data-only warning, on every response.                                |
+
+**Advisories are never counted as findings.** An advisory is an observation about a
+payload that violates no requirement (`DESIGN.md` §7.1), so it stays out of `findings`,
+out of `findingDetails` and out of the `message` tally — a 100 %-conformant transmission
+must never be handed a number to explain. They are reported in `advisories` rather than
+dropped, because this response is the only surface an integrator who never opens the
+dashboard will read.
 
 Findings appear in pipeline order (auth, size, content-type, encoding, parse, schema,
 then the semantic checks), so a schema failure yields one entry per Ajv error.
