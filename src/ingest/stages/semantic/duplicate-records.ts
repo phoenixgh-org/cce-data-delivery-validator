@@ -195,9 +195,13 @@ function scanReport(report: unknown, reportIndex: number): Repeat[] {
     if (abstTwin !== undefined || identityTwin !== undefined) {
       repeats.push({
         pointer,
-        // The identical twin when there is one: it is the more specific claim,
-        // and it is the same record the ABST match would have named whenever
-        // both comparisons hit.
+        // The identical twin when there is one: it is the more specific, more
+        // informative pointer. The two are NOT interchangeable — with records
+        // [T/3.2, T/9.9, T/9.9] the third record's abstTwin is record 0 while
+        // its identityTwin is record 1 — so this order is load-bearing, not a
+        // free choice: the prose keys off `first.identical` (see firstPhrase
+        // below), so it says "is identical in full to" for exactly the twin
+        // preferred here.
         twinPointer: identityTwin ?? abstTwin!,
         sameAbst: abstTwin !== undefined,
         identical: identityTwin !== undefined,
