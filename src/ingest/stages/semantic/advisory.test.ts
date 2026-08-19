@@ -119,12 +119,18 @@ test('runAdvisories collects every registered check, in order', async () => {
 });
 
 test('the registry holds the catalogue, and says nothing about an empty payload', async () => {
-  // The catalogue as of agj.4. Registration is the ONLY wiring a new advisory
+  // The catalogue as of agj.3. Registration is the ONLY wiring a new advisory
   // needs — semantic.ts fans out through advisoriesCheck — so this list is the
   // one place that says out loud which checks the category is running.
   assert.deepEqual(
     ADVISORY_CHECKS.map((c) => c.name),
-    ['nullIdentityCheck', 'nullPaddingCheck', 'dateFormatCheck', 'timeOrderCheck'],
+    [
+      'nullIdentityCheck',
+      'nullPaddingCheck',
+      'dateFormatCheck',
+      'timeOrderCheck',
+      'compressorSupplyCheck',
+    ],
   );
   // A payload with no reports gives every check nothing to observe, so the
   // category stays silent rather than inventing a finding.

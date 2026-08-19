@@ -27,6 +27,7 @@ import {
   dropRequiredField,
   duplicateVersionStringsIntoRecords,
   setInvalidValue,
+  setCompressorAboveSupply,
   setNonIsoDate,
   setSchemaVersion,
   setUnsupportedSchemaVersion,
@@ -354,5 +355,24 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [swapRecordTimestamps(0, 1)], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.time_not_increasing', severity: 'info' }],
+  },
+
+  // SVA lives on the MAINS branch of ems-record.allOf[0] — the rtm branch has no
+  // such partition and RTMDs do not measure compressor runtime at all — so this
+  // one declares the EMS baseline, which is already a mains record.
+  {
+    id: 'adv.compressor_exceeds_supply-fail-runtime-past-supply',
+    title: 'A compressor credited with running longer than power was available',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        'the first record reports CMPR 420 s against SVA 200 s — both inside the schema’s own ' +
+        '0–900 bounds, which it applies to each object independently',
+    },
+    posts: [{ transforms: [setCompressorAboveSupply(420, 200)], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.compressor_exceeds_supply', severity: 'info' }],
   },
 ];

@@ -505,3 +505,41 @@ export function swapRecordTimestamps(
     },
   });
 }
+
+/**
+ * Set one MAINS EMS record's `CMPR` and `SVA` so the compressor runtime runs
+ * past the supply availability the same record reports — which is what
+ * `adv.compressor_exceeds_supply` observes.
+ *
+ * Schema-VALID by design, and that is the point: `CMPR` and `SVA` are each
+ * bounded 0..900 independently, and the schema has no vocabulary for one
+ * property's relationship to another in the same record, so `CMPR: 420` beside
+ * `SVA: 200` validates exactly like the baseline. Both values stay inside those
+ * bounds so the case varies the RELATIONSHIP and nothing else.
+ *
+ * EMS-only by construction: it writes `SVA`, which lives on the mains branch of
+ * `ems-record.allOf[0]`, so a case using it declares `emsBaseline`.
+ */
+export function setCompressorAboveSupply(
+  runtimeSeconds: number,
+  supplySeconds: number,
+  recordIndex = 0,
+  reportIndex = 0,
+): PayloadTransform {
+  const name = `setCompressorAboveSupply(${reportIndex}/${recordIndex}: CMPR ${runtimeSeconds} > SVA ${supplySeconds})`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const records = payload.data[reportIndex]?.records;
+      const record = Array.isArray(records)
+        ? (records[recordIndex] as Record<string, unknown> | undefined)
+        : undefined;
+      if (record === undefined) {
+        throw new Error(`${name}: /data/${reportIndex}/records/${recordIndex} is missing`);
+      }
+      record.CMPR = runtimeSeconds;
+      record.SVA = supplySeconds;
+      return payload;
+    },
+  });
+}
