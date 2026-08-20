@@ -201,8 +201,9 @@ function advisoryIdOf(f: SignatureFinding): string {
  * not looked up: the `adv.*` ids are hand-authored words, so a derivation cannot
  * go stale as the catalogue grows or leave a new check rendering a raw id. Same
  * derivation as `advisoryLabel` in src/web/advisories.ts (which the browser keeps
- * for the findings it folds itself); an id that somehow arrives without the
- * prefix is returned verbatim rather than mangled.
+ * for labelling the raw per-transmission findings in the transmission block); an
+ * id that somehow arrives without the prefix is returned verbatim rather than
+ * mangled.
  */
 export function advisoryTitle(id: string): string {
   if (!isAdvisoryId(id)) return id;
