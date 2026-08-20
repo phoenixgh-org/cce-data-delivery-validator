@@ -246,13 +246,16 @@ excludes them from both its fail count and its total.
 
 Advisories emit **per transmission** from the stage-8 semantic check `advisoriesCheck`
 (`src/ingest/stages/semantic/advisory.ts`, which is also the registration point for new
-checks); the session-level view aggregates findings the dashboard already fetches, so there
-is no new read path. Wording must **observe, never conclude** — a null cannot prove "no
+checks); the session-level view rides on the signature set the summary read already returns,
+so there is no new read path and no advisory-specific endpoint. Wording must **observe, never conclude** — a null cannot prove "no
 sensor fitted", since a broken sensor looks identical — and should lead with the payload-size
 argument, which is actionable self-interest rather than a judgement about the supplier's
 hardware.
 
-**The catalogue.** Two checks today, each in its own module under `stages/semantic/`:
+**The catalogue.** `ADVISORY_CHECKS` (`src/ingest/stages/semantic/advisory.ts`) is the
+registration point *and* the count of record — every check below is one entry in that array,
+in that order, each in its own module under `stages/semantic/`. Scope decisions worth
+recording:
 
 - **`adv.null_identity`** — the report does not carry the identifier that names the appliance
   on its branch. **One identifier per branch, and the others are not substitutes** (`2km`,
@@ -268,25 +271,107 @@ hardware.
   which is why blank strings count at all. `ESER` and `LSER` name the monitoring device, not the
   appliance, so they never identify it.
 - **`adv.null_padding`** — a record property `null` in **every** record that carried it, over
-  at least **12 records** (three hours at the 15-minute period DS01's per-period objects are
-  defined over — long enough to be a pattern and to be worth bytes; the repo's own conformant
-  EMS baseline is 3 records, well clear of it). One finding per transmission naming every
-  padded property, since the dashboard folds recurring advisories to a single detail. `ALRM`,
-  `EERR` and `LERR` are excluded: there `null` is the schema's *defined* value for "no
-  condition present", so a device that raised no alarm is correctly shaped that way.
+  at least **12 records** (`MIN_RECORDS`: three hours at the 15-minute period DS01's per-period
+  objects are defined over — long enough to be a pattern and to be worth bytes; the repo's own
+  conformant EMS baseline is 3 records, well clear of it). One finding per transmission naming
+  every padded property. `ALRM`, `EERR` and `LERR` are excluded: there `null` is the schema's
+  *defined* value for "no condition present", so a device that raised no alarm is correctly
+  shaped that way.
+- **`adv.date_format`** — a production date sent in some form other than the ISO-8601 calendar
+  date `YYYY-MM-DD` (e.g. `2026-7-4`, `07/04/2026`). The gap is **total**: all five date objects
+  (`ADOP`, `EDOP`, `CDAT`, `CDAT2`, `LDOP`) are declared as bare strings with no `format` and no
+  `pattern`, so nothing downstream of the schema looks at them either. **Record-level `EDOP` is
+  in scope** deliberately (Benson, 2026-08-18) — both record branches declare it with the same
+  total gap, so skipping it would be silent on half the places a mis-shaped date arrives.
+  Branch-agnostic by construction (both branches declare the same names). Nulls and non-strings
+  are skipped: an absent value is `adv.null_padding`'s question and a wrong *type* is §3.2's.
+  The prose never re-writes a supplier's value into what we think it meant — `07/04/2026` is
+  genuinely ambiguous, and guessing would be the concluding language this category forbids.
+- **`adv.time_not_increasing`** — within one report, `records[].ABST` walked in **array order**
+  does not step forward: a timestamp earlier than (steps back) or equal to (repeats) its
+  predecessor. §3.4's `intervalCheck` grades the **sorted** series by design (it asks about
+  cadence, where order is noise), so a backwards series can score a perfectly regular CV — this
+  covers that blind spot from **outside** §3.4, whose verdict does not move. Reports are
+  independent; unparseable/missing ABST is skipped, and the comparison resumes from the last
+  value that did parse. (PQS states the rule for RELT too; RELT does not exist in cce-interop,
+  so this is the ABST half only.)
+- **`adv.compressor_exceeds_supply`** — a **mains EMS** record whose `CMPR` exceeds the same
+  record's `SVA`, both being 0–900-second accumulators over the same 15-minute period. **EMS
+  only** (Benson, 2026-08-18): RTMDs do not measure compressor runtime, and `rtmd-record`
+  carries no mains/solar partition to select on. **The mains/solar discriminator is the
+  schema's, not a heuristic**: `ems-record.allOf[0]` is an exclusive `oneOf` (mains requires
+  `SVA` and forbids `DCSV`/`DCCD`; solar the reverse), so the **presence** of `SVA` is what the
+  check reads — never SVA-is-null, which would conflate "this is a DC appliance" with "this
+  mains appliance had no supply reading". **Solar records are out of scope and nothing may
+  substitute for SVA**: `DCSV` is a voltage, no DC-availability-in-seconds object exists through
+  0.8.4, and comparing CMPR to DCSV would be comparing seconds against volts. Nulls on either
+  side are skipped.
+- **`adv.cmpr_minutes`** — an EMS transmission whose compressor runtimes never cross 15, the
+  shape a **minutes**-valued feed takes on a seconds-valued envelope. The root cause is a
+  **specification erratum, not a careless supplier**: CMPR/CMPR2 read "measured in minutes,
+  `maximum: 15`" through cce-interop 0.7.2 and PQS DS01.2 Annex 2, and "seconds, `maximum: 900`"
+  from 0.8.0 on, so values shaped this way are a conformant implementation against a superseded
+  artifact and the prose is required to say so. No schema check can see it, because the
+  correction **widened** the range. Two signals: the **ceiling** (across at least `MIN_RECORDS`
+  = 12 records carrying a numeric value, every one ≤ 15 and at least one > 0 — the floor reused
+  from `adv.null_padding` for the same reason it exists there) and, mains-only by construction,
+  **saturation** (a value of exactly 15 while the record's SVA is above 15), which sharpens but
+  never gates. **CMPR and CMPR2 only** — `SVA`, `DORV` and `DORF` were seconds in every version,
+  so a low value there is a quiet period, not a units question. **EMS only**, as above. No
+  version gate is needed while both registered versions are post-correction; registering a
+  pre-0.8.0 version would change that. Annex 1 is authoritative on units (CLAUDE.md), so the
+  remedy named is "re-check against Annex 1", not against the version being sent.
+- **`adv.sample_gap`** — two consecutive readings in one report taken more than **900 s + 60 s**
+  apart. 900 s is not arbitrary: DS01's per-period accumulators are *defined* over a 15-minute
+  period (CMPR, CMPR2, SVA, DORV, DORF are each bounded 0..900), so readings further apart than
+  that leave the accumulators between them with no period to attribute them to. The **60 s
+  tolerance** (`SAMPLE_GAP_EPSILON_MS`) is about **quantization, not generosity**: whole-minute
+  ABST stamping makes a nominal 900 s cadence land on 840/960 s with no reading missed, and 60 s
+  is the smallest epsilon that absorbs it — a genuinely missed period puts the delta at 1800 s.
+  **Both branches**, because the argument is about the standard rather than a device class.
+  Timestamps are **sorted** before deltas are taken, exactly as §3.4 does: a swapped pair is
+  `adv.time_not_increasing`'s observation, and measuring off the unsorted array would report
+  that one defect twice under two ids. §3.4's verdict does not move (the CV is scale-free by
+  design, so a regular one-hour series passes §3.4 while every period is four times DS01's).
+- **`adv.duplicate_records`** — the same record delivered twice **inside one transmission**,
+  under either of two comparisons: **same `ABST`** (string equality on the value as sent — the
+  weaker signal, since a logger stamping at whole-minute resolution produces it honestly) and
+  **identical in full** (deep-equal by stable serialization with object keys sorted — the
+  stronger signal). Both counts ride on the one finding; they overlap by construction and are
+  stated side by side. **Intra-payload only, deliberately** (agj.8's own boundary): §1.8's
+  `duplicate.ts` grades the *envelope* — body sha256 and `meta.transferId` — so a payload
+  repeating a record inside itself is novel on both counts and earns a §1.8 pass; answering the
+  cross-file overlap PQS actually described needs per-record hashes we do not hold, and whether
+  that is in v1 scope is tracked as `agj.14`. §1.8's verdict does not move. Both branches.
+  Overlap with `adv.time_not_increasing` is **not** suppressed when both fire: they are
+  different observations, and together they reconstruct the assembly that produced them.
 
-**The dashboard surface.** Advisories get a surface of their own, labelled **Advisories**:
-a card between the filter strip and the two verdict panes (`src/web/components/AdvisoriesCard.tsx`),
-plus a separate block under each transmission's findings. It folds the advisories out of the
-transmissions the dashboard already fetches, keyed `requirement|code` in the browser
-(`src/web/advisories.ts`) — *not* through `computeSignatures`, which excludes them by design so
-they never enter the "distinct issues" list or its headline count. Nothing it shows feeds a
-pass/fail number, the conformance rollup, or that headline, and no advisory is counted in a
-transmission row's findings cell or highlighted in the raw-payload inspector. It renders
-nothing at all when there are none. The palette is deliberate: **accent and neutrals, never a
-status colour, and never the `--mixed` amber**, which already means *warning / outdated*
-everywhere else on the dashboard — borrowing it would say "a lesser defect" on the one surface
-that must not say defect at all.
+**The dashboard surface.** Advisories are the last section of the **compliance column**, below
+Permissive (`AdvisorySection` in `src/web/components/ComplianceCard.tsx`, `agj.16`), plus a
+separate block under each transmission's findings. The section is **not** a §7 verifiability
+class: it has no `CLASS_META` entry and no `ComplianceClass`, because inventing a sixth class
+would have put advisories inside the matrix that grades the 27 requirements. It borrows only
+the group header's shape (chevron · label · count · one faint line), is collapsible, defaults
+to expanded, and renders **nothing at all** — header included — when the scope holds none.
+
+Its rows are the same clickable signature rows a requirement's "distinct issues" are, driving
+the same `?signatureKey=` cross-filter: since `agj.15` the server rolls an advisory signature
+(`kind: 'advisory'`, keyed `adv|<adv.id>`, `req` the `''` sentinel, `sev: 'info'`) so **one**
+cross-filter serves both kinds. Picking one sets the list filter and nothing else — never
+`failuresOnly`, which would hide an advisory-only transmission from the very filter the click
+just set. The chip above the list then reads **Advisory**, not "Issue" (`agj.18`).
+
+Every count that grades a supplier filters advisories back out: `issueSignatures` server-side
+feeds `scoped.distinctIssues`, and `signaturesForReq` — mirrored on both sides, `kind` guard
+included (`agj.19`) — keeps them out of requirement grouping. Nothing the section shows feeds a
+pass/fail number, the conformance rollup or that headline, no advisory is counted in a
+transmission row's findings cell or highlighted in the raw-payload inspector, and the section
+renders no `StatusPill`, no `§` cross-link (an advisory belongs to no requirement) and no
+pass/fail tally. The palette is deliberate: **accent and neutrals, never a status colour, and
+never the `--mixed` amber**, which already means *warning / outdated* everywhere else on the
+dashboard — borrowing it would say "a lesser defect" on the one surface that must not say
+defect at all. An advisory signature carries `sev: 'info'`, which is exactly what a verdict
+signature paints amber, so `sigTone()` branches on `kind` to prevent it.
 
 ## 8. Data model
 
