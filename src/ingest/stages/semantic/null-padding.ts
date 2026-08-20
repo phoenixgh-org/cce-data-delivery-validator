@@ -20,9 +20,11 @@
  * pwd is explicit that the session-level view comes from aggregating findings
  * the dashboard already fetches, with no new read path — so this emits per
  * transmission. It emits ONE finding naming every padded property rather than
- * one per property: the dashboard folds advisories by id and shows only the most
- * recent occurrence's detail, so a finding-per-property would render as a count
- * with a single arbitrary property's prose behind it. The detail names EVERY
+ * one per property: the compliance column carries a single signature row per
+ * advisory id — title, and a count of the DISTINCT transmissions it appeared in,
+ * with no detail — while the detail prose is read per transmission, in the
+ * transmission block. A finding-per-property would therefore add no row, only
+ * stack near-identical lines in that block, one per property. The detail names EVERY
  * padded property (52r retired the old six-name cap): the list is the
  * actionable part, and it is bounded by the schema's property count.
  *

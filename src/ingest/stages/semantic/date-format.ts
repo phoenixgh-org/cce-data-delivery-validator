@@ -46,10 +46,12 @@
  * speaks about text it can compare against the ISO form.
  *
  * ── ONE FINDING PER TRANSMISSION, GROUPED BY FIELD ───────────────────────────
- * Like every advisory, this emits ONE finding per transmission: the dashboard
- * folds advisories by id and shows only the most recent occurrence's detail, so
- * a finding per offending value would render as a count with one arbitrary
- * value's prose behind it.
+ * Like every advisory, this emits ONE finding per transmission: the compliance
+ * column carries a single signature row per advisory id — title, and a count of
+ * the DISTINCT transmissions it appeared in, with no detail — while the detail
+ * prose is read per transmission, in the transmission block. A finding per
+ * offending value would therefore add no row, only stack near-identical lines in
+ * that block.
  *
  * Within that one finding the prose is grouped BY FIELD, not per occurrence,
  * naming each offending field once with the pointer and value of its first

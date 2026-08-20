@@ -62,8 +62,10 @@
  * running compressor into an observation. Skipping can only under-report.
  *
  * ── ONE FINDING PER TRANSMISSION ────────────────────────────────────────────
- * Like every advisory (the dashboard folds by id and renders only the most
- * recent occurrence's detail), this emits ONE finding carrying the three things
+ * Like every advisory (the compliance column carries a single signature row per
+ * advisory id — title, and a count of the DISTINCT transmissions it appeared in,
+ * with no detail — while the detail prose is read per transmission in the
+ * transmission block), this emits ONE finding carrying the three things
  * agj.3 asks for: HOW MANY readings exceed their record's supply, the WORST
  * excess in seconds, and a pointer to the FIRST one in document order.
  *

@@ -70,8 +70,10 @@
  * Deliberately not renamed to something like `adv.missing_appliance_serial`.
  * The rationale for collapsing to one field per branch is precisely that
  * NOTHING ELSE SUBSTITUTES for it, so the identity framing is still the correct
- * one — and the id is a stable value the dashboard folds on (`requirement|code`
- * in src/web/advisories.ts). Renaming it is a separate, confirmed decision.
+ * one — and the id is a stable value the dashboard keys on: an advisory's
+ * signature key is `adv|<adv.id>` (`sigKey` in src/api/signatures.ts), so the id
+ * is what its row in the compliance column and the `?signatureKey=` cross-filter
+ * are addressed by. Renaming it is a separate, confirmed decision.
  *
  * Forward note: if the proposed schema 0.8.4 lands, `ASER: null` becomes a hard
  * §3.2 failure on EMS and this advisory then fires on that path only for

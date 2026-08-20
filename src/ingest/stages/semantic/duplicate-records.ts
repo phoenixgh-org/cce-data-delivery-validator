@@ -107,10 +107,12 @@
  * assembly that produced them, which neither alone supports.
  *
  * ── ONE FINDING PER TRANSMISSION ─────────────────────────────────────────────
- * Like every advisory, this emits ONE finding per transmission (the dashboard
- * folds advisories by id and shows only the most recent occurrence's detail, so a
- * finding per repeat would render as a count with one arbitrary repeat's prose
- * behind it). It carries what agj.8 asks for: the COUNTS under both comparisons,
+ * Like every advisory, this emits ONE finding per transmission (the compliance
+ * column carries a single signature row per advisory id — title, and a count of
+ * the DISTINCT transmissions it appeared in, with no detail — while the detail
+ * prose is read per transmission in the transmission block, so a finding per
+ * repeat would add no row, only stack near-identical lines in that block). It
+ * carries what agj.8 asks for: the COUNTS under both comparisons,
  * and a pointer to the FIRST repeat in document order along with the earlier
  * record it repeats.
  *

@@ -99,8 +99,10 @@
  * not the other, and a secondary compressor that genuinely idles is a different
  * story from a primary one that never crosses 15 — and the finding names which
  * of them the observation is about. Like every advisory it emits ONE finding per
- * transmission (the dashboard folds by id and renders only the most recent
- * occurrence's detail).
+ * transmission (the compliance column carries a single signature row per advisory
+ * id — title, and a count of the DISTINCT transmissions it appeared in, with no
+ * detail — while the detail prose is read per transmission in the transmission
+ * block).
  *
  * Values are pooled ACROSS the whole transmission, which is what agj.7 asks for
  * ("every non-null CMPR <= 15 across the transmission"). A transmission mixing a

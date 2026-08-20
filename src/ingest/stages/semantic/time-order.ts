@@ -57,10 +57,12 @@
  * choice: it can only under-report.
  *
  * ── ONE FINDING PER TRANSMISSION ─────────────────────────────────────────────
- * Like every advisory, this emits ONE finding per transmission (the dashboard
- * folds advisories by id and shows only the most recent occurrence's detail, so
- * a finding per pair would render as a count with one arbitrary pair's prose
- * behind it). It carries the three things agj.4 asks for: HOW MANY positions are
+ * Like every advisory, this emits ONE finding per transmission (the compliance
+ * column carries a single signature row per advisory id — title, and a count of
+ * the DISTINCT transmissions it appeared in, with no detail — while the detail
+ * prose is read per transmission in the transmission block, so a finding per pair
+ * would add no row, only stack near-identical lines in that block). It carries
+ * the three things agj.4 asks for: HOW MANY positions are
  * not forward of their predecessor, the WORST backward step (in seconds, or in
  * milliseconds when ABST's sub-second precision puts it under one), and a
  * pointer to the FIRST such record in document order.

@@ -186,7 +186,6 @@ function httpTone(status: number | null): string {
   return 'var(--fail)';
 }
 
-/** The far-right findings cell's rendered decision: text, color, and tooltip. */
 /**
  * The eyebrow above the active cross-filter chip (agj.18).
  *
@@ -202,6 +201,7 @@ export function signatureEyebrow(sig: Pick<Signature, 'kind'>): string {
   return sig.kind === 'advisory' ? 'Advisory' : 'Issue';
 }
 
+/** The far-right findings cell's rendered decision: text, color, and tooltip. */
 export interface FindingsCell {
   text: string;
   color: string;

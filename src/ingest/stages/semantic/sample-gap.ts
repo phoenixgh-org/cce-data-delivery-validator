@@ -88,10 +88,12 @@
  * pooled across reports for the one per-transmission finding.
  *
  * ── ONE FINDING PER TRANSMISSION ────────────────────────────────────────────
- * Like every advisory, this emits ONE finding per transmission (the dashboard
- * folds advisories by id and shows only the most recent occurrence's detail, so
- * a finding per gap would render as a count with one arbitrary gap's prose
- * behind it) — and agj.6 asks for exactly that shape: HOW MANY gaps, and the
+ * Like every advisory, this emits ONE finding per transmission (the compliance
+ * column carries a single signature row per advisory id — title, and a count of
+ * the DISTINCT transmissions it appeared in, with no detail — while the detail
+ * prose is read per transmission in the transmission block, so a finding per gap
+ * would add no row, only stack near-identical lines in that block) — and agj.6
+ * asks for exactly that shape: HOW MANY gaps, and the
  * WIDEST one. The pointer goes to the reading that CLOSES the widest gap, ties
  * broken by the earliest, so the drill-down lands on the most informative place
  * rather than an arbitrary one.
