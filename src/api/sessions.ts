@@ -39,7 +39,7 @@ import {
   scopeTransmissions,
   windowLowerBound,
 } from './scope.js';
-import { computeSignatures, txMatchesSig } from './signatures.js';
+import { computeSignatures, issueSignatures, txMatchesSig } from './signatures.js';
 import type { SignatureTransmission } from './signatures.js';
 import { deriveSourceView, sourceCounts } from './source.js';
 import { generateCredential } from '../auth/credential.js';
@@ -418,7 +418,10 @@ export function registerSessionsApi(app: FastifyInstance): void {
       const summary = computeComplianceSummary(scopedCounts, scopedOutdated);
 
       // computeSignatures consumes the scoped views via the shared signature-tx
-      // projection (same one the list endpoint's cross-filter uses).
+      // projection (same one the list endpoint's cross-filter uses). The set now
+      // also carries kind:'advisory' entries (agj.15) so the dashboard can drive
+      // the ?signatureKey= cross-filter from an advisory — they ride the wire but
+      // are EXCLUDED from `distinctIssues` below, which counts defects only.
       const signatures = computeSignatures(scopedViews.map(asSignatureTx));
 
       const base = session.last_post_at ?? session.created_at;
@@ -440,7 +443,7 @@ export function registerSessionsApi(app: FastifyInstance): void {
         signatures,
         trend: passTrend(scopedViews),
         sources,
-        scoped: scopeTotals(scopedViews, signatures.length),
+        scoped: scopeTotals(scopedViews, issueSignatures(signatures).length),
         expiresAt,
         // Which schema bytes this endpoint grades against (beads 3cq). Service-
         // global, not session-scoped, but it rides on the response the dashboard

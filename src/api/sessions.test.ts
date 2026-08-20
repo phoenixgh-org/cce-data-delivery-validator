@@ -814,6 +814,127 @@ test(
   },
 );
 
+test(
+  'GET …/transmissions → an ADVISORY signatureKey selects a zero-failure tx (failuresOnly false)',
+  { skip },
+  async () => {
+    // The agj.15 acceptance: an advisory key drives the SAME ?signatureKey=
+    // cross-filter, and selecting one implies NOTHING about failures — a fully
+    // conformant transmission that merely carries an observation is a hit.
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      // The expected key comes from signatures.ts sigKey — NOT a re-impl here.
+      const advisoryFinding: SignatureFinding = {
+        requirement: 'adv.null_padding',
+        severity: 'info',
+        detail: null,
+        pointer: null,
+        outdated: false,
+        keyword: null,
+        instancePath: null,
+        param: null,
+        code: 'adv.null_padding',
+      };
+      const key = sigKey(advisoryFinding);
+      assert.equal(key, 'adv|adv.null_padding', 'advisory keys are adv|<adv.id>');
+
+      // txClean: ZERO failures — a §3.2 pass plus one advisory, built through the
+      // production emission helper so the persisted shape is the real one.
+      const txClean = await insertTxAt(
+        uuid,
+        new Date(Date.now() - 3 * 60_000).toISOString(),
+        'src',
+      );
+      await insertFinding(txClean, { requirement: '3.2', severity: 'pass' });
+      await insertFinding(
+        txClean,
+        advisory({
+          id: 'adv.null_padding',
+          detail:
+            'TCON was null in all 480 records of this transmission — if the equipment has ' +
+            'no condenser sensor, omitting the property communicates that more clearly ' +
+            'than sending null, and costs you bytes against the 1 MB limit',
+          pointer: '/data/0/records/0/TCON',
+        }),
+      );
+
+      // txOther: a real failure, and a DIFFERENT advisory — matches neither
+      // the selected advisory key nor (below) an unrelated one.
+      const txOther = await insertTxAt(
+        uuid,
+        new Date(Date.now() - 2 * 60_000).toISOString(),
+        'src',
+      );
+      await insertFinding(txOther, {
+        requirement: '1.4',
+        severity: 'fail',
+        code: 'tx.body_too_large',
+      });
+      await insertFinding(
+        txOther,
+        advisory({ id: 'adv.sample_gap', detail: 'readings 3600 s apart', pointer: '/data/0' }),
+      );
+
+      const res = await app.inject({
+        method: 'GET',
+        url:
+          `/api/sessions/${uuid}/transmissions?signatureKey=${encodeURIComponent(key)}` +
+          '&failuresOnly=false',
+      });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as ListResp;
+      assert.deepEqual(
+        body.transmissions.map((t) => t.id),
+        [txClean],
+        'the advisory key selects the zero-failure transmission',
+      );
+      assert.equal(body.scoped, 1, 'scoped denominator counts the advisory-only tx');
+      assert.ok(
+        body.transmissions[0]?.findings.some((f) => f.requirement === 'adv.null_padding'),
+        'the advisory travels inlined with the row',
+      );
+      assert.ok(
+        !body.transmissions[0]?.findings.some((f) => f.severity === 'fail'),
+        'the selected transmission really has no failures',
+      );
+
+      // The other advisory selects the other transmission — advisories do not
+      // collapse into one another.
+      const other = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?signatureKey=${encodeURIComponent('adv|adv.sample_gap')}`,
+      });
+      assert.deepEqual(
+        (other.json() as ListResp).transmissions.map((t) => t.id),
+        [txOther],
+        'a different advisory key selects a different transmission',
+      );
+
+      // failuresOnly=true still means what it says: the advisory-only tx has no
+      // failure, so the two filters compose rather than one implying the other.
+      const strict = await app.inject({
+        method: 'GET',
+        url:
+          `/api/sessions/${uuid}/transmissions?signatureKey=${encodeURIComponent(key)}` +
+          '&failuresOnly=true',
+      });
+      assert.deepEqual(
+        (strict.json() as ListResp).transmissions.map((t) => t.id),
+        [],
+        'failuresOnly=true excludes the zero-failure advisory tx',
+      );
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
 /* ── Advisories: the round trip, and matrix immunity through the REAL read path
  * (pwd / bva slice A) ────────────────────────────────────────────────────────
  *
@@ -884,7 +1005,7 @@ test(
         rollup: unknown;
         trend: unknown;
         scoped: unknown;
-        signatures: unknown[];
+        signatures: Array<{ key: string; req: string; kind: string; sev: string; title: string }>;
       }
 
       const first = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
@@ -936,8 +1057,34 @@ test(
       assert.deepEqual(after.rollup, before.rollup, 'the gradeable rollup moved');
       assert.deepEqual(after.trend, before.trend, 'the pass-rate trend moved');
       assert.deepEqual(after.scoped, before.scoped, 'the scope totals moved');
-      assert.deepEqual(after.signatures, before.signatures, 'an advisory entered the issue list');
-      assert.deepEqual(after.signatures, [], 'a conformant session has no distinct issues');
+      // `scoped` covers the distinctIssues headline: advisories now fold into the
+      // signature set (agj.15) but issueSignatures() keeps them out of that count.
+      assert.deepEqual(
+        after.signatures.filter((sig) => sig.kind !== 'advisory'),
+        before.signatures.filter((sig) => sig.kind !== 'advisory'),
+        'an advisory entered the ISSUE half of the signature list',
+      );
+      assert.deepEqual(
+        after.signatures.filter((sig) => sig.kind !== 'advisory'),
+        [],
+        'a conformant session has no distinct issues',
+      );
+      assert.equal(before.signatures.length, 0, 'no signatures before the advisories were raised');
+
+      // ── agj.15: the advisories DO ship as signatures, so the dashboard can
+      // drive the ?signatureKey= cross-filter from one. Keyed adv|<adv.id>,
+      // req '' (no §7 row), sev 'info', title derived from the id.
+      const advSigs = after.signatures.filter((sig) => sig.kind === 'advisory');
+      assert.deepEqual(
+        advSigs.map((sig) => sig.key).sort(),
+        ['adv|adv.null_identity', 'adv|adv.null_padding'],
+        'both advisories folded into one signature each',
+      );
+      for (const sig of advSigs) {
+        assert.equal(sig.req, '', 'an advisory signature claims no requirement');
+        assert.equal(sig.sev, 'info', 'an advisory signature is always info');
+        assert.match(sig.title, /^[A-Z]/, 'title is the derived human label, not a raw id');
+      }
 
       // ── the round trip itself: the advisories came back intact. ─────────────
       const returned = after.transmissions[0]?.findings.filter((f) =>

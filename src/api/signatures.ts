@@ -18,7 +18,19 @@
  *   - timestamps come from `tx.received_at` (ISO string), not minutes-since-midnight;
  *   - the source Set keys off `tx.source` (raw transfer_src; '' is the single
  *     stable unknown bucket and counts as one source).
+ *
+ * ADVISORIES (agj.15). Advisory findings (`adv.*`, src/ingest/stages/semantic/
+ * advisory.ts) are folded here too, as a THIRD `kind: 'advisory'` keyed
+ * `adv|<adv.id>` — so the one `?signatureKey=` cross-filter serves them with no
+ * new endpoint. They are NOT issues: `isIssue()` still rejects them, they carry
+ * no requirement (`req: ''`), {@link signaturesForReq} never returns them, and
+ * every requirement/matrix count must read {@link issueSignatures} rather than
+ * the raw set (the `distinctIssues` headline does). An advisory is an
+ * observation about a conformant payload; counting one as a defect is the single
+ * thing the whole category exists to avoid.
  */
+
+import { ADVISORY_PREFIX, isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
 
 /** §7 severity carried by a per-transmission finding (mirror src/web/api.ts). */
 export type Severity = 'pass' | 'fail' | 'info';
@@ -56,19 +68,40 @@ export interface SignatureTransmission {
 }
 
 /**
+ * What a signature was folded from (mirror src/web/api.ts `Signature.kind`).
+ * 'advisory' is not a defect class — see the ADVISORIES note in the header.
+ */
+export type SignatureKind = 'schema' | 'check' | 'advisory';
+
+/**
+ * Key namespace for advisory signatures: `adv|adv.null_padding`. The left half is
+ * a literal namespace where a requirement id would sit, which is unambiguous —
+ * every §7 id is `MAJOR.MINOR` digits, so no requirement key can collide.
+ */
+export const ADVISORY_KEY_PREFIX = 'adv|';
+
+/**
  * One aggregated signature, pre-rolled for the wire — the browser must NEVER need
  * every raw finding to render the summary.
  */
 export interface Signature {
   /** Stable key the list cross-filter matches against (see {@link sigKey}). */
   key: string;
-  /** The requirement this signature belongs to (e.g. "3.2"). */
+  /**
+   * The requirement this signature belongs to (e.g. "3.2"). EMPTY STRING for an
+   * advisory: an advisory violates no requirement, so it belongs to no §7 row —
+   * the sentinel is '' rather than a fake id so a stray advisory can never match
+   * a matrix row in `signaturesForReq` (server or browser copy).
+   */
   req: string;
   /** Human title for the issue (see {@link sigTitle}). */
   title: string;
-  /** 'schema' for Ajv-keyword defects, 'check' for transport/heuristic codes. */
-  kind: 'schema' | 'check';
-  /** Severity of the representative finding ('fail' or 'info' for outdated). */
+  /**
+   * 'schema' for Ajv-keyword defects, 'check' for transport/heuristic codes,
+   * 'advisory' for an `adv.*` observation (never a defect — see the header).
+   */
+  kind: SignatureKind;
+  /** Severity of the representative finding ('fail', or 'info' for outdated/advisory). */
   sev: Severity;
   /** Raw finding count across all transmissions. */
   count: number;
@@ -137,13 +170,59 @@ export function isIssue(f: SignatureFinding): boolean {
 }
 
 /**
+ * Whether a finding is an advisory — reusing `isAdvisoryId`, the ONE definition
+ * of the `adv.*` namespace (src/ingest/stages/semantic/advisory.ts), rather than
+ * a fourth copy of the prefix. The emission helper writes the id into BOTH
+ * `requirement` and `code`, so either half identifies one.
+ *
+ * (src/web/api.ts mirrors the prefix instead of importing it — the browser must
+ * not import backend code. That constraint does not apply on this side.)
+ */
+export function isAdvisoryFinding(f: SignatureFinding): boolean {
+  return isAdvisoryId(f.requirement) || isAdvisoryId(f.code);
+}
+
+/**
+ * Whether a finding gets a signature at all: an issue, or an advisory. Kept
+ * separate from {@link isIssue} on purpose — everything that COUNTS defects
+ * (distinctIssues, the §7 matrix) must keep asking `isIssue`.
+ */
+export function isSignable(f: SignatureFinding): boolean {
+  return isIssue(f) || isAdvisoryFinding(f);
+}
+
+/** The `adv.*` id an advisory finding carries (`code` first, `requirement` as fallback). */
+function advisoryIdOf(f: SignatureFinding): string {
+  return isAdvisoryId(f.code) ? (f.code as string) : f.requirement;
+}
+
+/**
+ * Human title for an advisory id: `adv.null_padding` → `Null padding`. Derived,
+ * not looked up: the `adv.*` ids are hand-authored words, so a derivation cannot
+ * go stale as the catalogue grows or leave a new check rendering a raw id. Same
+ * derivation as `advisoryLabel` in src/web/advisories.ts (which the browser keeps
+ * for the findings it folds itself); an id that somehow arrives without the
+ * prefix is returned verbatim rather than mangled.
+ */
+export function advisoryTitle(id: string): string {
+  if (!isAdvisoryId(id)) return id;
+  const words = id.slice(ADVISORY_PREFIX.length).replaceAll('_', ' ').replaceAll('.', ' ').trim();
+  if (words === '') return id;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
  * The stable signature key. Sign on Ajv's structured fields (never the message),
  * generalize the path, and never put the offending value in the key:
+ *   - advisory:      adv|<adv.id>
  *   - schema error:  req|keyword|generalizedInstancePath|param
  *   - check code:    req|code
  *   - last resort:   req|detail
  */
 export function sigKey(f: SignatureFinding): string {
+  // Advisories first: they carry the adv.* id in `requirement`, which would
+  // otherwise key them off a requirement that does not exist.
+  if (isAdvisoryFinding(f)) return ADVISORY_KEY_PREFIX + advisoryIdOf(f);
   if (f.keyword) {
     return (
       f.requirement + '|' + f.keyword + '|' + generalizePath(f.instancePath) + '|' + (f.param || '')
@@ -160,6 +239,7 @@ export function sigKey(f: SignatureFinding): string {
  * untemplated edge is a plainer title — never a dropped or misfiled issue.
  */
 export function sigTitle(f: SignatureFinding): string {
+  if (isAdvisoryFinding(f)) return advisoryTitle(advisoryIdOf(f));
   if (f.keyword) {
     const field = generalizePath(f.instancePath).split('/').filter(Boolean).pop() || 'document';
     switch (f.keyword) {
@@ -184,17 +264,21 @@ export function sigTitle(f: SignatureFinding): string {
 }
 
 /**
- * Fold every issue finding across the given transmissions into signatures,
- * accumulating raw count, DISTINCT transmissions, DISTINCT sources, the
- * earliest/latest received_at, and a representative pointer. Returns the
- * pre-aggregated wire shape sorted by count DESC.
+ * Fold every issue finding — and every advisory — across the given transmissions
+ * into signatures, accumulating raw count, DISTINCT transmissions, DISTINCT
+ * sources, the earliest/latest received_at, and a representative pointer. Returns
+ * the pre-aggregated wire shape sorted by count DESC.
+ *
+ * Advisory entries ride in the SAME set so one cross-filter serves both, but they
+ * are not defects: filter with {@link issueSignatures} before any count that
+ * grades a supplier.
  */
 export function computeSignatures(transmissions: readonly SignatureTransmission[]): Signature[] {
   interface Group {
     key: string;
     req: string;
     title: string;
-    kind: 'schema' | 'check';
+    kind: SignatureKind;
     sev: Severity;
     count: number;
     sources: Set<string>;
@@ -207,15 +291,17 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
   const map = new Map<string, Group>();
   for (const tx of transmissions) {
     for (const f of tx.findings) {
-      if (!isIssue(f)) continue;
+      if (!isSignable(f)) continue;
+      const adv = isAdvisoryFinding(f);
       const k = sigKey(f);
       let g = map.get(k);
       if (!g) {
         g = {
           key: k,
-          req: f.requirement,
+          // An advisory belongs to no §7 row — '' is the sentinel (see Signature.req).
+          req: adv ? '' : f.requirement,
           title: sigTitle(f),
-          kind: f.keyword ? 'schema' : 'check',
+          kind: adv ? 'advisory' : f.keyword ? 'schema' : 'check',
           sev: f.severity,
           count: 0,
           sources: new Set<string>(),
@@ -253,17 +339,33 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
     .sort((a, b) => b.count - a.count);
 }
 
-/** Filter an already-computed signature set down to one requirement. */
+/**
+ * Filter an already-computed signature set down to one requirement. NEVER returns
+ * advisory signatures: requirement grouping in ComplianceCard is a verdict
+ * surface, and an advisory has no verdict. (`req` is '' for advisories, so the
+ * equality alone excludes them; the explicit `kind` guard says so on purpose.)
+ */
 export function signaturesForReq(sigs: readonly Signature[], reqId: string): Signature[] {
-  return sigs.filter((s) => s.req === reqId);
+  return sigs.filter((s) => s.kind !== 'advisory' && s.req === reqId);
+}
+
+/**
+ * The defect half of a computed signature set — everything EXCEPT advisories.
+ * Any count that grades a supplier (the `distinctIssues` headline, any §7/matrix
+ * tally) reads this, never `computeSignatures(...).length`.
+ */
+export function issueSignatures(sigs: readonly Signature[]): Signature[] {
+  return sigs.filter((s) => s.kind !== 'advisory');
 }
 
 /**
  * Whether a transmission exhibits the given signature key — the list cross-filter
- * predicate (consumed by the paginated list endpoint, 4h4.5).
+ * predicate (consumed by the paginated list endpoint, 4h4.5). Advisory keys match
+ * here too, and selecting one implies NOTHING about failures: an advisory-only
+ * transmission with zero fails is a legitimate hit.
  */
 export function txMatchesSig(tx: SignatureTransmission, key: string): boolean {
-  return tx.findings.some((f) => isIssue(f) && sigKey(f) === key);
+  return tx.findings.some((f) => isSignable(f) && sigKey(f) === key);
 }
 
 /** Epoch ms of an ISO timestamp, for first/last comparison. */

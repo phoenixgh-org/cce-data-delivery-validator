@@ -30,12 +30,15 @@
  *      every verdict-bearing aggregate keys off `fail` — `deriveStatus`,
  *      `txFailing`/`passTrend`/`scopeTotals` (src/api/scope.ts). `info` on its
  *      own moves nothing.
- *   3. `outdated` stays FALSE. `isIssue` (src/api/signatures.ts) groups a
- *      finding into the "distinct issues to fix" list when it is a `fail` OR an
- *      `info` carrying `outdated` — so an advisory is deliberately EXCLUDED from
- *      the signature fold and from the `distinctIssues` headline. Advisories are
- *      not defects and must not be counted among them; the dashboard gives them
- *      their own surface.
+ *   3. `outdated` stays FALSE. `isIssue` (src/api/signatures.ts) counts a
+ *      finding as a "distinct issue to fix" when it is a `fail` OR an `info`
+ *      carrying `outdated` — an advisory is neither, so it is deliberately
+ *      EXCLUDED from the `distinctIssues` headline and from every requirement
+ *      grouping. It DOES get a signature of its own (agj.15) — `kind:
+ *      'advisory'`, keyed `adv|<adv.id>` — so one `?signatureKey=` cross-filter
+ *      serves both; `issueSignatures()` is what any grading count reads.
+ *      Advisories are not defects and must not be counted among them; the
+ *      dashboard gives them their own surface.
  *
  * ── NO DDL ───────────────────────────────────────────────────────────────────
  * `finding.requirement` is `text NOT NULL` with no CHECK and no FK

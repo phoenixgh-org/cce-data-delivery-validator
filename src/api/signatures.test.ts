@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 import {
   computeSignatures,
   generalizePath,
+  isAdvisoryFinding,
   isIssue,
+  isSignable,
+  issueSignatures,
   sigKey,
   sigTitle,
   signaturesForReq,
@@ -211,4 +214,124 @@ test('txMatchesSig: true only when a tx carries an issue with the given key', ()
   assert.equal(txMatchesSig(t, '3.2|format|/data/*/ABST|date-time'), false);
   // The non-issue info finding's key must not match either.
   assert.equal(txMatchesSig(t, '1.8|repeat candidate'), false);
+});
+
+/* ── ADVISORY SIGNATURES (agj.15) ─────────────────────────────────────────────
+ *
+ * Advisories fold into the SAME signature set so the one ?signatureKey= list
+ * cross-filter serves them, while staying out of everything that counts defects.
+ * The fixtures below build advisories in the production shape: severity 'info',
+ * outdated false, and the adv.* id in BOTH `requirement` and `code`. */
+
+/** An advisory finding as src/ingest/stages/semantic/advisory.ts emits one. */
+function adv(id: string, over: Partial<SignatureFinding> = {}): SignatureFinding {
+  return finding({ requirement: id, code: id, severity: 'info', outdated: false, ...over });
+}
+
+test('isAdvisoryFinding: adv.* in requirement or code; §7 findings are not advisories', () => {
+  assert.equal(isAdvisoryFinding(adv('adv.null_padding')), true);
+  assert.equal(isAdvisoryFinding(finding({ requirement: 'adv.sample_gap', code: null })), true);
+  assert.equal(isAdvisoryFinding(finding({ requirement: '3.2', code: 'adv.sample_gap' })), true);
+  assert.equal(
+    isAdvisoryFinding(finding({ requirement: '1.2', code: 'tx.missing_charset' })),
+    false,
+  );
+  assert.equal(isAdvisoryFinding(finding({ requirement: '3.2', keyword: 'required' })), false);
+});
+
+test('isIssue STILL excludes advisories — they are not defects', () => {
+  assert.equal(isIssue(adv('adv.null_padding')), false);
+  assert.equal(isIssue(adv('adv.date_format')), false);
+  // isSignable is the wider gate: issues OR advisories.
+  assert.equal(isSignable(adv('adv.null_padding')), true);
+  assert.equal(isSignable(finding({ severity: 'fail' })), true);
+  assert.equal(isSignable(finding({ severity: 'info', outdated: false })), false);
+});
+
+test('sigKey: an advisory keys as adv|<adv.id>, never off a requirement', () => {
+  assert.equal(sigKey(adv('adv.null_padding')), 'adv|adv.null_padding');
+  // The pointer/detail of an instance never enters the key.
+  assert.equal(
+    sigKey(adv('adv.null_padding', { pointer: '/data/0/records/7/TCON', detail: 'TCON was null' })),
+    'adv|adv.null_padding',
+  );
+  // Two different advisories are two different keys.
+  assert.notEqual(sigKey(adv('adv.sample_gap')), sigKey(adv('adv.date_format')));
+});
+
+test('sigTitle: an advisory id derives a human label', () => {
+  assert.equal(sigTitle(adv('adv.null_padding')), 'Null padding');
+  assert.equal(sigTitle(adv('adv.time_not_increasing')), 'Time not increasing');
+  // Derivation, not a table: an id nobody has seen yet still renders as words.
+  assert.equal(sigTitle(adv('adv.brand_new_check')), 'Brand new check');
+});
+
+test('computeSignatures: advisories fold with kind advisory, sev info, req ""', () => {
+  const a = adv('adv.null_padding', { pointer: '/data/0/records/0/TCON' });
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [a]),
+    tx('t2', '2026-06-17T14:05:00.000Z', 'mombasa', [a]),
+  ]);
+  assert.equal(sigs.length, 1);
+  const sig = sigs[0]!;
+  assert.equal(sig.key, 'adv|adv.null_padding');
+  assert.equal(sig.kind, 'advisory');
+  assert.equal(sig.sev, 'info');
+  assert.equal(sig.req, '', 'an advisory belongs to no §7 requirement');
+  assert.equal(sig.title, 'Null padding');
+  assert.equal(sig.count, 2);
+  assert.equal(sig.txCount, 2);
+  assert.equal(sig.sourceCount, 2);
+  assert.equal(sig.first, '2026-06-17T14:00:00.000Z');
+  assert.equal(sig.last, '2026-06-17T14:05:00.000Z');
+  assert.equal(sig.examplePointer, '/data/0/records/0/TCON');
+});
+
+test('computeSignatures: advisories never displace or merge with issue signatures', () => {
+  const fail = finding({ requirement: '1.2', code: 'tx.missing_charset' });
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [fail, adv('adv.sample_gap')]),
+  ]);
+  assert.equal(sigs.length, 2);
+  assert.deepEqual(
+    sigs.map((s) => s.kind).sort(),
+    ['advisory', 'check'],
+    'one issue signature and one advisory signature, side by side',
+  );
+  // The defect half is what any grading count reads.
+  assert.deepEqual(
+    issueSignatures(sigs).map((s) => s.key),
+    ['1.2|tx.missing_charset'],
+    'issueSignatures drops advisories',
+  );
+});
+
+test('signaturesForReq NEVER returns an advisory signature', () => {
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [
+      finding({ requirement: '3.2', keyword: 'required', instancePath: '/data/0', param: 'EERR' }),
+      adv('adv.null_padding'),
+    ]),
+  ]);
+  assert.equal(signaturesForReq(sigs, '3.2').length, 1);
+  assert.equal(signaturesForReq(sigs, '3.2')[0]!.kind, 'schema');
+  // Not under the empty-string sentinel either — advisories are not a requirement.
+  assert.equal(signaturesForReq(sigs, '').length, 0, 'the "" sentinel is not a requirement');
+  assert.equal(signaturesForReq(sigs, 'adv.null_padding').length, 0);
+});
+
+test('txMatchesSig: an advisory key matches a tx with ZERO failures', () => {
+  // A fully conformant transmission that merely carries an observation.
+  const clean = tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [
+    finding({ requirement: '3.2', severity: 'pass' }),
+    adv('adv.null_padding'),
+  ]);
+  assert.equal(txMatchesSig(clean, 'adv|adv.null_padding'), true);
+  assert.equal(txMatchesSig(clean, 'adv|adv.sample_gap'), false);
+  // A failing tx without that advisory does not match it.
+  const failing = tx('t2', '2026-06-17T14:01:00.000Z', 'nairobi', [
+    finding({ requirement: '1.2', code: 'tx.missing_charset' }),
+  ]);
+  assert.equal(txMatchesSig(failing, 'adv|adv.null_padding'), false);
+  assert.equal(txMatchesSig(failing, '1.2|tx.missing_charset'), true);
 });

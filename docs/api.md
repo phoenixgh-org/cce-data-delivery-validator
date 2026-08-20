@@ -365,7 +365,7 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
   "transmissions": [ /* every transmission, newest first — see the row shape below */ ],
   "summary":   [ /* 27 §7 matrix rows joined with live counts */ ],
   "rollup":    { "total": 27, "gradeable": 10, "passing": 7, "failing": 0, "untested": 3 },
-  "signatures": [ /* distinct defects, most widespread first */ ],
+  "signatures": [ /* distinct defects + advisories, most widespread first */ ],
   "trend":     [ { "tot": 1, "fail": 0, "rate": 1 } /* 30 buckets, or [] when empty */ ],
   "sources":   [ { "source": "com.example", "sourceCode": "EXA", "sourceLabel": "com.example", "count": 1 } ],
   "scoped":    { "scoped": 1, "withFailures": 0, "distinctIssues": 0 },
@@ -505,15 +505,21 @@ the answer to "what are the distinct things to fix, and how widespread is each?"
 | Field            | Meaning                                                              |
 | ---------------- | -------------------------------------------------------------------- |
 | `key`            | Stable key; pass it as `signatureKey` to the list route to cross-filter. |
-| `req`            | Requirement, e.g. `3.2`.                                             |
-| `title`          | Human title for the defect.                                          |
-| `kind`           | `schema` (Ajv keyword) or `check` (a `tx.*` code).                   |
-| `sev`            | `fail`, or `info` for the outdated-schema signature.                 |
+| `req`            | Requirement, e.g. `3.2`; empty string for an advisory.               |
+| `title`          | Human title for the defect (for an advisory, the label derived from its id). |
+| `kind`           | `schema` (Ajv keyword), `check` (a `tx.*` code), or `advisory` (an `adv.*` observation). |
+| `sev`            | `fail`, or `info` for the outdated-schema signature and every advisory. |
 | `count`          | Raw finding count.                                                   |
 | `txCount`        | Distinct transmissions exhibiting it.                                |
 | `sourceCount`    | Distinct sources exhibiting it.                                      |
 | `first`, `last`  | ISO timestamps of the earliest and latest occurrence.                |
 | `examplePointer` | Representative JSON Pointer, may be `null`.                          |
+
+**Advisories are not defects.** `kind: "advisory"` entries ride in the same array so one
+`signatureKey` cross-filter serves both, keyed `adv|<adv.id>` (e.g. `adv|adv.null_padding`).
+They are excluded from `scoped.distinctIssues` and from every requirement grouping, and
+selecting one implies nothing about failures — a transmission with zero `fail` findings that
+merely carries an observation is a legitimate hit.
 
 ## `GET /api/sessions/{uuid}/transmissions` — paginated transmission list
 

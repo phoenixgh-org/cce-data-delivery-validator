@@ -13,17 +13,19 @@
  * percentage, or the distinct-issues headline; this module only folds advisory
  * findings for a surface of their own.
  *
- * WHY THE FOLD LIVES HERE rather than in src/api/signatures.ts. `sigKey()` does
- * key non-schema findings off `requirement|code`, which is all an advisory needs
- * — but `computeSignatures()` gates on `isIssue()`, which admits only `fail` or
- * (`info` AND `outdated`), so a plain-info advisory is deliberately EXCLUDED
- * from the signature fold and from `distinctIssues` (measured 2026-08-05, pinned
- * in src/api/sessions.test.ts, recorded in pwd's NOTES). That exclusion is the
- * design, not a gap: admitting advisories would file them in the "distinct
- * issues to fix" list and feed a headline count, which is precisely what this
- * category exists to avoid. {@link advisoryKey} therefore REPRODUCES sigKey's
- * non-schema arm here so the surface can de-duplicate itself. Do NOT "fix" this
- * by admitting advisories to computeSignatures.
+ * WHY THE FOLD STILL LIVES HERE. `computeSignatures()` used to exclude
+ * advisories outright, because it gates on `isIssue()` (only `fail`, or `info`
+ * AND `outdated`) and a plain-info advisory is neither. Since agj.15 the server
+ * DOES roll an advisory signature — `kind: 'advisory'`, keyed `adv|<adv.id>` —
+ * purely so the `?signatureKey=` list cross-filter can be driven from one. What
+ * has NOT changed is the exclusion that matters: an advisory signature never
+ * enters `distinctIssues`, `signaturesForReq`, or any verdict count, because
+ * filing an advisory among the "distinct issues to fix" is precisely what this
+ * category exists to avoid. This browser-side fold is what the current advisory
+ * surface renders from; the UI bite (agj.16) decides whether it retires in
+ * favour of the server-rolled signatures. Until then, {@link advisoryKey}
+ * REPRODUCES sigKey's non-schema arm here (`requirement|code`) — note it is NOT
+ * the server's advisory key shape, and the two are not interchangeable.
  *
  * WORDING. Every string this module exports is user-facing, and wording is
  * acceptance rather than polish (pwd's HONESTY section): advisory prose must

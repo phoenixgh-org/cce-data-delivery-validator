@@ -182,12 +182,17 @@ export interface CreateSessionResponse {
 export interface Signature {
   /** Stable key the list cross-filter matches against (?signatureKey=). */
   key: string;
-  /** The requirement this signature belongs to (e.g. "3.2"). */
+  /** The requirement this signature belongs to (e.g. "3.2"); '' for an advisory. */
   req: string;
   /** Human title for the issue. */
   title: string;
-  /** 'schema' for Ajv-keyword defects, 'check' for transport/heuristic codes. */
-  kind: 'schema' | 'check';
+  /**
+   * 'schema' for Ajv-keyword defects, 'check' for transport/heuristic codes,
+   * 'advisory' for an `adv.*` observation (keyed `adv|<adv.id>`, `req` '',
+   * `sev` 'info'). An advisory signature is NOT a defect: it is excluded from
+   * `scoped.distinctIssues` server-side and must never feed a verdict count.
+   */
+  kind: 'schema' | 'check' | 'advisory';
   /** Severity of the representative finding ('fail' or 'info' for outdated). */
   sev: Severity;
   /** Raw finding count across all transmissions. */
