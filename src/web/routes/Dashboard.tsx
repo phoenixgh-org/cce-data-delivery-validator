@@ -31,7 +31,6 @@ import {
   type Signature,
   type TransmissionView,
 } from '../api';
-import { AdvisoriesCard } from '../components/AdvisoriesCard';
 import { ComplianceCard } from '../components/ComplianceCard';
 import { DeleteModal } from '../components/DeleteModal';
 import { FilterBar, type WindowValue } from '../components/FilterBar';
@@ -569,16 +568,6 @@ export function Dashboard() {
         onSourceChange={setSource}
       />
 
-      {/* Advisories (pwd/bva) — the NON-VERDICT surface, and deliberately not
-          inside either verdict pane. It folds the advisories out of the summary
-          read's scoped transmissions (no new read path, no session-level
-          endpoint) and renders nothing at all when there are none, so a session
-          without advisories looks exactly as it did. Nothing it shows reaches
-          the scorecard, the rollup, or the distinct-issues count above: those
-          come from the server, which excludes advisories from the §7 matrix and
-          from the signature fold. */}
-      <AdvisoriesCard transmissions={transmissions} />
-
       {/* Two-pane body */}
       <div
         style={{
@@ -601,7 +590,12 @@ export function Dashboard() {
           onShowNonGradeableChange={setShowNonGradeable}
           collapsedGroups={collapsedGroups}
           onToggleGroup={toggleGroup}
-          // Signature cross-filter seams — consumed by 4h4.11 (not rendered yet).
+          // Signature cross-filter seams. `signatures` carries BOTH halves: the
+          // issue signatures the requirement rows group, and the advisory ones
+          // (kind 'advisory') the card's own Advisories section renders (agj.16).
+          // onSelectSignature sets the list filter and nothing else — in
+          // particular it never touches failuresOnly, which would hide an
+          // advisory-only transmission from its own cross-filter.
           signatures={state.data.signatures}
           onSelectSignature={onSelectSignature}
           activeSignatureKey={selectedSignature?.key ?? null}

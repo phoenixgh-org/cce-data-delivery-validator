@@ -17,6 +17,7 @@ import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
 import { CLASS_META } from './ui/statusMaps';
 import { getRequirementReference } from './requirementReference';
+import { ADVISORY_COPY } from '../advisories';
 
 /* ------------------------------------------------------------------ *
  * Props — EXACT copy of Dashboard.tsx CompliancePaneProps + CollapsedGroups.
@@ -125,9 +126,53 @@ const mono = 'var(--mono)';
  * The deduped signatures that belong to a requirement — `Signature.req` keyed,
  * matching the prototype's `E.signaturesForReq`. Server already scoped these to
  * the active window/source, so this is a pure filter (no recompute).
+ *
+ * NEVER returns an advisory (agj.19) — an exact mirror of the server-side
+ * `signaturesForReq` in src/api/signatures.ts, guard included. Requirement
+ * grouping is a verdict surface and an advisory has no verdict, so admitting one
+ * here would file it among the requirement's "distinct issues". The `req` sentinel
+ * ('' for an advisory) already excludes them today; the explicit `kind` guard is
+ * what keeps that true if a future advisory is ever given a requirement to group
+ * under. Advisories reach the column through {@link advisorySignatures} instead.
  */
-function signaturesForReq(signatures: Signature[], requirement: string): Signature[] {
-  return signatures.filter((s) => s.req === requirement);
+export function signaturesForReq(
+  signatures: readonly Signature[],
+  requirement: string,
+): Signature[] {
+  return signatures.filter((s) => s.kind !== 'advisory' && s.req === requirement);
+}
+
+/**
+ * The advisory half of the same set — the ONLY way advisories enter this card
+ * (agj.16). Server-rolled (`kind: 'advisory'`, keyed `adv|<adv.id>`) and already
+ * scoped, so this too is a pure filter.
+ *
+ * ORDER IS RESTATED, not inherited. `computeSignatures` returns count DESC, but
+ * ties fall back to Map insertion order, which follows whichever transmission
+ * happened to arrive first — that would reshuffle the section between polls. The
+ * `key` tie-break makes the order total and therefore stable.
+ */
+export function advisorySignatures(signatures: readonly Signature[]): Signature[] {
+  return signatures
+    .filter((s) => s.kind === 'advisory')
+    .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.key.localeCompare(b.key)));
+}
+
+/**
+ * The bar/count colour for a signature row.
+ *
+ * `--fail` for a hard fail, `--mixed` for a soft/info verdict signature — and
+ * `--accent-text` for an ADVISORY, which is NOT a lesser defect. DESIGN §7.1 is
+ * explicit that the advisory surface takes accent and neutrals and never a status
+ * colour, `--mixed` least of all: that amber already means *warning / outdated*
+ * everywhere on this dashboard (the `pass-outdated` pill, the OUTDATED SCHEMA
+ * tag, flagged payload lines), so an advisory row falling through to it would
+ * say "a lesser defect" in the one place that must not say defect at all. An
+ * advisory carries `sev: 'info'`, so without this branch it would.
+ */
+export function sigTone(sig: Pick<Signature, 'kind' | 'sev'>): string {
+  if (sig.kind === 'advisory') return 'var(--accent-text)';
+  return sig.sev === 'fail' ? 'var(--fail)' : 'var(--mixed)';
 }
 
 /**
@@ -138,8 +183,11 @@ function signaturesForReq(signatures: Signature[], requirement: string): Signatu
  * for a hard fail; `--mixed` for a soft/info signature (e.g. an outdated-schema
  * §3.2 finding, which carries `sev:'info'`). The active row (key ===
  * `activeSignatureKey`) takes an `--accent` border + `--accent-weak` fill.
+ *
+ * Advisories reuse this row wholesale but NOT its status palette — see
+ * {@link sigTone}.
  */
-function SigRow({
+export function SigRow({
   sig,
   max,
   active,
@@ -151,7 +199,7 @@ function SigRow({
   onPick: (sig: Signature) => void;
 }): ReactElement {
   const pct = max > 0 ? Math.max(6, Math.round((sig.count / max) * 100)) : 0;
-  const tone = sig.sev === 'fail' ? 'var(--fail)' : 'var(--mixed)';
+  const tone = sigTone(sig);
   return (
     <button
       onClick={() => onPick(sig)}
@@ -498,6 +546,149 @@ function ReqRow({
 }
 
 /* ------------------------------------------------------------------ *
+ * Advisories — the bottom section of the column (agj.16).
+ * ------------------------------------------------------------------ */
+
+/**
+ * The Advisories section: the last thing in the compliance column, BELOW
+ * Permissive, rendered from the server's advisory signatures.
+ *
+ * NOT A §7 CLASS, deliberately. It is not in `GROUPS`, has no `CLASS_META`
+ * entry, and no `ComplianceClass` — inventing a sixth "class" would have put
+ * advisories inside the verifiability matrix, which grades the 27 requirements
+ * and is exactly what an advisory has no place in. It is a sibling section that
+ * happens to sit in the same scroll column, and it borrows only the group
+ * header's SHAPE (chevron · label · count · one faint line) so the column reads
+ * as one thing.
+ *
+ * WHY IT LIVES IN THE COLUMN AT ALL. Its rows are the same interaction as a
+ * requirement's distinct-issue rows — click to cross-filter the transmission
+ * list — so they are the same {@link SigRow}, driving the same
+ * `onSelectSignature`. Picking one sets the signature filter and NOTHING else:
+ * `failuresOnly` is a separate control the Dashboard never touches from here,
+ * which matters because an advisory-only transmission has zero failures and
+ * would vanish from its own cross-filter if picking implied failures-only.
+ *
+ * WHAT IT DOES NOT DO: no StatusPill, no `§` cross-link (an advisory belongs to
+ * no requirement), no pass/fail tally, and no status colour — see
+ * {@link sigTone}. Its count is the number of distinct advisories and feeds
+ * nothing: the conformance rollup, the scorecard and the distinct-issues
+ * headline all read server numbers that exclude advisories by construction.
+ *
+ * Renders NOTHING when the scope holds no advisories (returns null, header and
+ * all). A permanent "no advisories" line would be noise at the foot of every
+ * conformant session, and it was the retired AdvisoriesCard's behaviour too.
+ *
+ * Hook-free on purpose: the collapse state is the parent's, which keeps this a
+ * plain function of its props that ComplianceCard.test.ts can call directly (the
+ * repo has no component-test harness — see Setup.test.ts).
+ */
+export function AdvisorySection({
+  signatures,
+  collapsed,
+  onToggle,
+  activeSignatureKey,
+  onSelectSignature,
+}: {
+  /** ALL in-scope signatures; the advisory half is selected here. */
+  signatures: readonly Signature[];
+  collapsed: boolean;
+  onToggle: () => void;
+  activeSignatureKey: string | null;
+  onSelectSignature?: (sig: Signature) => void;
+}): ReactElement | null {
+  const sigs = advisorySignatures(signatures);
+  if (sigs.length === 0) return null;
+
+  const max = Math.max(...sigs.map((s) => s.count));
+
+  return (
+    <div
+      data-advisories=""
+      style={{
+        // The one strong colour on the section, and it is the accent — never a
+        // status tone. Carried over from the retired AdvisoriesCard.
+        borderLeft: '3px solid var(--accent)',
+      }}
+    >
+      <div
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        aria-expanded={!collapsed}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 10,
+          padding: '10px 16px 8px',
+          background: 'var(--surface-3)',
+          borderTop: '1px solid var(--border)',
+          borderBottom: '1px solid var(--border)',
+          cursor: 'pointer',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1,
+        }}
+      >
+        <Icon
+          name={collapsed ? 'chevron' : 'chevronDown'}
+          size={12}
+          style={{ color: 'var(--text-faint)' }}
+        />
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)' }}>
+          {ADVISORY_COPY.title}
+        </span>
+        <span style={{ fontFamily: mono, fontSize: 11, color: 'var(--text-faint)' }}>
+          {sigs.length}
+        </span>
+        <span
+          style={{
+            flex: 1,
+            fontSize: 11.5,
+            color: 'var(--text-faint)',
+            textAlign: 'right',
+          }}
+        >
+          {ADVISORY_COPY.columnSubhead}
+        </span>
+      </div>
+      {!collapsed && (
+        <div style={{ padding: '11px 16px 15px' }}>
+          <p
+            style={{
+              margin: '0 0 10px',
+              fontSize: 11.5,
+              lineHeight: 1.55,
+              color: 'var(--text-muted)',
+              maxWidth: 640,
+            }}
+          >
+            {ADVISORY_COPY.blurb}
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 540 }}>
+            {sigs.map((s) => (
+              <SigRow
+                key={s.key}
+                sig={s}
+                max={max}
+                active={s.key === activeSignatureKey}
+                onPick={(sig) => onSelectSignature?.(sig)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Card.
  * ------------------------------------------------------------------ */
 
@@ -513,6 +704,16 @@ export function ComplianceCard({
   onSelectSignature,
   activeSignatureKey = null,
 }: CompliancePaneProps): ReactElement {
+  /*
+   * Collapse state for the Advisories section, LOCAL rather than in the parent's
+   * `collapsedGroups` — that map is keyed by `ComplianceClass` and advisories are
+   * not one (see {@link AdvisorySection}). Default EXPANDED: the section renders
+   * nothing at all when empty, so it is only ever on screen when there is
+   * something in it, and a collapsed-by-default section that appears out of
+   * nowhere would read as one more thing to go looking for.
+   */
+  const [advisoriesCollapsed, setAdvisoriesCollapsed] = useState(false);
+
   /*
    * Cross-link reveal (gfx): when a finding §req sets `expandedReq` to a row in a
    * group that's collapsed or filtered out, the row never renders and the click
@@ -700,6 +901,15 @@ export function ComplianceCard({
             </div>
           );
         })}
+        {/* Advisories LAST, below Permissive — outside the GROUPS map because it
+            is not a §7 verifiability class and must never be graded as one. */}
+        <AdvisorySection
+          signatures={signatures}
+          collapsed={advisoriesCollapsed}
+          onToggle={() => setAdvisoriesCollapsed((v) => !v)}
+          activeSignatureKey={activeSignatureKey}
+          onSelectSignature={onSelectSignature}
+        />
       </div>
     </div>
   );

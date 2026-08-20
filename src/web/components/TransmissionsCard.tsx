@@ -187,6 +187,21 @@ function httpTone(status: number | null): string {
 }
 
 /** The far-right findings cell's rendered decision: text, color, and tooltip. */
+/**
+ * The eyebrow above the active cross-filter chip (agj.18).
+ *
+ * The chip is driven by whatever {@link Signature} the compliance column picked,
+ * and since agj.15 that can be an advisory (`kind: 'advisory'`, keyed
+ * `adv|<adv.id>`) — reachable for real since agj.16 put advisory rows in the
+ * column. A hardcoded "Issue" would then label an advisory a defect, which is
+ * the one thing the category forbids: an advisory is raised against a payload
+ * that broke no rule (DESIGN §7.1; `src/ingest/stages/semantic/advisory.ts`).
+ * So the label follows the KIND, not the position in the UI.
+ */
+export function signatureEyebrow(sig: Pick<Signature, 'kind'>): string {
+  return sig.kind === 'advisory' ? 'Advisory' : 'Issue';
+}
+
 export interface FindingsCell {
   text: string;
   color: string;
@@ -384,8 +399,9 @@ function PointerLine({
  * carries no verdict, so there is no StatusPill here either.
  *
  * The tone is the accent, never a status colour and never the --mixed amber that
- * means warning/outdated elsewhere on this dashboard — see AdvisoriesCard's
- * header for the full reasoning. The pointer drill-down is kept: it is the one
+ * means warning/outdated elsewhere on this dashboard — DESIGN §7.1 carries the
+ * full reasoning, and `sigTone()` in ComplianceCard.tsx applies the same rule to
+ * the advisory rows in the compliance column. The pointer drill-down is kept: it is the one
  * piece of FindingItem that applies unchanged, and it is how a supplier sees
  * what the observation is about.
  */
@@ -1586,7 +1602,7 @@ export function TransmissionsCard({
               fontWeight: 700,
             }}
           >
-            Issue
+            {signatureEyebrow(activeSignature)}
           </span>
           <span
             title={activeSignature.title}

@@ -34,8 +34,14 @@ import type { FindingView, Severity } from '../api';
 
 // Dynamic + awaited so the assignment above runs BEFORE the component graph
 // evaluates (static imports are all hoisted, which would defeat it).
-const { metaCells, deriveTransmissionType, META_GRID_COLUMNS, findingsCell, flaggedPointers } =
-  await import('./TransmissionsCard.js');
+const {
+  metaCells,
+  deriveTransmissionType,
+  META_GRID_COLUMNS,
+  findingsCell,
+  flaggedPointers,
+  signatureEyebrow,
+} = await import('./TransmissionsCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
 function tx(over: Partial<Parameters<typeof metaCells>[0]> = {}): Parameters<typeof metaCells>[0] {
@@ -255,4 +261,14 @@ test('the inspector highlights finding pointers but never an advisory’s', () =
   // The highlight paints in --mixed, the warning tone — an advisory's lines must
   // stay untouched. Its `pointer:` button still scrolls there by data-path.
   assert.deepEqual([...flagged], ['/data/0/TVC']);
+});
+
+test('the cross-filter chip calls an advisory an Advisory, not an Issue', () => {
+  // agj.18: the eyebrow was the literal "Issue" for whatever signature the
+  // compliance column picked. Since agj.16 that can be an advisory — raised
+  // against a payload that broke no rule — and labelling it a defect is the one
+  // thing DESIGN §7.1 forbids the category.
+  assert.equal(signatureEyebrow({ kind: 'advisory' }), 'Advisory');
+  assert.equal(signatureEyebrow({ kind: 'schema' }), 'Issue');
+  assert.equal(signatureEyebrow({ kind: 'check' }), 'Issue');
 });
