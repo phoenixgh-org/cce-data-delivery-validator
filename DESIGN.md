@@ -289,8 +289,13 @@ Several properties follow from that decision:
 `ADVISORY_CHECKS` in [`advisory.ts`](src/ingest/stages/semantic/advisory.ts) is the registration
 point and the count of record. Each check's scope (what it reads, what it
 deliberately excludes, and why) is documented in its own module header. The
-dashboard surface (section behaviour, palette, and cross-filtering) is specified in
-[`ComplianceCard.tsx`](src/web/components/ComplianceCard.tsx).
+dashboard surface is specified in two places: the compliance column (section
+behaviour, palette, and cross-filtering) in
+[`ComplianceCard.tsx`](src/web/components/ComplianceCard.tsx), and the
+transmission detail (the separate advisory block, the chip that reads "Advisory"
+rather than "Issue", and the exclusion of advisories from the findings cell and the
+raw-payload inspector) in
+[`TransmissionsCard.tsx`](src/web/components/TransmissionsCard.tsx).
 
 | Advisory | Observes | Module |
 |---|---|---|
