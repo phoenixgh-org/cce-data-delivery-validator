@@ -162,9 +162,9 @@ export function advisorySignatures(signatures: readonly Signature[]): Signature[
  * The bar/count colour for a signature row.
  *
  * `--fail` for a hard fail, `--mixed` for a soft/info verdict signature — and
- * `--accent-text` for an ADVISORY, which is NOT a lesser defect. DESIGN §7.1 is
- * explicit that the advisory surface takes accent and neutrals and never a status
- * colour, `--mixed` least of all: that amber already means *warning / outdated*
+ * `--accent-text` for an ADVISORY, which is NOT a lesser defect. The advisory
+ * surface takes accent and neutrals and never a status colour, `--mixed` least
+ * of all: that amber already means *warning / outdated*
  * everywhere on this dashboard (the `pass-outdated` pill, the OUTDATED SCHEMA
  * tag, flagged payload lines), so an advisory row falling through to it would
  * say "a lesser defect" in the one place that must not say defect at all. An

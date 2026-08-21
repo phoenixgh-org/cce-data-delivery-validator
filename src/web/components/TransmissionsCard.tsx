@@ -399,9 +399,9 @@ function PointerLine({
  * carries no verdict, so there is no StatusPill here either.
  *
  * The tone is the accent, never a status colour and never the --mixed amber that
- * means warning/outdated elsewhere on this dashboard — DESIGN §7.1 carries the
- * full reasoning, and `sigTone()` in ComplianceCard.tsx applies the same rule to
- * the advisory rows in the compliance column. The pointer drill-down is kept: it is the one
+ * means warning/outdated elsewhere on this dashboard — `sigTone()` in
+ * ComplianceCard.tsx carries the full reasoning and applies the same rule to the
+ * advisory rows in the compliance column. The pointer drill-down is kept: it is the one
  * piece of FindingItem that applies unchanged, and it is how a supplier sees
  * what the observation is about.
  */
