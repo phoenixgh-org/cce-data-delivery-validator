@@ -171,7 +171,7 @@ Stage 8 never halts the request. Every §1.8, §2.1, and §3.x concern is a teac
 finding rather than a rejection.
 
 The stage numbers are stable labels used in code comments and in `docs/api.md`; they
-are not the run order. `src/ingest/route.ts` runs the method check before the session
+are not the run order. [`src/ingest/route.ts`](src/ingest/route.ts) runs the method check before the session
 check and explains why.
 
 ### 6.1 Division of labour between §3.1 and §3.2
@@ -182,15 +182,11 @@ would count the same evidence twice.
 
 §3.1 therefore owns the half that a schema cannot express: the conditional duty to
 declare `meta.customDataSchema` when the payload carries manufacturer-specific data
-objects. Those are clause 4.5 `z`-prefixed keys, plus keys that are custom by
-elimination, i.e., neither DS01-shaped nor a mis-cased DS01 code (e.g., `customTemp`
-or `zTPCM`). Keys in the second group also raise an informational finding for
-non-conformant naming. Unrecognized DS01-shaped codes and mis-cased codes never
-affect the grade.
-
-The conditional runs at stage 8 and independently of the schema, because
+objects. It runs at stage 8 and independently of the schema, because
 `meta.customDataSchema` does not exist in 0.8.1, and that schema's
-`additionalProperties: true` lets custom objects pass Ajv unexamined (see §9).
+`additionalProperties: true` lets custom objects pass Ajv unexamined (see §9). The
+detection rule and its deliberate limits are in
+[`custom-schema.ts`](src/ingest/stages/semantic/custom-schema.ts).
 
 ### 6.2 The response body
 
@@ -263,7 +259,7 @@ registered but older schema version shows "pass-outdated": those findings are `i
 with the `outdated` flag and no pass finding, so counting pass and fail alone would
 wrongly claim the check never ran (tracked as `cce-data-delivery-validator-2kx`).
 
-This table is the source for `COMPLIANCE_MATRIX` in `src/api/compliance-matrix.ts`,
+This table is the source for `COMPLIANCE_MATRIX` in [`src/api/compliance-matrix.ts`](src/api/compliance-matrix.ts),
 which encodes the same 27 rows verbatim. Change them together.
 
 ### 7.1 Advisories
@@ -290,22 +286,22 @@ Several properties follow from that decision:
 - Advisory wording observes and never concludes. A `null` cannot prove "no sensor
   fitted", because a broken sensor looks identical.
 
-`ADVISORY_CHECKS` in `src/ingest/stages/semantic/advisory.ts` is the registration
+`ADVISORY_CHECKS` in [`advisory.ts`](src/ingest/stages/semantic/advisory.ts) is the registration
 point and the count of record. Each check's scope (what it reads, what it
 deliberately excludes, and why) is documented in its own module header. The
 dashboard surface (section behaviour, palette, and cross-filtering) is specified in
-`src/web/components/ComplianceCard.tsx`.
+[`ComplianceCard.tsx`](src/web/components/ComplianceCard.tsx).
 
 | Advisory | Observes | Module |
 |---|---|---|
-| `adv.null_identity` | The branch's one appliance identifier is blank: `ASER` on `ems-report`, `AMID` on `rtmd-report` | `null-identity.ts` |
-| `adv.null_padding` | A record property is `null` in every record that carried it, over at least 12 records | `null-padding.ts` |
-| `adv.date_format` | A production date sent in some form other than the ISO 8601 calendar date `YYYY-MM-DD` | `date-format.ts` |
-| `adv.time_not_increasing` | `records[].ABST`, walked in array order, steps backward or repeats | `time-order.ts` |
-| `adv.compressor_exceeds_supply` | A mains EMS record whose `CMPR` exceeds the same record's `SVA` | `compressor-supply.ts` |
-| `adv.cmpr_minutes` | EMS compressor runtimes that never exceed 15, suggesting a minutes-valued feed in a seconds-valued envelope | `cmpr-minutes.ts` |
-| `adv.sample_gap` | Two consecutive readings more than 900 s apart, allowing 60 s of quantization tolerance | `sample-gap.ts` |
-| `adv.duplicate_records` | The same record delivered twice inside one transmission | `duplicate-records.ts` |
+| `adv.null_identity` | The branch's one appliance identifier is blank: `ASER` on `ems-report`, `AMID` on `rtmd-report` | [`null-identity.ts`](src/ingest/stages/semantic/null-identity.ts) |
+| `adv.null_padding` | A record property is `null` in every record that carried it, over at least 12 records | [`null-padding.ts`](src/ingest/stages/semantic/null-padding.ts) |
+| `adv.date_format` | A production date sent in some form other than the ISO 8601 calendar date `YYYY-MM-DD` | [`date-format.ts`](src/ingest/stages/semantic/date-format.ts) |
+| `adv.time_not_increasing` | `records[].ABST`, walked in array order, steps backward or repeats | [`time-order.ts`](src/ingest/stages/semantic/time-order.ts) |
+| `adv.compressor_exceeds_supply` | A mains EMS record whose `CMPR` exceeds the same record's `SVA` | [`compressor-supply.ts`](src/ingest/stages/semantic/compressor-supply.ts) |
+| `adv.cmpr_minutes` | EMS compressor runtimes that never exceed 15, suggesting a minutes-valued feed in a seconds-valued envelope | [`cmpr-minutes.ts`](src/ingest/stages/semantic/cmpr-minutes.ts) |
+| `adv.sample_gap` | Two consecutive readings more than 900 s apart, allowing 60 s of quantization tolerance | [`sample-gap.ts`](src/ingest/stages/semantic/sample-gap.ts) |
+| `adv.duplicate_records` | The same record delivered twice inside one transmission | [`duplicate-records.ts`](src/ingest/stages/semantic/duplicate-records.ts) |
 
 All modules are under `src/ingest/stages/semantic/`.
 
