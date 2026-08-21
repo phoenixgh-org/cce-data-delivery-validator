@@ -184,7 +184,13 @@ export function compressorSupplyCheck(ctx: PipelineContext): Finding[] {
   const first = found[0]!;
   const worst = found.reduce((max, one) => Math.max(max, one.excess), 0);
   const readingNoun = found.length === 1 ? 'reading' : 'readings';
-  const named = joinPhrases([...new Set(found.map((one) => one.key))]);
+  // One record can put both compressors past SVA, so the list that follows may
+  // name one object or two. The verbs agree with the number of objects NAMED,
+  // which is independent of found.length (two readings can name one key).
+  const namedKeys = [...new Set(found.map((one) => one.key))];
+  const named = joinPhrases(namedKeys);
+  const namedIs = namedKeys.length === 1 ? 'is' : 'are';
+  const namedCounts = namedKeys.length === 1 ? 'counts' : 'count';
   // With one reading, the first IS the worst — naming it twice reads as two
   // separate observations.
   const worstSentence =
@@ -195,13 +201,14 @@ export function compressorSupplyCheck(ctx: PipelineContext): Finding[] {
       id: 'adv.compressor_exceeds_supply',
       pointer: first.pointer,
       detail:
-        `This transmission carries ${found.length} ${readingNoun} where ${named} is larger than ` +
-        `${SUPPLY_KEY} in the same record. The first is at ${first.pointer}, where ${first.key} ` +
+        `This transmission carries ${found.length} ${readingNoun} where ${named} ${namedIs} ` +
+        `larger than ${SUPPLY_KEY} in the same record. The first is at ${first.pointer}, ` +
+        `where ${first.key} ` +
         `is ${first.runtime} s and ${SUPPLY_KEY} is ${first.supply} s — ${first.excess} s of ` +
         `compressor runtime beyond the supply that record accounts for. ${worstSentence}` +
         `On a mains appliance the two are accumulators over the same 15-minute period: ` +
         `${SUPPLY_KEY} counts the seconds the AC supply sat within the bounds the appliance ` +
-        `operates in, and ${named} counts the seconds the compressor ran, so a receiving ` +
+        `operates in, and ${named} ${namedCounts} the seconds the compressor ran, so a receiving ` +
         `country reads compressor runtime as a duration inside the window ${SUPPLY_KEY} ` +
         `describes. Records that carry DCSV and DCCD instead of ${SUPPLY_KEY} are ` +
         `solar-supplied and are not read here: DS01 defines no DC supply availability in ` +

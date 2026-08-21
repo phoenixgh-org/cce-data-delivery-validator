@@ -296,7 +296,26 @@ test('both compressors in one record are two readings, and both are named', () =
   );
   assert.ok(finding);
   assert.match(finding.detail ?? '', /carries 2 readings/);
-  assert.match(finding.detail ?? '', /CMPR and CMPR2 is larger than SVA/);
+  // Two objects named, so the verbs that follow the list are plural (ezgh).
+  assert.match(finding.detail ?? '', /CMPR and CMPR2 are larger than SVA/);
+  assert.match(finding.detail ?? '', /CMPR and CMPR2 count the seconds the compressor ran/);
+});
+
+test('one object named takes the singular verb, however many readings there are', () => {
+  // Two readings, but both are CMPR — the verb agrees with the list, not the
+  // count (ezgh).
+  const [finding] = advisories(
+    checkOnly(
+      emsPayload([
+        mainsRecord(0, { CMPR: 700, SVA: 600 }),
+        mainsRecord(1, { CMPR: 800, SVA: 600 }),
+      ]),
+    ),
+  );
+  assert.ok(finding);
+  assert.match(finding.detail ?? '', /carries 2 readings/);
+  assert.match(finding.detail ?? '', /CMPR is larger than SVA/);
+  assert.match(finding.detail ?? '', /CMPR counts the seconds the compressor ran/);
 });
 
 test('the count and the worst excess are the transmission’s, over every report', () => {
