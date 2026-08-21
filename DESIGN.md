@@ -129,7 +129,7 @@ the 2025 UNICEF-consultation document with no DS01.3 successor; see `docs/clause
 
 | Stage | Check | On failure |
 |-------|-------|-----------|
-| — Framework | Request body ≤ 2 MiB (Fastify `bodyLimit`; see §8) | `413` **before any stage runs** — no row, and a framework error body rather than the ingest response shape |
+| — Framework | Request body ≤ 2 MiB (Fastify `bodyLimit`; §12) | `413` **before any stage runs** — no row, and a framework error body rather than the ingest response shape |
 | 1. Method/TLS | POST over HTTPS (§1.1) | TLS enforced at the edge; non-POST → `405` |
 | 0. Session | UUID exists & not expired | `404` |
 | 2. Auth (opt-in) | If enabled, the configured credential — token header, Basic, or Bearer — is present & correct (§1.3) | `401` |
@@ -151,13 +151,14 @@ changes.
 
 **§3.1 vs §3.2 (the division of labour).** Ajv at stage 7 grades §3.2 only. §3.1's structural
 half — the metadata block and the DS01 object shapes — is already implied by a passing Ajv run,
-so grading it again at stage 7 would double-count the same evidence. What §3.1 owns instead is
-the half a schema cannot express: `meta.customDataSchema` is required **only when** the payload
-carries manufacturer-specific data objects — clause 4.5 `z`-prefixed keys, plus any key that is
-custom by elimination (see §7 row 3.1). That conditional runs as a
-**schema-independent** stage-8 check, because `meta.customDataSchema` does not exist in 0.8.1 at
-all and 0.8.1's `additionalProperties: true` lets custom objects through Ajv unexamined. See §7
-row 3.1 and §9.
+so grading it again would double-count the same evidence. What §3.1 owns instead is the half a
+schema cannot express: `meta.customDataSchema` is required **only when** the payload carries
+manufacturer-specific data objects — clause 4.5 `z`-prefixed keys plus keys that are custom by
+elimination (neither DS01-shaped nor a mis-cased DS01 code, e.g. `customTemp`, `zTPCM`).
+Unrecognized DS01-shaped and mis-cased codes never drive the grade; the custom-by-elimination
+keys additionally raise a separate info finding for non-conformant naming. The conditional runs
+as a schema-independent stage-8 check, because `meta.customDataSchema` does not exist in 0.8.1 at
+all and 0.8.1's `additionalProperties: true` lets custom objects through Ajv unexamined (§9).
 
 Success: `200` — the single success status; `202` is not used. It carries a small JSON body
 summarizing what was recorded. The body is a
@@ -191,7 +192,7 @@ The product's distinguishing honesty is classifying every requirement, not just 
 | 2.1 | Serial delivery by default | 🟡 | Observe concurrent in-flight requests per session |
 | 2.2 | Deliver within minutes of receipt | 📝 | Remote-system receipt time is unknown to us |
 | 2.3 | Alarm within 15 min + include data since last tx | 📝 | Alarm origin time unknown to us |
-| 3.1 | Declare custom data objects via `meta.customDataSchema` | ✅ | Stage-8 semantic check, **not** the schema: fail when manufacturer-specific objects are present without the declaration — clause 4.5 `z`-prefixed keys **plus** keys that are custom by elimination (neither DS01-shaped nor a mis-cased DS01 code, e.g. `customTemp`, `zTPCM`); pass when they are declared, or when none are present. Unrecognized DS01-shaped and mis-cased codes never drive the grade. We record the declaration only — we never dereference it (§9). The custom-by-elimination keys additionally raise a separate info finding for non-conformant naming. The structural half of §3.1 is covered by §3.2's Ajv run |
+| 3.1 | Declare custom data objects via `meta.customDataSchema` | ✅ | Stage-8 semantic check, **not** the schema — see §6. Fails when manufacturer-specific objects arrive undeclared; passes when they are declared or absent. The declaration is recorded, never dereferenced (§9) |
 | 3.2 | Validates against the schema | ✅ | Ajv (the core check) |
 | 3.3 | Transmit all collected objects | 📝 | We don't know what they collect; we can *inventory* what's present |
 | 3.4 | Preserve logger time resolution | 🟡 | `ABST` interval regularity heuristic |
@@ -316,11 +317,14 @@ convention); a migration runner is deferred until the schema needs to evolve in 
   publishes **0.8.0, 0.8.1, 0.8.2 and 0.8.4** (0.8.3 is not published; nothing above 0.8.4 exists).
   The versions past 0.8.1 stay unregistered for now, so current remains 0.8.1. A payload declaring
   any unregistered version gets `422` with the supported list, never a silent fallback.
-- **Never fetched at runtime.** `meta.schemaVersion` is a *lookup key*, not a locator. We validate
-  only against pre-registered copies — runtime fetching would (a) couple our ingest path to an
-  external host's uptime, (b) be an SSRF foot-gun (a URL pulled from request data), and (c) destroy
-  the "we validated against *the official* version" claim. JSON Schema's `$id` is formally an
-  identifier, not a network locator, so this is also correct per spec.
+- **Never fetched at runtime.** `meta.schemaVersion` is a *lookup key*, not a locator, and we
+  validate only against pre-registered copies. Runtime fetching would couple our ingest path to an
+  external host's uptime, be an SSRF foot-gun (a URL pulled from request data), and destroy the
+  "we validated against *the official* version" claim. The spec agrees: `$id` identifies, it never
+  locates — published schemas declare `$id: https://schemas.2to8.cc/schemas/cce-interop-<version>.json`,
+  a host that does not resolve, while the artifact is served from a different host and path.
+  `normalizeVersion()` already accepts URN-shaped values carrying a semver triple, so the expected
+  upstream move of `$id` to a URN needs no code change here.
 - **Normalized matching.** The standard today is ambiguous about the field's form (the description
   points at `$id` — a URL — while the only example is a bare semver, `0.1.1`). Until the standard is
   clarified (§15), we **normalize on ingest**: accept either a bare semver or a full `$id`-style URL,
@@ -332,14 +336,7 @@ convention); a migration runner is deferred until the schema needs to evolve in 
   The vendored file is therefore kept **byte-identical** to the published artifact — cosmetic issues
   in the schema (the stale `0.1.1` example, the `schemaVersion`→`$id` phrasing) are **not** patched
   locally, but tracked as standard-revision proposals (§15), so the hash keeps matching what WHO
-  published. Verified 2026-07-31: vendored 0.8.1 is `290290fd…`, identical to the live published
-  artifact and to the upstream authoring folder.
-- **The `$id` is not a download location.** Published schemas declare
-  `$id: https://schemas.2to8.cc/schemas/cce-interop-<version>.json`, but that host does not
-  resolve — the artifact is served from a different host and path. That is the live proof of the
-  rule above rather than a counterexample to it: `$id` identifies, it never locates, and we never
-  fetch. `normalizeVersion()` already accepts URN-shaped values carrying a semver triple, so the
-  expected upstream move of `$id` to a URN needs no code change here.
+  published. Verified 2026-07-31: vendored 0.8.1 is `290290fd…`, identical to the published artifact.
 - **Adding a version is a policy act, not maintenance.** A new version arrives as a *new* vendored
   file plus a registry entry; an existing schema file is never edited in place. Upstream **0.8.2**
   is published and is the first version to define `meta.customDataSchema` — and its own `$comment`
@@ -378,8 +375,8 @@ in the dashboard so it's never a surprise.
 - **Capability URL caveat.** The UUID is a bearer secret in the path; URLs leak via logs,
   proxies, and browser history. Acceptable for synthetic test data (v1's only data). If real
   data is ever in scope, revisit (split ingest vs view tokens; move the secret to a header).
-- **HTTPS only**, with valid certs that don't require suppliers to install intermediates
-  (Country Guidance, Attachment 2).
+- **HTTPS only**, with valid certs that need no supplier-installed intermediates — terminated
+  at the Caddy edge under the proxy contract in §4.1.
 - **Auth secrets** stored hashed, never echoed after first display.
 - **Resource limits** — Fastify's `bodyLimit` bounds buffered request memory at **2 MiB**, set
   above the §1.4 1MB grading cap on purpose so oversized-but-bounded bodies still reach the size
@@ -401,8 +398,7 @@ in the dashboard so it's never a surprise.
 - **Frontend:** React + Vite SPA (with `react-router-dom`), built to `dist/web` and served by the
   same Node process via `@fastify/static` with an SPA fallback for non-API paths. Locked
   2026-05-30; the server-rendered alternative was dropped.
-- **Edge:** **Caddy** reverse proxy terminating TLS with automatic Let's Encrypt certs; honors the
-  proxy contract in §4.1.
+- **Edge:** Caddy reverse proxy terminating TLS; the contract it owes the app is §4.1.
 - **Local/dev:** `docker-compose` (app + Postgres), following that MDM system's healthcheck-gated
   bring-up.
 
