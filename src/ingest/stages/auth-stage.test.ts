@@ -59,10 +59,17 @@ function makeCtx(headers: Record<string, string | string[]>): PipelineContext {
 
 /** A fake Queryable whose `query` returns `session` (or no rows when null). */
 function fakeDb(session: SessionRow | null): Queryable {
-  return {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    query: (async () => ({ rows: session ? [session] : [] })) as any,
-  };
+  // `satisfies` on the shape auth.ts actually reads, then ONE widening cast at
+  // the boundary — rather than an annotation against Queryable['query'], which
+  // does not type-check: pg resolves `query` to a full QueryResult, so a fake
+  // returning only `rows` is missing command/rowCount/oid/fields. Supplying those
+  // four dead fields to satisfy the overload would buy nothing, and `as any`
+  // (with the lint suppression it needs) would stop checking the rows too. This
+  // way the row type stays pinned to SessionRow[].
+  const query = (async () => ({
+    rows: session ? [session] : [],
+  })) satisfies () => Promise<{ rows: SessionRow[] }>;
+  return { query } as unknown as Queryable;
 }
 
 /** Build a SessionRow with the given auth columns (defaults: auth disabled). */
