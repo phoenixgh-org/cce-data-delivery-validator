@@ -25,7 +25,7 @@
     "exercise": "tsx src/exercise/runner/run.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
     "test:db": "DATABASE_URL=postgresql://cce_validator:cce_validator@localhost:5432/cce_validator npm test",
-    "lint": "eslint . && prettier --check .",
+    "lint": "eslint . && prettier --check . && node scripts/check-sibling-refs.mjs",
     "format": "prettier --write ."
   },
   "devDependencies": {
