@@ -231,15 +231,8 @@ function describeCounts(sameAbst: number, identical: number): string {
   return `${abstClause}, and ${fullClause}`;
 }
 
-/**
- * A FUNCTION DECLARATION rather than the `export const check: SemanticCheck =`
- * idiom the §7 checks use, for the ESM-cycle reason spelled out at the same place
- * in null-padding.ts, null-identity.ts, date-format.ts, time-order.ts and
- * sample-gap.ts: this module imports {@link advisory} from advisory.ts while
- * advisory.ts names this check in `ADVISORY_CHECKS`, and only a hoisted
- * declaration is initialized before either module body runs.
- */
-export function duplicateRecordsCheck(ctx: PipelineContext): Finding[] {
+/** The `adv.duplicate_records` check, registered in `ADVISORY_CHECKS`. */
+export const duplicateRecordsCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
   const data = (ctx.parsedBody as { data?: unknown } | null | undefined)?.data;
   if (!Array.isArray(data) || data.length === 0) return [];
 
@@ -277,7 +270,4 @@ export function duplicateRecordsCheck(ctx: PipelineContext): Finding[] {
         `reading one row downstream.`,
     }),
   ];
-}
-
-/** The frozen stage-8 signature, checked without giving up the hoisting above. */
-duplicateRecordsCheck satisfies SemanticCheck;
+};

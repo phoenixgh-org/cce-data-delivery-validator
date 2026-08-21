@@ -196,15 +196,8 @@ function describeCeiling(tally: KeyTally): string {
   );
 }
 
-/**
- * A FUNCTION DECLARATION rather than the `export const check: SemanticCheck =`
- * idiom the §7 checks use, for the ESM-cycle reason spelled out at the same place
- * in null-padding.ts, null-identity.ts, date-format.ts, time-order.ts and
- * compressor-supply.ts: this module imports {@link advisory} from advisory.ts
- * while advisory.ts names this check in `ADVISORY_CHECKS`, and only a hoisted
- * declaration is initialized before either module body runs.
- */
-export function cmprMinutesCheck(ctx: PipelineContext): Finding[] {
+/** The `adv.cmpr_minutes` check, registered in `ADVISORY_CHECKS`. */
+export const cmprMinutesCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
   // RTMD is out of scope entirely — see the header.
   if (!isEmsBranch(ctx)) return [];
 
@@ -291,7 +284,4 @@ export function cmprMinutesCheck(ctx: PipelineContext): Finding[] {
         `${named} against it is what tells you whether this feed is on the current definition.`,
     }),
   ];
-}
-
-/** The frozen stage-8 signature, checked without giving up the hoisting above. */
-cmprMinutesCheck satisfies SemanticCheck;
+};

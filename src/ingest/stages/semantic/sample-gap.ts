@@ -183,15 +183,8 @@ function describeSpan(ms: number): string {
   return ms % 60_000 === 0 ? `${seconds} s (${seconds / 60} min)` : `${seconds} s`;
 }
 
-/**
- * A FUNCTION DECLARATION rather than the `export const check: SemanticCheck =`
- * idiom the §7 checks use, for the ESM-cycle reason spelled out at the same place
- * in null-padding.ts, null-identity.ts, date-format.ts and time-order.ts: this
- * module imports {@link advisory} from advisory.ts while advisory.ts names this
- * check in `ADVISORY_CHECKS`, and only a hoisted declaration is initialized
- * before either module body runs.
- */
-export function sampleGapCheck(ctx: PipelineContext): Finding[] {
+/** The `adv.sample_gap` check, registered in `ADVISORY_CHECKS`. */
+export const sampleGapCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
   const data = (ctx.parsedBody as { data?: unknown } | null | undefined)?.data;
   if (!Array.isArray(data) || data.length === 0) return [];
 
@@ -225,7 +218,4 @@ export function sampleGapCheck(ctx: PipelineContext): Finding[] {
         `them to. A reading at least every 900 s is what keeps each period accountable.`,
     }),
   ];
-}
-
-/** The frozen stage-8 signature, checked without giving up the hoisting above. */
-sampleGapCheck satisfies SemanticCheck;
+};

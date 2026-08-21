@@ -148,15 +148,8 @@ function describeFirst(first: NotForward): string {
     : `carries an ABST ${describeStep(first.backwardMs)} earlier than the record before it`;
 }
 
-/**
- * A FUNCTION DECLARATION rather than the `export const check: SemanticCheck =`
- * idiom the §7 checks use, for the ESM-cycle reason spelled out at the same place
- * in null-padding.ts, null-identity.ts and date-format.ts: this module imports
- * {@link advisory} from advisory.ts while advisory.ts names this check in
- * `ADVISORY_CHECKS`, and only a hoisted declaration is initialized before either
- * module body runs.
- */
-export function timeOrderCheck(ctx: PipelineContext): Finding[] {
+/** The `adv.time_not_increasing` check, registered in `ADVISORY_CHECKS`. */
+export const timeOrderCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
   const data = (ctx.parsedBody as { data?: unknown } | null | undefined)?.data;
   if (!Array.isArray(data) || data.length === 0) return [];
 
@@ -202,7 +195,4 @@ export function timeOrderCheck(ctx: PipelineContext): Finding[] {
         `order on the wire the order the readings happened in.`,
     }),
   ];
-}
-
-/** The frozen stage-8 signature, checked without giving up the hoisting above. */
-timeOrderCheck satisfies SemanticCheck;
+};

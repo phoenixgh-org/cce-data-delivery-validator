@@ -126,14 +126,8 @@ function describe(field: string, stats: FieldStats): string {
   return `${field} at ${stats.firstPointer} arrived as ${quote(stats.firstValue)}${more}`;
 }
 
-/**
- * A FUNCTION DECLARATION rather than the `export const check: SemanticCheck =`
- * idiom the §7 checks use, for the ESM-cycle reason spelled out at the same place
- * in null-padding.ts and null-identity.ts: this module imports {@link advisory}
- * from advisory.ts while advisory.ts names this check in `ADVISORY_CHECKS`, and
- * only a hoisted declaration is initialized before either module body runs.
- */
-export function dateFormatCheck(ctx: PipelineContext): Finding[] {
+/** The `adv.date_format` check, registered in `ADVISORY_CHECKS`. */
+export const dateFormatCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
   const data = (ctx.parsedBody as { data?: unknown } | null | undefined)?.data;
   if (!Array.isArray(data) || data.length === 0) return [];
 
@@ -192,7 +186,4 @@ export function dateFormatCheck(ctx: PipelineContext): Finding[] {
         `compare dates whose field widths vary.`,
     }),
   ];
-}
-
-/** The frozen stage-8 signature, checked without giving up the hoisting above. */
-dateFormatCheck satisfies SemanticCheck;
+};
