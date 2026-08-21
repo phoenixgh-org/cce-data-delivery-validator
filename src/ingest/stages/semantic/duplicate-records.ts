@@ -128,7 +128,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
-import { advisory } from './advisory.js';
+import { advisory } from './advisory-finding.js';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

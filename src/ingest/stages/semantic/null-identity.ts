@@ -93,7 +93,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
-import { advisory } from './advisory.js';
+import { advisory } from './advisory-finding.js';
 
 /** The one identifier this advisory grades on an `ems-report`. */
 const EMS_IDENTIFIER = 'ASER';
@@ -134,17 +134,8 @@ function isEmsBranch(ctx: PipelineContext): boolean {
   return ctx.meta.transferType === 'ems';
 }
 
-/**
- * A FUNCTION DECLARATION, not the sibling `export const check: SemanticCheck =`
- * idiom, and deliberately so: this module imports {@link advisory} from
- * advisory.ts while advisory.ts imports this check for `ADVISORY_CHECKS`, which
- * is an ESM cycle. A `const` binding would sit in its temporal dead zone when
- * advisory.ts's module body builds that array under the import order a test (or
- * any importer) reaching this module FIRST produces, throwing at load. A hoisted
- * function declaration is initialized before any module body runs, so the cycle
- * is safe in either order. `satisfies` below keeps the frozen signature checked.
- */
-export function nullIdentityCheck(ctx: PipelineContext): Finding[] {
+/** The `adv.null_identity` check, registered in `ADVISORY_CHECKS`. */
+export const nullIdentityCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
   const data = (ctx.parsedBody as { data?: unknown } | null | undefined)?.data;
   if (!Array.isArray(data) || data.length === 0) return [];
 
@@ -216,7 +207,4 @@ export function nullIdentityCheck(ctx: PipelineContext): Finding[] {
       detail: `${unnamed} of ${total} ${reportNoun} in this transmission ${verb} ${body}`,
     }),
   ];
-}
-
-/** The frozen stage-8 signature, checked without giving up the hoisting above. */
-nullIdentityCheck satisfies SemanticCheck;
+};

@@ -71,7 +71,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
-import { advisory } from './advisory.js';
+import { advisory } from './advisory-finding.js';
 
 /** The strict ISO-8601 calendar date: four-digit year, two-digit month and day. */
 export const ISO_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;

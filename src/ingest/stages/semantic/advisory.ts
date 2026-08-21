@@ -77,53 +77,21 @@ import { nullPaddingCheck } from './null-padding.js';
 import { sampleGapCheck } from './sample-gap.js';
 import { timeOrderCheck } from './time-order.js';
 
-/** Namespace prefix separating advisory ids from the §7 requirement ids. */
-export const ADVISORY_PREFIX = 'adv.';
-
 /**
- * An advisory id, e.g. `adv.null_identity`. Carried in BOTH `finding.requirement`
- * (so the §7 matrix ignores it) and `finding.code` (so it de-duplicates).
+ * The advisory constructor and its id helpers live in the LEAF module
+ * advisory-finding.ts so that the checks below can import them without importing
+ * this registry back — see that module's header for why (igw). They are
+ * re-exported here because this file is the front door to the category: every
+ * existing importer (src/api/signatures.ts, src/ingest/pipeline.ts, the check
+ * tests) keeps reaching for them at `semantic/advisory.js`.
  */
-export type AdvisoryId = `${typeof ADVISORY_PREFIX}${string}`;
-
-/**
- * Whether a `finding.requirement` (or `finding.code`) is an advisory id rather
- * than a §7 requirement id. Prefix-only, and unambiguous: every §7 id is
- * `MAJOR.MINOR` digits, so no requirement can ever start with `adv.`.
- */
-export function isAdvisoryId(id: string | null | undefined): boolean {
-  return typeof id === 'string' && id.startsWith(ADVISORY_PREFIX);
-}
-
-/** What a check supplies when it raises one advisory. */
-export interface AdvisoryInput {
-  /** The `adv.*` id of the advisory being raised. */
-  id: AdvisoryId;
-  /**
-   * The observation, in the supplier's terms. OBSERVE, never conclude — see the
-   * wording note in the module header.
-   */
-  detail: string;
-  /** JSON Pointer to where it was observed, for the raw-payload drill-down. */
-  pointer?: string | null;
-}
-
-/**
- * Build one advisory {@link Finding}. This is the ONLY way advisories should be
- * constructed: it is what guarantees the three enforcement properties above —
- * `severity: 'info'`, the `adv.*` id in both `requirement` and `code`, and
- * `outdated` left false (never set here, so an advisory can never be folded into
- * the distinct-issues list).
- */
-export function advisory(input: AdvisoryInput): Finding {
-  return {
-    requirement: input.id,
-    severity: 'info',
-    detail: input.detail,
-    pointer: input.pointer ?? null,
-    code: input.id,
-  };
-}
+export {
+  ADVISORY_PREFIX,
+  advisory,
+  isAdvisoryId,
+  type AdvisoryId,
+  type AdvisoryInput,
+} from './advisory-finding.js';
 
 /**
  * THE REGISTRATION POINT. Every advisory check lands here, and only here — the
@@ -134,11 +102,10 @@ export function advisory(input: AdvisoryInput): Finding {
  * (bva slice C) plus `adv.date_format` (agj.1), `adv.time_not_increasing`
  * (agj.4), `adv.compressor_exceeds_supply` (agj.3), `adv.cmpr_minutes` (agj.7),
  * `adv.sample_gap` (agj.6) and `adv.duplicate_records` (agj.8); it grows from
- * here. Each is a HOISTED FUNCTION DECLARATION in its own module, not the
- * `const check: SemanticCheck =` idiom the §7 checks use — the checks import
- * {@link advisory} from here while this array names them, which is an ESM cycle
- * that a `const` binding would resolve into a temporal-dead-zone throw under one
- * of the two possible load orders. See the note above each declaration.
+ * here. Each is written in the ordinary `export const …Check: SemanticCheck =`
+ * idiom the §7 checks use: the imports run ONE WAY (checks ← advisory-finding.ts,
+ * this registry ← checks), so there is no cycle and no load-order hazard to work
+ * around (igw). A new check needs nothing but a module and an entry below.
  */
 export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   nullIdentityCheck,

@@ -79,7 +79,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
-import { advisory } from './advisory.js';
+import { advisory } from './advisory-finding.js';
 
 /** The compressor-runtime objects, in the order they are reported. */
 export const COMPRESSOR_KEYS: readonly string[] = ['CMPR', 'CMPR2'];

@@ -119,7 +119,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
-import { advisory } from './advisory.js';
+import { advisory } from './advisory-finding.js';
 import { COMPRESSOR_KEYS, SUPPLY_KEY } from './compressor-supply.js';
 import { MIN_RECORDS } from './null-padding.js';
 

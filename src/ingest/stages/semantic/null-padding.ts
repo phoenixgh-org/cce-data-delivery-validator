@@ -73,7 +73,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
-import { advisory } from './advisory.js';
+import { advisory } from './advisory-finding.js';
 
 /**
  * Minimum number of records that must carry a property before its being null in
@@ -111,14 +111,8 @@ interface KeyStats {
   firstPointer: string;
 }
 
-/**
- * A FUNCTION DECLARATION rather than the sibling `export const check:
- * SemanticCheck =` idiom, for the ESM-cycle reason spelled out at the same place
- * in null-identity.ts: this module and advisory.ts import each other, and a
- * hoisted declaration is initialized before any module body runs, so
- * `ADVISORY_CHECKS` can name it whichever module loads first.
- */
-export function nullPaddingCheck(ctx: PipelineContext): Finding[] {
+/** The `adv.null_padding` check, registered in `ADVISORY_CHECKS`. */
+export const nullPaddingCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
   const data = (ctx.parsedBody as { data?: unknown } | null | undefined)?.data;
   if (!Array.isArray(data) || data.length === 0) return [];
 
@@ -176,7 +170,4 @@ export function nullPaddingCheck(ctx: PipelineContext): Finding[] {
         `a value for this property".`,
     }),
   ];
-}
-
-/** The frozen stage-8 signature, checked without giving up the hoisting above. */
-nullPaddingCheck satisfies SemanticCheck;
+};
