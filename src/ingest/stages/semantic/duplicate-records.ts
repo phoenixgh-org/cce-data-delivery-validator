@@ -26,11 +26,12 @@
  * boundary and it is a scope decision, not an oversight: the overlap PQS actually
  * described spans two files, and answering it needs a read path the ingest
  * pipeline does not have today (DESIGN §8 — `transmission.content_hash` is a
- * per-transmission hash; we hold no per-record ones). Whether cross-transmission overlap is in scope
- * for v1 is the open question tracked as agj.14. Until that is decided, an
- * observation this check does NOT make is one nobody should read into its
- * silence: a payload whose every record repeats the PREVIOUS transmission is
- * silent here, correctly, because from inside itself it repeats nothing.
+ * per-transmission hash; we hold no per-record ones). Whether cross-transmission
+ * overlap is in scope for v1 is the open question tracked as agj.14. Until that
+ * is decided, an observation this check does NOT make is one nobody should read
+ * into its silence: a payload whose every record repeats the PREVIOUS
+ * transmission is silent here, correctly, because from inside itself it repeats
+ * nothing.
  *
  * ── AN ADVISORY, AND §1.8'S VERDICT DOES NOT MOVE ────────────────────────────
  * `severity: 'info'` under the `adv.*` namespace via {@link advisory}, so it

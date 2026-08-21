@@ -171,8 +171,8 @@ Stage 8 never halts the request. Every §1.8, §2.1, and §3.x concern is a teac
 finding rather than a rejection.
 
 The stage numbers are stable labels used in code comments and in `docs/api.md`; they
-are not the run order. [`src/ingest/route.ts`](src/ingest/route.ts) runs the method check before the session
-check and explains why.
+are not the run order. [`src/ingest/route.ts`](src/ingest/route.ts) runs the method
+check before the session check and explains why.
 
 ### 6.1 Division of labour between §3.1 and §3.2
 
@@ -259,8 +259,9 @@ registered but older schema version shows "pass-outdated": those findings are `i
 with the `outdated` flag and no pass finding, so counting pass and fail alone would
 wrongly claim the check never ran (tracked as `cce-data-delivery-validator-2kx`).
 
-This table is the source for `COMPLIANCE_MATRIX` in [`src/api/compliance-matrix.ts`](src/api/compliance-matrix.ts),
-which encodes the same 27 rows verbatim. Change them together.
+This table is the source for `COMPLIANCE_MATRIX` in
+[`src/api/compliance-matrix.ts`](src/api/compliance-matrix.ts), which encodes the
+same 27 rows verbatim. Change them together.
 
 ### 7.1 Advisories
 
@@ -286,10 +287,10 @@ Several properties follow from that decision:
 - Advisory wording observes and never concludes. A `null` cannot prove "no sensor
   fitted", because a broken sensor looks identical.
 
-`ADVISORY_CHECKS` in [`advisory.ts`](src/ingest/stages/semantic/advisory.ts) is the registration
-point and the count of record. Each check's scope (what it reads, what it
-deliberately excludes, and why) is documented in its own module header. The
-dashboard surface is specified in two places: the compliance column (section
+`ADVISORY_CHECKS` in [`advisory.ts`](src/ingest/stages/semantic/advisory.ts) is the
+registration point and the count of record. Each check's scope (what it reads,
+what it deliberately excludes, and why) is documented in its own module header.
+The dashboard surface is specified in two places: the compliance column (section
 behaviour, palette, and cross-filtering) in
 [`ComplianceCard.tsx`](src/web/components/ComplianceCard.tsx), and the
 transmission detail (the separate advisory block, the chip that reads "Advisory"
