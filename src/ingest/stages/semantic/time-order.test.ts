@@ -269,7 +269,12 @@ test('a forward-ordered payload stays silent, on both branches', () => {
 });
 
 test('a repeated timestamp is observed — strictly increasing means no ties', () => {
-  const [finding] = advisories(checkOnly(emsPayload([abstAt(0), abstAt(0), abstAt(15)])));
+  // Two repeats, not one: the worst-step sentence is suppressed for a single
+  // not-forward record (sl4y), so the zero-worst wording needs a plural to say
+  // it about.
+  const [finding] = advisories(
+    checkOnly(emsPayload([abstAt(0), abstAt(0), abstAt(0), abstAt(15)])),
+  );
   assert.ok(finding, 'a repeat raised nothing');
   assert.equal(finding.pointer, '/data/0/records/1/ABST');
   assert.match(finding.detail ?? '', /carries the same ABST as the record before it/);
@@ -306,6 +311,18 @@ test('it carries the count, the worst backward step in seconds, and the first po
   assert.equal(finding.pointer, '/data/0/records/1/ABST', 'and on the finding itself');
 });
 
+test('a single step does not report itself twice', () => {
+  // One not-forward record: describeFirst already names the step, so appending
+  // 'The furthest any of them steps back is …' would state the same measurement
+  // a second time, in the plural, about a set of one (sl4y).
+  const [finding] = advisories(checkOnly(emsPayload([abstAt(15), abstAt(0), abstAt(30)])));
+  assert.ok(finding);
+  assert.match(finding.detail ?? '', /carries 1 record whose ABST/);
+  assert.match(finding.detail ?? '', /900 s \(15 min\) earlier than the record before it/);
+  assert.doesNotMatch(finding.detail ?? '', /any of them/, 'no plural for a set of one');
+  assert.doesNotMatch(finding.detail ?? '', /furthest/, 'the first IS the furthest');
+});
+
 test('the seconds reading stands alone when the step is not a whole minute', () => {
   const [finding] = advisories(
     checkOnly(emsPayload(['20240115T033030Z', '20240115T033000Z', '20240115T034500Z'])),
@@ -331,7 +348,6 @@ test('a sub-second reversal is a step BACK, not a repeat (1dda)', () => {
   assert.ok(finding, 'a reversal under one second still raised nothing');
   assert.equal(finding.pointer, '/data/0/records/1/ABST');
   assert.match(finding.detail ?? '', /300 ms earlier than the record before it/);
-  assert.match(finding.detail ?? '', /furthest any of them steps back is 300 ms/);
   assert.doesNotMatch(finding.detail ?? '', /same ABST/, 'the two values differ');
   assert.doesNotMatch(finding.detail ?? '', /No timestamp steps back/, 'one did step back');
 });
@@ -341,7 +357,6 @@ test('only an exactly equal epoch value reads as a repeat', () => {
   const [tie] = advisories(checkOnly(emsPayload(['20240115T033000.000Z', '20240115T033000Z'])));
   assert.ok(tie);
   assert.match(tie.detail ?? '', /carries the same ABST as the record before it/);
-  assert.match(tie.detail ?? '', /No timestamp steps back/);
 
   // And a step of one millisecond is named rather than rounded away.
   const [step] = advisories(checkOnly(emsPayload(['20240115T033000.001Z', '20240115T033000Z'])));

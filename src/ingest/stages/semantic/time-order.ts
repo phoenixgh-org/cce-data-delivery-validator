@@ -172,14 +172,20 @@ export function timeOrderCheck(ctx: PipelineContext): Finding[] {
   const worstMs = found.reduce((max, one) => Math.max(max, one.backwardMs), 0);
   const positionNoun = found.length === 1 ? 'record' : 'records';
 
-  // A zero worst step means every one of them repeats a timestamp rather than
-  // reversing — there is no step back to name, so naming one would be naming a
-  // zero. It takes an EXACTLY equal epoch value to get here: a sub-second
-  // reversal is a positive number of milliseconds and is named as one.
+  // With one record there is nothing for a worst step to be worst OF: the first
+  // IS it, and describeFirst has already said what it did, so the plural sentence
+  // would restate the same measurement as if it were a second observation (sl4y,
+  // mirroring compressor-supply.ts). A zero worst step means every one of them
+  // repeats a timestamp rather than reversing — there is no step back to name, so
+  // naming one would be naming a zero. It takes an EXACTLY equal epoch value to
+  // get here: a sub-second reversal is a positive number of milliseconds and is
+  // named as one.
   const worstPhrase =
-    worstMs === 0
-      ? `No timestamp steps back — each of these repeats the one before it.`
-      : `The furthest any of them steps back is ${describeStep(worstMs)}.`;
+    found.length === 1
+      ? ''
+      : worstMs === 0
+        ? `No timestamp steps back — each of these repeats the one before it. `
+        : `The furthest any of them steps back is ${describeStep(worstMs)}. `;
 
   return [
     advisory({
@@ -188,7 +194,7 @@ export function timeOrderCheck(ctx: PipelineContext): Finding[] {
       detail:
         `This transmission carries ${found.length} ${positionNoun} whose ABST is not later ` +
         `than the ABST of the record before it in the same report. The first is at ` +
-        `${first.pointer}, which ${describeFirst(first)}. ${worstPhrase} A report's records ` +
+        `${first.pointer}, which ${describeFirst(first)}. ${worstPhrase}A report's records ` +
         `are a time series: E006 reads ABST as strictly increasing down the array, and a ` +
         `receiving country stores the records in the order they were sent, so a series that ` +
         `steps back or repeats reads as a different history than the logger recorded. ` +
