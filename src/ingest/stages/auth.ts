@@ -12,7 +12,7 @@
  *
  * Like {@link sessionStage} (stage 0), this re-fetches the session by uuid with an
  * injectable `db?` rather than threading the row through {@link PipelineContext}.
- * The extra PK lookup is accepted for v1 (DESIGN §14.6 / the M6 bite) — the frozen
+ * The extra PK lookup is accepted for v1 (the M6 auth-opt-in bite) — the frozen
  * pipeline contract is never widened. Credential verification itself is delegated
  * wholesale to {@link verifyCredential} (src/auth/credential.ts, ct4.1): this stage
  * only decides WHETHER to verify (skip when disabled) and maps the request headers

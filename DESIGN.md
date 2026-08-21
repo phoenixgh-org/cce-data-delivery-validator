@@ -406,17 +406,11 @@ in the dashboard so it's never a surprise.
 - **Local/dev:** `docker-compose` (app + Postgres), following that MDM system's healthcheck-gated
   bring-up.
 
-## 14. Build order (v1 milestones)
+## 14. Build history
 
-1. **Skeleton** — Node/TS project, Fastify server, Postgres via docker-compose with first-boot
-   schema, schema registry loading the vendored versions (0.8.0 + 0.8.1 today); Ajv compiles.
-2. **Ingest core** — `POST /i/{uuid}`: size/content-type/encoding/parse/schema stages → persist transmission + findings → correct status codes.
-3. **Sessions + dashboard read** — `POST /api/sessions`, `GET /api/sessions/{uuid}` (transmissions, findings, summary).
-4. **Web UI** — Create button, setup page with copy-paste examples, transmission list + drill-down, the §7 matrix.
-5. **Semantic checks** — duplicate `transferId`, interval regularity, concurrency, object inventory.
-6. **§1.3 auth opt-in** — generate credential, enforce on ingest, show config snippet.
-7. **Retention worker** + lifecycle display.
-8. **Polish** — examples, error messaging, fixture transmissions (valid + each conditional failure case) as tests.
+All eight v1 milestones — skeleton, ingest core, dashboard read, web UI, semantic
+checks, §1.3 auth opt-in, retention worker, polish — have shipped; the commit log
+is the record. Everything above describes the built system, not a plan.
 
 ## 15. Future / deferred
 

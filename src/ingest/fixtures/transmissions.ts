@@ -1,5 +1,5 @@
 /**
- * Fixture transmissions for the conditional-failure cases (bat.1; DESIGN.md §14.8).
+ * Fixture transmissions for the conditional-failure cases (bat.1; DESIGN.md §6).
  *
  * One VALID baseline (§6 happy path → 200) plus one fixture per conditional
  * failure, each mapped to the stage that grades it and the §6 response code it

@@ -1,5 +1,5 @@
 /**
- * Fixture transmissions as tests (bat.1; DESIGN.md §6, §14.8).
+ * Fixture transmissions as tests (bat.1; DESIGN.md §6).
  *
  * One VALID baseline plus one fixture per conditional failure, asserting each
  * yields the §6 status code + the expected findings/response body. The fixtures
