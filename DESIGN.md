@@ -7,30 +7,27 @@ system and is updated as it ships.
 
 ## 1. Overview
 
-Cold chain equipment (CCE) data suppliers — manufacturers/resellers of RTMDs and
-EMS-compliant equipment — are required by **WHO/PQS/E006/DS01.2, Clause 5 (Data
-Delivery to External Systems)** to deliver CCE performance data to countries over
-HTTPS. The "Interoperable CCE Data Delivery" requirements document (2025-03-30)
-clarifies the low-level details. PQS test labs prequalify the *equipment* but do
-**not** test the *data delivery* implementation, so suppliers today self-grade.
+This project is a public service that plays the **employer/country (receiving)
+side** of the CCE data-delivery interface, plus a web dashboard where suppliers
+get an independent read on their conformance — "to the extent possible" from the
+receiving vantage point. It exists because PQS test labs prequalify the
+*equipment* but never test the *data delivery* implementation, so suppliers
+self-grade today.
 
-This project is a **public service that plays the employer/country (receiving)
-side** of that interface, plus a **web dashboard** where suppliers get an
-independent, honest read on their compliance — "to the extent possible" from the
-receiving vantage point.
+The obligation is **WHO/PQS/E006/DS01.2, Clause 5 (Data Delivery to External
+Systems)**: cold chain equipment (CCE) data suppliers — manufacturers and
+resellers of RTMDs and EMS-compliant equipment — must deliver performance data to
+the countries that own the equipment, over HTTPS. The "Interoperable CCE Data
+Delivery" requirements document (2025-03-30) clarifies the low-level details.
 
-The governing artifacts:
-- `src/schemas/cce-interop-*.json` — the transmission JSON Schemas, vendored and
-  registered (§9). This is the **only** copy in the repo; `docs/` deliberately
-  holds no schemas, so there is one place to verify against the published bytes.
-- `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` — the
-  prose requirements (local-only: `docs/internal/` is gitignored, so this file is
-  absent from a fresh clone).
-- `docs/clause-mapping.md` — how those requirement numbers map to the DS01.3 rewrite.
+The governing artifacts are `src/schemas/cce-interop-*.json` (the transmission
+JSON Schemas, vendored and registered per §9 — the **only** copy in the repo, so
+there is one place to verify against the published bytes), the 2025 prose
+requirements PDF under the gitignored `docs/internal/`, and `docs/clause-mapping.md`,
+which maps those requirement numbers onto the DS01.3 rewrite.
 
-When prose and schema disagree, **the schema wins**. This came from 2025
-requirement §3.2; DS01.3 drops the precedence rule, and we keep it deliberately
-as a house rule (see `CLAUDE.md`).
+When prose and schema disagree, **the schema wins** — from 2025 requirement §3.2,
+kept as a house rule now that DS01.3 drops the precedence clause (`CLAUDE.md`).
 
 ## 2. Goals and non-goals (v1)
 
@@ -39,11 +36,9 @@ as a house rule (see `CLAUDE.md`).
 - Validate each transmission against the JSON Schema and the *passively verifiable* requirements.
 - Present results in a dashboard, **clearly delineating what we can and cannot prove**.
 
-**Non-goals (deferred)**
-- **Active conformance probing** of §4 (deliberately returning 429/503/5xx to measure
-  retry counts, backoff shape, `Retry-After` handling, abandon-on-permanent-failure).
-- **Guided retransmission scenarios** for §5 (6-month retransmit, time-range filter, all-vs-never-sent).
-- Receiving **real production data** — v1 is a **test/sandbox** for synthetic data only.
+**Non-goals** — active conformance probing of §4, guided retransmission scenarios for §5, and
+receiving real production data. All three are deferred, not rejected; §15 describes them and §3
+locks the two that constrain v1's shape.
 
 ## 3. Locked decisions
 
@@ -53,7 +48,7 @@ as a house rule (see `CLAUDE.md`).
 | Data | **Test/sandbox** synthetic data; no real CCE/PII. |
 | Onboarding | **Capability URL**, minted via the **web dashboard** "Create" action (no signup). |
 | Identity | **Single UUID** is both ingest path and dashboard key. Possession = authority. |
-| Auth (§1.3) | **Opt-in compliance layer, not a gate.** On opt-in the **dashboard generates** the credential — token + configurable header name, HTTP Basic, or `Authorization: Bearer` (RFC 6750, the third method DS01.3 clause 5.1.5 adds) — for the supplier to copy in; the endpoint then enforces the chosen method so §1.3 becomes gradeable. |
+| Auth (§1.3) | **Opt-in compliance layer, not a gate.** The dashboard generates the credential for the supplier to copy in and the endpoint then enforces the chosen method, so §1.3 becomes gradeable. The three methods are in §6 stage 2. |
 | Retention | Purge a path + its data after **7 days** of POST inactivity. |
 | Stack | **Node + TypeScript** end-to-end, **Ajv** for schema validation. |
 | Schema versioning | **Bare-semver `schemaVersion`** as an opaque registry key; schemas are **vendored** and validated against **pre-registered copies** (never fetched at runtime); each version is pinned by **content hash** to prove the "blessed bytes." |
@@ -73,40 +68,34 @@ as a house rule (see `CLAUDE.md`).
                  └──────────────────────────────────────────────┘
 ```
 
-Components:
-- **Ingest API** — `POST /i/{uuid}`. Runs the pipeline (§6), persists the transmission and its findings, returns an appropriate HTTP status.
-- **Dashboard API** — mint sessions, read transmissions/findings/summary, manage the §1.3 auth opt-in.
-- **Web frontend** — landing page with a **Create test endpoint** button; per-session dashboard.
-- **Compliance engine** — the schema validator plus the per-requirement checks; produces findings.
-- **Datastore** — sessions, transmissions, findings (§8).
-- **Retention worker** — purges inactive sessions (§11).
-
-A Node service (API + static frontend) plus a Postgres container for v1, wired together with
-`docker-compose`.
+One Node service (API + static frontend) plus a Postgres container, wired together with
+`docker-compose`. The **ingest API** runs the pipeline of §6 and persists the transmission with
+its findings; the **dashboard API** mints sessions, reads transmissions/findings/summary and
+manages the §1.3 auth opt-in; behind them sit the **compliance engine** (schema validator plus the
+per-requirement checks), the **datastore** (§8) and the **retention worker** (§11).
 
 ### 4.1 Edge / TLS termination (proxy contract)
 
-TLS is terminated at a **Caddy** reverse-proxy container (any Docker host; a Digital Ocean droplet
-is the intended target), whose automatic Let's Encrypt certs satisfy §12 / Attachment 2's "valid
-certs, no supplier-installed intermediates" for free. Because the app sees plain HTTP behind Caddy, the proxy must honor a
-small **contract** so the receiving-side checks stay accurate:
+TLS terminates at a Caddy reverse-proxy container (any Docker host; a Digital Ocean droplet is
+the intended target), whose automatic Let's Encrypt certs satisfy Attachment 2's "valid certs, no
+supplier-installed intermediates" for free. The app sees plain HTTP behind it, so the proxy owes
+it a **contract** that keeps the receiving-side checks accurate:
 
-- **Scheme advertised.** Caddy sets `X-Forwarded-Proto`; the app trusts it **scoped to Caddy's
-  address only** (Fastify `trustProxy`), and the app port is never publicly exposed. This is how
+- **Scheme advertised.** Caddy sets `X-Forwarded-Proto`; the app trusts it scoped to Caddy's
+  address only (Fastify `trustProxy`), and the app port is never publicly exposed. This is how
   §1.1's HTTPS aspect is known.
-- **Body passed through untouched.** Caddy must **not** impose a `request_body max_size` below our
+- **Body passed through untouched.** Caddy must not impose a `request_body max_size` below our
   1MB grading threshold — otherwise oversized POSTs get Caddy's generic `413` and we never record
-  the transmission or emit the teaching finding. The **app owns** the §1.4 cap.
-- **Encoding preserved.** The body reaches the app **as sent** (no request decompression, no
+  the transmission or emit the teaching finding. The app owns the §1.4 cap.
+- **Encoding preserved.** The body reaches the app as sent (no request decompression, no
   re-chunking), so §1.4 wire-byte measurement and §1.6 `Content-Encoding` / double-encoding
   detection see exactly the supplier's bytes. (Caddy does not decompress request bodies by
   default — verify and lock the config.)
 
-**Implementation.** The contract is encoded and commented in `deploy/Caddyfile` (wired as an
-optional `edge` compose profile), the operator half — `TRUSTED_PROXY`, the env surface, and the
-failure mode of each violation — is `docs/deployment.md`, and `deploy/smoke-proxy-contract.sh`
-verifies a running deployment by POSTing an oversized and a gzipped body and asserting the *app*,
-not the proxy, answered.
+The contract is encoded and commented in `deploy/Caddyfile` (an optional `edge` compose profile),
+its operator half is in `docs/deployment.md`, and `deploy/smoke-proxy-contract.sh` verifies a
+running deployment by POSTing an oversized and a gzipped body and asserting the *app*, not the
+proxy, answered.
 
 ## 5. Onboarding flow (web-driven)
 
@@ -115,24 +104,22 @@ not the proxy, answered.
    `{ uuid, ingestUrl: "/i/{uuid}", dashboardUrl: "/d/{uuid}" }`.
 3. Supplier is taken to `/d/{uuid}`, which shows the ingest URL, copy-paste examples
    (`curl`, headers), and an empty results view that fills in as data arrives.
-4. The dashboard URL is the only thing they need to bookmark. There is no account, email, or password.
-
-> The UUID is a bearer capability. Anyone holding it can both POST and view. Acceptable for
-> sandbox/test data; see §12.
+4. The dashboard URL is the only thing they need to bookmark — no account, email, or password.
+   Anyone holding the UUID can both POST and view it; that trade is §12's.
 
 ## 6. Ingest pipeline and response codes
 
-Each `POST /i/{uuid}` runs ordered stages. A stage either **produces a finding and continues**
-or **short-circuits** with a response code. We follow the Country Guidance (Attachment 2) for codes —
-the 2025 UNICEF-consultation document with no DS01.3 successor; see `docs/clause-mapping.md`
-("Dropped with no successor") for what it remains the source of.
+Each `POST /i/{uuid}` runs ordered stages; a stage either **produces a finding and continues** or
+**short-circuits** with a response code. The codes follow the Country Guidance (Attachment 2), the
+2025 UNICEF-consultation document with no DS01.3 successor — `docs/clause-mapping.md` records what
+it remains the source of.
 
 | Stage | Check | On failure |
 |-------|-------|-----------|
 | — Framework | Request body ≤ 2 MiB (Fastify `bodyLimit`; §12) | `413` **before any stage runs** — no row, and a framework error body rather than the ingest response shape |
-| 1. Method/TLS | POST over HTTPS (§1.1) | TLS enforced at the edge; non-POST → `405` |
 | 0. Session | UUID exists & not expired | `404` |
-| 2. Auth (opt-in) | If enabled, the configured credential — token header, Basic, or Bearer — is present & correct (§1.3) | `401` |
+| 1. Method/TLS | POST over HTTPS (§1.1) | TLS enforced at the edge; non-POST → `405` |
+| 2. Auth (opt-in) | If enabled, the configured credential — token + configurable header name, HTTP Basic, or `Authorization: Bearer` (RFC 6750, the third method DS01.3 clause 5.1.5 adds) — is present & correct (§1.3) | `401` |
 | 3. Size | Wire body ≤ 1MB **after** content-encoding (§1.4) | `413` + finding |
 | 4. Content-Type | `application/json; charset=utf-8` (§1.2) | finding; continue — `415` is optional and **we never return it** |
 | 5. Content-Encoding | If `gzip`, decompress; detect illegal double-encoding e.g. base64 (§1.6) | finding; `400` if undecodable |
@@ -142,40 +129,29 @@ the 2025 UNICEF-consultation document with no DS01.3 successor; see `docs/clause
 
 Stage 8 never halts: every §1.8/§2.1/§3.x concern is a *teaching* finding, not a rejection.
 
-**Stage numbers are stable labels, not the run order.** The rows above are listed in *execution*
-order, but the numbers are the identifiers used in code comments and `docs/api.md` and do not
-change. `src/ingest/route.ts` deliberately runs **method (1) before session (0)** so a non-POST
-short-circuits `405` without a pointless database lookup — observable as `405`, not `404`, for a
-non-POST to an *unknown* UUID. Neither stage persists a row, so nothing else about the outcome
-changes.
+The stage **numbers are stable labels** used across code comments and `docs/api.md`, not the run
+order: [`src/ingest/route.ts`](src/ingest/route.ts) runs method before session and says why.
 
-**§3.1 vs §3.2 (the division of labour).** Ajv at stage 7 grades §3.2 only. §3.1's structural
-half — the metadata block and the DS01 object shapes — is already implied by a passing Ajv run,
-so grading it again would double-count the same evidence. What §3.1 owns instead is the half a
-schema cannot express: `meta.customDataSchema` is required **only when** the payload carries
-manufacturer-specific data objects — clause 4.5 `z`-prefixed keys plus keys that are custom by
-elimination (neither DS01-shaped nor a mis-cased DS01 code, e.g. `customTemp`, `zTPCM`).
-Unrecognized DS01-shaped and mis-cased codes never drive the grade; the custom-by-elimination
-keys additionally raise a separate info finding for non-conformant naming. The conditional runs
-as a schema-independent stage-8 check, because `meta.customDataSchema` does not exist in 0.8.1 at
-all and 0.8.1's `additionalProperties: true` lets custom objects through Ajv unexamined (§9).
+**§3.1 vs §3.2 — the division of labour.** Ajv at stage 7 grades §3.2 only; §3.1's structural half
+(the metadata block, the DS01 object shapes) is implied by a passing Ajv run, and grading it twice
+would double-count the same evidence. §3.1 therefore owns the half a schema cannot express — the
+**conditional** duty to declare `meta.customDataSchema` when the payload carries
+manufacturer-specific data objects — and runs schema-independently at stage 8. The detection rule
+and its deliberate limits are in
+[`custom-schema.ts`](src/ingest/stages/semantic/custom-schema.ts).
 
-Success: `200` — the single success status; `202` is not used. It carries a small JSON body
-summarizing what was recorded. The body is a
+Success is `200`, the single success status; `202` is not used. Its small JSON body is a
 deliberate **teaching surface** — a supplier should understand the outcome from the HTTP response
-alone, without opening the dashboard. It carries the persisted `transmissionId`, the `status`, a
-one-line `message` with the fail/info tally, the per-finding `findingDetails` echo, an
-`advisories` array (§7.1 — kept out of `findings`, `findingDetails` and the tally, so a
-conformant payload is never handed a number to explain), and a standing
-`notice` restating that this is a synthetic-data-only sandbox (§2, §12). The same shape is
-returned on rejection, so a 4xx is just as self-explanatory as a 2xx.
-
-**Size note (§1.4):** the requirement is measured *after* encoding (the bytes on the wire), so
-we measure the raw request body length, not the decompressed size.
+alone, without opening the dashboard — carrying `transmissionId`, `status`, a one-line `message`
+with the fail/info tally, the per-finding `findingDetails` echo, an `advisories` array (§7.1, kept
+out of the tally so a conformant payload is never handed a number to explain), and a standing
+`notice` that this is a synthetic-data-only sandbox (§2, §12). Rejections return the same shape,
+so a 4xx is as self-explanatory as a 2xx. §1.4 is measured *after* encoding, so the size stage
+reads the raw request body length rather than the decompressed size.
 
 ## 7. Compliance engine — verifiability matrix
 
-The product's distinguishing honesty is classifying every requirement, not just the ones we can grade.
+The product classifies **every** requirement, not just the ones it can grade.
 
 **Legend:** ✅ Passively verified · 🟡 Heuristic / partial · 🔌 Active-only (deferred) · 📝 Self-attestation (not provable from receiving side) · 🔒 Enforced by us (guaranteed by the endpoint, not a test of the supplier's choice)
 
@@ -210,43 +186,38 @@ The product's distinguishing honesty is classifying every requirement, not just 
 | 5.3 | Filter all vs never-sent | 🔌 | Guided scenario |
 
 The dashboard renders this matrix per session: ✅/🟡 carry live pass/fail counts from the
-supplier's actual traffic; 🔌 are marked "not yet exercised — available in a future test mode";
-📝 are marked "self-attestation — outside what a receiver can prove." A gradeable row with zero
-findings so far shows **untested**, never a false pass. A row whose only evidence came from
-transmissions validated against a registered-but-*older* schema version shows
-**pass-outdated** — those findings are `info` + `outdated` with no pass finding, so counting
-pass/fail alone would report **untested** and claim we never checked (`cce-data-delivery-validator-2kx`).
+supplier's traffic, 🔌 read "not yet exercised", 📝 read "self-attestation — outside what a
+receiver can prove". A gradeable row with zero findings shows **untested**, never a false pass; one
+whose only evidence came from a registered-but-*older* schema version shows **pass-outdated**,
+because those findings are `info` + `outdated` with no pass finding and counting pass/fail alone
+would claim we never checked (tracked: `cce-data-delivery-validator-2kx`).
 
-This table is the source for `COMPLIANCE_MATRIX` in `src/api/compliance-matrix.ts`, which
-encodes the same 27 rows verbatim — change them together.
+This table is the source for `COMPLIANCE_MATRIX` in
+[`src/api/compliance-matrix.ts`](src/api/compliance-matrix.ts), which encodes the same 27 rows
+verbatim — change them together.
 
 ### 7.1 Advisories
 
-Some payloads are fully schema-compliant *and* fully requirement-compliant, yet
-obviously unhelpful to the country receiving them — a report whose `ASER` and
-`AMID` are both `null`; every DS01 property emitted with `null` where no sensor
-is fitted. **Advisories** are the category for saying so.
+**Advisories** are how the validator names a payload that is fully schema-compliant *and* fully
+requirement-compliant yet obviously unhelpful to the country receiving it — a report whose `ASER`
+and `AMID` are both `null`, say.
 
-An advisory never changes a requirement's pass/fail status. The product's
-proposition is an independent read on conformance; the moment house opinion
-moves a verdict, the grade stops being trustworthy. A supplier must be able to
-sit at 100 % conformant and still carry advisories, which is why this is a
-separate category rather than extra findings on existing requirements.
-Mechanically it costs no DDL: `severity` is always `info`, and the id lives in
-its own `adv.*` namespace, carried in both `finding.requirement` and
-`finding.code` — named codes rather than numbers, because an advisory catalogue
-has no external document to number against. The §7 matrix is immune by
-construction, since the join iterates the 27 static rows and never looks up an
-unknown id. The ingest response keeps advisories out of `findings`,
-`findingDetails` and the message tally, and the dashboard keeps them out of
-every count that grades a supplier. Wording must observe, never conclude: a null
-cannot prove "no sensor fitted", because a broken sensor looks identical.
+An advisory never changes a requirement's pass/fail status. The product's proposition is an
+independent read on conformance, so the moment house opinion moves a verdict the grade stops being
+trustworthy; a supplier must be able to sit at 100 % conformant and still carry advisories. Hence
+a separate category rather than extra findings on existing requirements — one that costs no DDL,
+since `severity` is always `info` and the id lives in its own `adv.*` namespace (named codes, not
+numbers: an advisory catalogue has no external document to number against), carried in both
+`finding.requirement` and `finding.code`. The §7 matrix is immune by construction, because the
+join iterates the 27 static rows and never looks up an unknown id, and both the ingest response
+and the dashboard keep advisories out of every count that grades a supplier. Wording must observe,
+never conclude: a null cannot prove "no sensor fitted", because a broken sensor looks identical.
 
-`ADVISORY_CHECKS` in [`src/ingest/stages/semantic/advisory.ts`](src/ingest/stages/semantic/advisory.ts)
-is the registration point and the count of record. Each check's scope argument —
-what it reads, what it deliberately excludes, and why — lives in its own module
-header; the dashboard surface (section behaviour, palette, cross-filter) is
-specified in [`src/web/components/ComplianceCard.tsx`](src/web/components/ComplianceCard.tsx).
+`ADVISORY_CHECKS` in [`advisory.ts`](src/ingest/stages/semantic/advisory.ts) is the registration
+point and the count of record; each check's scope argument — what it reads, what it deliberately
+excludes, and why — lives in its own module header, and the dashboard surface (section behaviour,
+palette, cross-filter) is specified in
+[`ComplianceCard.tsx`](src/web/components/ComplianceCard.tsx).
 
 | Advisory | Observes | Module |
 |---|---|---|
@@ -261,107 +232,94 @@ specified in [`src/web/components/ComplianceCard.tsx`](src/web/components/Compli
 
 ## 8. Data model
 
-**PostgreSQL** is the datastore, converging with an experimental Master Data Management (MDM)
-system for cold chain equipment (which ingests the same PQS E006 DS01 data and is itself
-"opinionated-Postgres"). This gives us native `jsonb` for payloads/findings, a clean path to a
-future production-endpoint mode with no migration, and lets us lift that MDM system's
-content-addressed patterns directly. Accessed via `node-postgres` (`pg`) behind a thin
-repository layer.
-
-The `transmission` table mirrors that MDM system's `source_artifact` (content hash, byte size,
-content type, channel, received-at), with one deliberate difference: that system makes
-`content_hash` **`UNIQUE`** to *dedup-and-drop* on idempotent replay, whereas we **record every
-POST** and instead *flag* repeats — duplicate detection is the §1.8 signal we're grading, so we
-must never silently collapse it.
+**PostgreSQL**, via `node-postgres` (`pg`) behind a thin repository layer: native `jsonb` for
+payloads/findings, and a path to a future production-endpoint mode with no migration. It also
+converges with an experimental cold-chain **master-data system** — an MDM ingesting the same PQS
+E006 DS01 data, itself "opinionated-Postgres" — whose `source_artifact` shape (content hash, byte
+size, content type, channel, received-at) `transmission` mirrors, with one deliberate difference:
+that system makes `content_hash` `UNIQUE` to dedup-and-drop on idempotent replay, whereas we
+**record every POST** and *flag* repeats instead, because duplicate detection is the §1.8 signal
+we grade and must never silently collapse.
 
 - **session** — `uuid` (PK), `created_at`, `last_post_at`, `auth_enabled bool`, `auth_method`
   (`header` | `basic` | `bearer`), `auth_header_name`, `auth_secret_hash`.
 - **transmission** — `id uuid` (PK), `session_uuid` (FK → session), `received_at timestamptz`,
-  `content_hash bytea` (SHA-256 of the raw wire body; **not** unique — used to detect exact
-  replays), `wire_bytes bigint`, `content_type`, `content_encoding`, `http_status int`,
-  `transfer_id`, `transfer_src`, `transfer_type`, `schema_version`,
-  `body jsonb` (parsed payload; null if unparseable), `raw_body text` (the original bytes, kept
-  for drill-down especially when parsing fails; the ceilings on it are in §12), `parse_ok bool`,
-  `schema_ok bool`.
+  `content_hash bytea` (SHA-256 of the raw wire body, **not** unique — it detects exact replays),
+  `wire_bytes bigint`, `content_type`, `content_encoding`, `http_status int`, `transfer_id`,
+  `transfer_src`, `transfer_type`, `schema_version`, `body jsonb` (parsed payload, null if
+  unparseable), `raw_body text` (the original bytes, kept for drill-down especially when parsing
+  fails; its ceilings are in §12), `parse_ok bool`, `schema_ok bool`.
 - **finding** — `id`, `transmission_id` (FK → transmission), `requirement` (e.g. `1.4`),
-  `severity` (`pass` | `fail` | `info`), `detail`, `pointer` (JSON Pointer into the payload
-  where relevant), `outdated bool` (true only for the §3.2 info finding raised when a
-  transmission validates against a valid-but-**older** registered version — the body is accepted
-  and the dashboard shows an amber OUTDATED SCHEMA tag), plus the structured **signature**
-  fields that let identical defects collapse into one issue without keying off an English
-  message that drifts between Ajv versions: `keyword`, `instance_path`, `param` for schema
-  (§3.2) errors, and `code` (e.g. `tx.missing_charset`) for transport/heuristic findings. All
-  are nullable and populated only where they apply.
+  `severity` (`pass` | `fail` | `info`), `detail`, `pointer` (JSON Pointer into the payload),
+  `outdated bool` (set only on the §3.2 info finding raised when a transmission validates against
+  a valid-but-*older* registered version — the body is accepted and the dashboard shows an amber
+  OUTDATED SCHEMA tag), plus the **signature** fields that let identical defects collapse into one
+  issue without keying off an English message that drifts between Ajv versions: `keyword`,
+  `instance_path`, `param` for schema (§3.2) errors, `code` (e.g. `tx.missing_charset`) for
+  transport/heuristic ones. All nullable, populated only where they apply.
 
 Indexes: `transmission (session_uuid, received_at DESC)` for the dashboard's reverse-chronological
-list and per-session rollups; `transmission (session_uuid, content_hash)` and
-`transmission (session_uuid, transfer_id)` for duplicate detection (§1.8). Concurrency
-observation (§2.1) is in-flight request tracking per session, not a stored artifact.
+list and per-session rollups; `(session_uuid, content_hash)` and `(session_uuid, transfer_id)` for
+duplicate detection (§1.8). Concurrency observation (§2.1) is in-flight request tracking per
+session, not a stored artifact.
 
-Schema is applied as ordered SQL on first boot (mirroring that MDM system's `db/initdb/`
-convention); a migration runner is deferred until the schema needs to evolve in production.
+Schema is applied as ordered SQL on first boot (`db/initdb/`); a migration runner is deferred
+until the schema needs to evolve in production.
 
 ## 9. Schema registry and versioning
 
-- The service hosts a registry of **vendored** schema versions: **0.8.1** (current) and
-  **0.8.0** (registered, outdated-but-valid). Multi-version support is a feature, not a
-  complication — the registry is a *policy* about which versions we accept. 0.8.0 was
-  dropped from that policy once 0.8.1 was published, then **restored on 2026-08-04**
-  (bd 8qa.4) because a single registered version leaves the outdated-but-valid grade
-  (§7) unreachable by construction: with nothing older than current, no transmission can
-  earn the OUTDATED SCHEMA signal and neither the grade nor the dashboard tag can be
-  exercised end to end. 0.8.0 is also the version a supplier is likeliest to still be
-  sending. **Registration is per-dialect**: 0.8.0 declares draft-07 and 0.8.1 declares
-  2020-12, so each entry names its dialect and compiles under the matching Ajv build in
-  its own instance. 0.7.x and earlier stay out entirely. **Measured 2026-08-20**, docs.2to8.cc
-  publishes **0.8.0, 0.8.1, 0.8.2 and 0.8.4** (0.8.3 is not published; nothing above 0.8.4 exists).
-  The versions past 0.8.1 stay unregistered for now, so current remains 0.8.1. A payload declaring
-  any unregistered version gets `422` with the supported list, never a silent fallback.
+- The registry is a **policy** about which versions we accept, so multi-version support is a
+  feature rather than a complication. It holds 0.8.1 (current) and 0.8.0 (outdated-but-valid);
+  0.8.0 left when 0.8.1 was published and was restored on 2026-08-04, because a single registered
+  version leaves the outdated-but-valid grade (§7) unreachable by construction — with nothing
+  older than current, no transmission can earn the OUTDATED SCHEMA signal — and it is the version
+  a supplier is likeliest to still be sending. Registration is **per-dialect**: 0.8.0 declares
+  draft-07 and 0.8.1 declares 2020-12, so each entry names its dialect and compiles under the
+  matching Ajv build in its own instance. 0.7.x and earlier stay out entirely. Measured
+  2026-08-20, docs.2to8.cc publishes 0.8.0, 0.8.1, 0.8.2 and 0.8.4 (0.8.3 is not published); those
+  past 0.8.1 stay unregistered, so current remains 0.8.1, and an unregistered version gets `422`
+  with the supported list rather than a silent fallback.
 - **Never fetched at runtime.** `meta.schemaVersion` is a *lookup key*, not a locator, and we
-  validate only against pre-registered copies. Runtime fetching would couple our ingest path to an
-  external host's uptime, be an SSRF foot-gun (a URL pulled from request data), and destroy the
-  "we validated against *the official* version" claim. The spec agrees: `$id` identifies, it never
-  locates — published schemas declare `$id: https://schemas.2to8.cc/schemas/cce-interop-<version>.json`,
-  a host that does not resolve, while the artifact is served from a different host and path.
-  `normalizeVersion()` already accepts URN-shaped values carrying a semver triple, so the expected
-  upstream move of `$id` to a URN needs no code change here.
-- **Normalized matching.** The standard today is ambiguous about the field's form (the description
-  points at `$id` — a URL — while the only example is a bare semver, `0.1.1`). Until the standard is
-  clarified (§15), we **normalize on ingest**: accept either a bare semver or a full `$id`-style URL,
-  extract `MAJOR.MINOR.PATCH`, and look that up. **Exact match required**; no silent fallback to a
-  "close" version (that would defeat conformance). Unknown version → `422` with an
-  "unsupported schemaVersion" finding that **lists the versions we do support**.
+  validate only against pre-registered copies. Runtime fetching would couple ingest to an external
+  host's uptime, be an SSRF foot-gun (a URL pulled from request data), and destroy the "we
+  validated against *the official* version" claim. The spec agrees — `$id` identifies, it never
+  locates — and the live proof is that published schemas declare
+  `$id: https://schemas.2to8.cc/schemas/cce-interop-<version>.json`, a host that does not resolve,
+  while the artifact is served from a different host and path. `normalizeVersion()` already accepts
+  URN-shaped values carrying a semver triple, so the expected upstream move of `$id` to a URN needs
+  no code change here.
+- **Normalized matching.** The standard is ambiguous about the field's form (its description
+  points at `$id`, a URL, while its only example is a bare semver). Until that is clarified (§15)
+  we normalize on ingest: accept either shape, extract `MAJOR.MINOR.PATCH`, look that up. An exact
+  match is required — a silent fallback to a "close" version would defeat conformance — and an
+  unknown version gets `422` with a finding listing the versions we do support.
 - **Content-hash provenance ("blessed bytes").** Each registered version is pinned by the SHA-256
-  of its canonical bytes; the dashboard can surface "validated against official 0.8.1 (sha256 …)".
-  The vendored file is therefore kept **byte-identical** to the published artifact — cosmetic issues
-  in the schema (the stale `0.1.1` example, the `schemaVersion`→`$id` phrasing) are **not** patched
-  locally, but tracked as standard-revision proposals (§15), so the hash keeps matching what WHO
-  published. Verified 2026-07-31: vendored 0.8.1 is `290290fd…`, identical to the published artifact.
+  of its canonical bytes, so the dashboard can surface "validated against official 0.8.1
+  (sha256 …)" — vendored 0.8.1 is `290290fd…`, verified 2026-07-31. The vendored file is therefore
+  kept byte-identical to the published artifact: cosmetic issues (the stale `0.1.1` example, the
+  `schemaVersion`→`$id` phrasing) are never patched locally but tracked as standard-revision
+  proposals (§15).
 - **Adding a version is a policy act, not maintenance.** A new version arrives as a *new* vendored
-  file plus a registry entry; an existing schema file is never edited in place. Upstream **0.8.2**
-  is published and is the first version to define `meta.customDataSchema` — and its own `$comment`
-  on that definition says the conditional is deliberately *not* enforced by the schema and that
-  employers wishing to enforce it should do so in their own validation layer. We are that layer
-  (§7 row 3.1), which is why our §3.1 check is schema-independent and works for suppliers still
-  declaring 0.8.1. Whether to accept 0.8.2 declarations is an open version-acceptance decision
-  (beads `cce-data-delivery-validator-fvw`), not a promise this document makes.
-- Ajv compiles each registered schema once at startup, in its own instance per version, and reuses
-  the compiled validator. Registration is a boot-time gate: bytes that cannot be read or compiled
+  file plus a registry entry; an existing schema file is never edited in place. Whether to accept
+  the published 0.8.2 — the first version to define `meta.customDataSchema`, and one whose own
+  `$comment` tells employers to enforce that conditional in their own validation layer, as §3.1
+  does — stays open (tracked: `cce-data-delivery-validator-fvw`).
+- Ajv compiles each registered schema once at startup, in its own instance, and reuses the
+  compiled validator. Registration is a **boot-time gate**: bytes that cannot be read or compiled
   fail the process loudly rather than degrading silently.
 
 ## 10. Dashboard
 
 Per session (`/d/{uuid}`):
 - **Setup** — ingest URL, copy-paste `curl`/header examples, the synthetic-data-only notice, and
-  the §1.3 auth opt-in (toggle → pick one of the three methods → service generates the credential
-  → shows a config snippet).
-- **Compliance summary** — the §7 matrix with live counts and the honesty classification. Each row
-  drills down to the **verbatim** 2025-requirement text; our own editorializing lives in a
-  separate guidance field so a supplier can always tell the requirement from our reading of it.
-- **Transmissions** — reverse-chronological, paginated list; drill into any transmission to see
-  the returned status, the compression/wire-byte picture, a raw-payload inspector, and the
-  findings (with JSON Pointers to schema errors). The list pane is height-capped so the detail
-  pane stays on screen.
+  the §1.3 auth opt-in: toggle, pick a method, the service generates the credential and shows a
+  config snippet.
+- **Compliance summary** — the §7 matrix, rendered as §7 describes. Each row drills down to the
+  **verbatim** 2025-requirement text, with our own reading of it in a separate guidance field so a
+  supplier can always tell the two apart.
+- **Transmissions** — reverse-chronological, paginated list; drill into any one for the returned
+  status, the compression/wire-byte picture, a raw-payload inspector, and the findings (with JSON
+  Pointers to schema errors). The list pane is height-capped so the detail pane stays on screen.
 - **Lifecycle** — shows the 7-day inactivity expiry clock.
 
 ## 11. Retention / lifecycle
@@ -372,9 +330,9 @@ in the dashboard so it's never a surprise.
 
 ## 12. Security considerations
 
-- **Capability URL caveat.** The UUID is a bearer secret in the path; URLs leak via logs,
-  proxies, and browser history. Acceptable for synthetic test data (v1's only data). If real
-  data is ever in scope, revisit (split ingest vs view tokens; move the secret to a header).
+- **Capability URL caveat.** The UUID is a bearer secret in the path, and URLs leak via logs,
+  proxies and browser history — acceptable for synthetic test data, v1's only data. If real data
+  is ever in scope, revisit: split ingest from view tokens, move the secret to a header.
 - **HTTPS only**, with valid certs that need no supplier-installed intermediates — terminated
   at the Caddy edge under the proxy contract in §4.1.
 - **Auth secrets** stored hashed, never echoed after first display.
@@ -387,20 +345,17 @@ in the dashboard so it's never a surprise.
 
 ## 13. Tech stack
 
-- **Runtime/language:** Node + TypeScript.
-- **HTTP:** Fastify (fast, schema-friendly, first-class `Content-Type`/raw-body control). Locked.
-- **Validation:** Ajv running the published schema directly, using the build that
-  matches each schema's declared dialect — **2020-12** (`ajv/dist/2020`) for 0.8.1,
-  **draft-07** (Ajv's default export) for the registered-but-outdated 0.8.0. Neither
-  build accepts the other's `$schema`, so the choice is per registry entry.
-- **Storage:** PostgreSQL via `node-postgres` (`pg`), behind a thin repository layer; schema
-  adopts the §8 MDM system's content-addressed `source_artifact` / `jsonb`-body patterns.
-- **Frontend:** React + Vite SPA (with `react-router-dom`), built to `dist/web` and served by the
-  same Node process via `@fastify/static` with an SPA fallback for non-API paths. Locked
-  2026-05-30; the server-rendered alternative was dropped.
-- **Edge:** Caddy reverse proxy terminating TLS; the contract it owes the app is §4.1.
-- **Local/dev:** `docker-compose` (app + Postgres), following that MDM system's healthcheck-gated
-  bring-up.
+**Node + TypeScript** end-to-end (§3), and beneath that:
+
+- **HTTP:** Fastify — fast, schema-friendly, first-class `Content-Type`/raw-body control. Locked.
+- **Frontend:** React + Vite SPA (`react-router-dom`), built to `dist/web` and served by the same
+  Node process via `@fastify/static` with an SPA fallback for non-API paths. **Locked 2026-05-30**;
+  the server-rendered alternative was dropped.
+- **Validation:** Ajv, on the build matching each schema's declared dialect — 2020-12
+  (`ajv/dist/2020`) for 0.8.1, draft-07 for 0.8.0 (§9).
+- **Storage:** PostgreSQL via `node-postgres` (`pg`), behind a thin repository layer (§8).
+- **Edge:** Caddy, terminating TLS under the contract in §4.1.
+- **Local/dev:** `docker-compose` (app + Postgres), healthcheck-gated bring-up.
 
 ## 14. Build history
 
@@ -410,13 +365,11 @@ is the record. Everything above describes the built system, not a plan.
 
 ## 15. Future / deferred
 
-- **Active conformance harness** (§4): a test-campaign mode that returns controlled error
-  responses and measures retry count, backoff shape, `Retry-After` adherence, and
-  abandon-on-permanent-failure.
+- **Active conformance harness** (§4): a test-campaign mode returning controlled error responses
+  and measuring retry count, backoff shape, `Retry-After` adherence, abandon-on-permanent-failure.
 - **Guided retransmission scenarios** (§5).
 - **Production-endpoint mode** (real data): retention, PII, sovereignty, and split-token auth.
-- **Standard-revision proposals** (upstream, for the next WHO-stewarded revision): make
-  `schemaVersion` an explicit opaque bare-semver token decoupled from hosting; state that receivers
-  MUST NOT dereference the schema at validation time and SHOULD pre-register; mechanically link
-  `$id` and `schemaVersion` (one version string); publish an out-of-band manifest with a content
-  hash per version; fix the stale `0.1.1` example. Tracked in beads.
+- **Standard-revision proposals** for the next WHO-stewarded revision: make `schemaVersion` an
+  opaque bare-semver token decoupled from hosting; state that receivers MUST NOT dereference the
+  schema at validation time and SHOULD pre-register; mechanically link `$id` and `schemaVersion`;
+  publish an out-of-band manifest with a content hash per version; fix the stale `0.1.1` example.
