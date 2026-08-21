@@ -25,8 +25,8 @@
  * and never against anything stored from an earlier one. That is agj.8's own
  * boundary and it is a scope decision, not an oversight: the overlap PQS actually
  * described spans two files, and answering it needs a read path the ingest
- * pipeline does not have today (DESIGN §7.1 — we hold per-transmission content
- * hashes, not per-record ones). Whether cross-transmission overlap is in scope
+ * pipeline does not have today (DESIGN §8 — `transmission.content_hash` is a
+ * per-transmission hash; we hold no per-record ones). Whether cross-transmission overlap is in scope
  * for v1 is the open question tracked as agj.14. Until that is decided, an
  * observation this check does NOT make is one nobody should read into its
  * silence: a payload whose every record repeats the PREVIOUS transmission is

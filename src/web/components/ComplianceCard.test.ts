@@ -23,7 +23,8 @@
  *   3. NO STATUS COLOUR. An advisory carries `sev: 'info'`, which without a
  *      `kind` branch falls through to the `--mixed` amber that means
  *      *warning / outdated* everywhere else on this dashboard — "a lesser
- *      defect" on the one surface that must not say defect (DESIGN §7.1).
+ *      defect" on the one surface that must not say defect (`sigTone()` in
+ *      ComplianceCard.tsx carries the full reasoning).
  *   4. EMPTY MEANS ABSENT. No advisories → the section returns null, header and
  *      all, so a conformant session's column looks exactly as it did before.
  *
