@@ -14,9 +14,12 @@ side** of that interface, plus a web dashboard giving suppliers an independent
 read on their conformance, "to the extent possible" from the receiving vantage
 point.
 
-It is the **ingest gatekeeper** in the pipeline: `ems-data-simulator` (producer)
-→ **this project** (conformance) → `ColdchainDB` (store + query) → `cce-mdm`
-(device identity). See `../CLAUDE.md` for the workspace-wide map and glossary.
+It is the **ingest gatekeeper** on the receiving side: producers POST
+transmissions here, and findings about their conformance are what comes out.
+
+**This repo is public.** Do not reference sibling workspace projects or `../`
+paths in this file or elsewhere in the repo; that context belongs in the
+workspace-level agent file, which is loaded automatically alongside this one.
 
 **`DESIGN.md` is the authority on scope and locked decisions** — read it before
 proposing architecture changes. Highlights: passive validation only in v1
@@ -33,9 +36,7 @@ key; retention keyed to POST inactivity (`RETENTION_MS` in
 | `DESIGN.md` | Scope, locked decisions, ingest pipeline, verifiability matrix. Start here. |
 | `src/schemas/cce-interop-*.json` | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts`; 0.8.1 (JSON Schema 2020-12) is current, and 0.8.0 (draft-07, compiled per-entry with the matching Ajv build) is registered as the deliberate outdated cohort. Registering a further version is a spec decision, not mechanical work — ask before vendoring one. |
 | `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. **Local-only**: `docs/internal/` is gitignored, so it is absent from a fresh clone. |
-| `../WHO_PQS_E006_EMS_specifications` | **Authoritative** source for the spec and schema: PQS E006 DS01 PDF, the draft DS01.3 `.docx`, the Annex-1 data-object spreadsheet, and the schema authoring folder under `data_delivery/`. |
-| `../ems-data-simulator` | Produces `cce-interop`-conformant EMS/RTMD payloads with realistic faults and edge values. The first producer to deliver here; the two evolve together. |
-| `../ColdchainDB` | Downstream store/query layer. Reuses this project's schema and validation logic on its ingest path, and treats `db/initdb/*.sql` as the house DB-schema style. |
+| WHO PQS E006/DS01 (PQS catalogue) and `https://docs.2to8.cc/cce-data-interop/` | **Authoritative** public sources for the spec, Annex 1 data objects, and the published `cce-interop` schemas. |
 
 **When prose and schema disagree, the schema wins** — except for data-object
 bounds and units, where Annex 1 is authoritative over the schema.
