@@ -880,9 +880,11 @@ function decodeState(tx: TransmissionView, storedText: string): DecodeState {
  * 0x00. The wire facts are preserved elsewhere (`content_hash`, `wire_bytes`,
  * `content_encoding`).
  *
- * We assert no byte cap — none is implemented (beads 1z9), and DESIGN §8 says
- * not to describe the copy as size-bounded. We report only what the row itself
- * supports:
+ * We assert no byte cap. None is implemented — the decision was no write-side
+ * cap (beads 1z9), and the two transport ceilings (DESIGN §12) bound the stored
+ * copy only loosely, so this disclosure must never describe `raw_body` as
+ * size-bounded; it compares against `wire_bytes` for exactly that reason. We
+ * report only what the row itself supports:
  *   - encoded + decoded     -> both sizes stated; no comparison is meaningful.
  *   - encoded + refused     -> the copy is the wire body as sent; whether those
  *                              bytes are mojibake or a merely MISLABELLED plain

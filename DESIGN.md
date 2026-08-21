@@ -280,7 +280,7 @@ must never silently collapse it.
   replays), `wire_bytes bigint`, `content_type`, `content_encoding`, `http_status int`,
   `transfer_id`, `transfer_src`, `transfer_type`, `schema_version`,
   `body jsonb` (parsed payload; null if unparseable), `raw_body text` (the original bytes, kept
-  for drill-down especially when parsing fails — see the size note below), `parse_ok bool`,
+  for drill-down especially when parsing fails; the ceilings on it are in §12), `parse_ok bool`,
   `schema_ok bool`.
 - **finding** — `id`, `transmission_id` (FK → transmission), `requirement` (e.g. `1.4`),
   `severity` (`pass` | `fail` | `info`), `detail`, `pointer` (JSON Pointer into the payload
@@ -291,27 +291,6 @@ must never silently collapse it.
   message that drifts between Ajv versions: `keyword`, `instance_path`, `param` for schema
   (§3.2) errors, and `code` (e.g. `tx.missing_charset`) for transport/heuristic findings. All
   are nullable and populated only where they apply.
-
-**On `raw_body` size (honest statement of what is implemented).** There is **no write-side cap**:
-the ingest path gzip-decodes, strips NUL (illegal in a Postgres `text` column), and stores the
-result whole. The only ceilings that exist today are upstream of the insert:
-
-- **Fastify `bodyLimit` — 2 MiB.** Deliberately set *above* the §1.4 1MB grading cap so an
-  oversized-but-bounded POST still reaches the size stage and earns its §1.4 teaching finding and
-  a persisted row. Beyond 2 MiB, Fastify's generic `413` fires and nothing is recorded.
-- **gzip `maxOutputLength` — 1 MiB.** The zip-bomb guard: a gzip body whose output would exceed
-  it throws, and stage 5 halts `400` as undecodable. That halt is *downstream* of the persistence
-  boundary — a request that reached the body stages persists a row whether or not a body stage
-  short-circuits — so a row **is** still written, and its `raw_body` is the still-**compressed**
-  wire bytes read as UTF-8 (invalid sequences become U+FFFD), not a decoded payload. This ceiling
-  therefore bounds only the decoded path.
-
-So a stored `raw_body` is bounded in practice, but by the transport rather than by the write —
-and loosely: U+FFFD substitution emits three bytes of text per undecodable wire byte, so the
-2 MiB `bodyLimit` translates to a several-MiB worst case in the column. **Decided 2026-08-02: no
-write-side cap** (`cce-data-delivery-validator-1z9`) — the two transport ceilings above are the
-only bounds, and they stay as they are. Do not describe `raw_body` as "size-bounded"; the
-dashboard's truncation disclosure compares against `wire_bytes` for exactly this reason.
 
 Indexes: `transmission (session_uuid, received_at DESC)` for the dashboard's reverse-chronological
 list and per-session rollups; `transmission (session_uuid, content_hash)` and
@@ -405,8 +384,9 @@ in the dashboard so it's never a surprise.
 - **Resource limits** — Fastify's `bodyLimit` bounds buffered request memory at **2 MiB**, set
   above the §1.4 1MB grading cap on purpose so oversized-but-bounded bodies still reach the size
   stage and get a teaching `413` with a persisted row instead of Fastify's opaque one; gzip
-  decompression is bounded at **1 MiB** of output as a zip-bomb guard. See the `raw_body` note in
-  §8 for what this does and does not bound at the storage layer.
+  decompression is bounded at **1 MiB** of output as a zip-bomb guard. The `raw_body` copy (§8)
+  has **no write-side cap** — decided 2026-08-02 (`cce-data-delivery-validator-1z9`); those two
+  transport ceilings are its only bounds, and they bound it only loosely.
 
 ## 13. Tech stack
 
