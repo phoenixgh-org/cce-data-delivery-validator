@@ -3,7 +3,7 @@
 **Status:** Living document — **v1 scope is locked**; §3 records the decisions
 that are settled and are not reopened casually. Everything else tracks the built
 system and is updated as it ships.
-**Last updated:** 2026-08-01
+**Last updated:** 2026-08-20
 
 ## 1. Overview
 
@@ -82,13 +82,13 @@ Components:
 - **Retention worker** — purges inactive sessions (§11).
 
 A Node service (API + static frontend) plus a Postgres container for v1, wired together with
-`docker-compose`; the frontend can be split out later if needed.
+`docker-compose`.
 
 ### 4.1 Edge / TLS termination (proxy contract)
 
-TLS is terminated at a **Caddy** reverse-proxy container (Digital Ocean), whose automatic
-Let's Encrypt certs satisfy §12 / Attachment 2's "valid certs, no supplier-installed
-intermediates" for free. Because the app sees plain HTTP behind Caddy, the proxy must honor a
+TLS is terminated at a **Caddy** reverse-proxy container (any Docker host; a Digital Ocean droplet
+is the intended target), whose automatic Let's Encrypt certs satisfy §12 / Attachment 2's "valid
+certs, no supplier-installed intermediates" for free. Because the app sees plain HTTP behind Caddy, the proxy must honor a
 small **contract** so the receiving-side checks stay accurate:
 
 - **Scheme advertised.** Caddy sets `X-Forwarded-Proto`; the app trusts it **scoped to Caddy's
@@ -123,7 +123,9 @@ not the proxy, answered.
 ## 6. Ingest pipeline and response codes
 
 Each `POST /i/{uuid}` runs ordered stages. A stage either **produces a finding and continues**
-or **short-circuits** with a response code. We follow the Country Guidance (Attachment 2) for codes.
+or **short-circuits** with a response code. We follow the Country Guidance (Attachment 2) for codes —
+the 2025 UNICEF-consultation document with no DS01.3 successor; see `docs/clause-mapping.md`
+("Dropped with no successor") for what it remains the source of.
 
 | Stage | Check | On failure |
 |-------|-------|-----------|
@@ -303,9 +305,9 @@ recording:
   `SVA` and forbids `DCSV`/`DCCD`; solar the reverse), so the **presence** of `SVA` is what the
   check reads — never SVA-is-null, which would conflate "this is a DC appliance" with "this
   mains appliance had no supply reading". **Solar records are out of scope and nothing may
-  substitute for SVA**: `DCSV` is a voltage, no DC-availability-in-seconds object exists through
-  0.8.4, and comparing CMPR to DCSV would be comparing seconds against volts. Nulls on either
-  side are skipped.
+  substitute for SVA**: `DCSV` is a voltage, no DC-availability-in-seconds object exists in any
+  published schema version (§9), and comparing CMPR to DCSV would be comparing seconds against
+  volts. Nulls on either side are skipped.
 - **`adv.cmpr_minutes`** — an EMS transmission whose compressor runtimes never cross 15, the
   shape a **minutes**-valued feed takes on a seconds-valued envelope. The root cause is a
   **specification erratum, not a careless supplier**: CMPR/CMPR2 read "measured in minutes,
@@ -448,9 +450,10 @@ convention); a migration runner is deferred until the schema needs to evolve in 
   exercised end to end. 0.8.0 is also the version a supplier is likeliest to still be
   sending. **Registration is per-dialect**: 0.8.0 declares draft-07 and 0.8.1 declares
   2020-12, so each entry names its dialect and compiles under the matching Ajv build in
-  its own instance. 0.7.x and earlier stay out entirely; 0.8.2/0.8.3 exist upstream but
-  stay out for now, so current remains 0.8.1. A payload declaring any unregistered
-  version gets `422` with the supported list, never a silent fallback.
+  its own instance. 0.7.x and earlier stay out entirely. **Measured 2026-08-20**, docs.2to8.cc
+  publishes **0.8.0, 0.8.1, 0.8.2 and 0.8.4** (0.8.3 is not published; nothing above 0.8.4 exists).
+  The versions past 0.8.1 stay unregistered for now, so current remains 0.8.1. A payload declaring
+  any unregistered version gets `422` with the supported list, never a silent fallback.
 - **Never fetched at runtime.** `meta.schemaVersion` is a *lookup key*, not a locator. We validate
   only against pre-registered copies — runtime fetching would (a) couple our ingest path to an
   external host's uptime, (b) be an SSRF foot-gun (a URL pulled from request data), and (c) destroy
@@ -535,8 +538,8 @@ in the dashboard so it's never a surprise.
 - **Frontend:** React + Vite SPA (with `react-router-dom`), built to `dist/web` and served by the
   same Node process via `@fastify/static` with an SPA fallback for non-API paths. Locked
   2026-05-30; the server-rendered alternative was dropped.
-- **Edge:** **Caddy** reverse proxy (Digital Ocean) terminating TLS with automatic Let's Encrypt
-  certs; honors the proxy contract in §4.1.
+- **Edge:** **Caddy** reverse proxy terminating TLS with automatic Let's Encrypt certs; honors the
+  proxy contract in §4.1.
 - **Local/dev:** `docker-compose` (app + Postgres), following that MDM system's healthcheck-gated
   bring-up.
 

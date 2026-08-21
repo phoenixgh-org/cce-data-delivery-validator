@@ -18,7 +18,7 @@ at a test endpoint and get back an independent evaluation on what conforms, what
 
 Clause 5 obliges CCE data suppliers — the manufacturers and resellers of RTMDs and
 EMS-compliant equipment — to deliver performance data over HTTPS to the countries
-that own the equipment. This project is a **plays the
+that own the equipment. This project is a **public service that plays the
 employer/country (receiving) side** of that interface, and provides a web dashboard where a
 supplier gets an independent read on their conformance, "to the extent possible"
 from the receiving vantage point.
@@ -240,7 +240,7 @@ proxies `/api`, `/i` and `/health` through to the API.
 `npm test` **without a database is not a full run.** Eight suites — the repository
 layer, the ingest route, the ingest stages, and the sessions API — probe Postgres
 once and skip themselves entirely when it is unreachable. The run is green with
-roughly a fifth of the tests reported as `# skipped`, and the whole persistence
+the eight DB-gated suites reported as `# skipped`, and the whole persistence
 and ingest-integration layer never executed. Treat a bare `npm test` as the
 pure-logic subset only.
 
@@ -261,9 +261,7 @@ hand, or `docker compose down -v` and let it re-initialize from scratch.
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs lint, build and the
 full suite against a real Postgres, applying every `db/initdb/*.sql` in filename
 order first. It **fails on any skip**, because in CI a skipped test means the
-database gating broke rather than that a database was unavailable. (Nothing has been
-pushed to the remote yet, so the workflow is checked in and starts running on the
-first push.)
+database gating broke rather than that a database was unavailable.
 
 ### Exercising a running instance — `npm run exercise`
 
