@@ -148,8 +148,10 @@ function buildContext(
  * transport: Fastify's 2 MiB `bodyLimit` (nothing recorded past it) and gzip's
  * 1 MiB `maxOutputLength` (stage 5 halts 400, and the row keeps the still-
  * compressed wire bytes). U+FFFD substitution can make the stored copy LONGER
- * than the wire, which is why the dashboard's truncation disclosure compares
- * against `wire_bytes` rather than quoting a cap.
+ * than the wire — it emits three bytes of text per undecodable wire byte, so the
+ * 2 MiB `bodyLimit` implies a several-MiB worst case in the column — which is why
+ * the dashboard's truncation disclosure compares against `wire_bytes` rather than
+ * quoting a cap.
  */
 function storedRawBody(ctx: PipelineContext): string {
   const bytes = getDecodedBody(ctx) ?? ctx.rawBody;
