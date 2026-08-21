@@ -11,8 +11,9 @@
 -- only its hash — the secret is never persisted in the clear and is echoed to
 -- the supplier exactly once (§12).
 --
--- Applied as ordered SQL on first boot (mirrors ../tremble/db/initdb); a
--- migration runner is deferred (DESIGN.md §8).
+-- Applied as ordered SQL on first boot (mirrors the `db/initdb/` convention of
+-- the experimental cold chain MDM system DESIGN.md §8 draws on); a migration
+-- runner is deferred (DESIGN.md §8).
 
 CREATE TABLE session (
   uuid             uuid          PRIMARY KEY DEFAULT gen_random_uuid(),

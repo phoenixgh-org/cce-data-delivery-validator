@@ -10,13 +10,21 @@
  *
  * ── THE ROOT CAUSE IS A SPECIFICATION ERRATUM, NOT A CARELESS SUPPLIER ──────
  * CMPR's unit CHANGED. The correction landed between cce-interop 0.7.2 and
- * 0.8.0 — measured across ../WHO_PQS_E006_EMS_specifications/data_delivery/
- * schemas on 2026-08-17:
+ * 0.8.0 — measured across the published schema history at
+ * https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-<version>.json,
+ * re-fetched 2026-08-20:
  *
  *   0.1.1 .. 0.7.2                    "measured in minutes"  maximum 15   e.g. 7
  *   DS01.2 Annex 2 schema (20231128)  "measured in minutes"  maximum 15   e.g. 7
  *   0.8.0 .. 0.8.4                    "measured in seconds"  maximum 900  e.g. 120
  *   Annex 1 spreadsheet               "measured in seconds"
+ *
+ * Those ranges are not dense, and the host is honest about it: the versions
+ * actually published there are 0.1.1, 0.2.0, 0.3.0, 0.4.0, 0.5.0, 0.6.0, 0.7.0,
+ * 0.7.2, 0.8.0, 0.8.1, 0.8.2 and 0.8.4. There is no 0.7.1, and 0.8.3 returns
+ * 404 — so the 0.8.x row is measured over the four 0.8.x artifacts that ARE
+ * published, not all five. Every one of them was fetched; none contradicts the
+ * rows above.
  *
  * CMPR2 followed the identical path. SVA never changed — "the number of seconds
  * within each 15-minute period" in every version — which is why it is the one

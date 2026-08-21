@@ -1,8 +1,9 @@
 -- transmission — one row per `POST /i/{uuid}` (DESIGN.md §6, §8).
 --
--- Mirrors ../tremble's `source_artifact` (content hash, byte size, content
--- type, received-at) with ONE DELIBERATE DIVERGENCE: tremble makes
--- `content_hash` UNIQUE to dedup-and-drop idempotent replays. We must NOT —
+-- Mirrors the `source_artifact` table of the experimental cold chain MDM system
+-- DESIGN.md §8 draws on (content hash, byte size, content type, received-at)
+-- with ONE DELIBERATE DIVERGENCE: that system makes `content_hash` UNIQUE to
+-- dedup-and-drop idempotent replays. We must NOT —
 -- duplicate detection is the §1.8 signal we GRADE, so we record EVERY POST and
 -- flag repeats instead of silently collapsing them. `content_hash` is
 -- therefore NON-UNIQUE here.

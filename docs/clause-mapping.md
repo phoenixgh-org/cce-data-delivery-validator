@@ -14,7 +14,7 @@ The forthcoming **WHO/PQS/E006/DS01.3** rewrites Clause 5 and renumbers every
 requirement into `5.1.x` / `5.2.x` / `5.3.x` / `5.4.x`. Source of truth for the
 new text:
 
-> `../WHO_PQS_E006_EMS_specifications/data_delivery/Draft PQS E006 DS01.3 revision 26-Jun-2026 rth1 bm1.docx`
+> an unreleased DS01.3 draft (seen 2026-07-31)
 
 **Decision (2026-07-31): the internal IDs stay on the 2025 numbering for now.**
 Suppliers hold the 2025 document; DS01.3 is still an unreleased draft (its own

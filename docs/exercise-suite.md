@@ -165,7 +165,8 @@ never spans cases, so a burst cannot leak a §2.1 fail into a neighbour's pool.
 
 The canonical payload sits behind a `BaselineGenerator` function rather than a
 constant, so it can be swapped — e.g. for simulator-grade realism from
-`../ems-data-simulator` — without touching the case table or the runner. The default
+https://github.com/phoenixgh-org/ems-data-simulator/ — without touching the case
+table or the runner. The default
 is seeded from `src/ingest/fixtures/transmissions.ts`, the repo's existing single
 source of truth for "a transmission that reaches the §6 happy-path 200"; the EMS
 generator is hand-built beside it, because that fixture module is the §6 conditional-
@@ -178,7 +179,8 @@ on every call, and carries a **distinct `meta.transferId` per (caseId, index)**.
 last one is an obligation rather than a quirk of the fixture generator (bd b8r): the
 runner plays the whole table against ONE session and §1.8 is session-scoped, so a
 generator holding `transferId` constant — the obvious shape for one seeded from
-`../ems-data-simulator` output — would make every non-replay case record a §1.8 fail
+https://github.com/phoenixgh-org/ems-data-simulator/ output — would make every
+non-replay case record a §1.8 fail
 from table ordering alone. Both shipped generators stamp `<caseId>#<index>`; a case
 that *wants* a duplicate pins the id itself with `setTransferId` on every POST rather
 than trusting two baseline calls to return identical bytes.

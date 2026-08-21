@@ -375,14 +375,15 @@ signature paints amber, so `sigTone()` branches on `kind` to prevent it.
 
 ## 8. Data model
 
-**PostgreSQL** is the datastore, converging with the sibling project `tremble` (which ingests
-the same PQS E006 DS01 data and is itself "opinionated-Postgres"). This gives us native `jsonb`
-for payloads/findings, a clean path to a future production-endpoint mode with no migration, and
-lets us lift `tremble`'s content-addressed patterns directly. Accessed via `node-postgres`
-(`pg`) behind a thin repository layer.
+**PostgreSQL** is the datastore, converging with an experimental Master Data Management (MDM)
+system for cold chain equipment (which ingests the same PQS E006 DS01 data and is itself
+"opinionated-Postgres"). This gives us native `jsonb` for payloads/findings, a clean path to a
+future production-endpoint mode with no migration, and lets us lift that MDM system's
+content-addressed patterns directly. Accessed via `node-postgres` (`pg`) behind a thin
+repository layer.
 
-The `transmission` table mirrors `tremble`'s `source_artifact` (content hash, byte size,
-content type, channel, received-at), with one deliberate difference: `tremble` makes
+The `transmission` table mirrors that MDM system's `source_artifact` (content hash, byte size,
+content type, channel, received-at), with one deliberate difference: that system makes
 `content_hash` **`UNIQUE`** to *dedup-and-drop* on idempotent replay, whereas we **record every
 POST** and instead *flag* repeats — duplicate detection is the §1.8 signal we're grading, so we
 must never silently collapse it.
@@ -432,8 +433,8 @@ list and per-session rollups; `transmission (session_uuid, content_hash)` and
 `transmission (session_uuid, transfer_id)` for duplicate detection (§1.8). Concurrency
 observation (§2.1) is in-flight request tracking per session, not a stored artifact.
 
-Schema is applied as ordered SQL on first boot (mirroring `tremble`'s `db/initdb/` convention);
-a migration runner is deferred until the schema needs to evolve in production.
+Schema is applied as ordered SQL on first boot (mirroring that MDM system's `db/initdb/`
+convention); a migration runner is deferred until the schema needs to evolve in production.
 
 ## 9. Schema registry and versioning
 
@@ -530,13 +531,14 @@ in the dashboard so it's never a surprise.
   **draft-07** (Ajv's default export) for the registered-but-outdated 0.8.0. Neither
   build accepts the other's `$schema`, so the choice is per registry entry.
 - **Storage:** PostgreSQL via `node-postgres` (`pg`), behind a thin repository layer; schema
-  adopts `tremble`'s content-addressed `source_artifact` / `jsonb`-body patterns.
+  adopts the §8 MDM system's content-addressed `source_artifact` / `jsonb`-body patterns.
 - **Frontend:** React + Vite SPA (with `react-router-dom`), built to `dist/web` and served by the
   same Node process via `@fastify/static` with an SPA fallback for non-API paths. Locked
   2026-05-30; the server-rendered alternative was dropped.
 - **Edge:** **Caddy** reverse proxy (Digital Ocean) terminating TLS with automatic Let's Encrypt
   certs; honors the proxy contract in §4.1.
-- **Local/dev:** `docker-compose` (app + Postgres), following `tremble`'s healthcheck-gated bring-up.
+- **Local/dev:** `docker-compose` (app + Postgres), following that MDM system's healthcheck-gated
+  bring-up.
 
 ## 14. Build order (v1 milestones)
 

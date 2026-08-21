@@ -181,7 +181,8 @@ test('payloadTypeOf reports the BRANCH a case exercises, not what it mutates', (
 // One test per clause of the contract documented on `BaselineGenerator`, each
 // looping over `BASELINE_GENERATORS` rather than naming a generator (b8r). The
 // failure b8r describes is a generator added LATER — e.g. one seeded from
-// ../ems-data-simulator output, which would naturally carry a constant
+// https://github.com/phoenixgh-org/ems-data-simulator/ output, which would
+// naturally carry a constant
 // transferId and so reintroduce 5xi in full — and no test written against
 // today's two generators can catch that. Registering the new generator is what
 // enrolls it here.

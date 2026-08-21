@@ -4,8 +4,8 @@
  * Every exercise case is "one canonical baseline × a named transform vocabulary"
  * (see ./transforms/). The baseline itself is deliberately behind a FUNCTION
  * rather than a constant so it can be swapped later — e.g. for simulator-grade
- * realism from ../ems-data-simulator (seeded PRNG) — without touching the case
- * table or the future live runner. That is the whole point of this module: it is
+ * realism from https://github.com/phoenixgh-org/ems-data-simulator/ (seeded
+ * PRNG) — without touching the case table or the future live runner. That is the whole point of this module: it is
  * the one seam where "what a conformant transmission looks like" is decided.
  *
  * The initial implementation is seeded from the hand-built valid fixture in
@@ -70,8 +70,9 @@ export interface BaselineRequest {
  *     must never yield the same id (b8r; the defect it prevents is 5xi). The
  *     runner plays the WHOLE table against ONE session and §1.8 is
  *     session-scoped: a generator holding `transferId` constant — the obvious
- *     shape for one seeded from ../ems-data-simulator output — would make every
- *     non-replay case in the table record a §1.8 fail from table ordering
+ *     shape for one seeded from https://github.com/phoenixgh-org/ems-data-simulator/
+ *     output — would make every non-replay case in the table record a §1.8
+ *     fail from table ordering
  *     alone, pass-direction cases included, and would poison the dashboard the
  *     runner points at. Deriving the id per POST also keeps the serialized bytes
  *     distinct, which clears the content-replay flavour of the same check.

@@ -1,4 +1,5 @@
-# Local/dev bring-up: Postgres + app, healthcheck-gated (mirrors ../tremble).
+# Local/dev bring-up: Postgres + app, healthcheck-gated (mirrors the experimental
+# cold chain MDM system DESIGN.md §8 draws on).
 # The app only starts once Postgres reports healthy. DB connection info is wired
 # through env and consumed by the pg pool (src/db/pool.ts): DATABASE_URL when set,
 # otherwise the PG* vars.
