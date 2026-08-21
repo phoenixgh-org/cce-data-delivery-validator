@@ -41,7 +41,7 @@ import assert from 'node:assert/strict';
 import { COMPLIANCE_MATRIX } from '../api/compliance-matrix.js';
 import { isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
 import { SchemaRegistry } from '../schema-registry.js';
-import { DEFAULT_BASELINE, emsBaseline } from './baseline.js';
+import { BASELINE_GENERATORS, DEFAULT_BASELINE, emsBaseline } from './baseline.js';
 import {
   isAcceptedStatus,
   materializeCase,
@@ -257,6 +257,30 @@ test('a case declaring the EMS baseline really materializes an EMS-typed payload
       );
     }
   }
+});
+
+test('every baseline the table declares is registered in BASELINE_GENERATORS', () => {
+  // WHY THIS IS THE ENFORCEMENT POINT (624). ./case.test.ts asserts the three
+  // BaselineGenerator obligations (schema-valid / fresh / distinct transferId per
+  // (caseId, index)) over the entries of BASELINE_GENERATORS — so registration is
+  // what enrols a generator in the contract, and until now it was REMEMBERED
+  // rather than required. A contributor writing `const solarBaseline:
+  // BaselineGenerator = …` in ./cases/payload.ts and hanging it off a case got
+  // zero contract checking, including clause 3, which is the exact defect (5xi)
+  // b8r was filed about. Asserting membership here makes the registry the only
+  // way in, and enrols every future generator automatically.
+  const registered = new Set<unknown>(Object.values(BASELINE_GENERATORS));
+  for (const kase of EXERCISE_CASES) {
+    if (kase.baseline === undefined) continue; // the default is registered below
+    assert.ok(
+      registered.has(kase.baseline),
+      `${kase.id}: declares a baseline generator that BASELINE_GENERATORS does not list, so ` +
+        `./case.test.ts never holds it to the BaselineGenerator contract — register it there`,
+    );
+  }
+  // The fallback every undeclared case resolves to has to be in the registry for
+  // the same reason.
+  assert.ok(registered.has(DEFAULT_BASELINE), 'DEFAULT_BASELINE is not registered');
 });
 
 test('a case that declares no baseline gets the default one', () => {
