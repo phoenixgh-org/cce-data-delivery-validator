@@ -168,40 +168,86 @@ Notes on the table:
 ### Response body
 
 The same shape on success and on rejection, so a `4xx` is as self-explanatory as a
-`2xx` (`DESIGN.md` §6 teaching surface).
+`2xx` (`DESIGN.md` §6 teaching surface). The body below is a real response to the
+0.8.1 RTM baseline fixture, abridged where entries repeat.
 
-```json
+```jsonc
 {
-  "transmissionId": "68d04f41-60f8-4a7c-ab13-6def35acb489",
+  "transmissionId": "5dc715af-4b18-44fe-9767-56c4cddd3aed",
   "status": 200,
-  "message": "Accepted (200): data recorded; 9 findings (2 info).",
+  "message": "Accepted (200): data recorded; 9 findings (2 info). 5 further findings under the DS01.3 draft of 2026-09-08 (sha256 7e22de27d46e2b6c4ad9f403c7de63ca1b9035c732be23aae7fbb42742324f05) did not affect this status.",
   "findings": 9,
   "findingDetails": [
     {
       "requirement": "1.2",
       "severity": "pass",
+      "profile": "2025",
       "detail": "Content-Type is application/json; charset=utf-8 (§1.2)"
     },
     {
       "requirement": "3.2",
+      "severity": "pass",
+      "profile": "2025",
+      "detail": "validated against official 0.8.1 (sha256 290290fd4623d25c…) (§3.2)"
+    },
+    {
+      "requirement": "5.3.2",
       "severity": "fail",
-      "detail": "schema violation at /data/0: must have required property 'AMID' (§3.2)"
+      "profile": "ds013",
+      "detail": "schema violation at /data/0: must have required property 'LSER' (§5.3.2)"
     }
+    // … 11 more entries: 7 further `2025` findings and the 4 other `ds013` fails.
   ],
   "advisories": [],
   "notice": "Synthetic test data only: this is a sandbox endpoint. …"
 }
 ```
 
-| Field            | Type                | Meaning                                                                                     |
-| ---------------- | ------------------- | ------------------------------------------------------------------------------------------- |
-| `transmissionId` | `string \| null`    | Id of the persisted row; `null` on the `404`/`405` rejections, which record nothing.        |
-| `status`         | `number`            | Same as the HTTP status.                                                                    |
-| `message`        | `string`            | One-line summary: `Accepted (200): data recorded; N findings (…)` or `Rejected (NNN): …`, with the fail/info tally. A trailing `N advisories, not graded and not counted above.` is appended when any were raised. |
-| `findings`       | `number`            | Count of **graded** findings recorded for this transmission — advisories excluded.        |
-| `findingDetails` | `array`             | Each `{ requirement, severity, detail }`. `severity` is `pass`, `fail`, or `info`. The JSON pointer and structured signature fields are omitted here — read them from the dashboard routes. |
-| `advisories`     | `array`             | Advisories (`adv.*` ids) in the same shape, in a field of their own. Usually empty. |
-| `notice`         | `string`            | The standing synthetic-data-only warning, on every response.                                |
+| Field            | Type             | Meaning                                                                                                                                                                                                                                                                 |
+| ---------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transmissionId` | `string \| null` | Id of the persisted row; `null` on the `404`/`405` rejections, which record nothing.                                                                                                                                                                                     |
+| `status`         | `number`         | Same as the HTTP status.                                                                                                                                                                                                                                                 |
+| `message`        | `string`         | One-line summary: `Accepted (200): data recorded; N findings (…)` or `Rejected (NNN): …`, with the **contract-lineage** fail and info tally. A sentence about advisories is appended when any were raised, and a sentence naming the shadow lineage when a shadow run happened. |
+| `findings`       | `number`         | Count of the **contract-lineage** graded findings for this transmission — shadow findings and advisories excluded.                                                                                                                                                       |
+| `findingDetails` | `array`          | Each `{ requirement, severity, profile, detail }`, from **both lineages**. `severity` is `pass`, `fail`, or `info`. The JSON pointer and structured signature fields are omitted here — read them from the dashboard routes.                                              |
+| `advisories`     | `array`          | Advisories (`adv.*` ids) in the same shape, `profile` included, in a field of their own. Usually empty.                                                                                                                                                                  |
+| `notice`         | `string`         | The standing synthetic-data-only warning, on every response.                                                                                                                                                                                                             |
+
+#### Two lineages in one body
+
+Every transmission is graded twice (`DESIGN.md` §6.1): against the **contract**
+lineage in force (`2025` — cce-interop and the March 2025 requirements) and against
+the **DS01.3 shadow** lineage (`ds013` — the unpublished Annex 4 draft). Both sets of
+findings are echoed, because previewing the next revision is exactly what this
+teaching surface is for, but only the contract findings decide the status.
+
+- `profile` on every entry names the lineage that graded it, so the two are separable
+  without reading clause numbers (`3.2` is cce-interop, `5.3.x` is Annex 4).
+- `findings` counts the contract lineage alone, so `findings` is **not** the length of
+  `findingDetails` — in the example above, 9 against 14. An integrator that derived one
+  from the other should read the count.
+- A clean shadow run is echoed too, as a single
+  `{ "requirement": "5.3.2", "severity": "pass", "profile": "ds013" }` entry, so a
+  supplier reads that they are DS01.3-ready rather than inferring it from an absence.
+- `message` gains a trailing sentence whenever a shadow run happened:
+
+| Shadow outcome    | Sentence appended to `message`                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| findings echoed   | `N further findings under the DS01.3 draft of {date} (sha256 {hash}) did not affect this status.`     |
+| a clean pass      | `Also passes the DS01.3 draft of {date} (sha256 {hash}).`                                             |
+| no shadow run     | none                                                                                                   |
+
+The date and the full 64-char hash are read from the registry entry, in the same
+`(sha256 …)` form the §3.2 pass detail uses, so the sentence and the dashboard legend
+name the same bytes. The lineage is described as the entry describes itself: an
+unpublished proposal reads "draft of {date}", published bytes read
+"the cce-interop {version} schema", and a payload declaring the Annex 4 revision
+therefore names cce-interop as *its* shadow.
+
+Nothing is appended when no shadow run happened at all — an unresolved
+`meta.schemaVersion`, a body that never parsed, or a transport stage that halted
+first. A sentence about a draft the body was never graded against is a claim this
+service cannot support.
 
 **Advisories are never counted as findings.** An advisory is an observation about a
 payload that violates no requirement (`DESIGN.md` §7.1), so it stays out of `findings`,
@@ -211,7 +257,8 @@ dropped, because this response is the only surface an integrator who never opens
 dashboard will read.
 
 Findings appear in pipeline order (auth, size, content-type, encoding, parse, schema,
-then the semantic checks), so a schema failure yields one entry per Ajv error.
+then the semantic checks), so a schema failure yields one entry per Ajv error and the
+shadow findings sit with the schema stage that produced them.
 
 `findingDetails` includes **passes**, not just problems: §1.4 within the cap, §1.2 an
 exact media type, §3.2 validated against the pinned schema, and so on. That is what
@@ -360,7 +407,9 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
     "created_at": "2026-08-01T05:50:06.568Z",
     "last_post_at": "2026-08-01T05:50:06.722Z",
     "auth_enabled": false,
-    "auth_method": null
+    "auth_method": null,
+    "contractProfile": "2025",
+    "shadowProfile": "ds013"
   },
   "transmissions": [ /* every transmission, newest first — see the row shape below */ ],
   "summary":   [ /* 27 §7 matrix rows joined with live counts */ ],
@@ -370,8 +419,11 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
   "sources":   [ { "source": "com.example", "sourceCode": "EXA", "sourceLabel": "com.example", "count": 1 } ],
   "scoped":    { "scoped": 1, "withFailures": 0, "distinctIssues": 0 },
   "expiresAt": "2026-08-08T05:50:33.722Z",
-  "schemas":   [ { "version": "0.8.0", "sha256": "e6614cc7d749be2e…" },
-                 { "version": "0.8.1", "sha256": "290290fd4623d25c…" } ]
+  "shadow":    { "version": "1", "sha256": "7e22de27d46e2b6c…", "draftDate": "2026-09-08" },
+  "readiness": { "passingContract": 1, "passingBoth": 0, "reasons": [ /* shadow-lineage signatures */ ] },
+  "schemas":   [ { "version": "0.8.0", "sha256": "e6614cc7d749be2e…", "profile": "2025" },
+                 { "version": "0.8.1", "sha256": "290290fd4623d25c…", "profile": "2025" },
+                 { "version": "1", "sha256": "7e22de27d46e2b6c…", "profile": "ds013", "draftDate": "2026-09-08" } ]
 }
 ```
 
@@ -383,7 +435,9 @@ its vendored bytes at boot (abbreviated above). It is what a transmission's
 `schemaVersion` is matched against, and it is the honest answer to "which bytes am I
 being graded against?" — compare it with the published artifact at
 `https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-{version}.json`. Schemas
-are never fetched at runtime.
+are never fetched at runtime. Each entry also carries the `profile` its lineage
+belongs to, and a `draftDate` when the entry is an unpublished proposal rather than a
+published schema.
 
 `transmissions` is **not** scoped by `window`/`source` (the full list ships for the
 detail pane); `summary`, `rollup`, `signatures`, `trend`, and `scoped` **are**.
@@ -391,6 +445,25 @@ detail pane); `summary`, `rollup`, `signatures`, `trend`, and `scoped` **are**.
 visible whichever one is selected. For large sessions, page the list through
 [`/transmissions`](#get-apisessionsuuidtransmissions--paginated-transmission-list)
 instead.
+
+### Which lineage graded what
+
+Every transmission is graded against two requirement lineages (`DESIGN.md` §6.1), so
+the session read names them rather than leaving the dashboard to infer them from
+version numbers. The first three are read off the schema registry; `readiness` is
+computed over the traffic in scope.
+
+| Field                     | Type                | Purpose                                                                                                                                                  |
+| ------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session.contractProfile` | `string`            | The lineage in force (`2025`) — what the compliance summary, `rollup`, `trend` and `scoped.distinctIssues` grade.                                         |
+| `session.shadowProfile`   | `string \| null`    | The lineage previewed beside it (`ds013`), or `null` when the registry holds a single lineage. That `null` is the one signal that hides every shadow surface. |
+| `shadow`                  | `object \| null`    | Provenance of the shadow lineage's current bytes: `version`, the full 64-char `sha256`, and `draftDate` when the entry is an unpublished proposal.        |
+| `readiness`               | `object \| null`    | How much of the in-scope traffic that passes the contract would also pass the shadow lineage — see [Readiness object](#readiness-object).                 |
+
+`shadow` and `readiness` are **top-level**, beside `schemas`, not nested under
+`session`: `shadow` is a service-global fact about the registry, and `readiness` is
+computed over the selected scope rather than over the session as a whole. Both are
+`null` exactly when `session.shadowProfile` is.
 
 **`404`** — `{"error":"not_found","uuid":"…"}` for an unknown session.
 
@@ -412,6 +485,14 @@ Identical on this route and on the paginated list.
 | `body`                             | Parsed JSON payload, `null` if it never parsed.                             |
 | `raw_body`                         | Drill-down text (gzip-decoded when applicable, NUL-stripped) — kept especially when parsing failed. |
 | `findings`                         | The findings for this transmission, ordered by requirement number.          |
+| `verdicts`                         | `object` — this transmission's verdict under each registered lineage, keyed by profile id: `{ "2025": "pass", "ds013": "fail" }`. Each value is `pass`, `fail`, or `null` when that lineage never ran on it; the shadow key is **absent**, not `null`, when no shadow lineage is registered. |
+| `primaryProfile`                   | `string \| null` — which lineage drove the HTTP status, resolved from `schema_version` through the registry; `null` when the version never resolved. |
+
+**A verdict is by lineage, not by HTTP status.** The status records what the primary
+validator decided; a verdict records what one lineage decided, and the two differ in a
+mixed stream — a transmission rejected `422` on the Annex 4 draft it declared can still
+hold `"2025": "pass"`. Keys are profile ids rather than "primary" and "shadow" because
+the role varies per transmission while the dashboard's contract column does not.
 
 ### Finding object
 
@@ -442,8 +523,9 @@ Identical on this route and on the paginated list.
   findings, which are identified by `keyword` instead. §1.3 auth findings and pure
   `info` observations carry neither.
 - `profile` — the requirement lineage the finding grades against: `2025` (the contract
-  in force) or `ds013` (the DS01.3 shadow run). Every finding the service writes today
-  is `2025`.
+  in force) or `ds013` (the DS01.3 shadow run). Both appear: since the shadow validator
+  runs alongside the primary one, a conformant transmission carries `2025` passes and
+  may carry `ds013` fails at the same time.
 
 | `code`                          | Req   | Raised when                                          |
 | ------------------------------- | ----- | ---------------------------------------------------- |
@@ -533,6 +615,51 @@ They are excluded from `scoped.distinctIssues` and from every requirement groupi
 selecting one implies nothing about failures — a transmission with zero `fail` findings that
 merely carries an observation is a legitimate hit.
 
+### Readiness object
+
+`readiness` answers one question over the whole selected scope: of the transmissions
+that satisfy the obligations in force, how many would also satisfy the DS01.3 draft,
+and what stands in the way. It is `null` when no shadow lineage is registered.
+
+| Field             | Type     | Meaning                                                                                                         |
+| ----------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
+| `passingContract` | `number` | In-scope transmissions whose contract verdict is `pass`.                                                        |
+| `passingBoth`     | `number` | Of those, the ones whose shadow verdict is also `pass`.                                                         |
+| `reasons`         | `array`  | What stands between the two counts: the shadow-lineage fail [signatures](#signature-object) of the contract-passing transmissions, most widespread first. |
+
+```json
+{
+  "passingContract": 1,
+  "passingBoth": 0,
+  "reasons": [
+    {
+      "key": "ds013|5.3.2|required|/data/*|LSER",
+      "req": "5.3.2",
+      "profile": "ds013",
+      "title": "Missing required property LSER",
+      "kind": "schema",
+      "sev": "fail",
+      "count": 1,
+      "txCount": 1,
+      "sourceCount": 1,
+      "first": "2026-09-14T22:10:50.865Z",
+      "last": "2026-09-14T22:10:50.865Z",
+      "examplePointer": "/data/0"
+    }
+  ]
+}
+```
+
+Readiness is computed over `window` and `source` only. The list route's `failuresOnly`
+and `signatureKey` filters are deliberately not applied: readiness is a statement about
+the whole scope, and a set narrowed to failing transmissions would report readiness
+over the traffic least able to demonstrate it.
+
+`reasons` folds the contract-**passing** transmissions alone. A transmission that
+already fails the contract has a defect to fix either way, and including it would crowd
+the list with reasons that are not the gap between the two counts. Advisories are
+excluded here as everywhere else.
+
 ## `GET /api/sessions/{uuid}/transmissions` — paginated transmission list
 
 The same rows as the summary route, filtered and paged — what to use once a session
@@ -563,8 +690,10 @@ top. This route never returns `400`.
 }
 ```
 
-- `transmissions` — one page, newest first, each row the shape described above with
-  its findings inlined (no second fetch needed).
+- `transmissions` — one page, newest first, each row the
+  [shape described above](#transmission-object) with its findings, `verdicts` and
+  `primaryProfile` inlined, so the list renders its verdict columns without a second
+  fetch.
 - `scoped` — total matching **after all filters**: the denominator for "showing
   {page} of {scoped}".
 - `nextCursor` — opaque token for the next page, or `null` when there is none.

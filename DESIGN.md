@@ -208,8 +208,13 @@ with it is a deliberate teaching surface: a supplier should be able to understan
 outcome from the HTTP response alone, without opening the dashboard. It carries:
 
 - `transmissionId` and `status`;
-- a one-line `message` with the fail and info tally;
-- `findingDetails`, echoing each finding;
+- a one-line `message` with the fail and info tally of the CONTRACT lineage, plus a
+  trailing sentence naming the shadow lineage — the count of its findings and that they
+  did not affect the status, or that the transmission also passes it — whenever a
+  shadow run happened;
+- `findingDetails`, echoing each finding of BOTH lineages, each naming the `profile`
+  that graded it, so the array is longer than the counted tally whenever the shadow run
+  recorded anything;
 - an `advisories` array (§7.1), kept out of the tally so that a conformant payload is
   never handed a number to explain;
 - a standing `notice` that this is a synthetic-data-only sandbox (§2, §12).
