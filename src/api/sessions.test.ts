@@ -1173,6 +1173,345 @@ test(
   },
 );
 
+// ── by1c.9: shadow profile, per-profile verdicts, readiness ─────────────────
+//
+// The session read now says WHICH LINEAGE it means everywhere it grades: which
+// profile is the contract, which one is shadowed, what bytes that shadow is, a
+// verdict per lineage on every transmission, and how much of the conformant
+// traffic in scope would survive the shadow lineage. These tests pin the three
+// cases the dashboard has to render — a service with no shadow registered, a
+// transmission that conforms today but not under DS01.3, and one whose declared
+// version belongs to no lineage at all — plus the invariant underneath them all:
+// a shadow finding moves nothing the supplier is graded on today.
+
+/** The shadow-aware half of the summary read (by1c.9). */
+interface ShadowResp {
+  session: {
+    uuid: string;
+    contractProfile: string;
+    shadowProfile: string | null;
+  };
+  transmissions: Array<{
+    id: string;
+    schema_version: string | null;
+    verdicts: Record<string, 'pass' | 'fail' | null>;
+    primaryProfile: string | null;
+  }>;
+  summary: Array<{ requirement: string; counts: FindingCounts; status: string }>;
+  signatures: Array<{ key: string; profile: string | null; sev: string }>;
+  shadow: { version: string; sha256: string; draftDate?: string } | null;
+  readiness: {
+    passingContract: number;
+    passingBoth: number;
+    reasons: Array<{ key: string; profile: string | null; sev: string; txCount: number }>;
+  } | null;
+}
+
+interface FindingCounts {
+  pass: number;
+  fail: number;
+  info: number;
+}
+
+/** A 5.3.2 shadow failure: an Annex 4 required property the payload omits. */
+function missingUnderAnnex4(param: string) {
+  return {
+    requirement: '5.3.2',
+    severity: 'fail' as const,
+    keyword: 'required',
+    instancePath: '/data/0',
+    param,
+    profile: 'ds013' as const,
+    detail: `Annex 4 requires ${param}`,
+  };
+}
+
+test(
+  'GET /api/sessions/:uuid → a contract-passing transmission that fails DS01.3 (by1c.9)',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+
+      // Two transmissions, one conformant today and one not. Both would fail the
+      // DS01.3 draft, which is exactly the distinction readiness draws.
+      const passing = await insertTransmission({
+        sessionUuid: uuid,
+        wireBytes: 100,
+        httpStatus: 200,
+        schemaVersion: '0.8.1',
+        body: { meta: {} },
+        rawBody: '{"meta":{}}',
+        parseOk: true,
+        schemaOk: true,
+      });
+      await insertFinding(passing.id, { requirement: '1.2', severity: 'pass', profile: '2025' });
+
+      const failing = await insertTransmission({
+        sessionUuid: uuid,
+        wireBytes: 100,
+        httpStatus: 422,
+        schemaVersion: '0.8.1',
+        body: { meta: {} },
+        rawBody: '{"meta":{}}',
+        parseOk: true,
+        schemaOk: false,
+      });
+      await insertFinding(failing.id, {
+        requirement: '3.2',
+        severity: 'fail',
+        keyword: 'required',
+        instancePath: '/data/0',
+        param: 'ABST',
+        profile: '2025',
+      });
+
+      // The contract-only baseline: what the supplier is graded on today.
+      const before = (
+        await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` })
+      ).json() as ShadowResp;
+      assert.equal(before.summary.length, 27, 'all 27 §7 rows present');
+
+      // Now the shadow run's findings land beside them, plus an advisory — which
+      // is an observation about a conformant payload, never a readiness reason.
+      await insertFinding(passing.id, missingUnderAnnex4('LSER'));
+      await insertFinding(
+        passing.id,
+        advisory({
+          id: 'adv.null_padding',
+          detail: 'TCON was null in all records of this transmission',
+          pointer: '/data/0/records/0/TCON',
+        }),
+      );
+      await insertFinding(failing.id, missingUnderAnnex4('LMFR'));
+
+      const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as ShadowResp;
+
+      // ── which lineage is which, straight off the registry ───────────────────
+      assert.equal(body.session.contractProfile, '2025');
+      assert.equal(body.session.shadowProfile, 'ds013');
+      const shadowEntry = SchemaRegistry.load().shadowFor('2025');
+      assert.deepEqual(body.shadow, {
+        version: shadowEntry?.version,
+        sha256: shadowEntry?.sha256,
+        draftDate: shadowEntry?.draftDate,
+      });
+      assert.match(body.shadow?.draftDate ?? '', /^\d{4}-\d{2}-\d{2}$/, 'a draft date, not a name');
+
+      // ── a verdict per lineage, keyed by profile id ──────────────────────────
+      const byId = new Map(body.transmissions.map((t) => [t.id, t]));
+      assert.deepEqual(
+        byId.get(passing.id)?.verdicts,
+        { '2025': 'pass', ds013: 'fail' },
+        'conforms today, would not under DS01.3',
+      );
+      assert.deepEqual(byId.get(failing.id)?.verdicts, { '2025': 'fail', ds013: 'fail' });
+      assert.equal(byId.get(passing.id)?.primaryProfile, '2025', 'a 0.8.1 declaration is 2025');
+
+      // ── the 27-row matrix is UNMOVED by the shadow findings ─────────────────
+      assert.deepEqual(body.summary, before.summary, 'a ds013 finding moved a §7 row');
+      // The §7 matrix carries its own 5.1/5.2/5.3 retransmission rows, so the
+      // point is not that "5.x" is absent — it is that the DS01.3 clause id is,
+      // and that the neighbouring 5.3 row did not absorb it.
+      assert.equal(
+        body.summary.some((row) => row.requirement === '5.3.2'),
+        false,
+        'a DS01.3 clause id reached the §7 matrix',
+      );
+      assert.deepEqual(
+        body.summary.find((row) => row.requirement === '5.3')?.counts,
+        { pass: 0, fail: 0, info: 0 },
+        'the §7 5.3 row absorbed a 5.3.2 shadow finding',
+      );
+
+      // ── the shadow signatures ride the wire, each naming its lineage ────────
+      const shadowSigs = body.signatures.filter((sig) => sig.profile === 'ds013');
+      assert.deepEqual(
+        shadowSigs.map((sig) => sig.key).sort(),
+        ['ds013|5.3.2|required|/data/*|LMFR', 'ds013|5.3.2|required|/data/*|LSER'],
+        'both shadow failures fold, profile-prefixed and disjoint from 2025',
+      );
+
+      // ── readiness over the scope: one tx conforms today, none would survive ─
+      assert.equal(body.readiness?.passingContract, 1);
+      assert.equal(body.readiness?.passingBoth, 0);
+      assert.deepEqual(
+        body.readiness?.reasons.map((r) => r.key),
+        ['ds013|5.3.2|required|/data/*|LSER'],
+        'only the contract-passing transmission contributes a reason',
+      );
+      assert.equal(
+        body.readiness?.reasons.some((r) => r.key.startsWith('adv|') || r.sev !== 'fail'),
+        false,
+        'an advisory is never a readiness reason',
+      );
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test(
+  'GET /api/sessions/:uuid → a 1.0.0-declaring transmission has no lineage to shadow (by1c.9)',
+  { skip },
+  async () => {
+    // `1.0.0` is a well-formed semver that no lineage registers, so §3.2 rejects
+    // it and the shadow validator never runs: the contract verdict is 'fail' and
+    // the shadow verdict is null — "not measured", not "would fail".
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+      const tx = await insertTransmission({
+        sessionUuid: uuid,
+        wireBytes: 100,
+        httpStatus: 422,
+        schemaVersion: '1.0.0',
+        body: { meta: { schemaVersion: '1.0.0' } },
+        rawBody: '{"meta":{"schemaVersion":"1.0.0"}}',
+        parseOk: true,
+        schemaOk: false,
+      });
+      await insertFinding(tx.id, {
+        requirement: '3.2',
+        severity: 'fail',
+        code: 'schema.unsupported_version',
+        detail: 'unsupported schemaVersion 1.0.0',
+        profile: '2025',
+      });
+
+      const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as ShadowResp;
+
+      assert.deepEqual(body.transmissions[0]?.verdicts, { '2025': 'fail', ds013: null });
+      assert.equal(
+        body.transmissions[0]?.primaryProfile,
+        null,
+        'a version outside both lineages resolves to no primary profile',
+      );
+      assert.deepEqual(
+        body.readiness,
+        { passingContract: 0, passingBoth: 0, reasons: [] },
+        'nothing conforms today, so there is nothing to be ready with',
+      );
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test(
+  'GET /api/sessions/:uuid → a registry with one lineage reports no shadow at all (by1c.9)',
+  { skip },
+  async () => {
+    // The flip-point test: with only the contract lineage registered there is
+    // nothing to shadow, and all three shadow surfaces go dark off one null.
+    // Built with a synthetic registry rather than by touching the real one —
+    // `loadFrom` exists for exactly this (src/schema-registry.ts).
+    const app = buildApp({
+      logger: false,
+      registry: SchemaRegistry.loadFrom([
+        {
+          version: '0.8.1',
+          file: './schemas/cce-interop-0.8.1.json',
+          dialect: '2020-12',
+          profile: '2025',
+        },
+      ]),
+    });
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+      const tx = await insertTransmission({
+        sessionUuid: uuid,
+        wireBytes: 100,
+        httpStatus: 200,
+        schemaVersion: '0.8.1',
+        body: { meta: {} },
+        rawBody: '{"meta":{}}',
+        parseOk: true,
+        schemaOk: true,
+      });
+      await insertFinding(tx.id, { requirement: '1.2', severity: 'pass', profile: '2025' });
+      // A stored shadow finding must not conjure a lineage the registry has
+      // dropped: the response reports what this service grades against now.
+      await insertFinding(tx.id, missingUnderAnnex4('LSER'));
+
+      const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as ShadowResp;
+
+      assert.equal(body.session.shadowProfile, null, 'no second lineage to name');
+      assert.equal(body.shadow, null, 'and no bytes to name it by');
+      assert.equal(body.readiness, null, 'and nothing to be ready for');
+      for (const t of body.transmissions) {
+        assert.deepEqual(
+          Object.keys(t.verdicts),
+          ['2025'],
+          'a verdict is reported under registered lineages only',
+        );
+        assert.equal(t.verdicts.ds013 ?? null, null, 'no shadow verdict is claimed');
+      }
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test('GET …/transmissions → list rows carry the same verdicts (by1c.9)', { skip }, async () => {
+  // The virtualized list renders its verdict dots off the page it already
+  // fetched; if the verdicts shipped only on the summary read, every row would
+  // cost a second read of the whole session.
+  const app = makeApp();
+  await app.ready();
+  let uuid: string | undefined;
+  try {
+    const session = await createSession();
+    uuid = session.uuid;
+    const tx = await insertTransmission({
+      sessionUuid: uuid,
+      wireBytes: 100,
+      httpStatus: 200,
+      schemaVersion: '0.8.1',
+      body: { meta: {} },
+      rawBody: '{"meta":{}}',
+      parseOk: true,
+      schemaOk: true,
+    });
+    await insertFinding(tx.id, { requirement: '1.2', severity: 'pass', profile: '2025' });
+    await insertFinding(tx.id, missingUnderAnnex4('LSER'));
+
+    const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}/transmissions` });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as ShadowResp;
+    assert.deepEqual(body.transmissions[0]?.verdicts, { '2025': 'pass', ds013: 'fail' });
+    assert.equal(body.transmissions[0]?.primaryProfile, '2025');
+
+    // And the summary read agrees row for row — one projection, two endpoints.
+    const summary = (
+      await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` })
+    ).json() as ShadowResp;
+    assert.deepEqual(body.transmissions[0]?.verdicts, summary.transmissions[0]?.verdicts);
+  } finally {
+    if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+    await app.close();
+  }
+});
+
 test.after(async () => {
   await closePool().catch(() => {});
 });

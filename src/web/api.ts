@@ -83,6 +83,29 @@ export type Profile = '2025' | 'ds013';
  */
 export const CONTRACT_PROFILE: Profile = '2025';
 
+/**
+ * One lineage's verdict on one transmission — mirror `Verdict` in
+ * src/api/verdicts.ts (browser code, re-declared; see the header).
+ *
+ * `null` is a SHADOW-ONLY answer and it is NOT a soft fail: that lineage never
+ * ran on the transmission (an unparseable body, a `meta.schemaVersion` outside
+ * both lineages, a transport stage that halted first). Render it as "not
+ * measured", never as a failure.
+ */
+export type Verdict = 'pass' | 'fail' | null;
+
+/**
+ * A transmission's verdicts KEYED BY PROFILE ID — mirror `VerdictsByProfile` in
+ * src/api/sessions.ts. `{ '2025': 'pass', 'ds013': 'fail' }` reads "conforms
+ * today, would not under DS01.3".
+ *
+ * Keyed by lineage rather than by primary/shadow role because the role varies
+ * per transmission in a mixed stream while the dashboard's contract column does
+ * not. A key is ABSENT only when the service registers no such lineage — read it
+ * through {@link SessionMeta.shadowProfile}, which is null in exactly that case.
+ */
+export type VerdictsByProfile = Partial<Record<Profile, Verdict>>;
+
 /** A finding surfaced under a transmission's drill-down. */
 export interface FindingView {
   requirement: string;
@@ -106,8 +129,11 @@ export interface FindingView {
   param: string | null;
   code: string | null;
   /**
-   * Which requirement lineage this finding grades against. Every finding the
-   * service writes today is `'2025'`; `'ds013'` arrives with the shadow run.
+   * Which requirement lineage this finding graded against (by1c.5): the contract
+   * in force, or the DS01.3 shadow run. Since by1c.6 a single transmission
+   * carries findings of both lineages, and everything on this side that grades
+   * (the verdict dots, the findings cell, the profile-disjoint signature list)
+   * reads this field to tell them apart.
    */
   profile: Profile;
 }
@@ -163,6 +189,19 @@ export interface TransmissionView {
   body: unknown;
   raw_body: string | null;
   findings: FindingView[];
+  /**
+   * This transmission's verdict under each registered lineage (by1c.9), served
+   * on the summary read AND on every paginated list row, so the list renders its
+   * verdict dots without a second fetch.
+   */
+  verdicts: VerdictsByProfile;
+  /**
+   * Which lineage drove the HTTP status — the one `schema_version` resolved to.
+   * Null when nothing resolved (no version, or one outside both lineages), where
+   * no primary validator ran. Derived server-side from the registry; it is NOT
+   * the same question as `verdicts`, which reports every lineage's answer.
+   */
+  primaryProfile: Profile | null;
 }
 
 /**
@@ -186,6 +225,19 @@ export interface SessionMeta {
   last_post_at: string | null;
   auth_enabled: boolean;
   auth_method: AuthMethod | null;
+  /**
+   * The lineage in force — what the 27-row matrix, the scorecard, the pass rate
+   * and the response code grade (by1c.9). Served rather than assumed so a
+   * surface can name the contract without mirroring the constant a third time.
+   */
+  contractProfile: Profile;
+  /**
+   * The lineage previewed beside it, or null when the service registers only
+   * one. NULL IS THE HIDE SIGNAL: with no shadow lineage there is no readiness
+   * strip, no second verdict dot and no "would also fail" group, and no surface
+   * needs to test for a version by name to know it.
+   */
+  shadowProfile: Profile | null;
 }
 
 /** 201 response of POST /api/sessions. */
@@ -307,11 +359,57 @@ export interface SessionResponse {
   /** ISO timestamp string when the session expires (DESIGN §11). */
   expiresAt: string;
   /**
+   * The shadow lineage's current bytes, or null when none is registered (the
+   * same condition as `session.shadowProfile === null`). The legend renders its
+   * label from THIS — version, hash, and `draftDate` when the entry is an
+   * unpublished proposal — never from a literal of its own (3cq, by1c.22).
+   */
+  shadow: ShadowProvenance | null;
+  /**
+   * How much of the scope's contract-conformant traffic would also pass the
+   * shadow lineage, and what stands in the way. Null when no shadow lineage is
+   * registered. Computed over the scoped set (window + source), NOT over the
+   * list's `failuresOnly`/`signatureKey` filters.
+   */
+  readiness: Readiness | null;
+  /**
    * The schema versions the service grades against, oldest first, each with the
    * sha256 the server computed over its vendored bytes at boot. The Setup
    * panel's provenance line renders THIS — never a literal of its own (3cq).
    */
   schemas: SchemaProvenance[];
+}
+
+/**
+ * The shadow lineage's current bytes — mirror the `shadow` object built in
+ * src/api/sessions.ts (browser code, re-declared; see the header).
+ *
+ * `draftDate` is present only for an UNPUBLISHED proposal, and its presence is
+ * what licenses a surface to call the entry a draft; a published shadow schema
+ * is identified by version and hash alone.
+ */
+export interface ShadowProvenance {
+  version: string;
+  sha256: string;
+  draftDate?: string;
+}
+
+/**
+ * The readiness strip's numbers — mirror `Readiness` in src/api/verdicts.ts.
+ *
+ * `reasons` are the shadow-lineage fail signatures of the CONTRACT-PASSING
+ * transmissions, most widespread first: of the traffic that conforms today, what
+ * would stop it conforming under the shadow lineage. A transmission already
+ * failing the contract contributes no reason — it has a defect to fix either
+ * way — and one whose shadow verdict is null counts in neither number.
+ */
+export interface Readiness {
+  /** Transmissions in scope whose contract verdict is 'pass'. */
+  passingContract: number;
+  /** Of those, the ones whose shadow verdict is also 'pass'. */
+  passingBoth: number;
+  /** What stands between the two counts, txCount descending. */
+  reasons: Signature[];
 }
 
 /** One registered schema — mirrors `SchemaProvenance` in src/schema-registry.ts. */

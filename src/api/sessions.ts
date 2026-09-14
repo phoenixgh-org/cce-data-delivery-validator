@@ -43,6 +43,8 @@ import {
 import { computeSignatures, contractIssueSignatures, txMatchesSig } from './signatures.js';
 import type { SignatureTransmission } from './signatures.js';
 import { deriveSourceView, sourceCounts } from './source.js';
+import { readiness, verdict } from './verdicts.js';
+import type { Verdict, VerdictTransmission } from './verdicts.js';
 import { generateCredential } from '../auth/credential.js';
 import {
   AUTH_METHODS,
@@ -60,6 +62,7 @@ import {
 } from '../db/repository.js';
 import type { AuthMethod, FindingRow, Severity, TransmissionRow } from '../db/repository.js';
 import { CONTRACT_PROFILE } from '../schema-registry.js';
+import type { Profile, SchemaRegistry } from '../schema-registry.js';
 
 /** Findings as surfaced per-transmission on the dashboard (drill-down detail). */
 function toFindingView(f: FindingRow) {
@@ -85,6 +88,114 @@ function toFindingView(f: FindingRow) {
 }
 
 /**
+ * Everything the response needs to say WHICH LINEAGE graded what: the contract in
+ * force, the lineage being shadowed (if any), that lineage's provenance, and the
+ * registry the primary lineage of a transmission is resolved through.
+ *
+ * Built once per request from the registry (never from a literal), so the day
+ * `CONTRACT_PROFILE` flips, the shadow half of every response follows without a
+ * second decision: `shadowFor()` answers "the other lineage" by construction.
+ */
+interface Grading {
+  /** The lineage in force — what the 27-row matrix and the scorecard grade. */
+  contractProfile: Profile;
+  /** The lineage previewed beside it, or null when the registry holds only one. */
+  shadowProfile: Profile | null;
+  /** Provenance of the shadow lineage's current bytes; null with no shadow. */
+  shadow: ShadowProvenance | null;
+  /** The profile ids a verdict is reported under, contract first. */
+  profiles: readonly Profile[];
+  /** Resolves a declared `meta.schemaVersion` back to the lineage it belongs to. */
+  registry: SchemaRegistry;
+}
+
+/**
+ * What the dashboard needs to NAME the shadow lineage's bytes: its registry key,
+ * the hash computed over the vendored file at boot, and — for an unpublished
+ * proposal — the date of the draft it is a copy of.
+ *
+ * `draftDate` is OPTIONAL and comes off the registry entry, never a literal here
+ * (epic by1c item 3): a published shadow schema has no draft date to report, and
+ * the legend's "draft <date>" label is licensed by the field's presence alone.
+ */
+interface ShadowProvenance {
+  version: string;
+  sha256: string;
+  draftDate?: string;
+}
+
+/**
+ * Derive the request's {@link Grading} from the compiled registry.
+ *
+ * When `shadowFor()` finds nothing — a registry holding a single lineage — there
+ * is no second profile id to report a verdict under, so `profiles` is the
+ * contract alone and every shadow surface (readiness, the shadow verdict key,
+ * the provenance object) is absent or null. That is the same "nothing was
+ * measured" reading a null shadow verdict carries, one level up.
+ */
+function deriveGrading(registry: SchemaRegistry): Grading {
+  const entry = registry.shadowFor(CONTRACT_PROFILE);
+  const shadowProfile = entry === null ? null : entry.profile;
+  return {
+    contractProfile: CONTRACT_PROFILE,
+    shadowProfile,
+    shadow:
+      entry === null
+        ? null
+        : entry.draftDate === undefined
+          ? { version: entry.version, sha256: entry.sha256 }
+          : { version: entry.version, sha256: entry.sha256, draftDate: entry.draftDate },
+    profiles: shadowProfile === null ? [CONTRACT_PROFILE] : [CONTRACT_PROFILE, shadowProfile],
+    registry,
+  };
+}
+
+/**
+ * One transmission's verdict under each registered lineage, KEYED BY PROFILE ID
+ * (epic by1c item 8) — `{ '2025': 'pass', 'ds013': 'fail' }` — not by the
+ * primary/shadow role, which varies per transmission in a mixed stream while the
+ * dashboard's contract column does not.
+ *
+ * A key is absent only when the registry holds no such lineage; within a key,
+ * `null` means that lineage never ran on this transmission (see `Verdict`).
+ */
+type VerdictsByProfile = Partial<Record<Profile, Verdict>>;
+
+/**
+ * Grade one transmission under every profile the registry knows.
+ *
+ * Built by looping the profile ids rather than naming them, so this is the same
+ * code whichever lineage is the contract. Note what it does NOT read: the HTTP
+ * status. A transmission rejected 422 on its primary lineage can still hold a
+ * 'pass' verdict under the other one — status records what the primary validator
+ * decided, a verdict records what a lineage decided (src/api/verdicts.ts).
+ */
+function verdictsFor(tx: VerdictTransmission, grading: Grading): VerdictsByProfile {
+  const out: VerdictsByProfile = {};
+  for (const profile of grading.profiles) {
+    out[profile] = verdict(tx, profile, grading.contractProfile);
+  }
+  return out;
+}
+
+/**
+ * Which lineage drove this transmission's status — the one its declared
+ * `meta.schemaVersion` resolves to, read back through the same registry lookup
+ * the ingest pipeline used. Null when nothing resolved: an unparseable body, an
+ * absent version, or a version outside both lineages (a `1.0.0` declaration),
+ * where no primary validator ever ran.
+ *
+ * Derived, never stored: the version is already on the row and the registry is
+ * already loaded, so a DB column would be a second copy free to drift from the
+ * registry it restates.
+ */
+function primaryProfileOf(schemaVersion: string | null, registry: SchemaRegistry): Profile | null {
+  if (schemaVersion === null || schemaVersion.length === 0) return null;
+  const result = registry.lookup(schemaVersion);
+  return result.ok ? result.entry.profile : null;
+}
+
+/**
  * Order findings ascending by §-number for the per-tx drill-down. Requirements are
  * dotted ids ("1.2", "1.10", "3.2"), so a plain string sort would mis-rank "1.10"
  * before "1.2"; `numeric: true` compares each numeric run by VALUE, giving true
@@ -99,12 +210,18 @@ function byRequirement(a: FindingRow, b: FindingRow): number {
  * Build the per-transmission view (list row + drill-down detail) from a
  * transmission row and its pre-grouped findings. Shared by the summary read
  * (`GET /api/sessions/:uuid`) and the paginated list (`…/transmissions`) so the
- * row shape — source dimension (4h4.2) + inlined findings — is IDENTICAL on both.
+ * row shape — source dimension (4h4.2) + inlined findings + the per-profile
+ * verdicts (by1c.9) — is IDENTICAL on both. The list rows carry the verdicts for
+ * the same reason they carry the findings: the virtualized list renders its
+ * verdict dots off the page it already fetched, with no second read.
  */
-function toTransmissionView(t: TransmissionRow, findings: readonly FindingRow[]) {
+function toTransmissionView(t: TransmissionRow, findings: readonly FindingRow[], grading: Grading) {
   // SOURCE dimension (4h4.2): derive the presentation pair from the raw
   // transfer_src so list rows + the filter <select> agree (src/api/source.ts).
   const { source: src, sourceCode, sourceLabel } = deriveSourceView(t.transfer_src);
+  // One pass over the findings: the drill-down list and the verdicts read the
+  // same camelCase views, so the sort + map happens once.
+  const findingViews = findings.slice().sort(byRequirement).map(toFindingView);
   return {
     id: t.id,
     received_at: t.received_at,
@@ -125,7 +242,11 @@ function toTransmissionView(t: TransmissionRow, findings: readonly FindingRow[])
     schema_ok: t.schema_ok,
     body: t.body,
     raw_body: t.raw_body,
-    findings: findings.slice().sort(byRequirement).map(toFindingView),
+    findings: findingViews,
+    // Per-lineage verdicts + which lineage drove the status (by1c.9). Both are
+    // derived from data already on the row, so they cost no extra read.
+    verdicts: verdictsFor({ findings: findingViews }, grading),
+    primaryProfile: primaryProfileOf(t.schema_version, grading.registry),
   };
 }
 
@@ -393,8 +514,9 @@ export function registerSessionsApi(app: FastifyInstance): void {
       // Build the full per-transmission views (list + drill-down). `source` is the
       // raw key the scope predicate filters on; the camelCase finding fields feed
       // computeSignatures unchanged.
+      const grading = deriveGrading(app.schemaRegistry);
       const transmissionViews = transmissions.map((t) =>
-        toTransmissionView(t, findingsByTx.get(t.id) ?? []),
+        toTransmissionView(t, findingsByTx.get(t.id) ?? [], grading),
       );
 
       const now = Date.now();
@@ -438,7 +560,24 @@ export function registerSessionsApi(app: FastifyInstance): void {
       // also carries kind:'advisory' entries (agj.15) so the dashboard can drive
       // the ?signatureKey= cross-filter from an advisory — they ride the wire but
       // are EXCLUDED from `distinctIssues` below, which counts defects only.
-      const signatures = computeSignatures(scopedViews.map(asSignatureTx));
+      const scopedSignatureTxs = scopedViews.map(asSignatureTx);
+      const signatures = computeSignatures(scopedSignatureTxs);
+
+      // DS01.3 READINESS (by1c.9) over the SAME scoped set — window + source only.
+      // `failuresOnly` and `signatureKey` are list filters and are deliberately
+      // not applied: readiness is a statement about the whole scope, and a set
+      // narrowed to failing transmissions would report readiness over the traffic
+      // least able to demonstrate it (src/api/verdicts.ts states the rule).
+      // Null when the registry holds no shadow lineage — there is nothing to be
+      // ready for, and the dashboard hides the strip off that null.
+      const readinessView =
+        grading.shadowProfile === null
+          ? null
+          : readiness(scopedSignatureTxs, {
+              contractProfile: grading.contractProfile,
+              shadowProfile: grading.shadowProfile,
+              computeSignatures,
+            });
 
       const base = session.last_post_at ?? session.created_at;
       const expiresAt = new Date(base.getTime() + RETENTION_MS).toISOString();
@@ -451,6 +590,14 @@ export function registerSessionsApi(app: FastifyInstance): void {
           last_post_at: session.last_post_at,
           auth_enabled: session.auth_enabled,
           auth_method: session.auth_method,
+          // Which lineage the dashboard's verdict surfaces mean (by1c.9). Both
+          // come off the registry: `contractProfile` is the obligations in force,
+          // `shadowProfile` the lineage previewed beside them — null when the
+          // registry holds one lineage, which is what hides all three shadow
+          // surfaces (readiness strip, second verdict dot, "would also fail"
+          // group) without any of them testing for a version by name.
+          contractProfile: grading.contractProfile,
+          shadowProfile: grading.shadowProfile,
         },
         // Full list still ships here for the docked detail pane (see split note).
         transmissions: transmissionViews,
@@ -463,6 +610,17 @@ export function registerSessionsApi(app: FastifyInstance): void {
         // obligations in force, so a DS01.3 shadow signature never inflates it.
         scoped: scopeTotals(scopedViews, contractIssueSignatures(signatures).length),
         expiresAt,
+        // The shadow lineage's current bytes — version, the hash computed over
+        // the vendored file at boot, and the draft date when the entry is an
+        // unpublished proposal. Service-global like `schemas` (the shadow entry
+        // is in that list too), surfaced separately so the legend can name the
+        // shadow without re-deriving "the newest entry that is not the contract".
+        // Null whenever `session.shadowProfile` is.
+        shadow: grading.shadow,
+        // How much of the contract-conformant traffic in scope would also pass
+        // the shadow lineage, and what stands in the way (by1c.9). Null when
+        // there is no shadow lineage registered.
+        readiness: readinessView,
         // Which schema bytes this endpoint grades against (beads 3cq). Service-
         // global, not session-scoped, but it rides on the response the dashboard
         // ALREADY fetches rather than costing a second endpoint + round trip —
@@ -548,7 +706,10 @@ export function registerSessionsApi(app: FastifyInstance): void {
       ]);
 
       const findingsByTx = groupFindingsByTx(findings);
-      const views = transmissions.map((t) => toTransmissionView(t, findingsByTx.get(t.id) ?? []));
+      const grading = deriveGrading(app.schemaRegistry);
+      const views = transmissions.map((t) =>
+        toTransmissionView(t, findingsByTx.get(t.id) ?? [], grading),
+      );
 
       // Apply scope (source + the window's [lo, now] bound) + failuresOnly +
       // signatureKey app-side, single-sourced from scope.ts (inScope — the SAME
