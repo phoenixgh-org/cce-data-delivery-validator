@@ -24,6 +24,12 @@ Renumbering would have to migrate stored `finding.requirement` values, the
 DS01.3 is expected to publish soon, so treat this table as the bridge —
 it exists so the eventual switch is mechanical rather than archaeological.
 
+This document is the prose authority for the mapping. `src/api/clause-map.ts` is
+its code mirror — the forward map, the tightened set, the DS01.3-only clauses,
+and the short clause titles the dashboard renders. Change this document first,
+then the module; a test joins the module against `src/api/compliance-matrix.ts`
+so a new matrix row cannot silently lack a mapping.
+
 Quoted DS01.3 text below is the **changes-accepted** reading of the draft, not
 the redline.
 
@@ -60,6 +66,26 @@ the redline.
 | 5.1 | Retransmit last 6 months | 5.4.4 | Merged into one clause; **"manually"** added — no API obligation |
 | 5.2 | Filter retransmit by time range | 5.4.4 | Merged into 5.4.4 |
 | 5.3 | Filter all vs never-sent | 5.4.4 | Merged into 5.4.4 |
+
+## Tightened clauses
+
+Most of the forward map is renumbering. Four rows are not: the DS01.3 clause
+changes what conformance means, so a payload that satisfied the 2025 text may
+not satisfy its successor. These are the ids carried in `TIGHTENED`:
+
+| 2025 | DS01.3 | What changed |
+|------|--------|--------------|
+| 1.8 | 5.1.10 | `should` not duplicate becomes `shall` not duplicate. The three exception conditions are unchanged |
+| 3.1 | 5.3.3 | `meta.customDataSchema` added for manufacturer-specific objects; `transferredAt` narrowed to UTC RFC 3339 with the `Z` specifier; `transferType` `should` → `shall`; metadata location fixed in the `meta` envelope |
+| 3.2 | 5.3.2 | The schema-precedence tiebreaker is replaced by a duty to notify the employer of discrepancies — no successor rule is supplied |
+| 4.3 | 5.4.1 | `should` abandon permanent failures becomes `shall not` retry. The response-code list is unchanged |
+
+The other bolded rows in the forward map (1.3, 1.5, 1.7, 4.1) also carry new
+text, but none of it changes how this project grades the requirement: 1.3 adds
+a third permitted authentication method, and 1.5, 1.7, and 4.1 extend duties
+this project does not grade against passively — 1.5 is self-attestation, 1.7 is
+permissive, and 4.1 is active-only. They are therefore outside the tightened
+set.
 
 ## Reverse map: DS01.3 clauses with no 2025 equivalent
 
