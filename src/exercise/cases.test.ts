@@ -40,7 +40,7 @@ import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX } from '../api/compliance-matrix.js';
 import { isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
-import { SchemaRegistry } from '../schema-registry.js';
+import { CONTRACT_PROFILE, SchemaRegistry } from '../schema-registry.js';
 import { BASELINE_GENERATORS, DEFAULT_BASELINE, emsBaseline } from './baseline.js';
 import {
   isAcceptedStatus,
@@ -49,7 +49,13 @@ import {
   resolveBaseline,
   type ExerciseCase,
 } from './case.js';
-import { EXERCISE_CASES, PAYLOAD_CASES, SEQUENCE_CASES, TRANSPORT_CASES } from './cases.js';
+import {
+  EXERCISE_CASES,
+  PAYLOAD_CASES,
+  SEQUENCE_CASES,
+  SHADOW_CASES,
+  TRANSPORT_CASES,
+} from './cases.js';
 
 /** The real registry — load() is synchronous and DB-free. */
 const registry = SchemaRegistry.load();
@@ -85,7 +91,7 @@ test('the index carries every per-domain case module', () => {
   // The table is assembled from ./cases/*.ts (ke6). A module the index forgot to
   // concatenate would silently stop being played AND stop being checked here —
   // every invariant below reads the aggregate.
-  const modules = { PAYLOAD_CASES, SEQUENCE_CASES, TRANSPORT_CASES };
+  const modules = { PAYLOAD_CASES, SEQUENCE_CASES, SHADOW_CASES, TRANSPORT_CASES };
   let total = 0;
   for (const [name, table] of Object.entries(modules)) {
     assert.ok(table.length > 0, `${name} is empty — a domain module lost its cases`);
@@ -319,15 +325,74 @@ test('every requirement a case names exists in COMPLIANCE_MATRIX', () => {
   //   over the static §7 rows and ignores every other id, which is HOW an advisory
   //   is guaranteed never to move a verdict (src/ingest/stages/semantic/
   //   advisory.ts). Admitting them here is what lets a case assert that the
-  //   observation was made.
+  //   observation was made. The `expectedFindings` half moved into the next test
+  //   when shadow grading gave that field a second vocabulary (by1c.15); this one
+  //   now owns `requirements` alone, which is what its name says.
   for (const kase of EXERCISE_CASES) {
     for (const requirement of kase.requirements) {
       assert.ok(MATRIX_IDS.has(requirement), `${kase.id}: unknown requirement ${requirement}`);
     }
+  }
+});
+
+test('the contract and shadow requirement vocabularies cannot be crossed', () => {
+  // TWO NUMBERING SCHEMES, one field (by1c.15). The contract profile grades the
+  // 2025 requirement ids COMPLIANCE_MATRIX carries (§1.1–§5.3, plus the `adv.*`
+  // advisories); the DS01.3 shadow run grades the draft's own 5.x.x clauses,
+  // which are a different vocabulary that happens to look similar. Nothing at
+  // runtime stops a case writing `{ '5.3.2', 'fail' }` with no profile, and such
+  // an expectation would be matched against a lineage that never produces the id
+  // — a case that can only ever fail, and that reads as though it were asserting
+  // something real.
+  //
+  // So the rule is checked both ways: a shadow expectation names a 5.x.x clause,
+  // and a contract expectation names a matrix row or an advisory. The shadow
+  // side is deliberately a SHAPE check rather than a list — there is no matrix
+  // for a lineage that is not in force, and inventing one for an unpublished
+  // draft would claim more precision than we have.
+  const SHADOW_CLAUSE = /^5\.\d+\.\d+$/;
+  for (const kase of EXERCISE_CASES) {
     for (const finding of kase.expectedFindings) {
+      const profile = finding.profile ?? CONTRACT_PROFILE;
+      if (profile === CONTRACT_PROFILE) {
+        assert.ok(
+          MATRIX_IDS.has(finding.requirement) || isAdvisoryId(finding.requirement),
+          `${kase.id}: a contract expectation must name a COMPLIANCE_MATRIX row or an ` +
+            `adv.* id, not ${finding.requirement}`,
+        );
+      } else {
+        assert.match(
+          finding.requirement,
+          SHADOW_CLAUSE,
+          `${kase.id}: a ${profile} expectation must name a DS01.3 clause (5.x.x), not ` +
+            `${finding.requirement}`,
+        );
+      }
+    }
+    for (const clause of kase.shadowClauses ?? []) {
+      assert.match(clause, SHADOW_CLAUSE, `${kase.id}: shadowClauses holds DS01.3 clause ids`);
+    }
+  }
+});
+
+test('a case naming shadowClauses really asserts something about the shadow run', () => {
+  // `shadowClauses` is informational — no consumer joins on it (../case.ts) —
+  // which is exactly why it can rot without anything noticing. A case that
+  // records a clause but expects no finding under that lineage is claiming an
+  // exercise it does not perform, and the coverage report cannot catch it
+  // because the report is 2025-only by construction.
+  const shadowCases = EXERCISE_CASES.filter((kase) => (kase.shadowClauses ?? []).length > 0);
+  assert.ok(shadowCases.length > 0, 'the table still exercises the DS01.3 shadow run');
+  for (const kase of shadowCases) {
+    const asserted = new Set(
+      kase.expectedFindings
+        .filter((f) => f.profile !== undefined && f.profile !== CONTRACT_PROFILE)
+        .map((f) => f.requirement),
+    );
+    for (const clause of kase.shadowClauses ?? []) {
       assert.ok(
-        MATRIX_IDS.has(finding.requirement) || isAdvisoryId(finding.requirement),
-        `${kase.id}: expected finding names unknown requirement ${finding.requirement}`,
+        asserted.has(clause),
+        `${kase.id}: records shadow clause ${clause} but expects no finding on it`,
       );
     }
   }
@@ -372,8 +437,22 @@ test('pass-direction cases declare no fault, expect only 2xx and no fail finding
         `${kase.id}: pass-direction POST expects ${post.expectedStatus}`,
       );
     }
-    const fails = kase.expectedFindings.filter((f) => f.severity === 'fail');
-    assert.deepEqual(fails, [], `${kase.id}: a pass-direction case expects no fail findings`);
+    // CONTRACT fails only (by1c.15). Direction describes the contract's point of
+    // view — the only view that grades — and since by1c.6 a transmission also
+    // carries the DS01.3 shadow run's verdict. A shadow fail says how conformant
+    // traffic would fare under an unpublished draft: it moves no status, no
+    // verdict and no matrix row, so a case expecting one is still a pass-direction
+    // case and still declares no fault. Reading every `fail` as the contract's
+    // would make a readiness case impossible to write, which is the same
+    // contract-awareness every other fail consumer gained in by1c.25.
+    const fails = kase.expectedFindings.filter(
+      (f) => f.severity === 'fail' && (f.profile ?? CONTRACT_PROFILE) === CONTRACT_PROFILE,
+    );
+    assert.deepEqual(
+      fails,
+      [],
+      `${kase.id}: a pass-direction case expects no fail findings under the contract`,
+    );
     // POSITIVE EVIDENCE, not necessarily a `pass` finding (relaxed 2026-08-04,
     // bd 8qa.4). This used to demand severity `pass`, which was right while every
     // conformant transmission earned one. It is not right for the outdated-but-

@@ -103,6 +103,11 @@ curl -sX POST "$BASE/i/<uuid>" \
         "EPQS": "E006/999",
         "ESER": "EMD-SerialNum",
         "EMSV": "v01.02.123",
+        "LDOP": "2021-08-15",
+        "LMFR": "Logger_Co",
+        "LMOD": "Logger_Model",
+        "LPQS": "E006/998",
+        "LSER": "log4567890asdf",
         "DLST": { "TVC": { "SID": "sensor-1", "SMFR": "SensMfr", "SMOD": "SensMod" } },
         "records": [
           { "ABST": "20200115T040554Z", "ALRM": "HEAT", "BEMD": 14.3, "EERR": "none", "TVC": 3.2 }

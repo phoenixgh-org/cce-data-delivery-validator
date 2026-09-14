@@ -300,6 +300,44 @@ row has is a fact the report must state rather than hide. The payload type of a 
 mutators wrote: `3.2-fail-invalid-transfer-type` sets `meta.transferType` to
 `thermometer` to prove the enum bites, and that is no branch of anything.
 
+### Shadow cases, and why coverage ignores them
+
+Every transmission is graded twice: once against the contract in force (`cce-interop`,
+profile `2025`) and once against the DS01.3 Annex 4 delivery-schema proposal (profile
+`ds013`). The second run changes no status and no verdict, because the draft is
+unpublished — what it produces is readiness information. The `readiness.*` cases in
+`cases/shadow.ts` exercise it.
+
+Three fields carry that:
+
+- **`ExpectedFinding.profile`** names the lineage a finding must come from. Absent means
+  the contract profile, which is what every case written before shadow grading expects.
+  It is part of the match, not a label: one transmission now carries findings of both
+  lineages, so an expectation matched on `(requirement, severity)` alone could assert a
+  contract pass and be satisfied by a draft one.
+- **`ExerciseCase.shadowClauses`** records the DS01.3 clauses a case exercises, e.g.
+  `['5.3.2']`. It is informational — nothing joins on it.
+- **`ExerciseCase.requirements`** stays 2025 ids, unchanged.
+
+Coverage ignores the 5.x clauses because `COMPLIANCE_MATRIX` is 2025-only by
+construction. A DS01.3 clause is not a row there, so an id added to `requirements` would
+be reported as an *unknown requirement* rather than as coverage — and building a second
+matrix for a lineage that is not in force would print a coverage claim about a draft. So
+the clause is recorded on the case, where it is read, and what the case actually asserts
+about the shadow run is its `expectedFindings` entries carrying `profile`.
+
+A readiness case is **direction `pass`**. Direction describes the contract's point of
+view, which is the only view that grades: a payload the validator accepts with a §3.2
+pass is conformant traffic whatever the draft would make of it. Such a case therefore
+declares no `fault`, and `cases.test.ts` reads the pass-direction "no fail findings" rule
+as contract fails only.
+
+One case the design asked for does not exist. A `meta.transferredAt` carrying a `+03:00`
+offset is invalid under `cce-interop` 0.8.1 as well — that schema already pins the field
+to a pattern ending in `Z` — so the trailing `Z` is not a DS01.3 tightening, an offset is
+a §3.2 fail and a 422 under the contract, and the draft's clause 5.3.3 is reachable only
+on a payload the contract already rejects.
+
 ## Why 0.8.0 is registered
 
 The §3.2 **pass-outdated** case (`3.2-pass-outdated-schema-version`) depends on the
@@ -321,7 +359,8 @@ skipping the older version.
 ## Adding a case
 
 1. Put it in the module for its requirement **domain** — `cases/transport.ts` (§1.x),
-   `cases/payload.ts` (§3.1/§3.2), `cases/sequence.ts` (§1.8/§2.1/§3.4). Grouping is by
+   `cases/payload.ts` (§3.1/§3.2), `cases/sequence.ts` (§1.8/§2.1/§3.4),
+   `cases/shadow.ts` (readiness under the DS01.3 shadow run). Grouping is by
    domain, not by `fault.layer`: the §3.4 cases mutate a payload but grade a sequence
    heuristic, so they live with the sequence table. Nor is it by **payload type**: a
    case on the schema's EMS branch is one that DECLARES `baseline: emsBaseline` and

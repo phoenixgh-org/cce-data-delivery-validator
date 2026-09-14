@@ -55,6 +55,43 @@ export const validTransmission = {
   ],
 } as const;
 
+/**
+ * The same RTM transmission, plus the five logger-identity properties — the
+ * fixture that passes BOTH registered lineages (by1c.15).
+ *
+ * WHY TWO VALID FIXTURES. {@link validTransmission} is the canonical readiness
+ * demo: conformant under the contract profile and, since the DS01.3 Annex 4
+ * draft makes `LDOP`, `LMFR`, `LMOD`, `LPQS` and `LSER` required on an
+ * rtmd-report, failing under the shadow profile on exactly those five. That
+ * split is the whole point of it and it stays byte-for-byte as it is. This
+ * fixture is the other side of the same demo — the payload a supplier who is
+ * already ready for the draft would send — so both halves of shadow grading can
+ * be exercised without either fixture having to mean two things at once.
+ *
+ * DERIVED from the baseline rather than retyped, so a change to the RTM shape
+ * reaches both and the difference between them stays exactly the five
+ * properties named here. Values are strings: 0.8.1 declares `LDOP` as a plain
+ * string and Annex 4 pins it to `YYYY-MM-DD`, so a date string satisfies both.
+ * Everything else is already dual-valid — the timestamps carry a trailing `Z`,
+ * which 0.8.1 requires too, and the dates already have ISO-8601 field widths.
+ *
+ * `meta.transferId` differs from the baseline's so a session can hold both: the
+ * §1.8 duplicate check is session-scoped and grades a repeated id as a fail.
+ */
+export const validTransmissionDualPass = {
+  meta: { ...validTransmission.meta, transferId: 'T-dual-pass' },
+  data: [
+    {
+      ...validTransmission.data[0],
+      LDOP: '2021-08-15',
+      LMFR: 'Logger_Co',
+      LMOD: 'Logger_Model',
+      LPQS: 'E006/998',
+      LSER: 'log4567890asdf',
+    },
+  ],
+} as const;
+
 /** Structured deep clone so a derived fixture never mutates the baseline. */
 export function cloneValid(): {
   meta: Record<string, unknown>;
@@ -64,6 +101,17 @@ export function cloneValid(): {
   // inherits validTransmission's `as const` deep-readonly shape — so cast via
   // `unknown` to reach the mutable fixture type (TS2352 otherwise).
   return structuredClone(validTransmission) as unknown as {
+    meta: Record<string, unknown>;
+    data: Record<string, unknown>[];
+  };
+}
+
+/** The dual-passing fixture, deep-cloned — same contract as {@link cloneValid}. */
+export function cloneDualPass(): {
+  meta: Record<string, unknown>;
+  data: Record<string, unknown>[];
+} {
+  return structuredClone(validTransmissionDualPass) as unknown as {
     meta: Record<string, unknown>;
     data: Record<string, unknown>[];
   };

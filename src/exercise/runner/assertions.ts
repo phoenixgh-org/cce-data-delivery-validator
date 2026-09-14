@@ -27,12 +27,31 @@
  */
 
 import type { Severity } from '../../db/repository.js';
+import { CONTRACT_PROFILE, type Profile } from '../../schema-registry.js';
 import { isAcceptedStatus, type ExerciseCase, type ExpectedFinding } from '../case.js';
 
-/** A finding as the dashboard API reports it, reduced to the graded pair. */
+/** A finding as the dashboard API reports it, reduced to the graded triple. */
 export interface ObservedFinding {
   readonly requirement: string;
   readonly severity: Severity;
+  /**
+   * The lineage that graded it (by1c.15). Optional on the OBSERVED side because
+   * the field is read off a live instance's JSON: an instance older than by1c.5
+   * serves findings without it, and the runner should grade such a response as
+   * a contract-only one rather than fail every case on a missing key. See
+   * {@link profileOf} for the default and why it is not a literal.
+   */
+  readonly profile?: Profile;
+}
+
+/**
+ * The lineage a finding belongs to, defaulted. Absent means the CONTRACT
+ * profile, read from the registry rather than written as '2025': which profile
+ * is the contract is a single flip point (src/schema-registry.ts), and a literal
+ * here would silently start defaulting to the shadow lineage on the day it moves.
+ */
+export function profileOf(finding: ObservedFinding | ExpectedFinding): Profile {
+  return finding.profile ?? CONTRACT_PROFILE;
 }
 
 /** What one played POST came back with. */
@@ -66,9 +85,14 @@ export interface CaseVerdict {
   readonly missing: readonly ExpectedFinding[];
 }
 
-/** The `(requirement, severity)` pair a finding is matched on — never `detail`. */
+/**
+ * The `(requirement, severity, profile)` triple a finding is matched on — never
+ * `detail`. The profile joined the key with shadow grading (by1c.15): a
+ * transmission now carries findings of two lineages at once, and matching
+ * without it would let a contract expectation be satisfied by a draft finding.
+ */
 export function findingKey(finding: ObservedFinding | ExpectedFinding): string {
-  return `${finding.requirement}/${finding.severity}`;
+  return `${finding.requirement}/${finding.severity}/${profileOf(finding)}`;
 }
 
 /**
@@ -141,7 +165,10 @@ export function judgeCase(
   const missing = missingFindings(kase.expectedFindings, pooled);
   for (const want of missing) {
     const observed = pooled.length === 0 ? 'none' : [...new Set(pooled.map(findingKey))].join(' ');
-    failures.push(`missing finding §${want.requirement} ${want.severity} (observed: ${observed})`);
+    failures.push(
+      `missing finding §${want.requirement} ${want.severity} [${profileOf(want)}] ` +
+        `(observed: ${observed})`,
+    );
   }
 
   return {

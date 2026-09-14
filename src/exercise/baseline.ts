@@ -28,7 +28,7 @@
  * contract tests in ./case.test.ts hold a third one honest the day it lands.
  */
 
-import { cloneValid } from '../ingest/fixtures/transmissions.js';
+import { cloneDualPass, cloneValid } from '../ingest/fixtures/transmissions.js';
 
 /**
  * The mutable shape a payload transform operates on: the `{ meta, data }` object
@@ -116,6 +116,29 @@ function transferIdFor(request: BaselineRequest): string {
  */
 export const fixtureBaseline: BaselineGenerator = (request) => {
   const payload = cloneValid();
+  payload.meta.transferId = transferIdFor(request);
+  return payload;
+};
+
+/**
+ * The DUAL-PASSING rtm baseline (by1c.15) — the same deal as
+ * {@link fixtureBaseline}, seeded from the other valid fixture in
+ * `src/ingest/fixtures/transmissions.ts`: the RTM payload carrying the five
+ * logger-identity properties, which validates under BOTH registered lineages.
+ *
+ * It exists because {@link fixtureBaseline} cannot serve the readiness cases.
+ * That one is the readiness DEMO — conformant under the contract and failing the
+ * DS01.3 Annex 4 draft on exactly LDOP/LMFR/LMOD/LPQS/LSER — so every case built
+ * on it carries five shadow fails whether it wants them or not. A case asserting
+ * that a supplier is already draft-ready needs a payload with nothing for the
+ * shadow run to say, and a case about one shadow defect needs a payload where
+ * that defect is the ONLY one. This generator gives both.
+ *
+ * NOT the default: {@link DEFAULT_BASELINE} stays on the readiness demo so the
+ * existing table is untouched, and a case reaches this one by declaring it.
+ */
+export const dualPassBaseline: BaselineGenerator = (request) => {
+  const payload = cloneDualPass();
   payload.meta.transferId = transferIdFor(request);
   return payload;
 };
@@ -268,6 +291,7 @@ export const emsBaseline: BaselineGenerator = (request) => {
  */
 export const BASELINE_GENERATORS: Readonly<Record<string, BaselineGenerator>> = {
   fixtureBaseline,
+  dualPassBaseline,
   emsBaseline,
 };
 

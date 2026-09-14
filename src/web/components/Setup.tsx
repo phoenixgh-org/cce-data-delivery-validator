@@ -97,10 +97,19 @@ export interface SetupProps {
  * Rendered multi-line for readability: the callers embed it in a shell snippet
  * as `-d '<body>'`, so it must stay free of single quotes (it is).
  *
- * Exported only so Setup.test.ts can hold both claims to account — that the body
- * still validates against the newest registered schema, and that it carries no
- * single quote. Twice now the sample drifted into a guaranteed 422 (beads 48h,
- * auu) and both times only a manual audit caught it (beads lg8).
+ * THE BODY CARRIES THE LOGGER IDENTITY (`LDOP`, `LMFR`, `LMOD`, `LPQS`, `LSER`)
+ * so it passes BOTH lineages (by1c.15). Those five are optional under
+ * `cce-interop` and required under the Annex 4 draft, so a sample without them
+ * still earns its 200 but opens a first-run supplier's dashboard on five
+ * DS01.3 failures. That is a true statement about a payload we handed them, and
+ * a poor first thing to see; a dual-passing sample makes the readiness surfaces
+ * something they reach by sending their OWN traffic.
+ *
+ * Exported only so Setup.test.ts can hold the claims to account — that the body
+ * validates against the newest registered schema AND against the shadow entry,
+ * and that it carries no single quote. Twice now the sample drifted into a
+ * guaranteed 422 (beads 48h, auu) and both times only a manual audit caught it
+ * (beads lg8).
  */
 /**
  * The reader-facing name of a lineage, for the "also loaded, not graded against"
@@ -141,6 +150,11 @@ export function sampleBody(schemas: SchemaProvenance[]): string {
       "EPQS": "E006/999",
       "ESER": "demo-emd-001",
       "EMSV": "v01.02.123",
+      "LDOP": "2023-06-01",
+      "LMFR": "Demo Logger Ltd",
+      "LMOD": "DEMO-LOG-1",
+      "LPQS": "E006/998",
+      "LSER": "demo-logger-001",
       "DLST": { "TVC": { "SID": "demo-sensor-1", "SMFR": "Demo Sensors", "SMOD": "DS-1" } },
       "records": [
         { "ABST": "20260115T040600Z", "ALRM": null, "BEMD": 100, "EERR": null, "TVC": 4.2 }

@@ -33,7 +33,7 @@ import { buildApp } from '../app.js';
 import { closePool, getPool } from '../db/pool.js';
 import { createSession } from '../db/repository.js';
 import { emsBaseline } from '../exercise/baseline.js';
-import { SchemaRegistry } from '../schema-registry.js';
+import { CONTRACT_PROFILE, SchemaRegistry } from '../schema-registry.js';
 import {
   buildResponseBody,
   runPipeline,
@@ -59,6 +59,7 @@ import {
   unparseableBytes,
   validBytes,
   validTransmission,
+  validTransmissionDualPass,
 } from './fixtures/transmissions.js';
 
 // ── pipeline-level harness (no DB, no HTTP) ─────────────────────────────────
@@ -210,6 +211,57 @@ test('fixture valid → 200, no fail findings, accepted message', async () => {
       `(sha256 ${draft.sha256}) did not affect this status.`,
   );
   assert.match(draft.sha256, /^[0-9a-f]{64}$/, 'the hash is quoted in full, not shortened');
+});
+
+/**
+ * The DUAL-PASS RTM FIXTURE's own guarantee (by1c.15), asserted against every
+ * registered version of both lineages rather than against the two current ones.
+ *
+ * Iterating the registry is the point. A version list written out here would go
+ * on claiming a guarantee the moment a third entry is vendored — the outdated
+ * 0.8.0 cohort is exactly that case already — and the fixture is only useful to
+ * the readiness exercise while it really passes everything registered. So the
+ * test enumerates `provenance()` and asserts clean validation per entry, and a
+ * newly registered version enrols itself.
+ *
+ * The other half of the pair is asserted below: {@link validTransmission} must
+ * keep FAILING the shadow lineage on exactly the five logger-identity
+ * properties, which is what makes it the readiness demo.
+ */
+test('the dual-pass fixture validates under every registered version of both lineages', () => {
+  const versions = registry.provenance();
+  assert.ok(versions.length > 1, 'more than one version is registered');
+  assert.ok(
+    versions.some((p) => p.profile !== CONTRACT_PROFILE),
+    'both lineages are registered — otherwise "dual" proves nothing',
+  );
+
+  for (const { version, profile } of versions) {
+    const entry = registry.get(version);
+    assert.ok(entry, `registry cannot fetch its own registered version ${version}`);
+    const valid = entry.validate(validTransmissionDualPass);
+    assert.ok(
+      valid,
+      `dual-pass fixture rejected by ${profile} ${version}: ` +
+        JSON.stringify(entry.validate.errors),
+    );
+  }
+});
+
+test('the readiness-demo fixture still fails the shadow lineage on the five L* properties', () => {
+  // The guard on the OTHER fixture: validTransmission earns its place by passing
+  // the contract and failing the draft on exactly LDOP/LMFR/LMOD/LPQS/LSER. If a
+  // re-pin of the draft bytes ever relaxed that, the demo would quietly become a
+  // second dual-pass fixture and the readiness surfaces would have nothing to
+  // show — so the difference between the two fixtures is pinned here.
+  const shadow = registry.shadowFor(CONTRACT_PROFILE);
+  assert.ok(shadow, 'a shadow lineage is registered');
+  assert.equal(shadow.validate(validTransmission), false, 'the demo must fail the draft');
+  const missing = (shadow.validate.errors ?? [])
+    .filter((e) => e.keyword === 'required')
+    .map((e) => (e.params as { missingProperty?: string }).missingProperty)
+    .sort();
+  assert.deepEqual(missing, ['LDOP', 'LMFR', 'LMOD', 'LPQS', 'LSER']);
 });
 
 /**

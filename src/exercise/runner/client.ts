@@ -16,6 +16,7 @@
  */
 
 import type { Severity } from '../../db/repository.js';
+import type { Profile } from '../../schema-registry.js';
 import type { WireRequest } from '../transforms/transport.js';
 import type { ObservedFinding } from './assertions.js';
 
@@ -191,6 +192,18 @@ export async function playPost(
 
 const SEVERITIES = new Set<string>(['pass', 'fail', 'info']);
 
+/**
+ * The lineages a finding can name on the wire. Written as an EXHAUSTIVE record
+ * over {@link Profile} rather than as a list of strings, so registering a third
+ * lineage is a compile error here instead of a value this guard silently drops
+ * (the same device as `LINEAGE_NAME` in src/web/components/Setup.tsx).
+ */
+const KNOWN_PROFILES: Readonly<Record<Profile, true>> = { '2025': true, ds013: true };
+
+function asProfile(raw: unknown): Profile | undefined {
+  return typeof raw === 'string' && raw in KNOWN_PROFILES ? (raw as Profile) : undefined;
+}
+
 interface ListedTransmission {
   id?: unknown;
   findings?: unknown;
@@ -235,9 +248,23 @@ export async function fetchFindingsByTransmission(
             (f: { requirement?: unknown; severity?: unknown }) =>
               typeof f.requirement === 'string' && SEVERITIES.has(f.severity as string),
           )
-          .map((f: { requirement: string; severity: string }) => ({
+          .map((f: { requirement: string; severity: string; profile?: unknown }) => ({
             requirement: f.requirement,
             severity: f.severity as Severity,
+            // WHICH LINEAGE graded it (by1c.15). `FindingView` has carried this
+            // since the session read learned about profiles, and the case
+            // expectations match on it, so dropping it here would collapse both
+            // lineages into one pool and let a draft finding satisfy a contract
+            // expectation.
+            //
+            // TOLERANT OF ABSENCE, and deliberately so: the runner points at
+            // whatever instance the operator names, which may be older than the
+            // field. An unrecognised value is treated the same way. Either way
+            // the finding is graded as the contract's, which is what an instance
+            // that does not know about lineages is in fact reporting — and a
+            // shadow expectation then fails loudly rather than matching
+            // something nobody graded.
+            profile: asProfile(f.profile),
           })),
       );
     }

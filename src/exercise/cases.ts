@@ -11,6 +11,7 @@
  *   ./cases/transport.ts   §1.x — how a transmission is delivered      (8qa.3)
  *   ./cases/payload.ts     §3.1/§3.2 — what is in the body             (8qa.4)
  *   ./cases/sequence.ts    §1.8/§2.1/§3.4 — how transmissions relate   (8qa.5)
+ *   ./cases/shadow.ts      readiness — what the DS01.3 shadow run says (by1c.15)
  *
  * Grouping is by domain, not by `fault.layer`: §3.4's cases mutate the payload
  * but grade a sequence heuristic, so they sit with the sequence table.
@@ -32,14 +33,17 @@
 import type { ExerciseCase } from './case.js';
 import { PAYLOAD_CASES } from './cases/payload.js';
 import { SEQUENCE_CASES } from './cases/sequence.js';
+import { SHADOW_CASES } from './cases/shadow.js';
 import { TRANSPORT_CASES } from './cases/transport.js';
 
 export { PAYLOAD_CASES } from './cases/payload.js';
 export { SEQUENCE_CASES } from './cases/sequence.js';
+export { SHADOW_CASES } from './cases/shadow.js';
 export { TRANSPORT_CASES } from './cases/transport.js';
 
 export const EXERCISE_CASES: readonly ExerciseCase[] = [
   ...PAYLOAD_CASES,
   ...SEQUENCE_CASES,
+  ...SHADOW_CASES,
   ...TRANSPORT_CASES,
 ];

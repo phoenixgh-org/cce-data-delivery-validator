@@ -27,6 +27,7 @@
 
 import type { Severity } from '../db/repository.js';
 import { toBytes } from '../ingest/fixtures/transmissions.js';
+import type { Profile } from '../schema-registry.js';
 import { DEFAULT_BASELINE, type BaselineGenerator, type TransmissionPayload } from './baseline.js';
 import type { PayloadTransform, SchemaOutcome } from './transforms/payload.js';
 import {
@@ -56,6 +57,22 @@ export interface ExpectedFinding {
   /** COMPLIANCE_MATRIX requirement id, e.g. '3.2'. */
   readonly requirement: string;
   readonly severity: Severity;
+  /**
+   * WHICH LINEAGE graded this finding (by1c.15). Absent means
+   * {@link CONTRACT_PROFILE} — the contract in force — which is what every case
+   * written before shadow grading existed expects and what the overwhelming
+   * majority of cases will go on expecting.
+   *
+   * It has to be part of the match, not a label. Since by1c.6 one transmission
+   * carries findings of BOTH lineages, and the two vocabularies overlap in
+   * severity while differing in clause numbering: a `fail` under the shadow
+   * profile is a statement about an unpublished draft and moves no verdict,
+   * while a `fail` under the contract is the real grade. An expectation that
+   * named only `(requirement, severity)` would let a case assert a contract
+   * pass and be satisfied by a draft one, which is precisely the confusion the
+   * profile field exists to make impossible.
+   */
+  readonly profile?: Profile;
 }
 
 /**
@@ -157,6 +174,21 @@ export interface ExerciseCase {
   readonly title: string;
   /** COMPLIANCE_MATRIX requirement ids this case exercises. */
   readonly requirements: readonly string[];
+  /**
+   * DS01.3 clause ids this case exercises under the shadow lineage, e.g.
+   * '5.3.2' (by1c.15). INFORMATIONAL: nothing joins on it.
+   *
+   * It is a separate field rather than more entries in `requirements` because
+   * `requirements` is what the coverage report joins onto COMPLIANCE_MATRIX,
+   * and that matrix is 2025-only by construction — a DS01.3 clause is not a row
+   * there, so an id added to `requirements` would be reported as an unknown
+   * requirement rather than as coverage. Recording the clause on the case keeps
+   * the fact readable where the case is read, without inventing a second
+   * coverage report for a lineage that is not in force. What the case actually
+   * ASSERTS about the shadow run is its `expectedFindings` entries carrying
+   * `profile`; this field only says what the case is about.
+   */
+  readonly shadowClauses?: readonly string[];
   readonly direction: Direction;
   /** REQUIRED when direction is `fail`; must be absent when it is `pass`. */
   readonly fault?: Fault;

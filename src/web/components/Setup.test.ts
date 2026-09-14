@@ -41,7 +41,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as React from 'react';
 
-import { SchemaRegistry, type SchemaProvenance } from '../../schema-registry.js';
+import { CONTRACT_PROFILE, SchemaRegistry, type SchemaProvenance } from '../../schema-registry.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
@@ -88,6 +88,31 @@ test('sampleBody() renders a body the newest registered schema accepts', () => {
 
   const valid = found.entry.validate(body);
   assert.ok(valid, `sample body is invalid: ${JSON.stringify(found.entry.validate.errors)}`);
+});
+
+/**
+ * The SECOND lineage (by1c.15). The sample is the first payload most suppliers
+ * will ever send here, and every transmission is now graded twice: once against
+ * the contract and once against the DS01.3 Annex 4 draft. A sample that passed
+ * only the contract would open their dashboard on five readiness failures that
+ * are an artefact of OUR sample rather than of their system — so the body must
+ * carry the logger identity the draft requires, and that is checked here rather
+ * than trusted to the docblock.
+ *
+ * Reached through `shadowFor(CONTRACT_PROFILE)` rather than by naming the draft:
+ * which lineage shadows which is the registry's answer, and it moves when
+ * `CONTRACT_PROFILE` moves.
+ */
+test('sampleBody() renders a body the shadow lineage also accepts', () => {
+  const shadow = registry.shadowFor(CONTRACT_PROFILE);
+  assert.notEqual(shadow, null, 'a shadow lineage is registered');
+
+  const body: unknown = JSON.parse(sampleBody(panelSchemas()));
+  const valid = shadow!.validate(body);
+  assert.ok(
+    valid,
+    `sample body fails the shadow schema: ${JSON.stringify(shadow!.validate.errors)}`,
+  );
 });
 
 test('sampleBody() stays free of single quotes for the -d snippet', () => {
@@ -160,6 +185,18 @@ test('the README quick-start body declares the registry current version', () => 
     body.meta?.schemaVersion,
     current,
     'README.md hardcodes schemaVersion; the registry current version moved — update the README',
+  );
+});
+
+test('the README quick-start body is one the shadow lineage also accepts', () => {
+  // Same rule as the panel's copy, for the same reason: the two are the first
+  // payload a supplier sends, and both are graded against both lineages.
+  const shadow = registry.shadowFor(CONTRACT_PROFILE);
+  assert.notEqual(shadow, null, 'a shadow lineage is registered');
+  const valid = shadow!.validate(readmeSampleBody());
+  assert.ok(
+    valid,
+    `README sample body fails the shadow schema: ${JSON.stringify(shadow!.validate.errors)}`,
   );
 });
 
