@@ -64,6 +64,9 @@
  *     — to the proposal document as received).
  *   - Ajv compiles each schema once at startup; the compiled validator is reused.
  *     The process fails loudly at boot if the blessed bytes don't compile.
+ *   - ONE ENTRY PER KEY across both lineages: entries are held in a single map
+ *     keyed by the canonical version alone, so `load()` throws on a repeat rather
+ *     than letting the later entry replace the earlier one unseen (bd by1c.23).
  */
 
 import { createHash } from 'node:crypto';
@@ -108,8 +111,13 @@ const PROFILES: readonly Profile[] = ['2025', 'ds013'];
  */
 export const CONTRACT_PROFILE: Profile = '2025';
 
-/** A schema version vendored into the registry. */
-interface VendoredSchema {
+/**
+ * A schema version vendored into the registry.
+ *
+ * Exported only so {@link SchemaRegistry.loadFrom} can be given a synthetic set
+ * in tests; the blessed set is {@link VENDORED} and nothing else constructs one.
+ */
+export interface VendoredSchema {
   /** Canonical key: a MAJOR.MINOR.PATCH triple, or an integer revision. */
   version: string;
   /** Path to the byte-identical published bytes, relative to this module. */
@@ -308,9 +316,31 @@ export class SchemaRegistry {
    * missing or fail to compile, so the process fails loudly at boot.
    */
   static load(): SchemaRegistry {
+    return SchemaRegistry.loadFrom(VENDORED);
+  }
+
+  /**
+   * {@link load} over an arbitrary entry list. Separate only so the duplicate-key
+   * guard below can be exercised without vendoring a real duplicate file; the
+   * service always loads {@link VENDORED}.
+   */
+  static loadFrom(entries: readonly VendoredSchema[]): SchemaRegistry {
     const registry = new SchemaRegistry();
 
-    for (const { version, file, dialect, profile, draftDate } of VENDORED) {
+    for (const { version, file, dialect, profile, draftDate } of entries) {
+      // `byVersion` is keyed by the canonical version ALONE, and the two lineages
+      // share that key space, so a repeat would silently replace the earlier
+      // entry and the registry would boot clean — invisible to every consumer,
+      // all of which read back from the deduped map. Fail loudly instead, the
+      // same way bytes that will not compile do (bd by1c.23).
+      const clash = registry.byVersion.get(version);
+      if (clash !== undefined) {
+        throw new Error(
+          `schema registry: duplicate version key ${version} (profiles ${clash.profile} and ${profile}); ` +
+            `each vendored entry must normalize to its own key`,
+        );
+      }
+
       const path = fileURLToPath(new URL(file, import.meta.url));
       let bytes: Buffer;
       try {

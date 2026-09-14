@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import type { VendoredSchema } from './schema-registry.js';
 import { CONTRACT_PROFILE, SchemaRegistry, normalizeVersion } from './schema-registry.js';
 
 /** Blessed bytes of the published 0.8.1 (JSON Schema 2020-12) — the CURRENT version. */
@@ -104,6 +105,41 @@ test('registry loads + compiles every vendored version at startup with its bless
   assert.equal(shadow.profile, 'ds013');
   assert.equal(shadow.draftDate, '2026-09-08');
   assert.equal(typeof shadow.validate, 'function');
+});
+
+/**
+ * The duplicate-key guard. Entries live in one map keyed by the canonical
+ * version alone and the two lineages share that key space, so a repeat used to
+ * replace the earlier entry and boot clean — and no test could see it, because
+ * every listing reads back from the deduped map. Fed a synthetic list (the real
+ * VENDORED set is distinct today) so the invariant is exercised without
+ * vendoring a duplicate file.
+ */
+test('load() throws on a duplicate version key, naming the key', () => {
+  const annex4: VendoredSchema = {
+    version: '1',
+    file: './schemas/pqs-e006-ds01-annex4-1.json',
+    dialect: '2020-12',
+    profile: 'ds013',
+    draftDate: '2026-09-08',
+  };
+  assert.throws(
+    () =>
+      SchemaRegistry.loadFrom([
+        {
+          version: '1',
+          file: './schemas/cce-interop-0.8.1.json',
+          dialect: '2020-12',
+          profile: '2025',
+        },
+        annex4,
+      ]),
+    /duplicate version key 1\b/,
+  );
+
+  // The same list without the collision loads, so the throw is the repeat and
+  // nothing else about the synthetic entries.
+  assert.deepEqual(SchemaRegistry.loadFrom([annex4]).acceptedVersions(), ['1']);
 });
 
 /**
