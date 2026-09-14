@@ -3,9 +3,10 @@
 -- Shadow grading (epic by1c) runs the DS01.3 draft alongside the 2025 contract
 -- and records BOTH sets of results. The response code and the contract dashboard
 -- must keep counting only the contract results, so every finding carries the
--- lineage it belongs to: '2025' (the requirements in force, the only value
--- written today) or 'ds013' (the DS01.3 shadow run). Filtering by this column is
--- what keeps a shadow failure out of a supplier's grade.
+-- lineage it graded against: '2025' (the requirements in force) or 'ds013' (the
+-- DS01.3 shadow run). Both values are written today: a transmission whose declared
+-- meta.schemaVersion resolves to a registered lineage records findings under both.
+-- Filtering by this column is what keeps a shadow failure out of a supplier's grade.
 --
 -- House rule: an existing db/initdb file is NEVER edited in place — an additive
 -- column arrives as a new numbered file, so the ordered first-boot replay stays a

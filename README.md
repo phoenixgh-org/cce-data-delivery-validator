@@ -69,9 +69,13 @@ mirrored in `src/api/compliance-matrix.ts` and rendered live in the dashboard.
 
 ### Shadow grading
 
-Every transmission is also graded a second time, against the DS01.3 Annex 4
-delivery-schema proposal — an unpublished draft, registered here as a *shadow*
-lineage. The shadow run never changes the HTTP response code and never touches the
+A transmission whose declared `schemaVersion` resolves to a registered lineage is
+graded a second time, against the DS01.3 Annex 4 delivery-schema proposal — an
+unpublished draft, registered here as a *shadow* lineage. Resolving the version is
+what selects the shadow, so a transmission that never gets that far carries no
+shadow result at all: an unrecognized `schemaVersion`, a body that does not parse,
+and a transport rejection before either are each answered under the 2025
+requirements alone. The shadow run never changes the HTTP response code and never touches the
 matrix above: those rows grade the 2025 requirements, which are the contract in
 force. What it produces instead is readiness: the dashboard shows how much of
 your passing traffic would also pass DS01.3, a verdict per transmission under each

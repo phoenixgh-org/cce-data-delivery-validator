@@ -70,7 +70,7 @@ The following decisions are settled for v1.
 | Authentication (§1.3) | An opt-in compliance layer, not a gate. The dashboard generates a credential for the supplier to configure, and the endpoint then enforces the chosen method, which makes §1.3 gradeable. The three methods are listed in §6, stage 2. |
 | Retention | A session and its data are purged after 7 days without a POST. |
 | Stack | Node and TypeScript end to end, with Ajv for schema validation. |
-| Grading profiles | Every transmission is graded twice. The `2025` `cce-interop` lineage is the contract in force, and the `ds013` DS01.3 Annex 4 draft runs as a shadow. The primary profile is derived from the lineage the payload's declared `schemaVersion` resolves to, and the shadow never affects the response code. |
+| Grading profiles | A transmission whose declared `schemaVersion` resolves to a registered lineage is graded twice. That lineage is the primary profile, and the current schema of the other lineage runs as the shadow: `2025` `cce-interop` is the contract in force today, `ds013` DS01.3 Annex 4 the shadow. The shadow never affects the response code, and a transmission whose version never resolves carries no shadow result (§6.1). |
 | Schema versioning | `schemaVersion` is treated as an opaque registry key. Its shape is per lineage: a bare semver triple for `cce-interop`, an integer revision for the Annex 4 draft. Schemas are vendored and validated against pre-registered copies, never fetched at runtime, and each version is pinned by content hash so the service can prove which bytes it validated against. |
 
 ## 4. Architecture
@@ -193,16 +193,26 @@ objects. It runs at stage 8 and independently of the schema, because
 detection rule and its deliberate limits are in
 [`custom-schema.ts`](src/ingest/stages/semantic/custom-schema.ts).
 
-Stage 7 also grades the body a second time. The lineage `meta.schemaVersion`
-resolves to is the primary profile and drives the response code exactly as it
-always has; the current schema of the other lineage runs as a shadow, and its
-findings are recorded but never change the status, never halt, and are recorded
-even when the primary run rejects the transmission. Findings are numbered by the
-profile that produced them rather than by the role it played, so the same
-validator files under the same clause whichever way round it ran: a `cce-interop`
-error is §3.2, and an Annex 4 error is DS01.3 clause 5.3.2, except where its JSON
-Pointer addresses the transmission metadata block (`/meta` or below), which is
-clause 5.3.3. That attribution rule is why DS01.3's metadata duties need no check
+Stage 7 also grades the body a second time, but only once `meta.schemaVersion` has
+resolved to a registered lineage. The lineage it resolves to is the primary profile
+and drives the response code exactly as it always has; the current schema of the
+other lineage runs as a shadow, and its findings are recorded but never change the
+status, never halt, and are recorded even when the primary run rejects the
+transmission.
+
+Resolution is the precondition and not a formality. A missing, non-string, or
+unregistered `meta.schemaVersion` is a §3.2 failure that halts stage 7 with `422`
+before either profile is chosen, and a body that never parsed or a transport halt
+before stage 7 never reaches the choice at all. Those transmissions carry no shadow
+findings and no shadow verdict, and the response says nothing about a second
+lineage — there is no second ruleset to report until the first one has been
+identified.
+
+Findings are numbered by the profile that produced them rather than by the role it
+played, so the same validator files under the same clause whichever way round it
+ran: a `cce-interop` error is §3.2, and an Annex 4 error is DS01.3 clause 5.3.2,
+except where its JSON Pointer addresses the transmission metadata block (`/meta` or
+below), which is clause 5.3.3. That attribution rule is why DS01.3's metadata duties need no check
 of their own — Annex 4's pattern on `meta.transferredAt` already rejects a UTC
 offset, and the pointer files the rejection under the clause that requires it.
 
@@ -286,12 +296,13 @@ This table is the source for `COMPLIANCE_MATRIX` in
 [`src/api/compliance-matrix.ts`](src/api/compliance-matrix.ts), which encodes the
 same 27 rows verbatim. Change them together.
 
-**Shadow verdicts do not move a row.** Every transmission is also graded against
-the DS01.3 Annex 4 draft (§6.1), which produces its own verdict and its own
-findings under DS01.3 clause numbers. Those 27 rows stay contract-only, and every
-count that feeds them filters on the contract profile. The reason is that a
-shadow run changes the ruleset and not the vantage point: what a passive receiver
-can establish about a supplier is the same either way, so a row that is
+**Shadow verdicts do not move a row.** A transmission whose declared
+`schemaVersion` resolves to a registered lineage is also graded against the DS01.3
+Annex 4 draft (§6.1), which produces its own verdict and its own findings under
+DS01.3 clause numbers. Those 27 rows stay contract-only, and every count that feeds
+them filters on the contract profile. The reason is that a shadow run changes the
+ruleset and not the vantage point: what a passive receiver can establish about a
+supplier is the same either way, so a row that is
 self-attestation under the 2025 requirements is self-attestation under their
 successor too, and a verifiability class that moved with the ruleset would be
 describing the standard rather than this service's reach.
@@ -505,8 +516,14 @@ Upstream 0.8.2 is the first version to define `meta.customDataSchema`. Its own
 `$comment` there states that the conditional is deliberately not enforced by the
 schema, and that employers who want it enforced should do so in their own validation
 layer. This service is that layer (§7, row 3.1), which is why the §3.1 check is
-schema-independent and works for suppliers still declaring 0.8.1. Whether to accept
-0.8.2 declarations remains open (tracked as `cce-data-delivery-validator-fvw`).
+schema-independent and works for suppliers still declaring 0.8.1.
+
+Whether to accept 0.8.2 declarations has been settled, and the answer is a standing
+hold: 0.8.2 and 0.8.3 stay unregistered until there is an explicit instruction to
+register one. The reason is that registering a version is a version-acceptance
+decision rather than maintenance. It demotes 0.8.1 to the outdated-but-valid cohort
+(§9.1), so every supplier still declaring the version their agreement names would
+begin to be told to upgrade.
 
 Ajv compiles each registered schema once at startup, in its own instance per version,
 and reuses the compiled validator. Registration is a boot-time gate: bytes that
@@ -575,10 +592,10 @@ and they bound it only loosely.
 - Runtime and language: Node and TypeScript.
 - HTTP: Fastify, chosen for speed, schema-friendliness, and first-class control over
   `Content-Type` and the raw body. Locked.
-- Validation: Ajv, running the published schema directly on the build that matches
-  each schema's declared dialect: 2020-12 (`ajv/dist/2020`) for 0.8.1, and draft-07
-  (Ajv's default export) for the outdated 0.8.0. Neither build accepts the other's
-  `$schema`, so the choice is made per registry entry.
+- Validation: Ajv, running each vendored schema directly on the build that matches
+  that schema's declared dialect: 2020-12 (`ajv/dist/2020`) for 0.8.1 and the Annex 4
+  draft, and draft-07 (Ajv's default export) for the outdated 0.8.0. Neither build
+  accepts the other's `$schema`, so the choice is made per registry entry (§9.1).
 - Storage: PostgreSQL via `node-postgres` (`pg`) behind a thin repository layer,
   adopting the master-data system's content-addressed `source_artifact` and
   `jsonb`-body patterns (§8).
