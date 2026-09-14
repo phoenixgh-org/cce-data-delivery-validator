@@ -28,6 +28,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as React from 'react';
 
+import { CONTRACT_PROFILE } from '../api';
 import type { FindingView, Severity } from '../api';
 
 (globalThis as unknown as { React: typeof React }).React = React;
@@ -168,7 +169,13 @@ function finding(severity: Severity): FindingView {
     instancePath: null,
     param: null,
     code: null,
+    profile: CONTRACT_PROFILE,
   };
+}
+
+/** A DS01.3 shadow finding — a different lineage's verdict on the same payload. */
+function shadowFinding(severity: Severity): FindingView {
+  return { ...finding(severity), requirement: '5.3.2', profile: 'ds013' };
 }
 
 test('no findings at all reads as a green OK with a "No findings" tooltip', () => {
@@ -248,6 +255,33 @@ test('advisories never join the fail count or its denominator', () => {
     finding('pass'),
     advisoryFinding('adv.null_padding'),
   ]);
+  assert.equal(cell.text, '1f');
+  assert.equal(cell.title, '1 of 2 findings failed');
+});
+
+/**
+ * DS01.3 SHADOW FINDINGS in the row's verdict cell (by1c.8).
+ *
+ * The cell answers one question — did this transmission fail the contract in
+ * force? — so the second lineage's verdict has to be invisible to it. A payload
+ * that conforms to cce-interop 0.8.1 and misses Annex 4's logger-identity
+ * properties is the canonical case: five shadow failures, and an unqualified OK
+ * here until by1c.12 gives DS01.3 its own column.
+ */
+test('DS01.3 shadow findings reach neither the fail count nor the total', () => {
+  const cell = findingsCell([
+    finding('pass'),
+    finding('pass'),
+    shadowFinding('fail'),
+    shadowFinding('fail'),
+  ]);
+  assert.equal(cell.text, 'OK');
+  assert.equal(cell.color, 'var(--pass)');
+  assert.equal(cell.title, '2 findings, none failed');
+});
+
+test('a contract failure still shows, shadow findings notwithstanding', () => {
+  const cell = findingsCell([finding('fail'), finding('pass'), shadowFinding('fail')]);
   assert.equal(cell.text, '1f');
   assert.equal(cell.title, '1 of 2 findings failed');
 });

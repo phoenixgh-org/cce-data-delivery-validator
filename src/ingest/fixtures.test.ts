@@ -129,7 +129,14 @@ async function runFixture(ctx: PipelineContext): Promise<IngestResponseBody> {
  * not the API), so this reads the context the pipeline actually ran on.
  */
 function contractFails(ctx: PipelineContext) {
-  return ctx.findings.filter((f) => f.severity === 'fail' && f.profile !== ctx.shadowProfile);
+  return contractGraded(ctx).filter((f) => f.severity === 'fail');
+}
+
+/** The graded (non-advisory) findings of the CONTRACT lineage — the body's tally. */
+function contractGraded(ctx: PipelineContext) {
+  return ctx.findings.filter(
+    (f) => !isAdvisoryId(f.requirement) && f.profile !== ctx.shadowProfile,
+  );
 }
 
 function hasFinding(
@@ -156,8 +163,24 @@ test('fixture valid → 200, no fail findings, accepted message', async () => {
     'valid baseline produces zero fail findings under the contract profile',
   );
   assert.ok(hasFinding(body.findingDetails, '3.2', 'pass'), 'schema validated clean');
-  assert.equal(body.findings, body.findingDetails.length, 'count matches details');
   assert.deepEqual(body.advisories, [], 'the baseline raises no advisories');
+
+  // THE HEADLINE IS THE CONTRACT TALLY (by1c.8). This fixture is the canonical
+  // readiness demo: conformant under cce-interop 0.8.1, and missing five of the
+  // logger-identity properties the DS01.3 Annex 4 draft requires. The shadow run
+  // records those five failures and they are echoed in `findingDetails`, but
+  // they grade a lineage that is not yet in force, so neither the count a
+  // supplier reads as the outcome nor the one-line message may mention them.
+  assert.ok(
+    body.findingDetails.some((f) => f.severity === 'fail'),
+    'precondition: the Annex 4 shadow run does fail this fixture',
+  );
+  assert.doesNotMatch(body.message, /fail/, 'the contract headline reports no failure');
+  assert.equal(body.findings, contractGraded(ctx).length, 'the count is the contract-graded count');
+  assert.ok(
+    body.findingDetails.length > body.findings,
+    'shadow findings are listed in the details, never counted in the tally',
+  );
 });
 
 /**
@@ -214,18 +237,18 @@ test('a conformant payload raising an advisory tallies exactly as the baseline (
   // This used to be pinned as `advised.message.startsWith(baseline.message)`,
   // which no longer holds for a reason that has nothing to do with advisories:
   // the two payloads differ under the SHADOW profile (Annex 4 patterns the date
-  // objects), so their headline counts differ by that one shadow finding. The
+  // objects), so their DETAIL lists differ by that one shadow finding. The
   // property 7rv is about is per-payload, so it is pinned per payload here.
-  // KNOWN TRANSIENT (bd by1c.6 → by1c.8): the headline tally counts shadow fails
-  // alongside contract fails; by1c.8 owns the profile-aware audit of every
-  // `severity === 'fail'` consumer, this response body included.
-  const fails = advised.findingDetails.filter((f) => f.severity === 'fail').length;
-  const infos = advised.findingDetails.filter((f) => f.severity === 'info').length;
+  // Since by1c.8 the tally itself is contract-only, so the shadow finding is
+  // absent from both the count and the fail/info breakdown.
+  const fails = contractGraded(advisedCtx).filter((f) => f.severity === 'fail').length;
+  const infos = contractGraded(advisedCtx).filter((f) => f.severity === 'info').length;
   const headline = advised.message.replace(/ 1 advisory,.*$/, '');
+  assert.equal(fails, 0, 'nothing fails this payload under the contract');
   assert.equal(
     headline,
-    `Accepted (200): data recorded; ${advised.findings} findings (${fails} fail, ${infos} info).`,
-    'the tally is the graded tally, with no advisory folded into it',
+    `Accepted (200): data recorded; ${advised.findings} findings (${infos} info).`,
+    'the tally is the contract-graded tally, with no advisory folded into it',
   );
   assert.doesNotMatch(baseline.message, /advisor/i);
   assert.doesNotMatch(headline, /advisor/i);

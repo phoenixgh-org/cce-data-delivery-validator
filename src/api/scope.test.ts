@@ -24,6 +24,7 @@ import {
 import { computeComplianceSummary } from './compliance-matrix.js';
 import type { ComplianceRow } from './compliance-matrix.js';
 import { sourceCounts } from './source.js';
+import type { Profile } from '../schema-registry.js';
 
 // ── window parsing ──────────────────────────────────────────────────────────
 
@@ -172,15 +173,42 @@ test('rollup folds pass-outdated into passing (2kx) — it must not fall out of 
 
 // ── passTrend (30 buckets, {tot,fail,rate}) ─────────────────────────────────
 
-const tx = (mins: number, fail: boolean) => ({
-  received_at: new Date(NOW + mins * 60 * 1000).toISOString(),
-  findings: fail ? [{ severity: 'fail' }] : [{ severity: 'pass' }],
+/**
+ * A trend fixture. Findings carry a requirement and a PROFILE because `txFailing`
+ * is the contract verdict now (by1c.8), not a bare severity scan.
+ */
+const f = (severity: string, profile: Profile = '2025', requirement = '3.2') => ({
+  requirement,
+  severity,
+  profile,
 });
 
-test('txFailing keys off severity===fail', () => {
+const tx = (mins: number, fail: boolean) => ({
+  received_at: new Date(NOW + mins * 60 * 1000).toISOString(),
+  findings: fail ? [f('fail')] : [f('pass')],
+});
+
+test('txFailing keys off a contract-profile severity===fail', () => {
   assert.equal(txFailing(tx(0, true)), true);
   assert.equal(txFailing(tx(0, false)), false);
-  assert.equal(txFailing({ received_at: ago(0), findings: [{ severity: 'info' }] }), false);
+  assert.equal(txFailing({ received_at: ago(0), findings: [f('info')] }), false);
+});
+
+/**
+ * THE PROPERTY by1c.8 EXISTS FOR: a transmission that conforms under the
+ * contract and fails only the DS01.3 shadow run is NOT a failing transmission.
+ * Everything above the list — the pass-rate trend, `withFailures`, the
+ * failures-only filter — reads this predicate, so a leak here would restate a
+ * preview of the next revision as a defect against the obligations in force.
+ */
+test('a shadow-only failure does not make a transmission failing', () => {
+  const shadowOnly = {
+    received_at: ago(0),
+    findings: [f('pass'), f('fail', 'ds013', '5.3.2')],
+  };
+  assert.equal(txFailing(shadowOnly), false);
+  assert.deepEqual(scopeTotals([shadowOnly], 0).withFailures, 0);
+  assert.equal(passTrend([shadowOnly])[0]?.fail, 0);
 });
 
 test('passTrend returns exactly 30 buckets with {tot,fail,rate}, empty buckets null', () => {

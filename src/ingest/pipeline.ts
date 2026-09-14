@@ -15,6 +15,7 @@
 import type { FastifyRequest } from 'fastify';
 
 import type { InsertFindingInput, Severity } from '../db/repository.js';
+import { CONTRACT_PROFILE } from '../schema-registry.js';
 import type { Profile, SchemaRegistry } from '../schema-registry.js';
 import { isAdvisoryId } from './stages/semantic/advisory.js';
 
@@ -179,8 +180,8 @@ export interface ResponseFinding {
  * persisted `transmissionId` and HTTP `status`, it carries:
  *   - `message` — a one-line human summary ("Accepted: …" / "Rejected (NNN): …")
  *     including a fail/info breakdown so the headline result is self-explanatory.
- *   - `findings` — the COUNT of graded findings recorded (kept from the original
- *     shape).
+ *   - `findings` — the COUNT of findings that GRADE this transmission (kept from
+ *     the original shape).
  *   - `findingDetails` — the per-finding `{requirement, severity, detail}` echo,
  *     so every recorded observation is readable straight from the response.
  *   - `advisories` — the same echo for the `adv.*` findings, in a field of their
@@ -197,6 +198,17 @@ export interface ResponseFinding {
  * than dropped because this body is the teaching surface for an integrator who
  * never opens the dashboard — the browser puts them in their own Advisories
  * block, and this puts them in their own field.
+ *
+ * THE SHADOW LINEAGE IS LISTED, NOT COUNTED (by1c.8). Since bd by1c.6 every
+ * transmission is graded a second time against the DS01.3 Annex 4 draft. Those
+ * findings never move the HTTP status, so they must not move the one number a
+ * supplier reads as the outcome either: `findings` and the `message` tally are
+ * CONTRACT-lineage findings only, on the same reasoning that excludes advisories.
+ * They ARE echoed in `findingDetails`, because a preview of the next revision is
+ * exactly the kind of thing the teaching surface exists to deliver — which is why
+ * `findingDetails` can be longer than `findings` counts. The requirement id says
+ * which lineage each one speaks to (`3.2` is cce-interop, `5.3.x` is Annex 4);
+ * naming the lineage on the wire is bd by1c.9's job.
  */
 export interface IngestResponseBody {
   /** Persisted transmission id, or null when no row was written (404/405). */
@@ -204,9 +216,17 @@ export interface IngestResponseBody {
   status: number;
   /** One-line human summary of the outcome (teaching surface, §6). */
   message: string;
-  /** Count of GRADED findings recorded — advisories excluded (§7.1). */
+  /**
+   * Count of the findings that GRADE this transmission — advisories excluded
+   * (§7.1) and shadow-lineage findings excluded (by1c.8). May be smaller than
+   * `findingDetails.length`; see the shadow note above.
+   */
   findings: number;
-  /** Per-finding human-readable echo of the graded findings (no advisories). */
+  /**
+   * Per-finding human-readable echo of the graded findings (no advisories),
+   * BOTH lineages — the contract findings that produced the status and the
+   * shadow findings that preview DS01.3.
+   */
   findingDetails: ResponseFinding[];
   /**
    * The advisories raised on this transmission, same echo shape. Never counted
@@ -248,6 +268,16 @@ function isAccepted(status: number): boolean {
 }
 
 /**
+ * Whether a finding graded against the CONTRACT lineage — the obligations in
+ * force. Findings written before by1c.5 carry no profile at all, and the
+ * repository defaults those to `'2025'`, so the same default is applied here
+ * rather than treating an absent value as "some other lineage".
+ */
+function isContractFinding(f: Finding): boolean {
+  return (f.profile ?? '2025') === CONTRACT_PROFILE;
+}
+
+/**
  * Compose the one-line teaching summary. Accepted runs lead with "Accepted",
  * short-circuits with "Rejected (NNN)"; both append the finding tally (with a
  * fail/info breakdown when present) so the headline conveys the result alone.
@@ -256,15 +286,23 @@ function isAccepted(status: number): boolean {
  * been raised (7rv). Advisories get their own trailing sentence when there are
  * any — never a term inside the tally — echoing the dashboard's own wording
  * ("not graded, and not counted in the findings above", `ADVISORY_COPY`).
+ *
+ * It excludes SHADOW-lineage findings for the same reason (by1c.8). Since bd
+ * by1c.6 every transmission is also graded against the DS01.3 Annex 4 draft, and
+ * those findings never touch the HTTP status; letting them into the one number a
+ * supplier reads as the outcome would tell a conformant integrator they had five
+ * failures against obligations that do not yet exist. They stay in
+ * `findingDetails`, where the requirement id says which lineage they speak to.
  */
 function summarize(
   status: number,
   graded: readonly Finding[],
   advisories: readonly Finding[],
 ): string {
-  const total = graded.length;
-  const fails = graded.filter((f) => f.severity === 'fail').length;
-  const infos = graded.filter((f) => f.severity === 'info').length;
+  const contract = graded.filter(isContractFinding);
+  const total = contract.length;
+  const fails = contract.filter((f) => f.severity === 'fail').length;
+  const infos = contract.filter((f) => f.severity === 'info').length;
 
   const plural = (n: number) => (n === 1 ? 'finding' : 'findings');
   let tally = `${total} ${plural(total)}`;
@@ -308,7 +346,9 @@ export function buildResponseBody(
     transmissionId,
     status,
     message: summarize(status, graded, advisories),
-    findings: graded.length,
+    // Contract lineage only — the count and the message tally agree, and both
+    // say what this transmission was graded on (by1c.8).
+    findings: graded.filter(isContractFinding).length,
     findingDetails: graded.map(echo),
     advisories: advisories.map(echo),
     notice: SYNTHETIC_DATA_NOTICE,

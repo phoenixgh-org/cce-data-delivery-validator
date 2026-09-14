@@ -37,6 +37,7 @@ import {
   rollup,
   scopeTotals,
   scopeTransmissions,
+  txFailing,
   windowLowerBound,
 } from './scope.js';
 import { computeSignatures, contractIssueSignatures, txMatchesSig } from './signatures.js';
@@ -58,6 +59,7 @@ import {
   listTransmissionsInWindow,
 } from '../db/repository.js';
 import type { AuthMethod, FindingRow, Severity, TransmissionRow } from '../db/repository.js';
+import { CONTRACT_PROFILE } from '../schema-registry.js';
 
 /** Findings as surfaced per-transmission on the dashboard (drill-down detail). */
 function toFindingView(f: FindingRow) {
@@ -73,7 +75,11 @@ function toFindingView(f: FindingRow) {
     instancePath: f.instance_path,
     param: f.param,
     code: f.code,
-    // Requirement lineage (by1c.5): '2025' on every finding written today.
+    // Which requirement lineage this finding graded against (by1c.5): the
+    // contract in force, or the DS01.3 shadow run. Passed through from the row —
+    // since by1c.6 a single transmission carries findings of both lineages, and
+    // everything downstream that grades (the profile-disjoint signature fold,
+    // the verdict engine) reads this field to tell them apart.
     profile: f.profile,
   };
 }
@@ -408,10 +414,18 @@ export function registerSessionsApi(app: FastifyInstance): void {
       // severity (2kx keeps the outdated-but-valid schema finding at info), and it
       // is what lifts a session that only ever used an older registered version off
       // 'untested' onto 'pass-outdated'.
+      //
+      // CONTRACT lineage only (by1c.8). The §7 matrix grades the obligations in
+      // force, so a DS01.3 shadow finding has no row to land in. Its clause ids
+      // (5.3.2, 5.3.3) happen not to collide with any of the 27 §7 ids today, so
+      // `computeComplianceSummary` would drop them anyway — the filter makes that
+      // a property of the code rather than a coincidence of the numbering, the
+      // same argument `signaturesForReq` states for the signature side.
       const scopedCounts: FindingCountsByRequirement = {};
       const scopedOutdated: OutdatedCountsByRequirement = {};
       for (const t of scopedViews) {
         for (const f of t.findings) {
+          if (f.profile !== CONTRACT_PROFILE) continue;
           const counts = (scopedCounts[f.requirement] ??= { pass: 0, fail: 0, info: 0 });
           counts[f.severity as Severity] += 1;
           if (f.outdated) scopedOutdated[f.requirement] = (scopedOutdated[f.requirement] ?? 0) + 1;
@@ -544,7 +558,10 @@ export function registerSessionsApi(app: FastifyInstance): void {
       // bound; inScope re-applies it harmlessly and adds the now upper bound.
       const filtered = views.filter((t) => {
         if (!inScope(t, window, source, now)) return false;
-        if (failuresOnly && !t.findings.some((f) => f.severity === 'fail')) return false;
+        // CONTRACT verdict (by1c.8), not "any fail finding": a transmission
+        // that conforms today and would only fail under DS01.3 is not a failure
+        // the supplier can act on under the obligations in force.
+        if (failuresOnly && !txFailing(t)) return false;
         if (signatureKey !== null && !txMatchesSig(asSignatureTx(t), signatureKey)) return false;
         return true;
       });

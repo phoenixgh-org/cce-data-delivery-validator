@@ -13,9 +13,17 @@
  * `f.sev`/`f.req`/`tx.mins` accessors adapted to the landed view: findings carry
  * `severity`/`requirement`, and time buckets on `received_at` epoch (ms), not
  * minutes-since-midnight.
+ *
+ * {@link txFailing} now delegates to the verdict engine (by1c.8) and so reads
+ * `CONTRACT_PROFILE` off the registry. That is the only non-pure edge in this
+ * module, and it is a constant, not a capability: keeping the flip point in one
+ * place matters more here than keeping the import list at one entry.
  */
 
 import type { ComplianceRow } from './compliance-matrix.js';
+import { verdict } from './verdicts.js';
+import type { VerdictFinding } from './verdicts.js';
+import { CONTRACT_PROFILE } from '../schema-registry.js';
 
 /** The four selectable time windows (DESIGN.md §10 scope control). */
 export type Window = '15m' | '1h' | '6h' | 'all';
@@ -142,12 +150,22 @@ export function rollup(summary: readonly ComplianceRow[]): Rollup {
 /** The minimal transmission shape the trend/totals read (findings + time). */
 export interface TrendTransmission {
   received_at: string | Date;
-  findings: readonly { severity: string }[];
+  findings: readonly VerdictFinding[];
 }
 
-/** A transmission "fails" if any finding has severity 'fail' (engine.js txFailing). */
+/**
+ * A transmission "fails" if the CONTRACT lineage says so — the verdict engine's
+ * contract rule (src/api/verdicts.ts), which is the engine.js `txFailing` this
+ * was ported from plus the profile test.
+ *
+ * The profile test is what keeps the scorecard, the pass-rate trend and the
+ * `withFailures` readout meaning what they meant before the shadow run existed
+ * (by1c.8). Since bd by1c.6 a perfectly conformant payload can carry `fail`
+ * findings describing how it would fare under DS01.3; those grade a different
+ * lineage and must not move a single number a supplier is graded on today.
+ */
 export function txFailing(tx: TrendTransmission): boolean {
-  return tx.findings.some((f) => f.severity === 'fail');
+  return verdict(tx, CONTRACT_PROFILE, CONTRACT_PROFILE) === 'fail';
 }
 
 /** One pass-rate trend bucket. `rate` is pass/(pass+fail), or null when empty. */

@@ -25,7 +25,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { FindingView, Severity, Signature, TransmissionView } from '../api';
 import type { DisplayStatus } from '../api';
-import { isAdvisory } from '../api';
+import { CONTRACT_PROFILE, isAdvisory } from '../api';
 import { ADVISORY_COPY, advisoryLabel, splitFindings } from '../advisories';
 import { Icon } from './ui/Icon';
 import { StatusPill } from './ui/StatusPill';
@@ -75,14 +75,29 @@ const DOT_COLOR: Record<DotTone, string> = {
 };
 
 /**
- * Derive the row dot tone from the transmission's findings:
+ * The findings that GRADE a transmission under the contract in force — the only
+ * ones the row's verdict surfaces may read (by1c.8).
+ *
+ * Since bd by1c.6 a transmission also carries findings from the DS01.3 shadow
+ * run. Those describe a different lineage's verdict, so a payload that conforms
+ * today would otherwise show a red dot and a fail count for obligations that are
+ * not yet in force. The shadow verdict gets its own column in bd by1c.12; here
+ * the filter simply keeps it out of the contract one.
+ */
+function contractFindings(findings: FindingView[]): FindingView[] {
+  return findings.filter((f) => f.profile === CONTRACT_PROFILE);
+}
+
+/**
+ * Derive the row dot tone from the transmission's CONTRACT findings:
  *   any fail            -> fail
  *   pass AND fail mix    -> (covered by the fail branch; "mixed" = some pass + some fail)
  *   all pass             -> pass
  *   none                 -> neutral
  * Per the spec, any fail dominates; a mix of pass+fail reads as "mixed".
  */
-function dotTone(findings: FindingView[]): DotTone {
+function dotTone(all: FindingView[]): DotTone {
+  const findings = contractFindings(all);
   if (findings.length === 0) return 'neutral';
   const hasFail = findings.some((f) => f.severity === 'fail');
   const hasPass = findings.some((f) => f.severity === 'pass');
@@ -226,9 +241,15 @@ export interface FindingsCell {
  * to explain. They are rendered in the detail pane's own Advisories block
  * instead. A transmission carrying advisories and nothing else therefore reads
  * "No findings" here, which is true of the graded ones.
+ *
+ * SHADOW FINDINGS ARE EXCLUDED TOO (by1c.8), by the same argument one step over:
+ * this is the row's CONTRACT verdict cell, and a DS01.3 shadow failure is not a
+ * verdict against the obligations in force. It gets its own column in by1c.12,
+ * which replaces this cell; the filter is applied here so nothing leaks in the
+ * meantime.
  */
 export function findingsCell(findings: FindingView[]): FindingsCell {
-  const graded = findings.filter((f) => !isAdvisory(f));
+  const graded = contractFindings(findings).filter((f) => !isAdvisory(f));
   const findingCount = graded.length;
   const failCount = graded.filter((f) => f.severity === 'fail').length;
   const plural = (n: number): string => (n === 1 ? 'finding' : 'findings');
