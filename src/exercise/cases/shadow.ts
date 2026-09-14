@@ -28,6 +28,17 @@
  * by construction, so a 5.x clause is recorded on the case rather than joined
  * (see ../case.ts and docs/exercise-suite.md).
  *
+ * EVERY CASE HERE DECLARES `requirements: []` (by1c.42), the same way the `adv.*`
+ * cases in ./payload.ts do and for the same reason. That field is what the
+ * coverage join counts as a CLAIM — the requirements a case TARGETS, not the ones
+ * its `expectedFindings` happen to mention (../runner/coverage.ts). A readiness
+ * case targets no matrix row: what it exercises is the shadow run, and the §3.2
+ * pass it also earns is the incidental one every accepted POST earns. Naming
+ * §3.2 here would print three extra §3.2 pass exercises that are re-runs of
+ * `3.2-pass-baseline`, which is the coverage inflation that rule exists to stop.
+ * The §3.2 pass stays in `expectedFindings`, where it is the positive evidence a
+ * pass-direction case owes.
+ *
  * Naming 'ds013' as a literal here is data, not a label: this module IS the
  * lineage it exercises, and a case that defaulted its profile would be asserting
  * the contract's verdict instead. Everything that DEFAULTS a profile reads
@@ -50,7 +61,7 @@ export const SHADOW_CASES: readonly ExerciseCase[] = [
   {
     id: 'readiness.rtm_identity',
     title: 'The RTM baseline passes the contract; DS01.3 would fail it on the logger identity',
-    requirements: ['3.2'],
+    requirements: [],
     shadowClauses: ['5.3.2'],
     direction: 'pass',
     // The default baseline is the readiness demo itself: conformant under
@@ -66,7 +77,7 @@ export const SHADOW_CASES: readonly ExerciseCase[] = [
   {
     id: 'readiness.dual_pass',
     title: 'A transmission carrying the logger identity passes the contract and DS01.3 alike',
-    requirements: ['3.2'],
+    requirements: [],
     shadowClauses: ['5.3.2'],
     direction: 'pass',
     baseline: dualPassBaseline,
@@ -80,7 +91,7 @@ export const SHADOW_CASES: readonly ExerciseCase[] = [
     id: 'readiness.date_pattern',
     title:
       'A production date written 2026-7-4 passes the contract with an advisory; DS01.3 would fail it',
-    requirements: ['3.2'],
+    requirements: [],
     shadowClauses: ['5.3.2'],
     direction: 'pass',
     baseline: dualPassBaseline,

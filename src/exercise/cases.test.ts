@@ -428,6 +428,26 @@ test('every case declares at least one POST with a known §6 status', () => {
 
 // ── direction consistency ───────────────────────────────────────────────────
 
+/**
+ * The expected findings that are CONTRACT fails — the only fails a direction is
+ * about (by1c.15, by1c.43).
+ *
+ * Direction describes the contract's point of view, which is the only view that
+ * grades, and since by1c.6 a case's expectations may also carry the DS01.3 shadow
+ * run's verdict. A shadow fail says how traffic would fare under an unpublished
+ * draft: it moves no status, no verdict and no matrix row. Reading every `fail`
+ * as the contract's would make a readiness case impossible to write on the pass
+ * side, and would let a shadow fail stand in as the evidence a fail-direction
+ * case owes on the other. Both rules below count through this helper, which
+ * defaults an unstated profile through `CONTRACT_PROFILE` off the registry rather
+ * than through the literal '2025'.
+ */
+function contractFails(kase: ExerciseCase) {
+  return kase.expectedFindings.filter(
+    (f) => f.severity === 'fail' && (f.profile ?? CONTRACT_PROFILE) === CONTRACT_PROFILE,
+  );
+}
+
 test('pass-direction cases declare no fault, expect only 2xx and no fail findings', () => {
   for (const kase of EXERCISE_CASES.filter((c) => c.direction === 'pass')) {
     assert.equal(kase.fault, undefined, `${kase.id}: a pass-direction case declares no fault`);
@@ -437,17 +457,11 @@ test('pass-direction cases declare no fault, expect only 2xx and no fail finding
         `${kase.id}: pass-direction POST expects ${post.expectedStatus}`,
       );
     }
-    // CONTRACT fails only (by1c.15). Direction describes the contract's point of
-    // view — the only view that grades — and since by1c.6 a transmission also
-    // carries the DS01.3 shadow run's verdict. A shadow fail says how conformant
-    // traffic would fare under an unpublished draft: it moves no status, no
-    // verdict and no matrix row, so a case expecting one is still a pass-direction
-    // case and still declares no fault. Reading every `fail` as the contract's
-    // would make a readiness case impossible to write, which is the same
-    // contract-awareness every other fail consumer gained in by1c.25.
-    const fails = kase.expectedFindings.filter(
-      (f) => f.severity === 'fail' && (f.profile ?? CONTRACT_PROFILE) === CONTRACT_PROFILE,
-    );
+    // CONTRACT fails only (by1c.15) — see {@link contractFails}. A case expecting
+    // a shadow fail is still a pass-direction case and still declares no fault,
+    // which is the same contract-awareness every other fail consumer gained in
+    // by1c.25.
+    const fails = contractFails(kase);
     assert.deepEqual(
       fails,
       [],
@@ -480,7 +494,11 @@ test('fail-direction cases name their fault and expect a fail finding or a rejec
     assert.ok(fault, `${kase.id}: a fail-direction case must name its fault`);
     assert.ok(fault.note.length > 0, `${kase.id}: the fault note must say what is broken`);
 
-    const expectsFail = kase.expectedFindings.some((f) => f.severity === 'fail');
+    // CONTRACT fails only, mirroring the pass-direction rule above (by1c.43). A
+    // fail-direction case names a fault at the contract layer, so the finding it
+    // shows for that fault has to be one the contract grades: a lone `5.x.x`
+    // ds013 fail asserts nothing about the verdict the case claims to move.
+    const expectsFail = contractFails(kase).length > 0;
     const rejects = kase.posts.some((p) => !isAcceptedStatus(p.expectedStatus));
     // THE ADVISORY EXEMPTION (agj.1). An advisory case plants a payload the
     // validator is meant to NOTICE while breaking no rule at all: the schema

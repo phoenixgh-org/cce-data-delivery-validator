@@ -113,10 +113,11 @@ export function poolCaseFindings(
 }
 
 /**
- * The expected findings NOT present in the pool, matched on `(requirement,
- * severity)`. Presence-based: an expectation listed twice is satisfied by one
- * pooled occurrence (it names a pair, not a count), and pooled findings the
- * expectations do not name are ignored entirely.
+ * The expected findings NOT present in the pool, matched on the `(requirement,
+ * severity, profile)` triple {@link findingKey} builds. Presence-based: an
+ * expectation listed twice is satisfied by one pooled occurrence (it names a
+ * triple, not a count), and pooled findings the expectations do not name are
+ * ignored entirely.
  */
 export function missingFindings(
   expected: readonly ExpectedFinding[],
