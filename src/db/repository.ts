@@ -86,6 +86,14 @@ export interface InsertTransmissionInput {
 /** The §7 row-level honesty class carried by a finding. */
 export type Severity = 'pass' | 'fail' | 'info';
 
+/**
+ * The requirement lineage a finding grades against (by1c.5): `'2025'` is the
+ * contract in force — the only value written today — and `'ds013'` is the
+ * DS01.3 shadow run. Everything that grades filters on this so a shadow result
+ * never reaches a supplier's response code or contract counts.
+ */
+export type Profile = '2025' | 'ds013';
+
 /** Fields recorded for one `finding` row (DESIGN.md §8, db/initdb/30-finding.sql). */
 export interface InsertFindingInput {
   /** Requirement id this finding speaks to, e.g. '1.4'. */
@@ -112,6 +120,8 @@ export interface InsertFindingInput {
   param?: string | null;
   /** Stable check code for transport/heuristic findings (e.g. tx.missing_charset). */
   code?: string | null;
+  /** Requirement lineage this finding grades against. Defaults to '2025'. */
+  profile?: Profile;
 }
 
 /** A `finding` row (DESIGN.md §8). */
@@ -132,6 +142,8 @@ export interface FindingRow {
   param: string | null;
   /** Stable check code for transport/heuristic findings; null for schema. */
   code: string | null;
+  /** Requirement lineage this finding grades against (by1c.5). */
+  profile: Profile;
 }
 
 /** A `transmission` row (DESIGN.md §8). */
@@ -298,7 +310,7 @@ export async function listFindingsForSession(
 ): Promise<FindingRow[]> {
   const { rows } = await db.query<FindingRow>(
     `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer, f.outdated,
-            f.keyword, f.instance_path, f.param, f.code
+            f.keyword, f.instance_path, f.param, f.code, f.profile
      FROM finding f
      JOIN transmission t ON t.id = f.transmission_id
      WHERE t.session_uuid = $1
@@ -364,7 +376,7 @@ export async function listFindingsInWindow(
 ): Promise<FindingRow[]> {
   const { rows } = await db.query<FindingRow>(
     `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer, f.outdated,
-            f.keyword, f.instance_path, f.param, f.code
+            f.keyword, f.instance_path, f.param, f.code, f.profile
      FROM finding f
      JOIN transmission t ON t.id = f.transmission_id
      WHERE t.session_uuid = $1
@@ -498,10 +510,10 @@ export async function insertFinding(
 ): Promise<FindingRow> {
   const { rows } = await db.query<FindingRow>(
     `INSERT INTO finding (transmission_id, requirement, severity, detail, pointer, outdated,
-                          keyword, instance_path, param, code)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                          keyword, instance_path, param, code, profile)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated,
-               keyword, instance_path, param, code`,
+               keyword, instance_path, param, code, profile`,
     [
       transmissionId,
       input.requirement,
@@ -513,6 +525,8 @@ export async function insertFinding(
       input.instancePath ?? null,
       input.param ?? null,
       input.code ?? null,
+      // Default lineage: a finding with no explicit profile grades the contract.
+      input.profile ?? '2025',
     ],
   );
   return rows[0]!;
@@ -529,7 +543,7 @@ export async function insertFindings(
 ): Promise<FindingRow[]> {
   if (findings.length === 0) return [];
 
-  const COLS = 9; // per-row bound params (requirement…code)
+  const COLS = 10; // per-row bound params (requirement…profile)
   const values: unknown[] = [];
   const tuples = findings.map((f, i) => {
     const base = i * COLS;
@@ -543,6 +557,7 @@ export async function insertFindings(
       f.instancePath ?? null,
       f.param ?? null,
       f.code ?? null,
+      f.profile ?? '2025',
     );
     const ph = Array.from({ length: COLS }, (_, j) => `$${base + j + 1}`);
     return `(${ph.join(', ')})`;
@@ -555,14 +570,14 @@ export async function insertFindings(
   // is inferred as `unknown`/text, so the cast pins it to boolean for the INSERT.
   const { rows } = await db.query<FindingRow>(
     `INSERT INTO finding (requirement, severity, detail, pointer, outdated,
-                          keyword, instance_path, param, code, transmission_id)
+                          keyword, instance_path, param, code, profile, transmission_id)
      SELECT v.requirement, v.severity, v.detail, v.pointer, v.outdated::boolean,
-            v.keyword, v.instance_path, v.param, v.code, ${txParam}
+            v.keyword, v.instance_path, v.param, v.code, v.profile, ${txParam}
      FROM (VALUES ${tuples.join(', ')})
        AS v(requirement, severity, detail, pointer, outdated,
-             keyword, instance_path, param, code)
+             keyword, instance_path, param, code, profile)
      RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated,
-               keyword, instance_path, param, code`,
+               keyword, instance_path, param, code, profile`,
     values,
   );
   return rows;

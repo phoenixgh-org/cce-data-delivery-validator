@@ -65,6 +65,14 @@ export interface ComplianceRow {
 /** The §7 severity carried by a per-transmission finding. */
 export type Severity = 'pass' | 'fail' | 'info';
 
+/**
+ * The requirement lineage a finding grades against (by1c.5): '2025' is the
+ * contract in force, 'ds013' the DS01.3 shadow run. Re-declared here from
+ * `Profile` in src/db/repository.ts for the same reason as the unions above —
+ * this file is browser code and imports no backend module.
+ */
+export type Profile = '2025' | 'ds013';
+
 /** A finding surfaced under a transmission's drill-down. */
 export interface FindingView {
   requirement: string;
@@ -87,6 +95,11 @@ export interface FindingView {
   instancePath: string | null;
   param: string | null;
   code: string | null;
+  /**
+   * Which requirement lineage this finding grades against. Every finding the
+   * service writes today is `'2025'`; `'ds013'` arrives with the shadow run.
+   */
+  profile: Profile;
 }
 
 /**

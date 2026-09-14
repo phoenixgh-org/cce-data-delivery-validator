@@ -425,7 +425,8 @@ Identical on this route and on the paginated list.
   "keyword": "required",
   "instancePath": "/data/0",
   "param": "AMID",
-  "code": null
+  "code": null,
+  "profile": "2025"
 }
 ```
 
@@ -440,6 +441,9 @@ Identical on this route and on the paginated list.
 - `code` — a stable identifier for transport and heuristic findings; `null` for schema
   findings, which are identified by `keyword` instead. §1.3 auth findings and pure
   `info` observations carry neither.
+- `profile` — the requirement lineage the finding grades against: `2025` (the contract
+  in force) or `ds013` (the DS01.3 shadow run). Every finding the service writes today
+  is `2025`.
 
 | `code`                          | Req   | Raised when                                          |
 | ------------------------------- | ----- | ---------------------------------------------------- |

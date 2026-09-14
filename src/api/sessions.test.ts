@@ -188,6 +188,7 @@ test(
           instancePath: null,
           param: null,
           code: null,
+          profile: '2025',
         },
       ]);
       assert.deepEqual(body.transmissions[1]?.findings, [
@@ -201,6 +202,7 @@ test(
           instancePath: null,
           param: null,
           code: 'tx.body_too_large',
+          profile: '2025',
         },
       ]);
 

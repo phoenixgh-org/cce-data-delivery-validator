@@ -158,6 +158,16 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
   assert.equal(single.keyword, null);
   assert.equal(single.instance_path, null);
   assert.equal(single.param, null);
+  // Lineage (by1c.5): omitted on insert, so the column default applies.
+  assert.equal(single.profile, '2025');
+
+  // An explicit lineage round-trips — the shadow run (by1c.6) writes 'ds013'.
+  const shadow = await insertFinding(tx.id, {
+    requirement: '5.3.3',
+    severity: 'fail',
+    profile: 'ds013',
+  });
+  assert.equal(shadow.profile, 'ds013');
 
   const many = await insertFindings(tx.id, [
     { requirement: '1.2', severity: 'pass' },
@@ -169,9 +179,14 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
       keyword: 'required',
       instancePath: '/data/0',
       param: 'EERR',
+      profile: 'ds013',
     },
   ]);
   assert.equal(many.length, 2);
+  // Per-row lineage in the multi-row INSERT: default on the first, explicit on
+  // the second — proving the column is bound per tuple, not once per statement.
+  assert.equal(many[0]?.profile, '2025');
+  assert.equal(many[1]?.profile, 'ds013');
   assert.equal(many[1]?.pointer, '/data/0');
   // The schema fail carries its Ajv keyword/instancePath/param and no code.
   assert.equal(many[1]?.keyword, 'required');
@@ -189,7 +204,7 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
     'SELECT count(*) AS n FROM finding WHERE transmission_id = $1',
     [tx.id],
   );
-  assert.equal(rows[0]?.n, '3', 'all three findings recorded');
+  assert.equal(rows[0]?.n, '4', 'all four findings recorded');
 
   await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
 });

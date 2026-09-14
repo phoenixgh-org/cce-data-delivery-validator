@@ -73,6 +73,8 @@ function toFindingView(f: FindingRow) {
     instancePath: f.instance_path,
     param: f.param,
     code: f.code,
+    // Requirement lineage (by1c.5): '2025' on every finding written today.
+    profile: f.profile,
   };
 }
 
