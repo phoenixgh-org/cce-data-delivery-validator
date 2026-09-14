@@ -23,6 +23,7 @@
 import { Fragment, useState, type CSSProperties } from 'react';
 
 import {
+  CONTRACT_PROFILE,
   disableAuth,
   enableAuth,
   type AuthMethod,
@@ -79,13 +80,18 @@ export interface SetupProps {
  * `schemaVersion` comes from the server-reported `schemas`, never a literal: a
  * hardcoded version would keep the copy-paste sample earning a 200 only until
  * the registry moved off it, and then hand a first-run supplier the 422 the
- * "Schema & lifecycle" line one column right already contradicts. `schemas` is
- * ordered oldest-first (SchemaRegistry.provenance()), so the last entry is the
- * newest registered version — the one ingest grades as current.
+ * "Schema & lifecycle" line one column right already contradicts.
  *
- * With no registered version there is nothing truthful to name, so the field is
- * omitted rather than guessed (same rule as the provenance line, beads 3cq).
- * Cannot happen with the current registry — load() seeds it.
+ * It is the newest CONTRACT-PROFILE entry, not simply the last one. `schemas`
+ * now carries a second lineage — the DS01.3 Annex 4 draft, registered as the
+ * shadow profile — and taking the last entry would put its revision key in the
+ * sample. The body below is the `cce-interop` RTMD shape, so that sample would
+ * be graded against the draft schema and hand a first-run supplier the very 422
+ * this function exists to avoid.
+ *
+ * With no contract version registered there is nothing truthful to name, so the
+ * field is omitted rather than guessed (same rule as the provenance line, beads
+ * 3cq). Cannot happen with the current registry — load() seeds it.
  *
  * Rendered multi-line for readability: the callers embed it in a shell snippet
  * as `-d '<body>'`, so it must stay free of single quotes (it is).
@@ -96,7 +102,10 @@ export interface SetupProps {
  * auu) and both times only a manual audit caught it (beads lg8).
  */
 export function sampleBody(schemas: SchemaProvenance[]): string {
-  const version = schemas.at(-1)?.version;
+  // `schemas` is ordered oldest-first within each profile (SchemaRegistry
+  // .provenance()), so the LAST contract-profile entry is the newest one — the
+  // version ingest grades as current.
+  const version = schemas.filter((s) => s.profile === CONTRACT_PROFILE).at(-1)?.version;
   const schemaLine = version === undefined ? '' : `\n    "schemaVersion": "${version}",`;
   return `{
   "meta": {${schemaLine}
@@ -571,6 +580,12 @@ export function Setup(props: SetupProps) {
 
   const body = sampleBody(schemas);
 
+  // The registered set is TWO lineages (schema registry header). Split once
+  // here: the contract cohort is what the panel calls official and grades
+  // against, the rest is shadow and gets its own, clearly-labelled line.
+  const contractSchemas = schemas.filter((s) => s.profile === CONTRACT_PROFILE);
+  const shadowSchemas = schemas.filter((s) => s.profile !== CONTRACT_PROFILE);
+
   const curlExample = [
     `curl -X POST '${absoluteIngestUrl}' \\`,
     `  -H 'Content-Type: ${CONTENT_TYPE}' \\`,
@@ -675,7 +690,7 @@ export function Setup(props: SetupProps) {
                 marginBottom: 16,
               }}
             >
-              {schemas.length === 0 ? (
+              {contractSchemas.length === 0 ? (
                 // Should not happen — SchemaRegistry.load() seeds itself — but a
                 // provenance line is the wrong place to guess. Say what the
                 // service reported, never a version it did not.
@@ -683,7 +698,7 @@ export function Setup(props: SetupProps) {
               ) : (
                 <>
                   Validating against official{' '}
-                  {schemas.map((s, i) => (
+                  {contractSchemas.map((s, i) => (
                     <Fragment key={s.version}>
                       {i > 0 && ', '}
                       <strong style={{ color: 'var(--text)' }}>{s.version}</strong>{' '}
@@ -692,15 +707,41 @@ export function Setup(props: SetupProps) {
                       </span>
                     </Fragment>
                   ))}{' '}
-                  — {schemas.length === 1 ? 'our vendored copy' : 'our vendored copies'},
+                  — {contractSchemas.length === 1 ? 'our vendored copy' : 'our vendored copies'},
                   byte-identical to the bytes published upstream, and the{' '}
-                  {schemas.length === 1 ? 'only registered version' : 'whole registered set'}.
+                  {contractSchemas.length === 1
+                    ? 'only registered version'
+                    : 'whole registered set'}
+                  .
                 </>
               )}{' '}
               Schemas are never fetched at runtime: the{' '}
               <code style={{ fontFamily: 'var(--mono)' }}>$id</code> inside the schema names the
               version, it is not a download location. Inactive endpoints are purged after 7 days;
               the clock resets on each POST.
+              {/*
+                The shadow lineage gets its OWN sentence, never a comma in the
+                list above. These bytes are an unpublished draft: they are not
+                what a transmission is graded against, and the line right above
+                calls its versions "official" — folding a draft into it would
+                make that sentence false. The hash and the draft date are
+                rendered from the entry, so the reader can tell exactly which
+                revision of a moving document is loaded.
+              */}
+              {shadowSchemas.map((s) => (
+                <div key={s.version} style={{ marginTop: 8 }}>
+                  Also loaded, not graded against:{' '}
+                  <strong style={{ color: 'var(--text)' }}>
+                    DS01.3 Annex 4 revision {s.version}
+                  </strong>{' '}
+                  <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
+                    (sha256 {shortSha(s.sha256)})
+                  </span>{' '}
+                  — an unpublished DRAFT
+                  {s.draftDate === undefined ? '' : ` dated ${s.draftDate}`}, pinned by hash so you
+                  can see which revision is loaded. It may be re-pinned as the proposal moves.
+                </div>
+              ))}
             </div>
 
             <div style={{ ...eyebrowStyle, color: 'var(--fail)' }}>Danger zone</div>

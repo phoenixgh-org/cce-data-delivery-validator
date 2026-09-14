@@ -228,12 +228,19 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     });
   }
 
-  // Log the blessed registry provenance at startup.
+  // Log the blessed registry provenance at startup — EVERY registered entry,
+  // both lineages, not just the contract cohort. SchemaRegistry.load() has
+  // already compiled all of them (it throws at boot if any set of blessed bytes
+  // does not), so anything missing from this log is a version the service is not
+  // actually holding, which is exactly what the line exists to reveal.
   app.ready(() => {
-    for (const version of registry.supportedVersions()) {
+    for (const { version, profile, draftDate } of registry.provenance()) {
       const entry = registry.get(version);
       if (entry) {
-        app.log.info(`registry: ${entry.version} (sha256 ${entry.sha256}) compiled`);
+        const draft = draftDate === undefined ? '' : `, draft ${draftDate}`;
+        app.log.info(
+          `registry: ${entry.version} (profile ${profile}${draft}, sha256 ${entry.sha256}) compiled`,
+        );
       }
     }
   });

@@ -41,7 +41,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as React from 'react';
 
-import { SchemaRegistry } from '../../schema-registry.js';
+import { SchemaRegistry, type SchemaProvenance } from '../../schema-registry.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
@@ -54,13 +54,25 @@ const registry = SchemaRegistry.load();
 
 /**
  * What the API serves the panel (GET /api/sessions/:uuid → `schemas`): the
- * registry's own provenance, oldest first. Copied into a mutable array because
- * the browser-side `SchemaProvenance[]` mirror is not readonly.
+ * registry's own provenance, oldest first within each lineage. Copied into a
+ * mutable array because the browser-side `SchemaProvenance[]` mirror is not
+ * readonly, and carrying `profile` because that is what the panel selects the
+ * sample's version on — a fixture that dropped it would exercise a list the API
+ * never serves.
  */
-function panelSchemas(): { version: string; sha256: string }[] {
-  return registry.provenance().map(({ version, sha256 }) => ({ version, sha256 }));
+function panelSchemas(): SchemaProvenance[] {
+  return registry
+    .provenance()
+    .map(({ version, sha256, profile, draftDate }) => ({ version, sha256, profile, draftDate }));
 }
 
+/**
+ * The sample must name the current CONTRACT version, not simply the newest
+ * registered one: the registered set spans two lineages, and the body below is
+ * the `cce-interop` RTMD shape. Naming the shadow lineage's revision would hand
+ * a first-run supplier a guaranteed 422 — the third way this sample could rot
+ * (after 48h's hardcoded version and auu's wrong shape).
+ */
 test('sampleBody() renders a body the newest registered schema accepts', () => {
   const current = registry.currentVersion();
   assert.notEqual(current, null, 'registry must register at least one version');

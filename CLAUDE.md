@@ -34,7 +34,7 @@ key; retention keyed to POST inactivity (`RETENTION_MS` in
 | Location | Content |
 |----------|---------|
 | `DESIGN.md` | Scope, locked decisions, ingest pipeline, verifiability matrix. Start here. |
-| `src/schemas/cce-interop-*.json` | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts`; 0.8.1 (JSON Schema 2020-12) is current, and 0.8.0 (draft-07, compiled per-entry with the matching Ajv build) is registered as the deliberate outdated cohort. Registering a further version is a spec decision, not mechanical work — ask before vendoring one. |
+| `src/schemas/*.json` | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts` under two lineages: the `2025` contract profile (`cce-interop-*.json`, where 0.8.1 (JSON Schema 2020-12) is current and 0.8.0 (draft-07, compiled per-entry with the matching Ajv build) is the deliberate outdated cohort) and the `ds013` shadow profile (`pqs-e006-ds01-annex4-1.json`, the DS01.3 Annex 4 delivery-schema change proposal — an unpublished draft, and the one file here that MAY be re-pinned in place when the proposal is revised). Registering a further version is a spec decision, not mechanical work — ask before vendoring one. |
 | `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. **Local-only**: `docs/internal/` is gitignored, so it is absent from a fresh clone. |
 | WHO PQS E006/DS01 (PQS catalogue) and `https://docs.2to8.cc/cce-data-interop/` | **Authoritative** public sources for the spec, Annex 1 data objects, and the published `cce-interop` schemas. |
 

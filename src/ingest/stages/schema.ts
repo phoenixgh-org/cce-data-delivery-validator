@@ -129,7 +129,7 @@ export function schemaStage(): Stage {
           requirement: '3.2',
           severity: 'fail',
           detail: `meta.schemaVersion is absent or not a string; supported: ${ctx.registry
-            .supportedVersions()
+            .acceptedVersions()
             .join(', ')} (§3.2)`,
           pointer: '/meta/schemaVersion',
           code: 'tx.missing_schema_version',
@@ -195,7 +195,11 @@ export function schemaStage(): Stage {
       // accepted — we record an info finding (not a pass, not a fail) carrying
       // the `outdated` flag so the dashboard can surface the OUTDATED SCHEMA tag
       // and nudge an upgrade. A current-version validation records a pass.
-      const current = ctx.registry.currentVersion();
+      // Currency is judged WITHIN the lineage the resolved entry belongs to, so a
+      // contract-profile transmission is never called outdated because a newer
+      // revision of the shadow lineage exists (registry header: current/outdated
+      // is intra-profile only).
+      const current = ctx.registry.currentVersion(res.entry.profile);
       if (current !== null && res.entry.version !== current) {
         ctx.findings.push({
           requirement: '3.2',

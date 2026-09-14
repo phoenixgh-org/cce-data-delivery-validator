@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import {
+  CONTRACT_PROFILE,
   deleteSessionData,
   getSession,
   listTransmissions,
@@ -58,10 +59,17 @@ const POLL_INTERVAL_MS = 5000;
  * scroll below when a second version is registered. Empty/multi are handled the
  * way Setup handles them: never name a version the service did not report, and
  * list the whole registered set when there is more than one.
+ *
+ * CONTRACT PROFILE ONLY. The registered set now spans two lineages, and the
+ * header states what transmissions are GRADED against — a shadow revision listed
+ * here would read as a third contract version ("schema 0.8.0, 0.8.1, 1") and say
+ * something the service does not do. The shadow entry is named in full, and
+ * labelled a draft, in the Setup panel's provenance line instead.
  */
 function schemaLabel(schemas: SchemaProvenance[]): string {
-  if (schemas.length === 0) return 'no schema';
-  return `schema ${schemas.map((s) => s.version).join(', ')}`;
+  const contract = schemas.filter((s) => s.profile === CONTRACT_PROFILE);
+  if (contract.length === 0) return 'no schema';
+  return `schema ${contract.map((s) => s.version).join(', ')}`;
 }
 
 const MS_PER_DAY = 86_400_000;

@@ -73,6 +73,16 @@ export type Severity = 'pass' | 'fail' | 'info';
  */
 export type Profile = '2025' | 'ds013';
 
+/**
+ * Which lineage is the contract in force — MIRRORS `CONTRACT_PROFILE` in
+ * src/schema-registry.ts, re-declared rather than imported for the same reason
+ * as the unions above (browser code imports no backend module).
+ *
+ * Every dashboard surface that names "the" schema version selects on this, so
+ * the day the backend constant flips, these follow by editing one literal.
+ */
+export const CONTRACT_PROFILE: Profile = '2025';
+
 /** A finding surfaced under a transmission's drill-down. */
 export interface FindingView {
   requirement: string;
@@ -302,6 +312,18 @@ export interface SchemaProvenance {
   version: string;
   /** Lowercase hex SHA-256 of the vendored bytes, computed server-side. */
   sha256: string;
+  /**
+   * Which lineage the version belongs to. Not every registered schema is
+   * contract-grade: the DS01.3 draft rides in this same list as the shadow
+   * lineage, so any surface that names "the" schema version must select on this
+   * (see CONTRACT_PROFILE in Setup.tsx) rather than taking the newest entry.
+   */
+  profile: Profile;
+  /**
+   * ISO date of the draft these bytes are a copy of, present only for an
+   * unpublished proposal — what licenses a surface to label the entry a draft.
+   */
+  draftDate?: string;
 }
 
 /**

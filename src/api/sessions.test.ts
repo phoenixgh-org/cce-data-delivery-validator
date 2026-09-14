@@ -245,21 +245,27 @@ test(
     try {
       const res = await app.inject({ method: 'GET', url: `/api/sessions/${session.uuid}` });
       assert.equal(res.statusCode, 200);
-      const body = res.json() as { schemas: Array<{ version: string; sha256: string }> };
+      const body = res.json() as {
+        schemas: Array<{ version: string; sha256: string; profile: string; draftDate?: string }>;
+      };
 
       const registry = SchemaRegistry.load();
+      // Compared against the provenance list WHOLE — profile and draftDate
+      // included — because the dashboard now selects on those: the registered set
+      // spans two lineages, and a response that dropped `profile` would leave the
+      // Setup panel unable to tell the contract cohort from the shadow draft.
       assert.deepEqual(
         body.schemas,
-        registry.provenance().map((p) => ({ version: p.version, sha256: p.sha256 })),
+        JSON.parse(JSON.stringify(registry.provenance())),
         'the response reports exactly the registered set',
       );
       assert.ok(body.schemas.length > 0, 'at least one schema is registered');
 
       for (const { version, sha256 } of body.schemas) {
         assert.match(sha256, /^[0-9a-f]{64}$/, `${version}: full lowercase-hex sha256`);
-        const bytes = readFileSync(
-          fileURLToPath(new URL(`../schemas/cce-interop-${version}.json`, import.meta.url)),
-        );
+        const file =
+          version === '1' ? 'pqs-e006-ds01-annex4-1.json' : `cce-interop-${version}.json`;
+        const bytes = readFileSync(fileURLToPath(new URL(`../schemas/${file}`, import.meta.url)));
         assert.equal(
           sha256,
           createHash('sha256').update(bytes).digest('hex'),
