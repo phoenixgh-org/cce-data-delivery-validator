@@ -12,7 +12,8 @@
  *  - the right readout reads the `ScopeTotals` object.
  */
 import type { ReactElement } from 'react';
-import type { SourceCount, ScopeTotals } from '../api';
+import type { Profile, ShadowProvenance, SourceCount, ScopeTotals } from '../api';
+import { gradingLegend } from '../profiles';
 import { Icon } from './ui/Icon';
 
 /** Local window union — api.ts types `window` as a plain string. */
@@ -93,7 +94,26 @@ export interface FilterBarProps {
   scoped: ScopeTotals;
   onWindowChange(w: WindowValue): void;
   onSourceChange(s: string): void;
+  /**
+   * The lineage graded in the shadow, or null when the service registers only
+   * one (by1c.11). NULL IS THE HIDE SIGNAL — the legend then names the contract
+   * alone. Passed down rather than re-derived from finding sets, so a session
+   * with no shadow findings yet still reads correctly.
+   */
+  shadowProfile: Profile | null;
+  /** The shadow lineage's vendored bytes, for the legend's draft date. */
+  shadow: ShadowProvenance | null;
 }
+
+/**
+ * The legend's tooltip (by1c.11, verbatim). It says which lineage the numbers a
+ * supplier is graded on come from, and where the shadow lineage's answers show
+ * up instead — the shadow is previewed, never scored.
+ */
+export const GRADING_LEGEND_TITLE =
+  'The matrix and pass rate grade against the 2025 requirements. DS01.3 is graded in the ' +
+  'shadow and shown in the readiness strip, the second verdict column and the transmission ' +
+  'detail.';
 
 export function FilterBar({
   window,
@@ -102,7 +122,13 @@ export function FilterBar({
   scoped,
   onWindowChange,
   onSourceChange,
+  shadowProfile,
+  shadow,
 }: FilterBarProps): ReactElement {
+  // Read-only text: no control, no state, no hover. The bar already wraps, so at
+  // narrow widths the legend drops to its own line rather than crushing the
+  // scope readout.
+  const legend = gradingLegend(shadowProfile, shadow);
   const totalCount = sources.reduce((sum, s) => sum + s.count, 0);
   return (
     <div
@@ -155,6 +181,24 @@ export function FilterBar({
         <span style={{ color: scoped.distinctIssues ? 'var(--mixed)' : 'var(--text-muted)' }}>
           {scoped.distinctIssues} distinct issue{scoped.distinctIssues === 1 ? '' : 's'}
         </span>
+      </span>
+      <span
+        title={GRADING_LEGEND_TITLE}
+        style={{
+          marginLeft: 'auto',
+          fontSize: 11.5,
+          fontFamily: 'var(--sans)',
+          color: 'var(--text-muted)',
+        }}
+      >
+        Grading: <strong style={{ color: 'var(--text)' }}>{legend.contract}</strong>
+        {legend.shadow !== null && (
+          <>
+            {' · shadow: '}
+            {legend.shadow.name}{' '}
+            <span style={{ fontFamily: 'var(--mono)' }}>{legend.shadow.detail}</span>
+          </>
+        )}
       </span>
     </div>
   );

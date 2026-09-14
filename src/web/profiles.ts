@@ -1,0 +1,143 @@
+/**
+ * The profile vocabulary (by1c.11) — the ONE place the dashboard turns a lineage
+ * id into words a supplier reads.
+ *
+ * The shadow-grading handoff makes the wording binding, because a supplier bound
+ * to a 2025 LTA must never be told the version their contract requires is stale:
+ * the contract lineage is "2025 (contract)", the shadow lineage is "DS01.3" with
+ * the vendored draft's date, and the words "old", "new", "current", "latest",
+ * "v1" and "v2" are NEVER used of a lineage. "Outdated" stays available, but only
+ * WITHIN a lineage (0.8.0 vs 0.8.1), never across two.
+ *
+ * Two consequences shape the exports below:
+ *
+ *  1. "(contract)" belongs to whichever profile is `CONTRACT_PROFILE` — the
+ *     registry's single flip point — so {@link profileLabel} derives the suffix
+ *     from that constant rather than hanging it on the '2025' key. The day the
+ *     contract moves, every surface follows without an edit here.
+ *  2. Nothing here names a lineage from a literal at the call site. Callers pass
+ *     the profile they read off the session response, and the name comes from
+ *     {@link PROFILE_NAME}.
+ *
+ * Pure and browser-safe: no DOM, no JSX, no backend import — which is also what
+ * lets profiles.test.ts exercise it on the Node runner without the React shim.
+ * The later web bites (by1c.12 verdict dots, by1c.13 readiness strip, by1c.14
+ * detail groups) import this module rather than restating the words.
+ *
+ * NOT in scope here: the server-side `LINEAGE_NAME` in Setup.tsx / pipeline.ts.
+ * Folding those in is by1c.32, a separate commit.
+ */
+import { CONTRACT_PROFILE, type Profile, type ShadowProvenance } from './api';
+
+/**
+ * The bare reader-facing name of each lineage — no role suffix, no date. The
+ * contract marker and the draft date are composed on top of this so one name
+ * serves the legend, the verdict columns and the tooltips alike.
+ */
+export const PROFILE_NAME: Record<Profile, string> = {
+  '2025': '2025',
+  ds013: 'DS01.3',
+};
+
+/**
+ * A lineage's name with its role: "2025 (contract)" for whichever profile is the
+ * contract in force, the bare name for every other one.
+ */
+export function profileLabel(profile: Profile): string {
+  return profile === CONTRACT_PROFILE
+    ? `${PROFILE_NAME[profile]} (contract)`
+    : PROFILE_NAME[profile];
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * A draft date as the legend shows it: `'2026-09-08'` → `"Sep 8"`.
+ *
+ * The YYYY-MM-DD parts are read off the string directly and NOT handed to
+ * `new Date(...)`: a date-only string parses as UTC midnight and then renders in
+ * the viewer's local zone, which shows the previous day west of Greenwich. The
+ * date is provenance, so it must read the same everywhere.
+ *
+ * Anything that is not a YYYY-MM-DD date comes back unchanged — an unrecognised
+ * value is shown as the server sent it rather than guessed at.
+ */
+export function formatDraftDate(date: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (match === null) return date;
+  const month = MONTHS[Number(match[2]) - 1];
+  const day = Number(match[3]);
+  if (month === undefined || day < 1 || day > 31) return date;
+  return `${month} ${day}`;
+}
+
+/**
+ * The shadow half of a legend, split so a surface can set the provenance detail
+ * in the mono stack while the name stays in the body face.
+ */
+export interface ShadowLegendParts {
+  /** `"DS01.3 draft"` for an unpublished proposal, `"DS01.3"` for a published entry. */
+  name: string;
+  /** `"Sep 8"` for a draft, the version string for a published entry — mono. */
+  detail: string;
+}
+
+/**
+ * The shadow lineage's label, in parts — `{ name: 'DS01.3 draft', detail: 'Sep 8' }`.
+ *
+ * `draftDate` present is what licenses calling the entry a draft (api.ts,
+ * `ShadowProvenance`); a published shadow entry is named by version alone, the
+ * same split Setup.tsx's provenance line makes. Null when there is no shadow
+ * lineage — `session.shadowProfile === null` is the hide signal for every shadow
+ * surface, and `shadow === null` is the same condition.
+ */
+export function shadowLegendParts(
+  shadow: ShadowProvenance | null,
+  profile: Profile | null,
+): ShadowLegendParts | null {
+  if (shadow === null || profile === null) return null;
+  const name = PROFILE_NAME[profile];
+  return shadow.draftDate === undefined
+    ? { name, detail: shadow.version }
+    : { name: `${name} draft`, detail: formatDraftDate(shadow.draftDate) };
+}
+
+/**
+ * The shadow label as one string — `"DS01.3 draft Sep 8"`, or `"DS01.3 0.9.0"`
+ * for a published entry. Null when no shadow lineage is registered.
+ *
+ * The profile is a parameter rather than a literal for the reason the module
+ * header gives: no caller names a lineage by hand.
+ */
+export function shadowLegend(
+  shadow: ShadowProvenance | null,
+  profile: Profile | null,
+): string | null {
+  const parts = shadowLegendParts(shadow, profile);
+  return parts === null ? null : `${parts.name} ${parts.detail}`;
+}
+
+/** The filter bar's grading legend, in the pieces the bar styles differently. */
+export interface GradingLegend {
+  /** `"2025 (contract)"` — rendered bold. */
+  contract: string;
+  /** The shadow half, or null when the "· shadow:" half is omitted entirely. */
+  shadow: ShadowLegendParts | null;
+}
+
+/**
+ * The legend that tells a supplier which lineage the matrix and pass rate grade
+ * against: `Grading: 2025 (contract) · shadow: DS01.3 draft Sep 8`.
+ *
+ * Read-only text, built from the contract constant and the session's shadow
+ * facts — the lineage the shadow ran under and its vendored bytes.
+ */
+export function gradingLegend(
+  shadowProfile: Profile | null,
+  shadow: ShadowProvenance | null,
+): GradingLegend {
+  return {
+    contract: profileLabel(CONTRACT_PROFILE),
+    shadow: shadowLegendParts(shadow, shadowProfile),
+  };
+}

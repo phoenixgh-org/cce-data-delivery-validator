@@ -422,7 +422,7 @@ export function Dashboard() {
     );
   }
 
-  const { session, expiresAt, schemas } = state.data;
+  const { session, expiresAt, schemas, shadow } = state.data;
   const ingestUrl = `/i/${session.uuid}`;
   const hasData = txCount > 0;
   const short = shortUuid(session.uuid);
@@ -574,6 +574,8 @@ export function Dashboard() {
         scoped={state.data.scoped}
         onWindowChange={setWindow}
         onSourceChange={setSource}
+        shadowProfile={session.shadowProfile}
+        shadow={shadow}
       />
 
       {/* Two-pane body */}
