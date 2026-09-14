@@ -35,6 +35,7 @@ import {
 import { ComplianceCard } from '../components/ComplianceCard';
 import { DeleteModal } from '../components/DeleteModal';
 import { FilterBar, type WindowValue } from '../components/FilterBar';
+import { ReadinessStrip } from '../components/ReadinessStrip';
 import { Setup } from '../components/Setup';
 import { TransmissionsCard } from '../components/TransmissionsCard';
 import { Sparkline } from '../components/ui/Sparkline';
@@ -480,87 +481,107 @@ export function Dashboard() {
         onRequestDelete={() => setDeleteModalOpen(true)}
       />
 
-      {/* Scorecard strip */}
+      {/* Scorecard strip. The headline row is unchanged; the DS01.3 readiness
+          strip (by1c.13) sits UNDER it inside the same bordered surface, which
+          is why the outer element is now a column and the flex row that used to
+          be the strip is its first child. */}
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 24,
           padding: '13px 24px',
           background: 'var(--surface)',
           borderBottom: '1px solid var(--border)',
         }}
       >
-        {(
-          [
-            { value: rollup.passing, label: 'passing', color: 'var(--pass)' },
-            { value: rollup.failing, label: 'with failures', color: 'var(--fail)' },
-            { value: rollup.untested, label: 'untested', color: 'var(--neutral)' },
-          ] as const
-        ).map((m) => (
-          <div
-            key={m.label}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
-          >
-            <span
-              style={{
-                fontFamily: 'var(--mono)',
-                fontSize: 26,
-                fontWeight: 700,
-                color: m.color,
-                lineHeight: 1,
-              }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          {(
+            [
+              { value: rollup.passing, label: 'passing', color: 'var(--pass)' },
+              { value: rollup.failing, label: 'with failures', color: 'var(--fail)' },
+              { value: rollup.untested, label: 'untested', color: 'var(--neutral)' },
+            ] as const
+          ).map((m) => (
+            <div
+              key={m.label}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}
             >
-              {m.value}
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{m.label}</span>
-          </div>
-        ))}
-        <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)' }} />
-        <span style={{ flex: 1, fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-          <strong style={{ fontWeight: 700, color: 'var(--text)' }}>
-            {rollup.gradeable} of {rollup.total}
-          </strong>{' '}
-          requirements are verifiable from your traffic. The rest are self-attested or need active
-          testing.
-        </span>
-        {/* Pass-rate trend (4h4.10). Eyebrow + Sparkline (168×34) fed the server
+              <span
+                style={{
+                  fontFamily: 'var(--mono)',
+                  fontSize: 26,
+                  fontWeight: 700,
+                  color: m.color,
+                  lineHeight: 1,
+                }}
+              >
+                {m.value}
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>{m.label}</span>
+            </div>
+          ))}
+          <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border)' }} />
+          <span style={{ flex: 1, fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            <strong style={{ fontWeight: 700, color: 'var(--text)' }}>
+              {rollup.gradeable} of {rollup.total}
+            </strong>{' '}
+            requirements are verifiable from your traffic. The rest are self-attested or need active
+            testing.
+          </span>
+          {/* Pass-rate trend (4h4.10). Eyebrow + Sparkline (168×34) fed the server
             `trend` buckets over the current scope; the --pass area + --fail spike
             ticks render INSIDE Sparkline. The window label reads "full history"
             for the unscoped All view, else "last {window}". */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
+          >
+            <span
+              style={{
+                fontSize: 9.5,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                color: 'var(--text-faint)',
+              }}
+            >
+              Pass rate · {window === 'all' ? 'full history' : `last ${window}`}
+            </span>
+            <Sparkline buckets={state.data.trend} width={168} height={34} />
+          </div>
           <span
             style={{
-              fontSize: 9.5,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
               color: 'var(--text-faint)',
             }}
           >
-            Pass rate · {window === 'all' ? 'full history' : `last ${window}`}
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 999,
+                background: hasData ? 'var(--pass)' : 'var(--neutral)',
+                display: 'inline-block',
+              }}
+            />
+            {hasData ? 'live · updated just now' : 'no data yet'}
           </span>
-          <Sparkline buckets={state.data.trend} width={168} height={34} />
         </div>
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 11,
-            color: 'var(--text-faint)',
-          }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: 999,
-              background: hasData ? 'var(--pass)' : 'var(--neutral)',
-              display: 'inline-block',
-            }}
-          />
-          {hasData ? 'live · updated just now' : 'no data yet'}
-        </span>
+
+        {/* DS01.3 readiness strip (by1c.13) — how much of the scope's
+            contract-passing traffic would still pass under the shadow lineage,
+            and the shadow signatures standing in the way. It hides itself when
+            there is no shadow lineage, no readiness, or no contract-passing
+            traffic. NOT gated on failuresOnly: readiness is computed over the
+            scoped set alone, so the list filter must not move these numbers.
+            `readiness` is never undefined here — the first-load phase renders a
+            whole-page "Loading…" above, so the strip's skeleton variant is
+            prop-driven and covered by its test rather than reached on load. */}
+        <ReadinessStrip
+          readiness={state.data.readiness}
+          shadowProfile={session.shadowProfile}
+          activeSignatureKey={selectedSignature?.key ?? null}
+          onSelectSignature={onSelectSignature}
+        />
       </div>
 
       {/* Scoped filter strip (4h4.8) — sits between the scorecard and the panes;
