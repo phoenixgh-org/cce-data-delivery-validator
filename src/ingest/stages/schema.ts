@@ -153,6 +153,18 @@ function lastSegment(pointer: string): string | null {
 }
 
 /**
+ * Does `instancePath` address `record` itself, or something inside it?
+ *
+ * Matched on the segment boundary rather than as a bare string prefix, the same
+ * treatment clauseFor() gives `/meta`: without it `/data/0/records/10/LERR`
+ * counts as being inside `/data/0/records/1`, and a tenth record's explainer
+ * would stand as evidence about the second one (bd by1c.24).
+ */
+function withinRecord(record: string, instancePath: string): boolean {
+  return instancePath === record || instancePath.startsWith(`${record}/`);
+}
+
+/**
  * One record's unexplained null reading, recovered from the Ajv errors of a
  * failed record-level `oneOf`. Carries the errors it stands for so the caller
  * can drop them rather than report the same fact three times.
@@ -198,6 +210,12 @@ export interface NullExplanation {
  * The mains/solar `oneOf` in the same record does not match: its leaves sit AT
  * the record pointer (`required SVA`/`required DCSV`), not under it, so it keeps
  * reporting as the ordinary required-property failures it is.
+ *
+ * A container's leaves are scoped by BOTH the schema position and the instance
+ * position. Ajv's `schemaPath` says where in the SCHEMA a rule sits, so every
+ * item of the same array shares it: scoping on `schemaPath` alone gathers the
+ * leaves of every record that failed the same `oneOf`, and collapsing them into
+ * one record's statement silently drops the others' real defects (bd by1c.24).
  */
 export function translateNullExplanations(errors: readonly ErrorObject[]): {
   readonly explanations: readonly NullExplanation[];
@@ -211,15 +229,25 @@ export function translateNullExplanations(errors: readonly ErrorObject[]): {
     const record = container.instancePath;
     if (record === '') continue;
 
-    // The branch failures of THIS oneOf: Ajv nests their schemaPath under it.
+    // The branch failures of THIS oneOf, in THIS record: Ajv nests their
+    // schemaPath under the container's, but that is a position in the schema and
+    // every record in the array shares it, so the record's own pointer is what
+    // separates one record's leaves from its siblings' (by1c.24).
     const prefix = `${container.schemaPath}/`;
-    const leaves = errors.filter((e) => e !== container && e.schemaPath.startsWith(prefix));
+    const leaves = errors.filter(
+      (e) =>
+        e !== container && e.schemaPath.startsWith(prefix) && withinRecord(record, e.instancePath),
+    );
     if (leaves.length === 0) continue;
 
     // Half one: something was offered to explain the null, or should have been.
     const explained = leaves.some((e) => {
       const segment = lastSegment(e.instancePath);
-      if (segment !== null && EXPLAINER_OBJECTS.has(segment) && e.instancePath.startsWith(record)) {
+      if (
+        segment !== null &&
+        EXPLAINER_OBJECTS.has(segment) &&
+        withinRecord(record, e.instancePath)
+      ) {
         return true;
       }
       const missing = (e.params as { missingProperty?: unknown }).missingProperty;

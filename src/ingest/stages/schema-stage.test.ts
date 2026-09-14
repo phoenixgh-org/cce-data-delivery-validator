@@ -393,6 +393,114 @@ test('shadow: a null sensed value collapses to ONE tx.null_unexplained finding',
   assert.match(shadow[0]?.detail ?? '', /null TVC without an explaining LERR\/EERR/);
 });
 
+test('shadow: a SECOND failing record keeps its own findings (by1c.24)', () => {
+  // Two records fail the same record-level oneOf for different reasons. Ajv's
+  // schemaPath is a position in the SCHEMA, shared by every item of the array,
+  // so gathering a container's leaves by schemaPath alone hands record 0's
+  // collapse the leaves of record 1 as well — and record 1's defect is then
+  // dropped rather than reported. The translation must stay inside its record.
+  const payload = emsBaseline({ caseId: 'two-bad-records', index: 0 });
+  const records = payload.data[0]!.records as Record<string, unknown>[];
+  records[0]!.TVC = null; // LERR is null in the baseline: an unexplained null.
+  delete records[1]!.TVC; // a different defect entirely: the reading is absent.
+  const ctx = makeCtx(payload);
+  schemaStage().run(ctx);
+
+  const shadow = byProfile(ctx.findings, 'ds013');
+  const collapsed = shadow.filter((f) => f.code === 'tx.null_unexplained');
+  assert.equal(collapsed.length, 1, `only record 0 collapses, got ${JSON.stringify(shadow)}`);
+  assert.equal(collapsed[0]?.pointer, '/data/0/records/0');
+  assert.equal(collapsed[0]?.param, 'TVC');
+
+  // Record 1's missing reading still reaches the supplier. Ajv emits the
+  // `required` error once per failing branch of the oneOf, so the count is not
+  // 1 — what this pins is that the shadow run reports it as often as the
+  // contract run does, rather than silently losing it.
+  const missingTvc = (profile: Profile) =>
+    byProfile(ctx.findings, profile).filter(
+      (f) => f.pointer === '/data/0/records/1' && f.keyword === 'required' && f.param === 'TVC',
+    ).length;
+  assert.ok(missingTvc('ds013') > 0, 'record 1 is not swallowed by record 0 collapse');
+  assert.equal(missingTvc('ds013'), missingTvc('2025'), 'shadow loses nothing the contract sees');
+});
+
+test('shadow: a wrong-TYPE second record keeps both of its branch errors (by1c.24)', () => {
+  // The same scoping defect, in its other live shape: a string where a number
+  // belongs trips both branches of record 1's oneOf ("must be number" and "must
+  // be null"), and both were being absorbed into record 0's collapse.
+  const payload = emsBaseline({ caseId: 'two-bad-records-type', index: 0 });
+  const records = payload.data[0]!.records as Record<string, unknown>[];
+  records[0]!.TVC = null;
+  records[1]!.TVC = 'not-a-number';
+  const ctx = makeCtx(payload);
+  schemaStage().run(ctx);
+
+  const shadow = byProfile(ctx.findings, 'ds013');
+  assert.equal(shadow.filter((f) => f.code === 'tx.null_unexplained').length, 1);
+  const branchTypes = shadow
+    .filter((f) => f.pointer === '/data/0/records/1/TVC' && f.keyword === 'type')
+    .map((f) => f.param);
+  assert.ok(branchTypes.includes('number'), `normal branch kept, got ${branchTypes.join('|')}`);
+  assert.ok(branchTypes.includes('null'), `abnormal branch kept, got ${branchTypes.join('|')}`);
+});
+
+test('translateNullExplanations scopes leaves to their own record', () => {
+  // Pure-unit mirror of the two-record case, with record 10 as the sibling: the
+  // record pointer must be matched on the segment boundary, or `/records/10/...`
+  // reads as being inside `/records/1`.
+  const errors = [
+    {
+      keyword: 'type',
+      instancePath: '/data/0/records/1/TVC',
+      schemaPath: '#/allOf/1/oneOf/0/properties/TVC/type',
+      params: { type: 'number' },
+    },
+    {
+      keyword: 'type',
+      instancePath: '/data/0/records/1/LERR',
+      schemaPath: '#/allOf/1/oneOf/1/properties/LERR/type',
+      params: { type: 'string' },
+    },
+    {
+      keyword: 'oneOf',
+      instancePath: '/data/0/records/1',
+      schemaPath: '#/allOf/1/oneOf',
+      params: {},
+    },
+    // Record 10 fails the SAME oneOf — same schemaPath, different record.
+    {
+      keyword: 'required',
+      instancePath: '/data/0/records/10',
+      schemaPath: '#/allOf/1/oneOf/0/required',
+      params: { missingProperty: 'TVC' },
+    },
+    {
+      keyword: 'type',
+      instancePath: '/data/0/records/10/LERR',
+      schemaPath: '#/allOf/1/oneOf/1/properties/LERR/type',
+      params: { type: 'string' },
+    },
+    {
+      keyword: 'oneOf',
+      instancePath: '/data/0/records/10',
+      schemaPath: '#/allOf/1/oneOf',
+      params: {},
+    },
+  ] as unknown as ErrorObject[];
+
+  const { explanations, remaining } = translateNullExplanations(errors);
+  assert.equal(explanations.length, 1, 'only record 1 shows both halves of the rule');
+  assert.equal(explanations[0]?.pointer, '/data/0/records/1');
+  assert.equal(explanations[0]?.replaces.length, 2, 'it stands for its own two leaves only');
+  const kept = remaining.map((e) => `${e.keyword}@${e.instancePath}`);
+  assert.deepEqual(kept, [
+    'oneOf@/data/0/records/1',
+    'required@/data/0/records/10',
+    'type@/data/0/records/10/LERR',
+    'oneOf@/data/0/records/10',
+  ]);
+});
+
 test('shadow: an unresolved schemaVersion runs no shadow at all', () => {
   const ctx = makeCtx({ meta: { schemaVersion: '9.9.9', transferType: 'rtm' }, data: [] });
   schemaStage().run(ctx);
