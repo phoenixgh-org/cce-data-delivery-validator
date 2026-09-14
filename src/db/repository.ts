@@ -87,10 +87,11 @@ export interface InsertTransmissionInput {
 export type Severity = 'pass' | 'fail' | 'info';
 
 /**
- * The requirement lineage a finding grades against (by1c.5): `'2025'` is the
- * contract in force — the only value written today — and `'ds013'` is the
- * DS01.3 shadow run. Everything that grades filters on this so a shadow result
- * never reaches a supplier's response code or contract counts.
+ * The requirement lineage a finding graded against (by1c.5): `'2025'` is the
+ * contract in force, and `'ds013'` is the DS01.3 shadow run. Since by1c.6 a
+ * single transmission carries findings of both, persisted through this type by
+ * {@link insertFindings}, so everything that grades filters on this — a shadow
+ * result never reaches a supplier's response code or contract counts.
  */
 export type Profile = '2025' | 'ds013';
 
