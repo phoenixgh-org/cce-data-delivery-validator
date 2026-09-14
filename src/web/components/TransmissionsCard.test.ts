@@ -42,6 +42,8 @@ const {
   findingsCell,
   flaggedPointers,
   signatureEyebrow,
+  verdictColumns,
+  chipTitle,
 } = await import('./TransmissionsCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
@@ -305,4 +307,38 @@ test('the cross-filter chip calls an advisory an Advisory, not an Issue', () => 
   assert.equal(signatureEyebrow({ kind: 'advisory' }), 'Advisory');
   assert.equal(signatureEyebrow({ kind: 'schema' }), 'Issue');
   assert.equal(signatureEyebrow({ kind: 'check' }), 'Issue');
+});
+
+/**
+ * The verdict columns (by1c.12). The header's labels and the dots a row draws
+ * come from ONE function so the two cannot drift, and the shadow column exists
+ * only when the session reports a shadow lineage — the hide signal is served
+ * (`session.shadowProfile`), never inferred from whether shadow findings happen
+ * to be present.
+ */
+test('the shadow column appears only when a shadow lineage is registered', () => {
+  assert.deepEqual(verdictColumns('ds013'), [CONTRACT_PROFILE, 'ds013']);
+  assert.deepEqual(verdictColumns(null), [CONTRACT_PROFILE]);
+});
+
+/**
+ * The cross-filter chip's title (by1c.12). A shadow cross-filter must announce
+ * the lineage it came from, or it reads as a defect against obligations that are
+ * not in force. The rule tests "not the contract profile" rather than naming
+ * ds013, and an advisory — which grades against no lineage at all — takes no
+ * prefix.
+ */
+test('a shadow signature prefixes the chip title with its lineage; a contract one does not', () => {
+  assert.equal(
+    chipTitle({ title: 'RTM logger identity missing', profile: 'ds013' }),
+    'DS01.3 · RTM logger identity missing',
+  );
+  assert.equal(
+    chipTitle({ title: 'transferredAt has offset', profile: CONTRACT_PROFILE }),
+    'transferredAt has offset',
+  );
+  assert.equal(
+    chipTitle({ title: 'Null padding observed', profile: null }),
+    'Null padding observed',
+  );
 });

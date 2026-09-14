@@ -629,6 +629,9 @@ export function Dashboard() {
           onLoadMore={onLoadMore}
           hasMore={listCursor !== null}
           isLoadingMore={isLoadingMore}
+          // Shadow lineage (by1c.12): null hides the DS01.3 verdict column and
+          // the row's second dot. Served, not derived from the findings.
+          shadowProfile={session.shadowProfile}
         />
       </div>
 

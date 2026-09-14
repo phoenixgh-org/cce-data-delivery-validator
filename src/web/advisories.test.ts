@@ -37,7 +37,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isAdvisory, type FindingView } from './api.js';
+import { CONTRACT_PROFILE, isAdvisory, type FindingView } from './api.js';
 import { ADVISORY_COPY, advisoryLabel, splitFindings } from './advisories.js';
 
 /** A §7 verdict finding — the kind that DOES carry a grade. */
@@ -52,6 +52,7 @@ function finding(over: Partial<FindingView> = {}): FindingView {
     instancePath: null,
     param: null,
     code: null,
+    profile: CONTRACT_PROFILE,
     ...over,
   };
 }

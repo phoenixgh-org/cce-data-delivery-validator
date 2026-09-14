@@ -23,12 +23,14 @@ import {
 } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import type { FindingView, Severity, Signature, TransmissionView } from '../api';
+import type { FindingView, Profile, Severity, Signature, TransmissionView } from '../api';
 import type { DisplayStatus } from '../api';
 import { CONTRACT_PROFILE, isAdvisory } from '../api';
 import { ADVISORY_COPY, advisoryLabel, splitFindings } from '../advisories';
+import { PROFILE_NAME } from '../profiles';
 import { Icon } from './ui/Icon';
 import { StatusPill } from './ui/StatusPill';
+import { VerdictPair } from './ui/VerdictDot';
 
 /** Props mirror Dashboard.tsx's TransmissionsPaneProps (lines 186-194) verbatim. */
 export interface TransmissionsCardProps {
@@ -62,6 +64,14 @@ export interface TransmissionsCardProps {
   hasMore?: boolean;
   /** Whether a load-more page fetch is in flight; gates `onLoadMore` (no double-fire). */
   isLoadingMore?: boolean;
+  /**
+   * The lineage graded in the shadow beside the contract, or null when the
+   * service registers none (by1c.12). NULL IS THE HIDE SIGNAL: it drops the
+   * DS01.3 header column and the row's second verdict dot. Passed down from the
+   * session read rather than re-derived from the findings, so a session that
+   * simply has no shadow findings yet still renders the column.
+   */
+  shadowProfile: Profile | null;
 }
 
 /** Row status-dot tone derived from a transmission's findings (not HTTP). */
@@ -267,14 +277,63 @@ export function findingsCell(findings: FindingView[]): FindingsCell {
   };
 }
 
+/** Width of one verdict column — header label and the dot slot under it. */
+const VERDICT_COL_PX = 50;
+
+/**
+ * The verdict columns the list shows, left to right (by1c.12): the contract
+ * lineage always, the shadow lineage only when one is registered.
+ *
+ * This is the header-visibility rule AND the label source in one function, so
+ * the column count the header draws and the dots a row draws cannot drift apart.
+ * The names come from the profile vocabulary (by1c.11), never from a literal —
+ * the day CONTRACT_PROFILE flips, the header follows.
+ */
+export function verdictColumns(shadowProfile: Profile | null): Profile[] {
+  return shadowProfile === null ? [CONTRACT_PROFILE] : [CONTRACT_PROFILE, shadowProfile];
+}
+
+/**
+ * How many findings the SHADOW lineage failed this transmission on — the count
+ * in the verdict pair's tooltip parenthetical.
+ *
+ * Advisories are excluded for the reason {@link findingsCell} gives: an advisory
+ * is not a verdict and must never inflate a number a supplier has to explain.
+ */
+function shadowFailCount(findings: FindingView[], shadowProfile: Profile | null): number {
+  if (shadowProfile === null) return 0;
+  return findings.filter(
+    (f) => f.profile === shadowProfile && f.severity === 'fail' && !isAdvisory(f),
+  ).length;
+}
+
+/**
+ * The cross-filter chip's title (by1c.12) — prefixed `DS01.3 · ` when the active
+ * signature belongs to a lineage other than the contract in force.
+ *
+ * Without the prefix a shadow cross-filter is indistinguishable from a defect
+ * against the obligations in force, which is the one confusion the shadow
+ * surfaces exist to prevent. The test is "not the contract profile" rather than
+ * "is ds013", so a third lineage names itself correctly; an advisory signature
+ * carries NO profile (api.ts, `Signature.profile`) and grades against no
+ * lineage, so it takes no prefix.
+ */
+export function chipTitle(sig: Pick<Signature, 'title' | 'profile'>): string {
+  const { profile } = sig;
+  if (profile === null || profile === CONTRACT_PROFILE) return sig.title;
+  return `${PROFILE_NAME[profile]} · ${sig.title}`;
+}
+
 function TxRow({
   tx,
   selected,
   onSelect,
+  shadowProfile,
 }: {
   tx: TransmissionView;
   selected: boolean;
   onSelect: () => void;
+  shadowProfile: Profile | null;
 }): ReactElement {
   const tone = dotTone(tx.findings);
   const outdated = tx.findings.some((f) => f.outdated);
@@ -349,6 +408,26 @@ function TxRow({
         }}
       >
         {findings.text}
+      </span>
+      {/* Verdict dots (by1c.12) — one per registered lineage, right-aligned under
+          the header's columns. Neutral by design: the 6px tone dot at the head of
+          the row already colours the contract verdict. The slot is 11px tall, so
+          it sits inside the existing line box and ROW_ESTIMATE_PX holds. */}
+      <span
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          width: VERDICT_COL_PX * verdictColumns(shadowProfile).length,
+          flexShrink: 0,
+        }}
+      >
+        <VerdictPair
+          contract={tx.verdicts[CONTRACT_PROFILE]}
+          shadow={shadowProfile === null ? null : (tx.verdicts[shadowProfile] ?? null)}
+          shadowProfile={shadowProfile}
+          findingsCount={shadowFailCount(tx.findings, shadowProfile)}
+        />
       </span>
     </div>
   );
@@ -1518,6 +1597,7 @@ export function TransmissionsCard({
   onLoadMore,
   hasMore,
   isLoadingMore,
+  shadowProfile,
 }: TransmissionsCardProps): ReactElement {
   // Default to the newest (first) transmission when nothing is selected or the
   // selection no longer exists. The API returns newest-first, so [0] is newest.
@@ -1628,7 +1708,7 @@ export function TransmissionsCard({
             {signatureEyebrow(activeSignature)}
           </span>
           <span
-            title={activeSignature.title}
+            title={chipTitle(activeSignature)}
             style={{
               fontSize: 12,
               color: 'var(--text)',
@@ -1639,7 +1719,7 @@ export function TransmissionsCard({
               whiteSpace: 'nowrap',
             }}
           >
-            {activeSignature.title}
+            {chipTitle(activeSignature)}
           </span>
           <button
             type="button"
@@ -1670,6 +1750,29 @@ export function TransmissionsCard({
         </div>
       ) : (
         <>
+          {/* Verdict column header (by1c.12) — the only column labels the list
+              carries, sized and right-aligned to match the dot slot at the end of
+              each row. The DS01.3 column is absent when no shadow lineage is
+              registered, which is the same condition that drops the second dot. */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '5px 16px',
+              borderBottom: '1px solid var(--border)',
+            }}
+          >
+            <span style={{ flex: 1 }} />
+            {verdictColumns(shadowProfile).map((profile) => (
+              <span
+                key={profile}
+                style={{ ...eyebrow, ...mono, width: VERDICT_COL_PX, textAlign: 'right' }}
+              >
+                {PROFILE_NAME[profile]}
+              </span>
+            ))}
+          </div>
+
           {/* Scrolling list region — API returns newest-first; no re-sort.
               Row-virtualized (4h4.13): only the visible window renders, each row
               absolutely positioned inside a full-height spacer so the region's
@@ -1717,6 +1820,7 @@ export function TransmissionsCard({
                       tx={t}
                       selected={selected !== null && selected.id === t.id}
                       onSelect={() => onSelectTx(t.id)}
+                      shadowProfile={shadowProfile}
                     />
                   </div>
                 );
