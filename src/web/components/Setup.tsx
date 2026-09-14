@@ -28,6 +28,7 @@ import {
   enableAuth,
   type AuthMethod,
   type EnableAuthResponse,
+  type Profile,
   type SchemaProvenance,
   type SessionMeta,
 } from '../api';
@@ -101,6 +102,22 @@ export interface SetupProps {
  * single quote. Twice now the sample drifted into a guaranteed 422 (beads 48h,
  * auu) and both times only a manual audit caught it (beads lg8).
  */
+/**
+ * The reader-facing name of a lineage, for the "also loaded, not graded against"
+ * line. The set that line renders is "every entry whose profile is not the
+ * contract profile", and which profile that is flips with `CONTRACT_PROFILE`
+ * (the registry header calls it the single flip point) — so the name has to come
+ * off the entry. Naming the lineage in a literal instead would describe the
+ * `cce-interop` entries as DS01.3 Annex 4 on the day the contract moves.
+ *
+ * Deliberately local and minimal: bd by1c.11 centralises the profile vocabulary
+ * for every surface; this is not a down payment on it.
+ */
+const LINEAGE_NAME: Record<Profile, string> = {
+  '2025': 'cce-interop',
+  ds013: 'DS01.3 Annex 4',
+};
+
 export function sampleBody(schemas: SchemaProvenance[]): string {
   // `schemas` is ordered oldest-first within each profile (SchemaRegistry
   // .provenance()), so the LAST contract-profile entry is the newest one — the
@@ -721,25 +738,29 @@ export function Setup(props: SetupProps) {
               the clock resets on each POST.
               {/*
                 The shadow lineage gets its OWN sentence, never a comma in the
-                list above. These bytes are an unpublished draft: they are not
-                what a transmission is graded against, and the line right above
-                calls its versions "official" — folding a draft into it would
-                make that sentence false. The hash and the draft date are
-                rendered from the entry, so the reader can tell exactly which
-                revision of a moving document is loaded.
+                list above: these are not the bytes a transmission is graded
+                against, and the line right above calls its versions "official",
+                which folding a second lineage into it would make false.
+
+                Everything the sentence asserts is read off the ENTRY — the
+                lineage name from `profile`, the draft wording from the presence
+                of `draftDate`, the hash from `sha256`. Nothing is inferred from
+                "this is not the contract profile", because which profile that is
+                flips with CONTRACT_PROFILE.
               */}
               {shadowSchemas.map((s) => (
                 <div key={s.version} style={{ marginTop: 8 }}>
                   Also loaded, not graded against:{' '}
                   <strong style={{ color: 'var(--text)' }}>
-                    DS01.3 Annex 4 revision {s.version}
+                    {LINEAGE_NAME[s.profile]} {s.draftDate === undefined ? 'version' : 'revision'}{' '}
+                    {s.version}
                   </strong>{' '}
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
                     (sha256 {shortSha(s.sha256)})
                   </span>{' '}
-                  — an unpublished DRAFT
-                  {s.draftDate === undefined ? '' : ` dated ${s.draftDate}`}, pinned by hash so you
-                  can see which revision is loaded. It may be re-pinned as the proposal moves.
+                  {s.draftDate === undefined
+                    ? '— pinned by hash, byte-identical to the bytes published upstream.'
+                    : `— an unpublished DRAFT dated ${s.draftDate}, pinned by hash so you can see which revision is loaded. It may be re-pinned as the proposal moves.`}
                 </div>
               ))}
             </div>
