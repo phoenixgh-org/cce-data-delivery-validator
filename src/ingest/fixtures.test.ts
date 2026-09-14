@@ -32,6 +32,7 @@ import assert from 'node:assert/strict';
 import { buildApp } from '../app.js';
 import { closePool, getPool } from '../db/pool.js';
 import { createSession } from '../db/repository.js';
+import { emsBaseline } from '../exercise/baseline.js';
 import { SchemaRegistry } from '../schema-registry.js';
 import {
   buildResponseBody,
@@ -114,7 +115,9 @@ function makeCtx(
 async function runFixture(ctx: PipelineContext): Promise<IngestResponseBody> {
   const result = await runPipeline(ctx, bodyStages());
   // transmissionId is null at pipeline level (persistence is the route's job).
-  return buildResponseBody(result.status, result.findings, null);
+  // `ctx` carries the registry and the lineage the schema stage shadowed —
+  // what the trailing shadow sentence is built from (by1c.27).
+  return buildResponseBody(result.status, result.findings, null, ctx);
 }
 
 /**
@@ -177,9 +180,115 @@ test('fixture valid → 200, no fail findings, accepted message', async () => {
   );
   assert.doesNotMatch(body.message, /fail/, 'the contract headline reports no failure');
   assert.equal(body.findings, contractGraded(ctx).length, 'the count is the contract-graded count');
+
+  // Pinned exactly rather than as an inequality (by1c.27). These are the
+  // PIPELINE-LEVEL counts: the §6 body stages only, so the route's own §1.3
+  // auth finding is absent and the end-to-end body carries one more of each
+  // (9 and 14 — pinned in the full-flow test below).
+  assert.equal(body.findings, 8, 'eight contract-graded findings');
+  assert.equal(body.findingDetails.length, 13, 'plus the five Annex 4 shadow fails');
+  const shadow = body.findingDetails.filter((f) => f.profile === 'ds013');
+  assert.equal(shadow.length, 5, 'the five logger-identity fails, listed but not counted');
   assert.ok(
-    body.findingDetails.length > body.findings,
-    'shadow findings are listed in the details, never counted in the tally',
+    shadow.every((f) => f.severity === 'fail' && f.requirement === '5.3.2'),
+    'each shadow entry names its own lineage and clause',
+  );
+  assert.ok(
+    body.findingDetails.every((f) => f.profile === '2025' || f.profile === 'ds013'),
+    'every echoed finding names the lineage that graded it',
+  );
+
+  // THE TRAILING SENTENCE (by1c.27). It is what tells a conformant supplier that
+  // the five failures above graded an unpublished draft and moved nothing. Every
+  // fact in it is read off the registry entry here too, so a re-pin of the draft
+  // bytes moves the test and the message together.
+  const draft = registry.get(registry.currentVersion('ds013')!)!;
+  assert.equal(
+    body.message,
+    'Accepted (200): data recorded; 8 findings (1 info). ' +
+      `5 further findings under the DS01.3 draft of ${draft.draftDate} ` +
+      `(sha256 ${draft.sha256}) did not affect this status.`,
+  );
+  assert.match(draft.sha256, /^[0-9a-f]{64}$/, 'the hash is quoted in full, not shortened');
+});
+
+/**
+ * A payload that passes BOTH lineages — the EMS baseline the exercise runner
+ * ships. The shadow run records a single `pass` finding, and the response says
+ * so: a supplier who is already DS01.3-ready learns it from the ingest response
+ * without opening the dashboard.
+ */
+test('a dual-passing payload echoes the shadow PASS and says "Also passes…" (by1c.27)', async () => {
+  const ctx = makeCtx(toBytes(emsBaseline({ caseId: 'dual-pass', index: 0 })), {
+    contentType: JSON_UTF8,
+  });
+  const body = await runFixture(ctx);
+
+  assert.equal(body.status, 200);
+  const shadow = body.findingDetails.filter((f) => f.profile === 'ds013');
+  assert.equal(shadow.length, 1, 'a clean shadow run records exactly one finding');
+  assert.equal(shadow[0]?.severity, 'pass');
+  assert.equal(shadow[0]?.requirement, '5.3.2');
+
+  const draft = registry.get(registry.currentVersion('ds013')!)!;
+  assert.match(
+    body.message,
+    new RegExp(
+      `Also passes the DS01\\.3 draft of ${draft.draftDate} \\(sha256 ${draft.sha256}\\)\\.$`,
+    ),
+  );
+});
+
+/**
+ * An unresolvable `schemaVersion` names no lineage, so no shadow run happens —
+ * and the response says nothing about a second lineage at all. The silence is
+ * the contract: a sentence about a draft the body was never graded against
+ * would be a claim we cannot support.
+ */
+test('an unresolvable version → 422 with no shadow entries and no shadow sentence', async () => {
+  const payload = cloneValid();
+  payload.meta.schemaVersion = '9.9.9';
+  const ctx = makeCtx(toBytes(payload), { contentType: JSON_UTF8 });
+  const body = await runFixture(ctx);
+
+  assert.equal(body.status, 422);
+  assert.equal(ctx.shadowProfile, null, 'no resolved entry means no lineage to shadow');
+  assert.equal(
+    body.findingDetails.filter((f) => f.profile === 'ds013').length,
+    0,
+    'nothing was graded under the draft',
+  );
+  assert.doesNotMatch(body.message, /draft|sha256|further findings|Also passes/);
+});
+
+/**
+ * ROLES SWAP WITH THE PAYLOAD (by1c.27). A supplier may declare the Annex 4
+ * revision, which makes ds013 the primary lineage and cce-interop the shadow.
+ * Nothing in the sentence is a literal, so it names the 2025 lineage — and
+ * describes published bytes as a schema rather than as a draft.
+ */
+test('a ds013-primary payload names the 2025 lineage as its shadow', async () => {
+  const payload = emsBaseline({ caseId: 'ds013-primary', index: 0 });
+  payload.meta.schemaVersion = '1';
+  const ctx = makeCtx(toBytes(payload), { contentType: JSON_UTF8 });
+  const body = await runFixture(ctx);
+
+  assert.equal(ctx.primaryProfile, 'ds013');
+  assert.equal(ctx.shadowProfile, '2025');
+
+  const current = registry.get(registry.currentVersion('2025')!)!;
+  assert.match(
+    body.message,
+    new RegExp(
+      `Also passes the cce-interop ${current.version.replace(/\./g, '\\.')} schema ` +
+        `\\(sha256 ${current.sha256}\\)\\.$`,
+    ),
+  );
+  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow today is the cce-interop lineage');
+  assert.equal(
+    body.findingDetails.filter((f) => f.profile === '2025' && f.requirement === '3.2').length,
+    1,
+    'the shadow §3.2 pass is echoed, naming its lineage',
   );
 });
 
@@ -252,8 +361,11 @@ test('a conformant payload raising an advisory tallies exactly as the baseline (
   );
   assert.doesNotMatch(baseline.message, /advisor/i);
   assert.doesNotMatch(headline, /advisor/i);
-  // Carried, not dropped: the response says they exist, outside the tally.
-  assert.match(advised.message, /1 advisory, not graded and not counted above\.$/);
+  // Carried, not dropped: the response says they exist, outside the tally. No
+  // longer the LAST sentence: since by1c.27 the shadow lineage gets one of its
+  // own after it, and this payload's mis-shaped date does fail the Annex 4 draft.
+  assert.match(advised.message, /1 advisory, not graded and not counted above\. /);
+  assert.match(advised.message, /further findings under the DS01\.3 draft of .* status\.$/);
 });
 
 test('fixture oversize → 413, 1.4 fail (size stage)', async () => {
@@ -405,6 +517,26 @@ test('full-flow: valid baseline → 200, persists a row', { skip }, async () => 
     const body = res.json() as IngestResponseBody;
     assert.match(body.transmissionId ?? '', /^[0-9a-f-]{36}$/, 'persisted id returned');
     assert.equal(body.status, 200);
+
+    // THE WHOLE BODY, END TO END (by1c.27). This is the canonical readiness
+    // demo — conformant under cce-interop 0.8.1, short of five logger-identity
+    // objects the Annex 4 draft wants — so it is the body a supplier is most
+    // likely to be reading when they meet a `severity: 'fail'` under an HTTP
+    // 200. Counts are one higher than the pipeline-level test above because the
+    // route runs the §1.3 auth stage as well.
+    assert.equal(body.findings, 9, 'nine contract-graded findings');
+    assert.equal(body.findingDetails.length, 14, 'plus the five Annex 4 shadow fails');
+    assert.ok(
+      body.findingDetails.every((f) => f.profile === '2025' || f.profile === 'ds013'),
+      'every echoed finding names the lineage that graded it',
+    );
+    const draft = registry.get(registry.currentVersion('ds013')!)!;
+    assert.equal(
+      body.message,
+      'Accepted (200): data recorded; 9 findings (2 info). ' +
+        `5 further findings under the DS01.3 draft of ${draft.draftDate} ` +
+        `(sha256 ${draft.sha256}) did not affect this status.`,
+    );
   } finally {
     if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
     await app.close();

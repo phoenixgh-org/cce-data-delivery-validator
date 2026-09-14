@@ -243,9 +243,9 @@ export function registerIngestRoute(app: FastifyInstance): void {
           const transmissionId = await persistTransmission(ctx, pre.status, ctx.findings);
           return reply
             .code(pre.status)
-            .send(buildResponseBody(pre.status, ctx.findings, transmissionId));
+            .send(buildResponseBody(pre.status, ctx.findings, transmissionId, ctx));
         }
-        return reply.code(pre.status).send(buildResponseBody(pre.status, pre.findings, null));
+        return reply.code(pre.status).send(buildResponseBody(pre.status, pre.findings, null, ctx));
       }
 
       // The request reached the body stages with a valid session + POST. Mark it
@@ -262,7 +262,9 @@ export function registerIngestRoute(app: FastifyInstance): void {
 
         const transmissionId = await persistTransmission(ctx, status, ctx.findings);
 
-        return reply.code(status).send(buildResponseBody(status, ctx.findings, transmissionId));
+        return reply
+          .code(status)
+          .send(buildResponseBody(status, ctx.findings, transmissionId, ctx));
       } finally {
         leaveSession(uuid);
       }

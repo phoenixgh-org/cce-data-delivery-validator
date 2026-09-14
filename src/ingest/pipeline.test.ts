@@ -18,6 +18,7 @@ import {
   type Stage,
 } from './pipeline.js';
 import { advisory } from './stages/semantic/advisory.js';
+import { SchemaRegistry, type Profile } from '../schema-registry.js';
 
 /** A bare context sufficient for runner tests (stages here ignore most fields). */
 function fakeCtx(): PipelineContext {
@@ -102,10 +103,22 @@ test('buildResponseBody echoes id, status, count, and per-finding details (teach
   assert.equal(body.transmissionId, 'tx-1');
   assert.equal(body.status, 200);
   assert.equal(body.findings, 2, 'count is preserved from the original shape');
-  // Per-finding echo carries requirement/severity/detail (no internal pointer).
+  // Per-finding echo carries requirement/severity/profile/detail (no internal
+  // pointer). A finding written with no profile echoes the contract lineage, the
+  // same default `insertFindings` applies on the way into the database.
   assert.deepEqual(body.findingDetails, [
-    { requirement: '1.4', severity: 'pass', detail: 'wire body is 12 bytes, within the 1MB cap' },
-    { requirement: '3.3', severity: 'info', detail: 'present DS01 objects: AMID×1' },
+    {
+      requirement: '1.4',
+      severity: 'pass',
+      profile: '2025',
+      detail: 'wire body is 12 bytes, within the 1MB cap',
+    },
+    {
+      requirement: '3.3',
+      severity: 'info',
+      profile: '2025',
+      detail: 'present DS01 objects: AMID×1',
+    },
   ]);
 });
 
@@ -132,6 +145,7 @@ test('buildResponseBody: advisories are carried in their own field, out of the t
     {
       requirement: 'adv.null_padding',
       severity: 'info',
+      profile: '2025',
       detail: 'TCON was null in all 480 records',
     },
   ]);
@@ -223,4 +237,151 @@ test('runPipeline result feeds buildResponseBody end-to-end (no DB)', async () =
   assert.equal(body.findings, 1);
   assert.equal(body.findingDetails[0]?.detail, 'undecodable');
   assert.match(body.message, /^Rejected \(400\): 1 finding \(1 fail\)\./);
+});
+
+// ── the lineage named on the wire (by1c.27) ─────────────────────────────────
+//
+// A supplier whose payload conforms to the contract still sees the shadow run's
+// failures echoed in `findingDetails` under an HTTP 200. Two things say so:
+// every entry carries the `profile` that graded it, and `message` gains a
+// trailing sentence naming the shadow lineage by its draft date and hash. Both
+// read off the registry entry, so neither restates a fact that could drift.
+
+/** The real registry — load() is synchronous and DB-free. */
+const registry = SchemaRegistry.load();
+
+/** The pipeline context's two shadow-bearing fields, as the route passes them. */
+function lineages(shadowProfile: Profile | null) {
+  return { registry, shadowProfile };
+}
+
+/** The current entry of one lineage, for building the expected sentence. */
+function entryOf(profile: Profile) {
+  return registry.get(registry.currentVersion(profile)!)!;
+}
+
+test('buildResponseBody: every echoed finding names the lineage that graded it (by1c.27)', () => {
+  const body = buildResponseBody(
+    200,
+    [
+      // A transport finding carries no profile; it echoes the contract lineage.
+      { requirement: '1.4', severity: 'pass' },
+      { requirement: '3.2', severity: 'pass', profile: '2025' },
+      { requirement: '5.3.2', severity: 'fail', profile: 'ds013', detail: "must have 'LSER'" },
+      advisory({ id: 'adv.date_format', detail: 'd' }),
+    ],
+    'tx-profile',
+    lineages('ds013'),
+  );
+
+  assert.deepEqual(
+    body.findingDetails.map((f) => `${f.profile}|${f.requirement}`),
+    ['2025|1.4', '2025|3.2', 'ds013|5.3.2'],
+    'both lineages are echoed, each naming itself',
+  );
+  assert.equal(body.advisories[0]?.profile, '2025', 'an advisory names its lineage too');
+  assert.equal(body.findings, 2, 'the count stays contract-only');
+});
+
+test('message: shadow fails echoed → a trailing sentence with the count, date and hash', () => {
+  const entry = entryOf('ds013');
+  const shadowFails = [1, 2, 3, 4, 5].map(() => ({
+    requirement: '5.3.2',
+    severity: 'fail' as const,
+    profile: 'ds013' as const,
+  }));
+  const body = buildResponseBody(
+    200,
+    [{ requirement: '3.2', severity: 'pass', profile: '2025' }, ...shadowFails],
+    'tx-shadow',
+    lineages('ds013'),
+  );
+
+  // The draft date and the full 64-hex hash come from the entry, never from a
+  // literal — the same provenance form the §3.2 pass detail uses.
+  assert.equal(
+    body.message,
+    'Accepted (200): data recorded; 1 finding. ' +
+      `5 further findings under the DS01.3 draft of ${entry.draftDate} ` +
+      `(sha256 ${entry.sha256}) did not affect this status.`,
+  );
+  assert.equal(body.findings, 1, 'the shadow findings move no count');
+});
+
+test('message: a clean shadow run says so — "Also passes the DS01.3 draft…"', () => {
+  const entry = entryOf('ds013');
+  const body = buildResponseBody(
+    200,
+    [
+      { requirement: '3.2', severity: 'pass', profile: '2025' },
+      { requirement: '5.3.2', severity: 'pass', profile: 'ds013' },
+    ],
+    'tx-clean',
+    lineages('ds013'),
+  );
+
+  assert.equal(
+    body.message,
+    'Accepted (200): data recorded; 1 finding. ' +
+      `Also passes the DS01.3 draft of ${entry.draftDate} (sha256 ${entry.sha256}).`,
+  );
+});
+
+test('message: no sentence at all when no shadow run happened', () => {
+  // `shadowProfile` stays null on an unresolved version, an unparseable body and
+  // every pre-body transport halt — there is no second lineage to report on.
+  const findings = [{ requirement: '3.2', severity: 'fail' as const, detail: 'unsupported' }];
+  for (const [label, body] of [
+    ['shadowProfile null', buildResponseBody(422, findings, 'tx-a', lineages(null))],
+    ['no lineage source at all', buildResponseBody(422, findings, 'tx-b')],
+  ] as const) {
+    assert.equal(body.message, 'Rejected (422): 1 finding (1 fail).', label);
+    assert.doesNotMatch(body.message, /draft|sha256|further/, label);
+  }
+});
+
+test('message: the sentence follows ctx.shadowProfile, so the roles can swap', () => {
+  // A payload declaring the Annex 4 revision is graded PRIMARY under ds013, and
+  // cce-interop becomes its shadow. Nothing in the sentence is written as a
+  // literal, so it names the 2025 lineage — and describes a published schema as
+  // a schema rather than as a draft.
+  const entry = entryOf('2025');
+  const body = buildResponseBody(
+    200,
+    [
+      // Transport findings carry no profile. They must not be counted into the
+      // shadow tally just because the contract lineage is the shadow today.
+      { requirement: '1.4', severity: 'pass' },
+      { requirement: '1.1', severity: 'pass' },
+      { requirement: '5.3.2', severity: 'pass', profile: 'ds013' },
+      { requirement: '3.2', severity: 'pass', profile: '2025' },
+    ],
+    'tx-swapped',
+    lineages('2025'),
+  );
+
+  assert.equal(
+    body.message,
+    'Accepted (200): data recorded; 3 findings. ' +
+      `Also passes the cce-interop ${entry.version} schema (sha256 ${entry.sha256}).`,
+  );
+  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow today is the cce-interop lineage');
+  assert.doesNotMatch(body.message, /draft/, 'published bytes are not called a draft');
+});
+
+test('message: the shadow sentence comes last, after the advisory sentence', () => {
+  const body = buildResponseBody(
+    200,
+    [
+      { requirement: '3.2', severity: 'pass', profile: '2025' },
+      { requirement: '5.3.2', severity: 'fail', profile: 'ds013' },
+      advisory({ id: 'adv.date_format', detail: 'd' }),
+    ],
+    'tx-both',
+    lineages('ds013'),
+  );
+
+  assert.match(body.message, /^Accepted \(200\): data recorded; 1 finding\./);
+  assert.match(body.message, /1 advisory, not graded and not counted above\. 1 further finding /);
+  assert.match(body.message, /did not affect this status\.$/);
 });

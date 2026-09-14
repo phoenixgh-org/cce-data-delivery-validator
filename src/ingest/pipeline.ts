@@ -16,7 +16,7 @@ import type { FastifyRequest } from 'fastify';
 
 import type { InsertFindingInput, Severity } from '../db/repository.js';
 import { CONTRACT_PROFILE } from '../schema-registry.js';
-import type { Profile, SchemaRegistry } from '../schema-registry.js';
+import type { Profile, RegistryEntry, SchemaRegistry } from '../schema-registry.js';
 import { isAdvisoryId } from './stages/semantic/advisory.js';
 
 /**
@@ -161,13 +161,23 @@ export async function runPipeline(
 
 /**
  * One finding as echoed in the HTTP response body — the human-readable subset of
- * a {@link Finding} (`requirement`, `severity`, `detail`). The internal `pointer`
- * is omitted; suppliers read the per-error location from `detail`, and the full
- * finding (with pointer) is persisted for the dashboard.
+ * a {@link Finding} (`requirement`, `severity`, `detail`) plus the lineage that
+ * graded it. The internal `pointer` is omitted; suppliers read the per-error
+ * location from `detail`, and the full finding (with pointer) is persisted for
+ * the dashboard.
  */
 export interface ResponseFinding {
   requirement: string;
   severity: Severity;
+  /**
+   * The requirement lineage this finding graded against (bd by1c.27). Until it
+   * was carried here, a supplier whose payload conforms to the contract read
+   * `severity: 'fail'` on an HTTP 200 with nothing but the clause numbering to
+   * tell them the finding came from an unpublished draft. Present on every
+   * entry, advisories included, so the body can be filtered without parsing
+   * clause ids.
+   */
+  profile: Profile;
   /** Human-readable explanation; absent only if a finding carried no detail. */
   detail?: string | null;
 }
@@ -206,9 +216,16 @@ export interface ResponseFinding {
  * CONTRACT-lineage findings only, on the same reasoning that excludes advisories.
  * They ARE echoed in `findingDetails`, because a preview of the next revision is
  * exactly the kind of thing the teaching surface exists to deliver — which is why
- * `findingDetails` can be longer than `findings` counts. The requirement id says
- * which lineage each one speaks to (`3.2` is cce-interop, `5.3.x` is Annex 4);
- * naming the lineage on the wire is bd by1c.9's job.
+ * `findingDetails` can be longer than `findings` counts.
+ *
+ * AND THE LINEAGE IS NAMED (by1c.27). Listing a draft's failures under an HTTP
+ * 200 without saying so left the clause numbering (`3.2` is cce-interop, `5.3.x`
+ * is Annex 4) as the only discriminator, which a supplier holding the March 2025
+ * document cannot read. Two additions close that: every echoed finding carries
+ * its `profile`, and `message` gains a trailing sentence naming the shadow
+ * lineage — by its draft date and content hash, read off the registry entry —
+ * whenever a shadow run happened, in both directions (findings echoed, or a
+ * clean pass). Nothing is appended when no shadow ran at all.
  */
 export interface IngestResponseBody {
   /** Persisted transmission id, or null when no row was written (404/405). */
@@ -225,7 +242,8 @@ export interface IngestResponseBody {
   /**
    * Per-finding human-readable echo of the graded findings (no advisories),
    * BOTH lineages — the contract findings that produced the status and the
-   * shadow findings that preview DS01.3.
+   * shadow findings that preview DS01.3. Each entry names its own `profile`, so
+   * the two are separable without reading clause numbers.
    */
   findingDetails: ResponseFinding[];
   /**
@@ -268,13 +286,111 @@ function isAccepted(status: number): boolean {
 }
 
 /**
+ * The lineage a finding grades against, as the response reports it. A finding
+ * from a transport stage carries no profile at all, and `insertFindings`
+ * defaults those to `'2025'` on the way into the database, so the same default
+ * is applied here — the wire and the stored row say the same thing rather than
+ * the response inventing a third answer for "absent".
+ */
+function profileOf(f: Finding): Profile {
+  return f.profile ?? '2025';
+}
+
+/**
  * Whether a finding graded against the CONTRACT lineage — the obligations in
- * force. Findings written before by1c.5 carry no profile at all, and the
- * repository defaults those to `'2025'`, so the same default is applied here
- * rather than treating an absent value as "some other lineage".
+ * force.
  */
 function isContractFinding(f: Finding): boolean {
-  return (f.profile ?? '2025') === CONTRACT_PROFILE;
+  return profileOf(f) === CONTRACT_PROFILE;
+}
+
+/**
+ * The reader-facing name of a lineage, for the trailing shadow sentence.
+ *
+ * Read off the ENTRY's `profile`, never written as a literal, for the reason
+ * src/web/components/Setup.tsx gives its own map (bd by1c.22): which lineage is
+ * the shadow flips with `CONTRACT_PROFILE`, so a sentence that says "DS01.3"
+ * outright would describe the `cce-interop` entry that way on the day the
+ * contract moves. The two maps are deliberately separate — that one is browser
+ * code, and this one names the lineage mid-sentence rather than as a heading, so
+ * it says `DS01.3` where the dashboard heading says `DS01.3 Annex 4`. bd by1c.11
+ * centralises the profile vocabulary for every surface; this is not a down
+ * payment on it.
+ */
+const LINEAGE_NAME: Record<Profile, string> = {
+  '2025': 'cce-interop',
+  ds013: 'DS01.3',
+};
+
+/**
+ * How the trailing sentence names the bytes the shadow run used.
+ *
+ * Every fact comes from the registry entry, on the same reasoning as the §3.2
+ * pass detail (`describePass`, src/ingest/stages/schema.ts): a draft date or a
+ * hash restated as a literal here is a second copy that can drift from the bytes
+ * actually loaded. Draft-ness is likewise read off the entry — the presence of
+ * `draftDate` — because an unpublished proposal and a published schema are not
+ * described the same way, and the shadow lineage is whichever one is not the
+ * contract today.
+ */
+function describeShadowLineage(entry: RegistryEntry): string {
+  const name = LINEAGE_NAME[entry.profile];
+  return entry.draftDate === undefined
+    ? `the ${name} ${entry.version} schema (sha256 ${entry.sha256})`
+    : `the ${name} draft of ${entry.draftDate} (sha256 ${entry.sha256})`;
+}
+
+/**
+ * Where the shadow lineage's facts are read from: the pipeline context, narrowed
+ * to the two fields this needs. {@link PipelineContext} satisfies it structurally,
+ * so the route passes `ctx` straight through.
+ */
+export interface ShadowLineageSource {
+  readonly registry: SchemaRegistry;
+  readonly shadowProfile: Profile | null;
+}
+
+/**
+ * The registry entry the shadow run graded against, or null when no shadow ran.
+ *
+ * `ctx.shadowProfile` is the schema stage's own record of which lineage it
+ * shadowed, and it stays null when the version never resolved, when the body
+ * never parsed, and on every pre-body transport halt — the three cases where the
+ * response must say nothing about a second lineage. The entry itself is the
+ * CURRENT one of that profile, which is exactly what `shadowFor()` handed the
+ * stage.
+ */
+function shadowEntryOf(source: ShadowLineageSource | null | undefined): RegistryEntry | null {
+  const profile = source?.shadowProfile ?? null;
+  if (profile === null) return null;
+  const version = source!.registry.currentVersion(profile);
+  return version === null ? null : (source!.registry.get(version) ?? null);
+}
+
+/**
+ * The trailing sentence naming the shadow lineage, or null when there is nothing
+ * to say (by1c.27).
+ *
+ * Both directions are reported. Failures echoed in `findingDetails` get the
+ * count plus "did not affect this status", which is the fact a conformant
+ * supplier needs to read `severity: 'fail'` on an HTTP 200 without alarm; a
+ * clean shadow run — recorded as a single `pass` finding — gets "Also passes",
+ * because being ready for the next revision is worth telling someone.
+ *
+ * The shadow set is matched on the finding's EXPLICIT profile, not on
+ * `profileOf`'s default: a transport finding carries no profile, and defaulting
+ * it would enrol every one of them in the shadow tally on the day the contract
+ * flips and `'2025'` becomes the shadow lineage.
+ */
+function shadowSentence(entry: RegistryEntry | null, graded: readonly Finding[]): string | null {
+  if (entry === null) return null;
+  const shadow = graded.filter((f) => f.profile === entry.profile);
+  if (shadow.length === 0) return null;
+
+  const lineage = describeShadowLineage(entry);
+  if (shadow.every((f) => f.severity === 'pass')) return `Also passes ${lineage}.`;
+  const n = shadow.length;
+  return `${n} further ${n === 1 ? 'finding' : 'findings'} under ${lineage} did not affect this status.`;
 }
 
 /**
@@ -292,12 +408,18 @@ function isContractFinding(f: Finding): boolean {
  * those findings never touch the HTTP status; letting them into the one number a
  * supplier reads as the outcome would tell a conformant integrator they had five
  * failures against obligations that do not yet exist. They stay in
- * `findingDetails`, where the requirement id says which lineage they speak to.
+ * `findingDetails`, each naming its own profile.
+ *
+ * `shadow` is that lineage's own trailing sentence, appended LAST (by1c.27) —
+ * after the advisory sentence, so both of the "this is outside the tally" notes
+ * follow the tally they qualify rather than interrupting it. Null when no shadow
+ * run happened.
  */
 function summarize(
   status: number,
   graded: readonly Finding[],
   advisories: readonly Finding[],
+  shadow: string | null,
 ): string {
   const contract = graded.filter(isContractFinding);
   const total = contract.length;
@@ -315,9 +437,15 @@ function summarize(
     ? `Accepted (${status}): data recorded; ${tally}.`
     : `Rejected (${status}): ${tally}.`;
 
-  if (advisories.length === 0) return headline;
-  const n = advisories.length;
-  return `${headline} ${n} ${n === 1 ? 'advisory' : 'advisories'}, not graded and not counted above.`;
+  const sentences = [headline];
+  if (advisories.length > 0) {
+    const n = advisories.length;
+    sentences.push(
+      `${n} ${n === 1 ? 'advisory' : 'advisories'}, not graded and not counted above.`,
+    );
+  }
+  if (shadow !== null) sentences.push(shadow);
+  return sentences.join(' ');
 }
 
 /**
@@ -325,15 +453,22 @@ function summarize(
  * surface). See {@link IngestResponseBody} for the field contract — in
  * particular, advisories are partitioned out of `findings`/`findingDetails` and
  * carried in `advisories` (7rv).
+ *
+ * `lineages` is the pipeline context (or anything carrying the registry and the
+ * shadow profile the run recorded). It is what the trailing shadow sentence is
+ * built from; omit it only where no shadow run could have happened, and the body
+ * simply says nothing about a second lineage.
  */
 export function buildResponseBody(
   status: number,
   findings: readonly Finding[],
   transmissionId: string | null,
+  lineages?: ShadowLineageSource | null,
 ): IngestResponseBody {
   const echo = (f: Finding): ResponseFinding => ({
     requirement: f.requirement,
     severity: f.severity,
+    profile: profileOf(f),
     detail: f.detail,
   });
   // Partitioned on the id namespace, not on position: findings arrive in stage
@@ -345,7 +480,7 @@ export function buildResponseBody(
   return {
     transmissionId,
     status,
-    message: summarize(status, graded, advisories),
+    message: summarize(status, graded, advisories, shadowSentence(shadowEntryOf(lineages), graded)),
     // Contract lineage only — the count and the message tally agree, and both
     // say what this transmission was graded on (by1c.8).
     findings: graded.filter(isContractFinding).length,
