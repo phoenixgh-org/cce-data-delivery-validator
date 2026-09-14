@@ -67,6 +67,19 @@ The full row-by-row matrix — every requirement, its class, and how it is check
 is [`DESIGN.md` §7](DESIGN.md#7-compliance-engine--verifiability-matrix). It is
 mirrored in `src/api/compliance-matrix.ts` and rendered live in the dashboard.
 
+### Shadow grading
+
+Every transmission is also graded a second time, against the DS01.3 Annex 4
+delivery-schema proposal — an unpublished draft, registered here as a *shadow*
+lineage. The shadow run never changes the HTTP response code and never touches the
+matrix above: those rows grade the 2025 requirements, which are the contract in
+force. What it produces instead is readiness: the dashboard shows how much of
+your passing traffic would also pass DS01.3, a verdict per transmission under each
+lineage, and the reasons the rest would not, while the ingest response names the
+lineage on every finding. Keeping the two apart is the point — a supplier under a
+2025 agreement should be able to see what is coming without being told that the
+version their contract requires is stale.
+
 ## Quick start
 
 ```bash
@@ -124,12 +137,13 @@ outcome without opening the dashboard (findings abridged here):
 
 ```json
 {
-  "transmissionId": "1aeb82e6-…",
+  "transmissionId": "563af727-…",
   "status": 200,
-  "message": "Accepted (200): data recorded; 9 findings (2 info).",
+  "message": "Accepted (200): data recorded; 9 findings (2 info). Also passes the DS01.3 draft of 2026-09-08 (sha256 7e22de27…).",
   "findings": 9,
   "findingDetails": [
-    { "requirement": "3.2", "severity": "pass", "detail": "validated against official 0.8.1 (sha256 290290fd…) (§3.2)" }
+    { "requirement": "3.2", "severity": "pass", "profile": "2025", "detail": "validated against official 0.8.1 (sha256 290290fd…) (§3.2)" },
+    { "requirement": "5.3.2", "severity": "pass", "profile": "ds013", "detail": "validated against DRAFT 1 (draft 2026-09-08, sha256 7e22de27…) (§5.3.2)" }
   ],
   "advisories": [],
   "notice": "Synthetic test data only: this is a sandbox endpoint. …"
@@ -137,6 +151,13 @@ outcome without opening the dashboard (findings abridged here):
 ```
 
 A rejection has the same shape, so a 4xx is just as self-explanatory as a 2xx.
+
+The `findings` count and the leading tally in `message` are the contract
+lineage alone, while `findingDetails` carries both: the `profile` on each entry
+says which lineage graded it, and the shadow sentence at the end of `message`
+reports what the DS01.3 run found without it ever changing the status. The draft
+date and hash shown there come from the registry entry for those bytes, so they
+move when the proposal is re-pinned.
 
 Useful things to know while testing:
 
@@ -152,13 +173,16 @@ Useful things to know while testing:
   dashboard, which generates the credential for one of the three methods DS01.3
   recognises — token in a configurable header, HTTP Basic, or `Authorization:
   Bearer` (RFC 6750) — and then enforces it so §1.3 becomes gradeable.
-- Transmissions are validated against the vendored, content-hash-pinned
-  `cce-interop` schema. Two versions are registered, both byte-identical to the
-  copies published upstream: **0.8.1** (sha256 `290290fd…`) is **current**, and
-  the older **0.8.0** (sha256 `e6614cc7…`) is still accepted but graded
-  *outdated* — a `200` with a §3.2 note telling you to upgrade, not a rejection.
-  Any other declared `schemaVersion` gets a `422` listing what is supported,
-  never a silent fallback. The schema is never fetched at runtime and the `$id` URL inside it is
+- Transmissions are validated against vendored, content-hash-pinned schemas. Two
+  `cce-interop` versions are registered as the contract lineage, both
+  byte-identical to the copies published upstream: **0.8.1** (sha256
+  `290290fd…`) is **current**, and the older **0.8.0** (sha256 `e6614cc7…`) is
+  still accepted but graded *outdated* — a `200` with a §3.2 note telling you to
+  upgrade, not a rejection. Outdated is judged within a lineage only. The DS01.3
+  Annex 4 draft is registered beside them as the shadow lineage; its
+  `schemaVersion` is the integer-valued string `"1"`, because that annex versions
+  by revision rather than by semver. Any other declared `schemaVersion` gets a
+  `422` listing what is supported, never a silent fallback. The schema is never fetched at runtime and the `$id` URL inside it is
   an *identifier*, not a download location: that host does not currently resolve,
   and the published artifact lives elsewhere. `DESIGN.md` §9 has the full version
   and publication picture.
@@ -191,9 +215,9 @@ input. The smoke test exists to catch exactly that.
 ## Status and v1 scope
 
 **Pre-release.** The service runs end to end — ingest pipeline, dashboard, semantic
-checks, the §1.3 auth opt-in, and the retention worker have all landed. There is no
-public instance, and self-hosting is the intended way to use it. Interfaces may
-still change.
+checks, the §1.3 auth opt-in, the retention worker, and DS01.3 shadow grading have
+all landed. There is no public instance, and self-hosting is the intended way to
+use it. Interfaces may still change.
 
 Source: <https://github.com/phoenixgh-org/cce-data-delivery-validator>.
 

@@ -52,6 +52,12 @@ mapping lives in `docs/clause-mapping.md`.
 artifact. Re-verify before trusting one, and **flag disagreements rather than
 silently "correcting" them** — reconciliation is a spec decision.
 
+**One exception, for drafts only.** The DS01.3 Annex 4 proposal is unpublished, so
+there is no published artifact for a hash to be checked against. Its vendored file
+MAY therefore be replaced in place when the proposal is revised: swap the bytes,
+update the registry entry's draft date, and update the hash asserted in the
+registry test, keeping the key. Every published `cce-interop` file stays immutable.
+
 ```bash
 curl -sL https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-0.8.1.json | sha256sum
 sha256sum src/schemas/cce-interop-0.8.1.json   # must match
@@ -118,7 +124,7 @@ npm run build                   # tsc + copy-schemas + web typecheck + vite buil
   compliance/verifiability matrix.
 - `src/db/` — `pg` pool and repository. DDL lives in `db/initdb/*.sql`,
   numbered and heavily commented (`10-session`, `20-transmission`,
-  `30-finding`, `40-indexes`, `50-session-auth-bearer`).
+  `30-finding`, `40-indexes`, `50-session-auth-bearer`, `60-finding-profile`).
 - `src/web/` — React + Vite dashboard (landing page, per-session report).
 - `src/schemas/` + `schema-registry.ts` — vendored schema versions.
 
@@ -129,8 +135,10 @@ npm run build                   # tsc + copy-schemas + web typecheck + vite buil
 - **Tests colocate** with source as `*.test.ts` and run on the Node test runner
   via `tsx --test` — not Jest or Vitest.
 - **Schemas are vendored and pinned by content hash, never fetched at runtime.**
-  `schemaVersion` is a bare-semver opaque registry key. Adding a version means
-  registering the blessed bytes, not editing an existing file in place.
+  `schemaVersion` is an opaque registry key whose shape follows its lineage: a
+  bare semver triple for `cce-interop`, an integer-valued string for the Annex 4
+  draft. Adding a version means registering the blessed bytes, not editing an
+  existing file in place — the draft named above is the only exception.
 - **DDL is ordered and commented** — new schema goes in a new numbered file.
 - Findings are the output unit: be explicit about what the receiving side can
   and cannot prove. `DESIGN.md` §7 is the verifiability matrix — respect the

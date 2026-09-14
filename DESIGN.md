@@ -4,7 +4,7 @@ Status: living document. The v1 scope is locked, and §3 records the decisions t
 are settled and are not reopened casually. Everything else describes the system as
 built and is updated as it ships.
 
-Last updated: August 20, 2026
+Last updated: September 14, 2026
 
 ## 1. Overview
 
@@ -21,7 +21,7 @@ interface. It provides an HTTPS endpoint that suppliers can POST to, and a web
 dashboard that gives them an independent reading of their conformance, to the extent
 that conformance can be judged from the receiving end.
 
-Three artifacts govern the design:
+Four artifacts govern the design:
 
 - `src/schemas/cce-interop-*.json` holds the transmission JSON Schemas, vendored and
   registered as described in §9. This is the only copy in the repository, so there is
@@ -32,6 +32,10 @@ Three artifacts govern the design:
   gitignored.
 - `docs/clause-mapping.md` records how those requirement numbers map to the DS01.3
   rewrite.
+- `src/schemas/pqs-e006-ds01-annex4-1.json` holds the DS01.3 Annex 4
+  delivery-schema change proposal. It is an unpublished draft and never the
+  contract; it is registered as the shadow ruleset so a supplier can see, ahead of
+  publication, what the successor schema would make of the same traffic (§9.1).
 
 Where prose and schema disagree, the schema takes precedence. This follows §3.2 of
 the 2025 requirements and is kept as a house rule now that DS01.3 drops the
@@ -66,7 +70,8 @@ The following decisions are settled for v1.
 | Authentication (§1.3) | An opt-in compliance layer, not a gate. The dashboard generates a credential for the supplier to configure, and the endpoint then enforces the chosen method, which makes §1.3 gradeable. The three methods are listed in §6, stage 2. |
 | Retention | A session and its data are purged after 7 days without a POST. |
 | Stack | Node and TypeScript end to end, with Ajv for schema validation. |
-| Schema versioning | `schemaVersion` is treated as an opaque bare-semver registry key. Schemas are vendored and validated against pre-registered copies, never fetched at runtime, and each version is pinned by content hash so the service can prove which bytes it validated against. |
+| Grading profiles | Every transmission is graded twice. The `2025` `cce-interop` lineage is the contract in force, and the `ds013` DS01.3 Annex 4 draft runs as a shadow. The primary profile is derived from the lineage the payload's declared `schemaVersion` resolves to, and the shadow never affects the response code. |
+| Schema versioning | `schemaVersion` is treated as an opaque registry key. Its shape is per lineage: a bare semver triple for `cce-interop`, an integer revision for the Annex 4 draft. Schemas are vendored and validated against pre-registered copies, never fetched at runtime, and each version is pinned by content hash so the service can prove which bytes it validated against. |
 
 ## 4. Architecture
 
@@ -281,6 +286,16 @@ This table is the source for `COMPLIANCE_MATRIX` in
 [`src/api/compliance-matrix.ts`](src/api/compliance-matrix.ts), which encodes the
 same 27 rows verbatim. Change them together.
 
+**Shadow verdicts do not move a row.** Every transmission is also graded against
+the DS01.3 Annex 4 draft (§6.1), which produces its own verdict and its own
+findings under DS01.3 clause numbers. Those 27 rows stay contract-only, and every
+count that feeds them filters on the contract profile. The reason is that a
+shadow run changes the ruleset and not the vantage point: what a passive receiver
+can establish about a supplier is the same either way, so a row that is
+self-attestation under the 2025 requirements is self-attestation under their
+successor too, and a verifiability class that moved with the ruleset would be
+describing the standard rather than this service's reach.
+
 ### 7.1 Advisories
 
 An advisory names a payload that is fully schema-compliant and fully
@@ -359,10 +374,14 @@ The three tables are:
   `parse_ok bool`, and `schema_ok bool`.
 - `finding`: `id`, `transmission_id` (foreign key to `transmission`), `requirement`
   (e.g., `1.4`), `severity` (`pass`, `fail`, or `info`), `detail`, `pointer` (a JSON
-  Pointer into the payload, where relevant), and `outdated bool`. The `outdated` flag
-  is set only on the §3.2 informational finding raised when a transmission validates
-  against a valid but older registered version; the body is accepted and the
-  dashboard shows an amber "Outdated schema" tag. The table also carries structured
+  Pointer into the payload, where relevant), `outdated bool`, and `profile`
+  (`2025` or `ds013`, defaulting to `2025`, added in
+  `db/initdb/60-finding-profile.sql`). `profile` names the requirement lineage the
+  finding graded against, so the contract findings and the shadow findings of one
+  transmission share a table without either being counted into the other's totals.
+  The `outdated` flag is set only on the §3.2 informational finding raised when a
+  transmission validates against a valid but older registered version; the body is
+  accepted and the dashboard shows an amber "Outdated schema" tag. The table also carries structured
   signature fields that let identical defects collapse into one issue without keying
   on an English message that drifts between Ajv versions: `keyword`,
   `instance_path`, and `param` for schema (§3.2) errors, and `code` (e.g.,
@@ -386,23 +405,50 @@ rather than a complication.
 
 ### 9.1 Registered versions
 
-Two versions are registered: 0.8.1 (current) and 0.8.0 (registered, outdated but
-valid). Version 0.8.0 left the policy when 0.8.1 was published and was restored on
+The registry holds two lineages, and every entry declares which one it belongs to.
+The `2025` contract lineage is `cce-interop`, with 0.8.1 (current) and 0.8.0
+(registered, outdated but valid). The `ds013` shadow lineage is the DS01.3 Annex 4
+delivery-schema change proposal at revision `1`, registered so a transmission can
+be graded against where the standard is heading (§6.1) and never as the contract.
+
+Current and outdated are judged within a lineage and never across one. The newest
+key of the profile a payload resolved to is what "current" means for that payload,
+so 0.8.1 did not become outdated when the Annex 4 revision registered. The two
+keys count revisions of two different standards, which is why the comparison is
+refused outright rather than answered with an invented order.
+
+Three things distinguish the Annex 4 entry, and the registry records each rather
+than smoothing it away. Its `meta.schemaVersion` is the string `"1"`, an
+integer-valued string used as a revision counter, because Annex 4 drops semver
+deliberately: each annex versions independently, and PQS will not maintain a
+semver contract across them. Its `$id` is the URN `urn:who:pqs:e006:ds01:annex4:1`
+rather than an HTTPS URL. And the proposal is unpublished, so the entry carries a
+draft date beside its profile, and the dashboard and the ingest body take the
+draft label and that date from the entry rather than hard-coding either (as of this
+writing the entry carries the 2026-09-08 draft).
+
+Being unpublished is also why the Annex 4 file is the one file in `src/schemas/`
+that may be re-pinned in place (§9.5). There is no published artifact for a content
+hash to protect, so when the proposal is revised the bytes, the draft date, and the
+hash asserted in the test are all replaced and the key stays.
+
+Version 0.8.0 left the policy when 0.8.1 was published and was restored on
 August 4, 2026, for two reasons. First, a single registered version leaves the
 outdated-but-valid grade (§7) unreachable by construction: with nothing older than
 current, no transmission can earn the "Outdated schema" signal, so neither the grade
 nor the dashboard tag can be exercised end to end. Second, 0.8.0 is the version a
 supplier is most likely to still be sending.
 
-Registration is per dialect. Version 0.8.0 declares draft-07 and 0.8.1 declares
-2020-12, so each entry names its dialect and compiles under the matching Ajv build in
-its own instance. Versions 0.7.x and earlier are excluded entirely.
+Registration is per dialect. Version 0.8.0 declares draft-07 while 0.8.1 and the
+Annex 4 draft declare 2020-12, so each entry names its dialect and compiles under
+the matching Ajv build in its own instance. Versions 0.7.x and earlier are excluded
+entirely.
 
 As measured on August 20, 2026, docs.2to8.cc publishes 0.8.0, 0.8.1, 0.8.2, and
 0.8.4 (0.8.3 is not published, and nothing above 0.8.4 exists). The versions after
-0.8.1 remain unregistered, so 0.8.1 remains current. A payload that declares an
-unregistered version receives `422` with the list of supported versions; there is
-never a silent fallback.
+0.8.1 remain unregistered, so 0.8.1 remains current for the contract lineage. A
+payload that declares an unregistered version receives `422` with the list of
+supported versions; there is never a silent fallback.
 
 ### 9.2 Schemas are never fetched at runtime
 
@@ -414,8 +460,9 @@ undermine the claim that the service validated against the official version.
 The specification agrees: `$id` identifies and never locates. Published schemas
 declare `$id: https://schemas.2to8.cc/schemas/cce-interop-<version>.json`, a host that
 does not resolve, while the artifact is served from a different host and path.
-`normalizeVersion()` already accepts URN-shaped values that carry a semver triple, so
-the expected upstream move of `$id` to a URN will require no code change here.
+`normalizeVersion()` accepts URN-shaped values as well as URLs, so the expected
+upstream move of `$id` to a URN requires no code change here. The Annex 4 draft has
+already made that move.
 
 ### 9.3 Normalized matching
 
@@ -425,7 +472,16 @@ Until that is clarified (§15), the service normalizes on ingest. It accepts eit
 shape, extracts `MAJOR.MINOR.PATCH`, and looks that up. An exact match is required,
 because a silent fallback to a "close" version would defeat the purpose of
 conformance testing. An unknown version receives `422` with a finding that lists the
-supported versions.
+supported versions of both lineages, which is the honest answer to what the service
+would have accepted.
+
+Normalization also recognizes the shapes the Annex 4 lineage uses: a bare integer
+revision, and a URN whose last segment is an integer. A semver triple is tried
+first, so a value carrying a triple still normalizes to that triple and never
+collapses onto an integer revision key — an earlier draft of the proposal numbered
+itself with a triple, and that value stays an unregistered semver key rather than
+quietly resolving to the registered revision. Normalization recognizes a shape; it
+never repairs one.
 
 ### 9.4 Content-hash provenance
 
@@ -440,8 +496,10 @@ published. Verified July 31, 2026: vendored 0.8.1 is `290290fd…`.
 ### 9.5 Adding a version
 
 Adding a version is a policy act rather than maintenance. A new version arrives as a
-new vendored file plus a registry entry; an existing schema file is never edited in
-place.
+new vendored file plus a registry entry; a published schema file is never edited in
+place. The single exception is the Annex 4 draft (§9.1), whose bytes are re-pinned
+in place when the proposal is revised, because an unpublished proposal has no
+published artifact for the hash to be checked against.
 
 Upstream 0.8.2 is the first version to define `meta.customDataSchema`. Its own
 `$comment` there states that the conditional is deliberately not enforced by the
@@ -470,6 +528,19 @@ Each session's dashboard at `/d/{uuid}` has four sections:
   inspector, and the findings, with JSON Pointers to schema errors. The list pane is
   height-capped so the detail pane stays on screen.
 - Lifecycle shows the 7-day inactivity expiry clock.
+
+Shadow grading reaches three of those surfaces and no others. A grading legend in
+the filter bar names both lineages and says which one is the contract. The
+transmissions list carries a verdict dot per lineage, and the docked detail splits
+into the contract findings and a separate DS01.3 group. The scorecard carries a
+readiness strip: of the in-scope traffic that passes the contract, how much would
+also pass the shadow lineage, with the leading reasons offered as cross-filters.
+
+The vocabulary those surfaces use is deliberate and is centralized in
+[`profiles.ts`](src/web/profiles.ts). A lineage is never called old, new, current,
+or latest, because a supplier bound to a 2025 long-term agreement must not be told
+that the version their contract requires is stale. "Outdated" stays available, but
+only within a lineage (§7, §9.1), never across two.
 
 ## 11. Retention and lifecycle
 
@@ -533,6 +604,13 @@ The following items are deferred from v1:
   returns controlled error responses and measures retry count, backoff shape,
   `Retry-After` adherence, and abandonment on permanent failure.
 - Guided retransmission scenarios for the §5 requirements.
+- A delta ledger for the shadow lineage: a per-session view of what DS01.3 changes
+  clause by clause for the traffic the supplier actually sent, rather than the
+  per-transmission verdicts and the readiness summary of §10. It is deferred until
+  DS01.3 publishes, because a ledger of differences is worth reading once the
+  target is fixed. Publication itself needs no redesign: the two lineages are
+  symmetric, and `CONTRACT_PROFILE` in `src/schema-registry.ts` is the single flip
+  point that makes DS01.3 the contract and `cce-interop` the shadow.
 - A production-endpoint mode for real data, which would need to address retention,
   PII, data sovereignty, and split-token authentication.
 - Standard-revision proposals for the next WHO-stewarded revision: make

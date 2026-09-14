@@ -126,7 +126,11 @@ The five metadata fields (`transferId`, `transferSrc`, `transferType`,
   place §3.1 acquires meaning independent of §3.2's schema check.
 - **`transferredAt` tightened** — 2025: "ISO8601 format with explicit timezone
   offset". DS01.3: **UTC, RFC 3339, with the `Z` specifier, zero offset**. A
-  previously-conformant `+05:30` is no longer conformant.
+  previously-conformant `+05:30` is no longer conformant. The tightening is
+  prose-only as far as this project is concerned: the vendored
+  `cce-interop-0.8.1.json` already pins `transferredAt` to a pattern ending in `Z`
+  (measured 2026-09-14), so under the schema-precedence rule below a `+05:30` was
+  never graded conformant here in the first place.
 - **`transferType` should → shall** for the `ems` / `rtm` selection.
 - **`schemaVersion` decoupled from `$id`** — the phrase "located in the `$id`
   field of the transmission schema" is gone; it now reads "from Annex 4".
