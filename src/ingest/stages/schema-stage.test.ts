@@ -23,12 +23,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import type { ErrorObject } from 'ajv';
+
 import { buildApp } from '../../app.js';
 import { closePool, getPool } from '../../db/pool.js';
 import { createSession, type InsertFindingInput } from '../../db/repository.js';
-import { SchemaRegistry } from '../../schema-registry.js';
+import { emsBaseline } from '../../exercise/baseline.js';
+import { SchemaRegistry, type Profile } from '../../schema-registry.js';
+import { cloneValid } from '../fixtures/transmissions.js';
 import type { PipelineContext, StageOutcome } from '../pipeline.js';
-import { schemaStage } from './schema.js';
+import {
+  identifyingParam,
+  isContainerError,
+  schemaStage,
+  translateNullExplanations,
+} from './schema.js';
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 
@@ -105,6 +114,8 @@ function makeCtx(parsedBody: unknown, reg: SchemaRegistry = registry): PipelineC
     parsedBody,
     meta: {},
     normalizedSchemaVersion: null,
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: JSON_UTF8,
     contentEncoding: null,
     parseOk: true,
@@ -272,6 +283,310 @@ test('schema: valid-but-OUTDATED version → continue, schemaOk true, one 3.2 in
     new RegExp((current ?? '').replace(/\./g, '\\.')),
     'names the current version to upgrade to',
   );
+});
+
+// ── stage-unit: the shadow run (by1c.6, by1c.21) ────────────────────────────
+//
+// Every transmission is graded twice: the lineage it declares is the PRIMARY and
+// drives the status, the current entry of the other lineage runs as SHADOW and
+// never does. Findings are numbered by the PROFILE that produced them, not by
+// the role it played — the Annex 4 validator files 5.3.2 (or 5.3.3 under /meta)
+// whether it ran as primary or as shadow, and a cce-interop validator files
+// §3.2 either way.
+
+/** Findings attributed to one profile. */
+function byProfile(findings: InsertFindingInput[], profile: Profile) {
+  return findings.filter((f) => f.profile === profile);
+}
+
+test('shadow: the RTM fixture passes 2025 and records five ds013 5.3.2 identity fails', () => {
+  const ctx = makeCtx(cloneValid());
+  const outcome = schemaStage().run(ctx) as StageOutcome;
+
+  // The contract verdict is untouched: accepted, with the §3.2 pass.
+  assert.equal(outcome.kind, 'continue', 'the shadow run never changes the status');
+  assert.equal(ctx.schemaOk, true);
+  assert.equal(ctx.primaryProfile, '2025');
+  assert.equal(ctx.shadowProfile, 'ds013');
+  assert.equal(findingsBy(ctx.findings, '3.2', 'pass').length, 1, 'one §3.2 pass');
+
+  // The shadow verdict: the Annex 4 draft requires the five logger-identity
+  // objects on an rtmd-report, and this fixture carries none of them.
+  const shadow = byProfile(ctx.findings, 'ds013');
+  assert.equal(shadow.length, 5, `exactly five shadow findings, got ${JSON.stringify(shadow)}`);
+  for (const f of shadow) {
+    assert.equal(f.severity, 'fail');
+    assert.equal(f.requirement, '5.3.2', 'a body-level Annex 4 error is clause 5.3.2');
+    assert.equal(f.keyword, 'required');
+    assert.equal(f.pointer, '/data/0');
+  }
+  assert.deepEqual(
+    shadow.map((f) => f.param).sort(),
+    ['LDOP', 'LMFR', 'LMOD', 'LPQS', 'LSER'],
+    'the five logger-identity objects, each its own signature',
+  );
+  // The root `if` Ajv emits alongside them carries no location and is suppressed.
+  assert.equal(
+    ctx.findings.filter((f) => f.keyword === 'if').length,
+    0,
+    'no container-keyword finding reaches the supplier',
+  );
+});
+
+test('shadow: a transferredAt offset adds ONE 5.3.3 finding on top of the five', () => {
+  const payload = cloneValid();
+  payload.meta.transferredAt = '2024-01-15T04:05:54+03:00';
+  const ctx = makeCtx(payload);
+  const outcome = schemaStage().run(ctx) as StageOutcome;
+
+  // 0.8.1 patterns transferredAt too, so the PRIMARY run rejects this body. The
+  // shadow run is recorded all the same — only the status is primary-only.
+  assert.deepEqual(outcome, { kind: 'halt', status: 422 });
+
+  const shadow = byProfile(ctx.findings, 'ds013');
+  assert.equal(shadow.length, 6, 'the five identity fails plus the metadata one');
+  const meta = shadow.filter((f) => f.requirement === '5.3.3');
+  assert.equal(meta.length, 1, 'one clause-5.3.3 finding');
+  assert.equal(meta[0]?.keyword, 'pattern');
+  assert.equal(meta[0]?.pointer, '/meta/transferredAt');
+  assert.equal(
+    typeof meta[0]?.param,
+    'string',
+    'a pattern failure names its pattern, so two paths do not share one signature',
+  );
+  assert.equal(
+    shadow.filter((f) => f.requirement === '5.3.2').length,
+    5,
+    'everything outside /meta stays 5.3.2',
+  );
+});
+
+test('shadow: the EMS exercise baseline passes the Annex 4 draft — one ds013 5.3.2 PASS', () => {
+  const ctx = makeCtx(emsBaseline({ caseId: 'shadow-pass', index: 0 }));
+  const outcome = schemaStage().run(ctx) as StageOutcome;
+
+  assert.equal(outcome.kind, 'continue');
+  assert.equal(ctx.schemaOk, true);
+  const shadow = byProfile(ctx.findings, 'ds013');
+  assert.equal(shadow.length, 1, 'a clean shadow run records exactly one finding');
+  assert.equal(shadow[0]?.severity, 'pass', 'passing the other profile is a recorded fact');
+  assert.equal(shadow[0]?.requirement, '5.3.2');
+  assert.match(shadow[0]?.detail ?? '', /DRAFT 1 \(draft \d{4}-\d{2}-\d{2}, sha256 [0-9a-f]{64}\)/);
+  assert.doesNotMatch(shadow[0]?.detail ?? '', /official/, 'an unpublished draft is not official');
+});
+
+test('shadow: a null sensed value collapses to ONE tx.null_unexplained finding', () => {
+  // The Annex 4 draft (like 0.8.1) encodes "a null reading must be explained" as
+  // a record-level oneOf. Ajv says it in three errors; the supplier is told once.
+  const payload = emsBaseline({ caseId: 'null-tvc', index: 0 });
+  (payload.data[0]!.records as Record<string, unknown>[])[1]!.TVC = null;
+  const ctx = makeCtx(payload);
+  schemaStage().run(ctx);
+
+  const shadow = byProfile(ctx.findings, 'ds013');
+  assert.equal(shadow.length, 1, `one shadow finding, got ${JSON.stringify(shadow)}`);
+  assert.equal(shadow[0]?.code, 'tx.null_unexplained');
+  assert.equal(shadow[0]?.requirement, '5.3.2');
+  assert.equal(shadow[0]?.severity, 'fail');
+  assert.equal(shadow[0]?.pointer, '/data/0/records/1');
+  assert.equal(shadow[0]?.param, 'TVC');
+  assert.match(shadow[0]?.detail ?? '', /null TVC without an explaining LERR\/EERR/);
+});
+
+test('shadow: an unresolved schemaVersion runs no shadow at all', () => {
+  const ctx = makeCtx({ meta: { schemaVersion: '9.9.9', transferType: 'rtm' }, data: [] });
+  schemaStage().run(ctx);
+
+  assert.equal(ctx.primaryProfile, null, 'no resolved entry means no lineage');
+  assert.equal(ctx.shadowProfile, null);
+  assert.equal(byProfile(ctx.findings, 'ds013').length, 0, 'zero shadow findings');
+  assert.equal(ctx.findings.length, 1, 'only the unsupported-version finding');
+});
+
+// ── stage-unit: a payload declaring the ds013 lineage (by1c.21) ─────────────
+//
+// `lookup()` resolves the Annex 4 key '1', so a supplier may declare it. When
+// they do, the Annex 4 draft is the PRIMARY validator — and its findings are
+// numbered 5.3.x under profile ds013, never §3.2 under the contract lineage,
+// because the numbering follows the validator that produced them.
+
+test('ds013 primary: a body failing Annex 4 → 422 with ONLY ds013 5.3.x findings', () => {
+  const payload = cloneValid();
+  payload.meta.schemaVersion = '1';
+  const ctx = makeCtx(payload);
+  const outcome = schemaStage().run(ctx) as StageOutcome;
+
+  assert.deepEqual(outcome, { kind: 'halt', status: 422 });
+  assert.equal(ctx.schemaOk, false);
+  assert.equal(ctx.normalizedSchemaVersion, '1');
+  assert.equal(ctx.primaryProfile, 'ds013');
+  assert.equal(ctx.shadowProfile, '2025');
+
+  const primary = byProfile(ctx.findings, 'ds013');
+  for (const f of primary) {
+    assert.equal(f.severity, 'fail');
+    assert.equal(f.requirement, '5.3.2', 'never the contract clause §3.2');
+  }
+  assert.deepEqual(
+    primary
+      .filter((f) => f.keyword === 'required')
+      .map((f) => f.param)
+      .sort(),
+    ['LDOP', 'LMFR', 'LMOD', 'LPQS', 'LSER'],
+    'the five logger-identity objects',
+  );
+  // The PRIMARY run still carries Ajv's root `if` error. Container suppression
+  // is deliberately shadow-only in by1c.6; bd bt8o extends it to the primary run
+  // and will drop this last finding.
+  assert.equal(primary.length, 6, 'five identity fails plus the unsuppressed root `if`');
+  assert.equal(
+    ctx.findings.filter((f) => f.requirement === '3.2' && f.severity === 'fail').length,
+    0,
+    'the contract clause records no failure it did not observe',
+  );
+
+  // The same body IS valid 0.8.1, so the shadow run records that fact.
+  const shadow = byProfile(ctx.findings, '2025');
+  assert.equal(shadow.length, 1);
+  assert.equal(shadow[0]?.severity, 'pass');
+  assert.equal(shadow[0]?.requirement, '3.2');
+});
+
+test('ds013 primary: a clean body passes as a DRAFT, and shadow-passes 0.8.1', () => {
+  const payload = emsBaseline({ caseId: 'ds013-clean', index: 0 });
+  payload.meta.schemaVersion = '1';
+  const ctx = makeCtx(payload);
+  const outcome = schemaStage().run(ctx) as StageOutcome;
+
+  assert.equal(outcome.kind, 'continue');
+  assert.equal(ctx.schemaOk, true);
+
+  const primary = byProfile(ctx.findings, 'ds013');
+  assert.equal(primary.length, 1);
+  assert.equal(primary[0]?.severity, 'pass');
+  assert.equal(primary[0]?.requirement, '5.3.2');
+  // by1c.21: the word "official" was a false claim about unpublished bytes.
+  assert.match(primary[0]?.detail ?? '', /validated against DRAFT 1 \(draft \d{4}-\d{2}-\d{2}, /);
+  assert.doesNotMatch(primary[0]?.detail ?? '', /official/);
+
+  const shadow = byProfile(ctx.findings, '2025');
+  assert.equal(shadow.length, 1);
+  assert.equal(shadow[0]?.severity, 'pass');
+  assert.equal(shadow[0]?.requirement, '3.2');
+});
+
+test('a published entry is still called official', () => {
+  const ctx = makeCtx(validPayload());
+  schemaStage().run(ctx);
+  const pass = findingsBy(ctx.findings, '3.2', 'pass')[0];
+  assert.match(pass?.detail ?? '', /validated against official 0\.8\.1 \(sha256 [0-9a-f]{64}\)/);
+  assert.doesNotMatch(pass?.detail ?? '', /DRAFT/);
+});
+
+// ── unit: the two pure translations (bt8o reuses both) ──────────────────────
+
+test('isContainerError names the combining keywords and nothing else', () => {
+  const err = (keyword: string) => ({ keyword }) as unknown as ErrorObject;
+  for (const keyword of ['if', 'then', 'else', 'oneOf', 'anyOf', 'allOf']) {
+    assert.equal(isContainerError(err(keyword)), true, `${keyword} is a container`);
+  }
+  for (const keyword of ['required', 'pattern', 'type', 'minLength', 'not']) {
+    assert.equal(isContainerError(err(keyword)), false, `${keyword} asserts something itself`);
+  }
+});
+
+test('translateNullExplanations leaves a oneOf it does not recognize alone', () => {
+  // The mains/solar partition is a record-level oneOf too, but its leaves sit AT
+  // the record rather than under it, so nothing about a null reading is claimed.
+  const errors = [
+    {
+      keyword: 'required',
+      instancePath: '/data/0/records/0',
+      schemaPath: '#/allOf/0/oneOf/0/required',
+      params: { missingProperty: 'SVA' },
+    },
+    {
+      keyword: 'oneOf',
+      instancePath: '/data/0/records/0',
+      schemaPath: '#/allOf/0/oneOf',
+      params: {},
+    },
+  ] as unknown as ErrorObject[];
+  const { explanations, remaining } = translateNullExplanations(errors);
+  assert.deepEqual(explanations, []);
+  assert.equal(remaining.length, 2, 'every error is handed back untouched');
+});
+
+test('translateNullExplanations leaves a wrong-TYPE reading alone', () => {
+  // A string where a number belongs trips the abnormal branch's "must be null"
+  // too, so the object carries a null-admitting type error and is not a null.
+  const errors = [
+    {
+      keyword: 'type',
+      instancePath: '/data/0/records/1/TVC',
+      schemaPath: '#/allOf/1/oneOf/0/properties/TVC/type',
+      params: { type: 'number' },
+    },
+    {
+      keyword: 'type',
+      instancePath: '/data/0/records/1/LERR',
+      schemaPath: '#/allOf/1/oneOf/1/properties/LERR/type',
+      params: { type: 'string' },
+    },
+    {
+      keyword: 'type',
+      instancePath: '/data/0/records/1/TVC',
+      schemaPath: '#/allOf/1/oneOf/1/properties/TVC/type',
+      params: { type: 'null' },
+    },
+    {
+      keyword: 'oneOf',
+      instancePath: '/data/0/records/1',
+      schemaPath: '#/allOf/1/oneOf',
+      params: {},
+    },
+  ] as unknown as ErrorObject[];
+  assert.deepEqual(translateNullExplanations(errors).explanations, []);
+});
+
+test('translateNullExplanations reads an ABSENT explainer as unexplained too', () => {
+  // The other live shape: the reading is null and LERR was never sent at all.
+  const errors = [
+    {
+      keyword: 'type',
+      instancePath: '/data/0/records/1/TVC',
+      schemaPath: '#/allOf/1/oneOf/0/properties/TVC/type',
+      params: { type: 'number' },
+    },
+    {
+      keyword: 'required',
+      instancePath: '/data/0/records/1',
+      schemaPath: '#/allOf/1/oneOf/1/required',
+      params: { missingProperty: 'LERR' },
+    },
+    {
+      keyword: 'oneOf',
+      instancePath: '/data/0/records/1',
+      schemaPath: '#/allOf/1/oneOf',
+      params: {},
+    },
+  ] as unknown as ErrorObject[];
+  const { explanations, remaining } = translateNullExplanations(errors);
+  assert.equal(explanations.length, 1);
+  assert.equal(explanations[0]?.object, 'TVC');
+  assert.equal(explanations[0]?.pointer, '/data/0/records/1');
+  assert.equal(remaining.length, 1, 'only the oneOf container is left to suppress');
+});
+
+test('identifyingParam names the pattern and the length limit', () => {
+  // Annex 4 applies both widely; without these every pattern failure in a
+  // transmission would sign identically and collapse into one dashboard row.
+  const err = (keyword: string, params: Record<string, unknown>) =>
+    ({ keyword, params }) as unknown as ErrorObject;
+  assert.equal(identifyingParam(err('pattern', { pattern: '^[0-9]{4}$' })), '^[0-9]{4}$');
+  assert.equal(identifyingParam(err('minLength', { limit: 1 })), '1');
+  assert.equal(identifyingParam(err('maxLength', { limit: 64 })), '64');
+  assert.equal(identifyingParam(err('not', {})), null, 'an unlisted keyword still has none');
 });
 
 // ── full-flow (DB-skip-guarded) ─────────────────────────────────────────────

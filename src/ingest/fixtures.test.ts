@@ -44,6 +44,7 @@ import { contentTypeStage } from './stages/content-type.js';
 import { encodingStage } from './stages/encoding.js';
 import { parseStage } from './stages/parse.js';
 import { schemaStage } from './stages/schema.js';
+import { isAdvisoryId } from './stages/semantic/advisory.js';
 import { semanticStage, type SemanticDeps } from './stages/semantic.js';
 import { sizeStage } from './stages/size.js';
 import {
@@ -100,6 +101,8 @@ function makeCtx(
     parsedBody: null,
     meta: {},
     normalizedSchemaVersion: null,
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: headers.contentType ?? null,
     contentEncoding: headers.contentEncoding ?? null,
     parseOk: null,
@@ -112,6 +115,21 @@ async function runFixture(ctx: PipelineContext): Promise<IngestResponseBody> {
   const result = await runPipeline(ctx, bodyStages());
   // transmissionId is null at pipeline level (persistence is the route's job).
   return buildResponseBody(result.status, result.findings, null);
+}
+
+/**
+ * The GRADED fail findings of a run — the contract profile's, and only those.
+ *
+ * Since bd by1c.6 the schema stage also grades the transmission under the shadow
+ * lineage, so a payload that is perfectly conformant today can carry shadow fail
+ * findings describing how it would fare under DS01.3. Those are a different
+ * profile's verdict and say nothing about this fixture's standing under the
+ * contract, so a "zero fails" claim has to name which profile it is about. The
+ * response body carries no profile field (it is the supplier's teaching surface,
+ * not the API), so this reads the context the pipeline actually ran on.
+ */
+function contractFails(ctx: PipelineContext) {
+  return ctx.findings.filter((f) => f.severity === 'fail' && f.profile !== ctx.shadowProfile);
 }
 
 function hasFinding(
@@ -133,9 +151,9 @@ test('fixture valid → 200, no fail findings, accepted message', async () => {
   assert.match(body.message, /^Accepted \(200\)/);
   // No fail findings on the happy path; every stage records a pass/info.
   assert.equal(
-    body.findingDetails.filter((f) => f.severity === 'fail').length,
+    contractFails(ctx).length,
     0,
-    'valid baseline produces zero fail findings',
+    'valid baseline produces zero fail findings under the contract profile',
   );
   assert.ok(hasFinding(body.findingDetails, '3.2', 'pass'), 'schema validated clean');
   assert.equal(body.findings, body.findingDetails.length, 'count matches details');
@@ -155,30 +173,62 @@ function advisoryOnlyBytes(): Buffer {
 }
 
 test('a conformant payload raising an advisory tallies exactly as the baseline (7rv)', async () => {
-  const baseline = await runFixture(makeCtx(validBytes(), { contentType: JSON_UTF8 }));
-  const advised = await runFixture(makeCtx(advisoryOnlyBytes(), { contentType: JSON_UTF8 }));
+  const baselineCtx = makeCtx(validBytes(), { contentType: JSON_UTF8 });
+  const baseline = await runFixture(baselineCtx);
+  const advisedCtx = makeCtx(advisoryOnlyBytes(), { contentType: JSON_UTF8 });
+  const advised = await runFixture(advisedCtx);
 
   // Precondition: the payload really does raise an advisory, and no fail.
   assert.equal(advised.status, 200);
   assert.equal(advised.advisories.length, 1, 'adv.date_format raised');
   assert.equal(advised.advisories[0]?.requirement, 'adv.date_format');
   assert.equal(
-    advised.findingDetails.filter((f) => f.severity === 'fail').length,
+    contractFails(advisedCtx).length,
     0,
-    '100 % conformant: no fail findings',
+    '100 % conformant under the contract profile: no fail findings',
   );
 
-  // THE CONTRACT: the graded count, the graded echo and the message tally read
-  // exactly as they would had the advisory never been raised.
-  const graded = (b: IngestResponseBody) =>
-    b.findingDetails.map((f) => `${f.requirement}:${f.severity}`);
-  assert.equal(advised.findings, baseline.findings, 'advisory does not inflate the count');
-  assert.deepEqual(graded(advised), graded(baseline), 'advisory is absent from findingDetails');
-  assert.ok(
-    advised.message.startsWith(baseline.message),
-    `tally must read as the no-advisory one: ${advised.message}`,
+  // THE CONTRACT: the graded count and the graded echo read exactly as they
+  // would had the advisory never been raised.
+  //
+  // Compared under the CONTRACT PROFILE. The mis-shaped date this fixture
+  // carries IS a schema failure under the DS01.3 Annex 4 draft (its date objects
+  // carry a pattern that 0.8.1's do not), so the shadow run legitimately says
+  // something about the advised payload that it does not say about the baseline.
+  // That is the two-surface design of bd by1c.6 item 8, not advisory leakage:
+  // what 7rv protects is the contract tally, which is what is compared here.
+  const graded = (ctx: PipelineContext) =>
+    ctx.findings
+      .filter((f) => !isAdvisoryId(f.requirement) && f.profile !== ctx.shadowProfile)
+      .map((f) => `${f.requirement}:${f.severity}`);
+  assert.equal(
+    graded(advisedCtx).length,
+    graded(baselineCtx).length,
+    'advisory does not inflate the contract-profile count',
+  );
+  assert.deepEqual(graded(advisedCtx), graded(baselineCtx), 'advisory is absent from the grade');
+  // The tally in the headline is the GRADED tally: the advisory contributed
+  // nothing to the count or to the fail/info breakdown, and appears only in its
+  // own trailing sentence.
+  //
+  // This used to be pinned as `advised.message.startsWith(baseline.message)`,
+  // which no longer holds for a reason that has nothing to do with advisories:
+  // the two payloads differ under the SHADOW profile (Annex 4 patterns the date
+  // objects), so their headline counts differ by that one shadow finding. The
+  // property 7rv is about is per-payload, so it is pinned per payload here.
+  // KNOWN TRANSIENT (bd by1c.6 → by1c.8): the headline tally counts shadow fails
+  // alongside contract fails; by1c.8 owns the profile-aware audit of every
+  // `severity === 'fail'` consumer, this response body included.
+  const fails = advised.findingDetails.filter((f) => f.severity === 'fail').length;
+  const infos = advised.findingDetails.filter((f) => f.severity === 'info').length;
+  const headline = advised.message.replace(/ 1 advisory,.*$/, '');
+  assert.equal(
+    headline,
+    `Accepted (200): data recorded; ${advised.findings} findings (${fails} fail, ${infos} info).`,
+    'the tally is the graded tally, with no advisory folded into it',
   );
   assert.doesNotMatch(baseline.message, /advisor/i);
+  assert.doesNotMatch(headline, /advisor/i);
   // Carried, not dropped: the response says they exist, outside the tally.
   assert.match(advised.message, /1 advisory, not graded and not counted above\.$/);
 });

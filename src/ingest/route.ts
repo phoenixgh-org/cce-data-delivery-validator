@@ -119,6 +119,8 @@ function buildContext(
     parsedBody: null,
     meta: {},
     normalizedSchemaVersion: null,
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: typeof headers['content-type'] === 'string' ? headers['content-type'] : null,
     contentEncoding:
       typeof headers['content-encoding'] === 'string' ? headers['content-encoding'] : null,

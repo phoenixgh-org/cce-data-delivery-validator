@@ -15,7 +15,7 @@
 import type { FastifyRequest } from 'fastify';
 
 import type { InsertFindingInput, Severity } from '../db/repository.js';
-import type { SchemaRegistry } from '../schema-registry.js';
+import type { Profile, SchemaRegistry } from '../schema-registry.js';
 import { isAdvisoryId } from './stages/semantic/advisory.js';
 
 /**
@@ -63,6 +63,20 @@ export interface PipelineContext {
   meta: IngestMeta;
   /** Normalized MAJOR.MINOR.PATCH schema version; null until resolved. */
   normalizedSchemaVersion: string | null;
+  /**
+   * The requirement lineage this transmission is GRADED against — the profile of
+   * the registry entry `meta.schemaVersion` resolved to. Set by the schema stage
+   * (7); null until then, and still null after it when the version was missing
+   * or unsupported, because an unresolved version names no lineage.
+   */
+  primaryProfile: Profile | null;
+  /**
+   * The lineage graded in SHADOW alongside it — the current entry of the other
+   * lineage, per `registry.shadowFor()`. Its findings are recorded but never
+   * affect the response. Null when no shadow ran (see `primaryProfile`, or a
+   * registry with only one lineage).
+   */
+  shadowProfile: Profile | null;
 
   /** `Content-Type` request header (as sent), or null if absent. */
   contentType: string | null;

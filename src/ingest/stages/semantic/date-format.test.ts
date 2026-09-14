@@ -166,6 +166,8 @@ function makeCtx(payload: unknown, transferType = 'ems'): PipelineContext {
     parsedBody: null,
     meta: { transferType },
     normalizedSchemaVersion: null,
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: JSON_UTF8,
     contentEncoding: null,
     parseOk: null,
@@ -192,6 +194,19 @@ function checkOnly(payload: unknown, transferType = 'ems'): Finding[] {
   ctx.parseOk = true;
   ctx.schemaOk = true;
   return dateFormatCheck(ctx);
+}
+
+/**
+ * The fail findings of a run under the CONTRACT profile only.
+ *
+ * Since bd by1c.6 the schema stage grades every transmission twice, so a payload
+ * that is fully conformant under the 2025 contract may still carry shadow fail
+ * findings describing how it would fare under DS01.3. Those are the other
+ * profile's verdict; a "zero fails" claim about this advisory has to say which
+ * profile it speaks for.
+ */
+function contractFails(ctx: PipelineContext, findings: readonly Finding[]): Finding[] {
+  return findings.filter((f) => f.severity === 'fail' && f.profile !== ctx.shadowProfile);
 }
 
 function advisories(findings: readonly Finding[]): Finding[] {
@@ -242,9 +257,9 @@ test('it fires through the real §6 body stages on a 200 with zero fail findings
 
   assert.equal(result.status, 200);
   assert.equal(
-    result.findings.filter((f) => f.severity === 'fail').length,
+    contractFails(ctx, result.findings).length,
     0,
-    `expected no fail findings, got ${JSON.stringify(result.findings.filter((f) => f.severity === 'fail'))}`,
+    `expected no contract-profile fail findings, got ${JSON.stringify(contractFails(ctx, result.findings))}`,
   );
 
   const raised = advisories(result.findings);
@@ -253,6 +268,55 @@ test('it fires through the real §6 body stages on a 200 with zero fail findings
   assert.equal(raised[0]?.code, 'adv.date_format', 'the adv.* id rides in code too');
   assert.ok(!raised[0]?.outdated, 'never outdated — that would file it as a defect');
   assert.equal(raised[0]?.pointer, '/data/0/ADOP', 'points at the first offending value');
+});
+
+// ── the two profiles, two surfaces (by1c.6 item 8) ──────────────────────────
+//
+// Advisories need no profile gate. They run only after the PRIMARY schema pass,
+// so which surface speaks follows from which lineage the payload declared.
+
+test('2025-primary: the advisory and the ds013 shadow failure both describe the date', async () => {
+  const ctx = makeCtx(emsPayload({ ADOP: '2026-7-4' }));
+  const result = await runPipeline(ctx, bodyStages());
+
+  assert.equal(
+    result.status,
+    200,
+    '0.8.1 has nothing to say about a date, so the body is accepted',
+  );
+  assert.equal(advisories(result.findings).length, 1, 'the advisory speaks');
+
+  // The Annex 4 draft DOES pattern the date objects, so the shadow run grades
+  // the same value as a 5.3.2 failure. Two surfaces, one fact, by design: the
+  // advisory says what the contract cannot grade, the shadow says what the
+  // successor would.
+  const shadowDate = result.findings.filter(
+    (f) => f.profile === ctx.shadowProfile && f.pointer === '/data/0/ADOP',
+  );
+  assert.equal(shadowDate.length, 1, 'one shadow finding on the offending value');
+  assert.equal(shadowDate[0]?.requirement, '5.3.2');
+  assert.equal(shadowDate[0]?.keyword, 'pattern');
+  assert.equal(shadowDate[0]?.severity, 'fail');
+});
+
+test('ds013-primary: the same date is rejected 422, and no advisory is raised', async () => {
+  const payload = emsPayload({ ADOP: '2026-7-4' });
+  (payload.meta as Record<string, unknown>).schemaVersion = '1';
+  const ctx = makeCtx(payload);
+  const result = await runPipeline(ctx, bodyStages());
+
+  assert.equal(result.status, 422, 'the Annex 4 pattern rejects the value outright');
+  assert.deepEqual(
+    advisories(result.findings),
+    [],
+    'stage 8 never runs, so nothing double-reports',
+  );
+  const graded = result.findings.filter(
+    (f) => f.severity === 'fail' && f.pointer === '/data/0/ADOP',
+  );
+  assert.equal(graded.length, 1);
+  assert.equal(graded[0]?.requirement, '5.3.2', 'graded under the lineage that rejected it');
+  assert.equal(graded[0]?.profile, 'ds013');
 });
 
 test('the conformant baseline stays silent, on both branches', () => {

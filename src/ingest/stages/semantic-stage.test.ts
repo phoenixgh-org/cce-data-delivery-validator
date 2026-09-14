@@ -28,6 +28,8 @@ function makeCtx(overrides: Partial<PipelineContext> = {}): PipelineContext {
     parsedBody: { meta: {}, data: [] },
     meta: {},
     normalizedSchemaVersion: '0.8.0',
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: 'application/json; charset=utf-8',
     contentEncoding: null,
     parseOk: true,

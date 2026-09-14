@@ -35,6 +35,8 @@ function makeCtx(parsedBody: unknown): PipelineContext {
     parsedBody,
     meta: {},
     normalizedSchemaVersion: '0.8.1',
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: JSON_UTF8,
     contentEncoding: null,
     parseOk: true,

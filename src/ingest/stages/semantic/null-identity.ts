@@ -89,6 +89,18 @@
  * populated, so both claims would be false. What is true, and all we say, is
  * that the branch's own appliance identifier did not arrive and nothing else on
  * the branch stands in for it.
+ *
+ * ── THE DS01.3 SHADOW AND THIS CHECK NEED NO GATE ────────────────────────────
+ * The DS01.3 Annex 4 draft requires a non-null ASER on `ems-report` and a
+ * minLength-1 AMID on `rtmd-report`, so most of what this advisory observes is a
+ * clause 5.3.2 schema failure under the shadow profile the schema stage now also
+ * grades (bd by1c.6). The check is deliberately NOT gated to the 2025 profile,
+ * because stage order already settles which surface speaks: a payload declaring
+ * the Annex 4 lineage is rejected 422 at stage 7 before stage 8 runs, and a
+ * payload declaring the 0.8.x lineage is accepted, so the advisory (never a
+ * grade) and the shadow failure describe the same fact on two surfaces by
+ * design. The same reasoning, with both directions pinned in tests, is in
+ * ./date-format.ts and ./date-format.test.ts.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';

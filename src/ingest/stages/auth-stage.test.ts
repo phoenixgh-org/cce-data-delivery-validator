@@ -50,6 +50,8 @@ function makeCtx(headers: Record<string, string | string[]>): PipelineContext {
     parsedBody: null,
     meta: {},
     normalizedSchemaVersion: null,
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: null,
     contentEncoding: null,
     parseOk: null,

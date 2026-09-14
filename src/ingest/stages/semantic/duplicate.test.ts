@@ -30,6 +30,8 @@ function makeCtx(body: Record<string, unknown>, transferId: string | null): Pipe
     parsedBody: body,
     meta: { transferId },
     normalizedSchemaVersion: '0.8.0',
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: JSON_UTF8,
     contentEncoding: null,
     parseOk: true,

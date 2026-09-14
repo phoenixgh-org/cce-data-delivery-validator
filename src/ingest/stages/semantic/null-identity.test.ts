@@ -165,6 +165,8 @@ function makeCtx(payload: unknown): PipelineContext {
     parsedBody: null,
     meta: {},
     normalizedSchemaVersion: null,
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: JSON_UTF8,
     contentEncoding: null,
     parseOk: null,
@@ -191,6 +193,19 @@ function checkOnly(payload: { meta: { transferType?: unknown } }): Finding[] {
   ctx.schemaOk = true;
   ctx.meta = { transferType: String(payload.meta.transferType) };
   return nullIdentityCheck(ctx);
+}
+
+/**
+ * The fail findings of a run under the CONTRACT profile only.
+ *
+ * Since bd by1c.6 the schema stage grades every transmission twice, so a payload
+ * that is fully conformant under the 2025 contract may still carry shadow fail
+ * findings describing how it would fare under DS01.3. Those are the other
+ * profile's verdict; a "zero fails" claim about this advisory has to say which
+ * profile it speaks for.
+ */
+function contractFails(ctx: PipelineContext, findings: readonly Finding[]): Finding[] {
+  return findings.filter((f) => f.severity === 'fail' && f.profile !== ctx.shadowProfile);
 }
 
 function advisories(findings: readonly Finding[]): Finding[] {
@@ -237,9 +252,9 @@ test('EMS: it fires through the real §6 body stages on a 200 with zero fail fin
 
   assert.equal(result.status, 200);
   assert.equal(
-    result.findings.filter((f) => f.severity === 'fail').length,
+    contractFails(ctx, result.findings).length,
     0,
-    `expected no fail findings, got ${JSON.stringify(result.findings.filter((f) => f.severity === 'fail'))}`,
+    `expected no contract-profile fail findings, got ${JSON.stringify(contractFails(ctx, result.findings))}`,
   );
 
   const raised = advisories(result.findings);
@@ -255,7 +270,7 @@ test('RTMD: it fires through the real §6 body stages on a 200 with zero fail fi
   const result = await runPipeline(ctx, bodyStages());
 
   assert.equal(result.status, 200);
-  assert.equal(result.findings.filter((f) => f.severity === 'fail').length, 0);
+  assert.equal(contractFails(ctx, result.findings).length, 0);
   assert.equal(advisories(result.findings).length, 1);
 });
 

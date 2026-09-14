@@ -188,6 +188,19 @@ objects. It runs at stage 8 and independently of the schema, because
 detection rule and its deliberate limits are in
 [`custom-schema.ts`](src/ingest/stages/semantic/custom-schema.ts).
 
+Stage 7 also grades the body a second time. The lineage `meta.schemaVersion`
+resolves to is the primary profile and drives the response code exactly as it
+always has; the current schema of the other lineage runs as a shadow, and its
+findings are recorded but never change the status, never halt, and are recorded
+even when the primary run rejects the transmission. Findings are numbered by the
+profile that produced them rather than by the role it played, so the same
+validator files under the same clause whichever way round it ran: a `cce-interop`
+error is §3.2, and an Annex 4 error is DS01.3 clause 5.3.2, except where its JSON
+Pointer addresses the transmission metadata block (`/meta` or below), which is
+clause 5.3.3. That attribution rule is why DS01.3's metadata duties need no check
+of their own — Annex 4's pattern on `meta.transferredAt` already rejects a UTC
+offset, and the pointer files the rejection under the clause that requires it.
+
 ### 6.2 The response body
 
 `200` is the single success status; `202` is not used. The small JSON body returned

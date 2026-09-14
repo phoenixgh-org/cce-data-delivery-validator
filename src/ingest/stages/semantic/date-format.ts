@@ -67,6 +67,23 @@
  * vary. We never re-write a supplier's value into what we think it meant:
  * `2026-7-4` looks obvious and `07/04/2026` is genuinely ambiguous, and guessing
  * either would be the concluding language this category is forbidden.
+ *
+ * ── THE DS01.3 SHADOW SAYS THE SAME THING, AND NEEDS NO GATE ─────────────────
+ * The DS01.3 Annex 4 draft DOES pattern the five report-level date objects and
+ * record-level EDOP, so a mis-shaped date is a clause 5.3.2 schema failure under
+ * the shadow profile the schema stage now also grades (bd by1c.6). This check is
+ * deliberately NOT gated to the 2025 profile, because the order of the stages
+ * already settles which surface speaks:
+ *
+ *   - a payload declaring the 0.8.x lineage is accepted (0.8.1 has nothing to
+ *     say about a date), so this advisory fires AND the shadow run records the
+ *     5.3.2 failure — one fact on two surfaces, which is the point: the advisory
+ *     says what the contract cannot grade, the shadow says what the successor
+ *     would;
+ *   - a payload declaring the Annex 4 lineage is rejected 422 at stage 7, before
+ *     stage 8 runs at all, so nothing is double-reported.
+ *
+ * Both directions are pinned in ./date-format.test.ts.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';

@@ -181,6 +181,8 @@ function makeCtx(payload: unknown, transferType = 'ems'): PipelineContext {
     parsedBody: null,
     meta: { transferType, transferId: 'T-duplicate-records' },
     normalizedSchemaVersion: null,
+    primaryProfile: null,
+    shadowProfile: null,
     contentType: JSON_UTF8,
     contentEncoding: null,
     parseOk: null,
