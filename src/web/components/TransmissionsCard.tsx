@@ -27,6 +27,12 @@ import type { FindingView, Profile, Severity, Signature, TransmissionView } from
 import type { DisplayStatus } from '../api';
 import { CONTRACT_PROFILE, isAdvisory } from '../api';
 import { ADVISORY_COPY, advisoryLabel, splitFindings } from '../advisories';
+import {
+  detailGroupCopy,
+  groupDetailFindings,
+  shadowRowText,
+  type ShadowRow,
+} from '../detailGroups';
 import { PROFILE_NAME } from '../profiles';
 import { Icon } from './ui/Icon';
 import { StatusPill } from './ui/StatusPill';
@@ -72,6 +78,14 @@ export interface TransmissionsCardProps {
    * simply has no shadow findings yet still renders the column.
    */
   shadowProfile: Profile | null;
+  /**
+   * The session's signatures (by1c.14). The docked detail's shadow rows name
+   * their defect from the matching signature's title and cross-filter the list
+   * by its key, so the card needs the same array the compliance column reads.
+   */
+  signatures: Signature[];
+  /** Cross-filter the list by a signature — the shadow rows' click (by1c.14). */
+  onSelectSignature: (sig: Signature) => void;
 }
 
 /** Row status-dot tone derived from a transmission's findings (not HTTP). */
@@ -546,12 +560,25 @@ function AdvisoryItem({
   );
 }
 
+/**
+ * The "· also 5.1.3" mark on a contract finding that fails under the shadow
+ * lineage too (by1c.14) — the clause it re-tags to, plus the words for its
+ * tooltip, which the caller builds so no lineage is named from a literal here.
+ */
+export interface AlsoFails {
+  clause: string;
+  hint: string;
+}
+
 function FindingItem({
   finding,
+  alsoFails,
   onSelectReq,
   onLocate,
 }: {
   finding: FindingView;
+  /** The shadow clause this finding also fails under, or null (by1c.14). */
+  alsoFails?: AlsoFails | null;
   onSelectReq: (req: string) => void;
   /** Open the raw-payload inspector at this finding's JSON Pointer (5bs.3). */
   onLocate?: (pointer: string) => void;
@@ -593,6 +620,14 @@ function FindingItem({
         >
           §{finding.requirement}
         </button>
+        {alsoFails != null && (
+          <span
+            title={alsoFails.hint}
+            style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)' }}
+          >
+            · also {alsoFails.clause}
+          </span>
+        )}
         {finding.outdated && (
           <span
             style={{
@@ -611,6 +646,69 @@ function FindingItem({
       {finding.detail && <div style={{ color: 'var(--text-muted)' }}>{finding.detail}</div>}
       <PointerLine finding={finding} onLocate={onLocate} />
     </div>
+  );
+}
+
+/**
+ * One row of the "Would also fail under DS01.3" group (by1c.14).
+ *
+ * The row is a button on the same `?signatureKey=` cross-filter the compliance
+ * signatures use, so picking one asks "which other transmissions would this
+ * affect?" — the question a supplier reads this group to answer. It is quieter
+ * than a FindingItem on purpose: nothing here grades the contract in force, and
+ * a row that looked like a verdict would say otherwise.
+ */
+function ShadowFindingRow({
+  row,
+  hint,
+  onSelectSignature,
+}: {
+  row: ShadowRow;
+  /** Tooltip for the clickable row — built by the caller, which knows the lineage. */
+  hint: string;
+  onSelectSignature: (sig: Signature) => void;
+}): ReactElement {
+  const body = (
+    <>
+      <span style={{ ...mono, fontSize: 11, color: 'var(--text-muted)' }}>{row.req}</span>
+      {row.title !== '' && <span style={{ color: 'var(--text)' }}>{row.title}</span>}
+      {row.detail !== null && row.detail !== '' && (
+        <>
+          {row.dash && <span style={{ color: 'var(--text-faint)' }}>—</span>}
+          <span style={{ ...mono, fontSize: 11, color: 'var(--text-muted)' }}>{row.detail}</span>
+        </>
+      )}
+    </>
+  );
+  const shell: CSSProperties = {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 6,
+    flexWrap: 'wrap',
+    width: '100%',
+    padding: '6px 10px',
+    borderRadius: 6,
+    fontSize: 12,
+    lineHeight: 1.5,
+    textAlign: 'left',
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+  };
+  const sig = row.sig;
+  // A finding of a transmission in scope always folded into one of the session's
+  // signatures — the server rolls them from these same findings — so this branch
+  // is unreachable in practice. It renders the finding's own detail rather than
+  // nothing, so a lookup that somehow misses costs the click, not the row.
+  if (sig === null) return <div style={shell}>{body}</div>;
+  return (
+    <button
+      type="button"
+      title={hint}
+      onClick={() => onSelectSignature(sig)}
+      style={{ ...shell, font: 'inherit', cursor: 'pointer' }}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -1362,9 +1460,18 @@ function RawPayload({
 function TxDetail({
   tx,
   onSelectReq,
+  shadowProfile,
+  signatures,
+  onSelectSignature,
 }: {
   tx: TransmissionView;
   onSelectReq: (req: string) => void;
+  /** The shadow lineage, or null — the hide signal for the whole shadow group. */
+  shadowProfile: Profile | null;
+  /** The session's signatures: the title and cross-filter target of a shadow row. */
+  signatures: readonly Signature[];
+  /** Cross-filter the list by a signature (the shadow rows' click). */
+  onSelectSignature: (sig: Signature) => void;
 }): ReactElement {
   const inventory = deriveInventory(tx.body);
   const rawSummary = rawPayloadSummary(tx);
@@ -1374,6 +1481,17 @@ function TxDetail({
   // as this transmission's grades. The split is explicit rather than relying on
   // advisories sorting to the tail of tx.findings, which is incidental.
   const { verdicts, advisories } = splitFindings(tx.findings);
+  // The graded findings split by lineage (by1c.14): the contract's grade the
+  // transmission, the shadow's say what a DS01.3 run would have made of it. With
+  // no shadow lineage the second group is empty and the first is the whole list,
+  // so the pane reads exactly as it did before.
+  const { contract, shadow } = groupDetailFindings(verdicts, shadowProfile, {
+    signatures,
+    body: tx.body,
+  });
+  const copy = detailGroupCopy(shadowProfile, contract.length);
+  const shadowName = shadowProfile === null ? null : PROFILE_NAME[shadowProfile];
+  const rowHint = shadowName === null ? '' : `Filter the list by this ${shadowName} issue`;
 
   // Raw-payload inspector state. Open/closed PERSISTS across row selections (so
   // payloads can be compared row to row); the pending scroll target does not.
@@ -1520,17 +1638,76 @@ function TxDetail({
         </button>
       </div>
 
-      <div style={{ ...eyebrow, marginBottom: 7 }}>Findings · click § to open the requirement</div>
-      {verdicts.length === 0 ? (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 10,
+          marginBottom: 7,
+        }}
+      >
+        <span style={eyebrow}>{copy.contractHeading}</span>
+        {copy.contractNote !== null && <span style={eyebrow}>{copy.contractNote}</span>}
+      </div>
+      {contract.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {contract.map((row, i) => (
+            <FindingItem
+              key={i}
+              finding={row.finding}
+              alsoFails={
+                row.alsoFails === null || shadowName === null
+                  ? null
+                  : {
+                      clause: row.alsoFails,
+                      hint: `Also fails under ${shadowName} ${row.alsoFails}`,
+                    }
+              }
+              onSelectReq={onSelectReq}
+              onLocate={onLocate}
+            />
+          ))}
+        </div>
+      )}
+      {/* With a shadow lineage the empty case is stated on the header's right
+          ("none — passes"), so only the no-shadow pane keeps the sentence. */}
+      {contract.length === 0 && shadowProfile === null && (
         <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
           No findings for this transmission.
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {verdicts.map((f, i) => (
-            <FindingItem key={i} finding={f} onSelectReq={onSelectReq} onLocate={onLocate} />
-          ))}
-        </div>
+      )}
+
+      {/* "Would also fail under DS01.3" (by1c.14) — rendered ONLY when the shadow
+          run failed on its own. A contract failure that re-tags forward is marked
+          in place above instead, so nothing appears twice. The count is the
+          number of rows, which is what the reader can see and act on: several
+          missing properties at one path are collapsed into one of them. */}
+      {shadow.length > 0 && copy.shadowHeading !== null && (
+        <>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              gap: 10,
+              margin: '13px 0 7px',
+            }}
+          >
+            <span style={eyebrow}>{copy.shadowHeading}</span>
+            <span style={eyebrow}>{shadow.length}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {shadow.map((row) => (
+              <ShadowFindingRow
+                key={`${row.key}|${shadowRowText(row)}`}
+                row={row}
+                hint={rowHint}
+                onSelectSignature={onSelectSignature}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {/* Advisories (pwd/bva) — a separate block with its own heading, below the
@@ -1598,6 +1775,8 @@ export function TransmissionsCard({
   hasMore,
   isLoadingMore,
   shadowProfile,
+  signatures,
+  onSelectSignature,
 }: TransmissionsCardProps): ReactElement {
   // Default to the newest (first) transmission when nothing is selected or the
   // selection no longer exists. The API returns newest-first, so [0] is newest.
@@ -1838,7 +2017,13 @@ export function TransmissionsCard({
             }}
           >
             {selected ? (
-              <TxDetail tx={selected} onSelectReq={onSelectReq} />
+              <TxDetail
+                tx={selected}
+                onSelectReq={onSelectReq}
+                shadowProfile={shadowProfile}
+                signatures={signatures}
+                onSelectSignature={onSelectSignature}
+              />
             ) : (
               <div
                 style={{

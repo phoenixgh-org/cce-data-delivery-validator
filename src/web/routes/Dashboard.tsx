@@ -653,6 +653,11 @@ export function Dashboard() {
           // Shadow lineage (by1c.12): null hides the DS01.3 verdict column and
           // the row's second dot. Served, not derived from the findings.
           shadowProfile={session.shadowProfile}
+          // The docked detail's shadow rows (by1c.14) name their defect from the
+          // matching signature and cross-filter the list by its key — the same
+          // array and the same handler the compliance column uses.
+          signatures={state.data.signatures}
+          onSelectSignature={onSelectSignature}
         />
       </div>
 
