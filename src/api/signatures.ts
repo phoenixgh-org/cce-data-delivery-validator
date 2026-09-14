@@ -28,9 +28,20 @@
  * the raw set (the `distinctIssues` headline does). An advisory is an
  * observation about a conformant payload; counting one as a defect is the single
  * thing the whole category exists to avoid.
+ *
+ * PROFILES (by1c.7). A finding grades against one requirement lineage — '2025',
+ * the contract in force, or 'ds013', the DS01.3 shadow run — and the two are kept
+ * DISJOINT here: the same Ajv keyword failing at the same path under the two
+ * lineages is two different defects with two different clause ids, so the key is
+ * prefixed with the profile and the fold can never merge them. Everything that
+ * feeds a verdict surface (the §7 matrix rows via {@link signaturesForReq}, the
+ * `distinctIssues` headline via {@link contractIssueSignatures}) then filters to
+ * {@link CONTRACT_PROFILE}: a shadow result must never grade a supplier.
  */
 
 import { ADVISORY_PREFIX, isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
+import { CONTRACT_PROFILE } from '../schema-registry.js';
+import type { Profile } from '../schema-registry.js';
 
 /** §7 severity carried by a per-transmission finding (mirror src/web/api.ts). */
 export type Severity = 'pass' | 'fail' | 'info';
@@ -55,6 +66,11 @@ export interface SignatureFinding {
   param: string | null;
   /** Stable check code for transport/heuristic findings; null for schema. */
   code: string | null;
+  /**
+   * Which requirement lineage this finding graded against (by1c.5). Part of the
+   * signature key for every non-advisory finding — see {@link sigKey}.
+   */
+  profile: Profile;
 }
 
 /** The minimal transmission shape the fold reads (mirror src/web/api.ts). */
@@ -75,8 +91,9 @@ export type SignatureKind = 'schema' | 'check' | 'advisory';
 
 /**
  * Key namespace for advisory signatures: `adv|adv.null_padding`. The left half is
- * a literal namespace where a requirement id would sit, which is unambiguous —
- * every §7 id is `MAJOR.MINOR` digits, so no requirement key can collide.
+ * a literal namespace where a PROFILE would sit, which is unambiguous — the
+ * profile vocabulary is closed ('2025' | 'ds013'), so no keyed finding can
+ * collide with it.
  */
 export const ADVISORY_KEY_PREFIX = 'adv|';
 
@@ -94,6 +111,13 @@ export interface Signature {
    * a matrix row in `signaturesForReq` (server or browser copy).
    */
   req: string;
+  /**
+   * The requirement lineage this signature belongs to, NULL for an advisory (an
+   * advisory grades against no lineage — it is an observation about a conformant
+   * payload). Every verdict surface filters this to {@link CONTRACT_PROFILE}, so
+   * the null is the same kind of sentinel as `req: ''`: unmatchable by design.
+   */
+  profile: Profile | null;
   /** Human title for the issue (see {@link sigTitle}). */
   title: string;
   /**
@@ -148,6 +172,9 @@ const CODE_TITLE: Record<string, string> = {
   'tx.concurrent_delivery': 'Concurrent delivery (expected serial)',
   // Added with the §3.1 conditional custom-object check (5bs.1).
   'tx.missing_custom_schema': 'Custom data objects sent without meta.customDataSchema',
+  // Added with the null-explanation translator (by1c.6): the leaf errors of one
+  // record's failed oneOf are collapsed into this single code.
+  'tx.null_unexplained': 'Null sensed value without an explaining error code',
 };
 
 /**
@@ -216,21 +243,27 @@ export function advisoryTitle(id: string): string {
  * The stable signature key. Sign on Ajv's structured fields (never the message),
  * generalize the path, and never put the offending value in the key:
  *   - advisory:      adv|<adv.id>
- *   - schema error:  req|keyword|generalizedInstancePath|param
- *   - check code:    req|code
- *   - last resort:   req|detail
+ *   - schema error:  profile|req|keyword|generalizedInstancePath|param
+ *   - check code:    profile|req|code
+ *   - last resort:   profile|req|detail
+ *
+ * The PROFILE prefix (by1c.7) makes the two lineages disjoint:
+ * `2025|3.2|required|/data/*|LSER` and `ds013|5.3.2|required|/data/*|LSER` are
+ * separate rows even though the keyword and path are identical, because they are
+ * separate defects against separate clauses. The requirement id alone would not
+ * be enough — a future DS01.3 clause id could collide with a §7 id. Advisory
+ * keys carry no profile (an advisory grades against no lineage).
  */
 export function sigKey(f: SignatureFinding): string {
   // Advisories first: they carry the adv.* id in `requirement`, which would
   // otherwise key them off a requirement that does not exist.
   if (isAdvisoryFinding(f)) return ADVISORY_KEY_PREFIX + advisoryIdOf(f);
+  const head = f.profile + '|' + f.requirement;
   if (f.keyword) {
-    return (
-      f.requirement + '|' + f.keyword + '|' + generalizePath(f.instancePath) + '|' + (f.param || '')
-    );
+    return head + '|' + f.keyword + '|' + generalizePath(f.instancePath) + '|' + (f.param || '');
   }
-  if (f.code) return f.requirement + '|' + f.code;
-  return f.requirement + '|' + (f.detail || '');
+  if (f.code) return head + '|' + f.code;
+  return head + '|' + (f.detail || '');
 }
 
 /**
@@ -257,6 +290,13 @@ export function sigTitle(f: SignatureFinding): string {
       case 'minimum':
       case 'maximum':
         return field + ' out of allowed range';
+      case 'pattern':
+        return field + ' does not match the required pattern';
+      case 'minLength':
+        // Annex 4's minLength is always 1, so the defect is an EMPTY string, not
+        // a too-short one. Phrasing it as emptiness says what to fix; quoting a
+        // limit of 1 would read as an arbitrary number.
+        return field + ' must not be empty';
       default:
         return f.detail || f.keyword + ' at ' + generalizePath(f.instancePath);
     }
@@ -278,6 +318,7 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
   interface Group {
     key: string;
     req: string;
+    profile: Profile | null;
     title: string;
     kind: SignatureKind;
     sev: Severity;
@@ -301,6 +342,8 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
           key: k,
           // An advisory belongs to no §7 row — '' is the sentinel (see Signature.req).
           req: adv ? '' : f.requirement,
+          // …and to no lineage — null is the matching sentinel (see Signature.profile).
+          profile: adv ? null : f.profile,
           title: sigTitle(f),
           kind: adv ? 'advisory' : f.keyword ? 'schema' : 'check',
           sev: f.severity,
@@ -327,6 +370,7 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
     .map((g) => ({
       key: g.key,
       req: g.req,
+      profile: g.profile,
       title: g.title,
       kind: g.kind,
       sev: g.sev,
@@ -341,22 +385,42 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
 }
 
 /**
- * Filter an already-computed signature set down to one requirement. NEVER returns
- * advisory signatures: requirement grouping in ComplianceCard is a verdict
- * surface, and an advisory has no verdict. (`req` is '' for advisories, so the
- * equality alone excludes them; the explicit `kind` guard says so on purpose.)
+ * Filter an already-computed signature set down to one requirement of the
+ * CONTRACT profile. NEVER returns advisory signatures: requirement grouping in
+ * ComplianceCard is a verdict surface, and an advisory has no verdict. (`req` is
+ * '' for advisories, so the equality alone excludes them; the explicit `kind`
+ * guard says so on purpose.)
+ *
+ * The profile test is not redundant with the requirement test: the §7 matrix
+ * grades the contract in force, and a DS01.3 clause id that one day collides
+ * with a §7 id would otherwise file a shadow defect in a contract row. Filtering
+ * on the lineage makes that impossible rather than merely unlikely.
  */
 export function signaturesForReq(sigs: readonly Signature[], reqId: string): Signature[] {
-  return sigs.filter((s) => s.kind !== 'advisory' && s.req === reqId);
+  return sigs.filter(
+    (s) => s.kind !== 'advisory' && s.profile === CONTRACT_PROFILE && s.req === reqId,
+  );
 }
 
 /**
  * The defect half of a computed signature set — everything EXCEPT advisories.
- * Any count that grades a supplier (the `distinctIssues` headline, any §7/matrix
- * tally) reads this, never `computeSignatures(...).length`.
+ * BOTH lineages: this is the set the signature list renders, where a shadow
+ * defect is legitimate information. Anything that GRADES reads
+ * {@link contractIssueSignatures} instead.
  */
 export function issueSignatures(sigs: readonly Signature[]): Signature[] {
   return sigs.filter((s) => s.kind !== 'advisory');
+}
+
+/**
+ * The contract half of the defect set — {@link issueSignatures} narrowed to
+ * {@link CONTRACT_PROFILE}. Any count that grades a supplier (the
+ * `distinctIssues` headline, any §7/matrix tally) reads this: a shadow finding
+ * records how a payload would fare under DS01.3 and is never a defect against
+ * the obligations in force today.
+ */
+export function contractIssueSignatures(sigs: readonly Signature[]): Signature[] {
+  return issueSignatures(sigs).filter((s) => s.profile === CONTRACT_PROFILE);
 }
 
 /**

@@ -510,6 +510,7 @@ the answer to "what are the distinct things to fix, and how widespread is each?"
 | ---------------- | -------------------------------------------------------------------- |
 | `key`            | Stable key; pass it as `signatureKey` to the list route to cross-filter. |
 | `req`            | Requirement, e.g. `3.2`; empty string for an advisory.               |
+| `profile`        | Requirement lineage the defect grades against (`2025` or `ds013`); `null` for an advisory. |
 | `title`          | Human title for the defect (for an advisory, the label derived from its id). |
 | `kind`           | `schema` (Ajv keyword), `check` (a `tx.*` code), or `advisory` (an `adv.*` observation). |
 | `sev`            | `fail`, or `info` for the outdated-schema signature and every advisory. |
@@ -518,6 +519,13 @@ the answer to "what are the distinct things to fix, and how widespread is each?"
 | `sourceCount`    | Distinct sources exhibiting it.                                      |
 | `first`, `last`  | ISO timestamps of the earliest and latest occurrence.                |
 | `examplePointer` | Representative JSON Pointer, may be `null`.                          |
+
+**Profiles keep the two lineages apart.** `key` is prefixed with `profile` for every
+non-advisory signature (`2025|3.2|required|/data/*|LSER` versus
+`ds013|5.3.2|required|/data/*|LSER`), so the same keyword failing at the same path under
+the contract and under the DS01.3 shadow run is two rows, not one. `scoped.distinctIssues`
+and the per-requirement groupings count the `2025` half alone: a shadow result records how
+a payload would fare under a draft and never grades a supplier against it.
 
 **Advisories are not defects.** `kind: "advisory"` entries ride in the same array so one
 `signatureKey` cross-filter serves both, keyed `adv|<adv.id>` (e.g. `adv|adv.null_padding`).

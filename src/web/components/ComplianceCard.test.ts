@@ -51,8 +51,9 @@ const { AdvisorySection, SigRow, advisorySignatures, signaturesForReq, sigTone }
 /** A signature as the server rolls one; `over` states only what a test varies. */
 function sig(over: Partial<Signature> = {}): Signature {
   return {
-    key: '3.2|required|/data|CID',
+    key: '2025|3.2|required|/data|CID',
     req: '3.2',
+    profile: '2025',
     title: 'Missing required property CID',
     kind: 'check',
     sev: 'fail',
@@ -66,9 +67,17 @@ function sig(over: Partial<Signature> = {}): Signature {
   };
 }
 
-/** An advisory signature: `kind: 'advisory'`, `adv|<id>` key, '' req, info sev. */
+/** An advisory signature: `kind: 'advisory'`, `adv|<id>` key, '' req, null profile, info sev. */
 function adv(id: string, over: Partial<Signature> = {}): Signature {
-  return sig({ key: `adv|${id}`, req: '', title: id, kind: 'advisory', sev: 'info', ...over });
+  return sig({
+    key: `adv|${id}`,
+    req: '',
+    profile: null,
+    title: id,
+    kind: 'advisory',
+    sev: 'info',
+    ...over,
+  });
 }
 
 /** Every SigRow element in a returned tree, in render order. */
@@ -107,7 +116,7 @@ test('the section renders one row per advisory, most-observed first', () => {
       sig(),
       adv('adv.null_padding', { count: 2 }),
       adv('adv.date_format', { count: 9 }),
-      sig({ key: '1.5|tx.missing_charset', req: '1.5' }),
+      sig({ key: '2025|1.5|tx.missing_charset', req: '1.5' }),
     ]),
   );
 
@@ -171,13 +180,23 @@ test('a requirement never groups an advisory, sentinel or not', () => {
   // agj.19: `req` is '' in production, so the equality alone excludes advisories
   // today and this hostile case cannot arise — the point of the `kind` guard is
   // that it stays excluded if one is ever given a requirement to group under.
-  const hostile = adv('adv.null_padding', { req: '3.2' });
+  const hostile = adv('adv.null_padding', { req: '3.2', profile: '2025' });
   const real = sig();
 
   assert.deepEqual(signaturesForReq([real, hostile], '3.2'), [real]);
   assert.deepEqual(signaturesForReq([adv('adv.null_padding')], ''), []);
   // And the section takes only the other half.
   assert.deepEqual(advisorySignatures([real, hostile]), [hostile]);
+});
+
+test('a requirement row never groups a SHADOW signature (by1c.7)', () => {
+  // The §7 matrix grades the contract in force. A ds013 signature carrying a
+  // clause id that collides with a §7 id is the case the profile filter exists
+  // for — the requirement alone would admit it.
+  const contract = sig();
+  const shadow = sig({ key: 'ds013|3.2|required|/data|LSER', profile: 'ds013' });
+
+  assert.deepEqual(signaturesForReq([contract, shadow], '3.2'), [contract]);
 });
 
 test('an advisory row takes the accent, never a status colour', () => {
@@ -190,7 +209,7 @@ test('an advisory row takes the accent, never a status colour', () => {
 
 test('no advisories renders no section at all — not an empty one', () => {
   assert.equal(section([]), null);
-  assert.equal(section([sig(), sig({ key: '1.5|tx.missing_charset', req: '1.5' })]), null);
+  assert.equal(section([sig(), sig({ key: '2025|1.5|tx.missing_charset', req: '1.5' })]), null);
   // Collapsed is a different thing from absent: the header still renders.
   assert.notEqual(section([adv('adv.null_padding')], { collapsed: true }), null);
   assert.deepEqual(sigRows(section([adv('adv.null_padding')], { collapsed: true })), []);

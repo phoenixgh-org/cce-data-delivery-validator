@@ -39,7 +39,7 @@ import {
   scopeTransmissions,
   windowLowerBound,
 } from './scope.js';
-import { computeSignatures, issueSignatures, txMatchesSig } from './signatures.js';
+import { computeSignatures, contractIssueSignatures, txMatchesSig } from './signatures.js';
 import type { SignatureTransmission } from './signatures.js';
 import { deriveSourceView, sourceCounts } from './source.js';
 import { generateCredential } from '../auth/credential.js';
@@ -445,7 +445,9 @@ export function registerSessionsApi(app: FastifyInstance): void {
         signatures,
         trend: passTrend(scopedViews),
         sources,
-        scoped: scopeTotals(scopedViews, issueSignatures(signatures).length),
+        // CONTRACT only (by1c.7): the headline counts defects against the
+        // obligations in force, so a DS01.3 shadow signature never inflates it.
+        scoped: scopeTotals(scopedViews, contractIssueSignatures(signatures).length),
         expiresAt,
         // Which schema bytes this endpoint grades against (beads 3cq). Service-
         // global, not session-scoped, but it rides on the response the dashboard

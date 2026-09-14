@@ -13,6 +13,7 @@
 import type { CSSProperties, ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import type { ComplianceClass, ComplianceRow, Signature, TransmissionView } from '../api';
+import { CONTRACT_PROFILE } from '../api';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
 import { CLASS_META } from './ui/statusMaps';
@@ -134,12 +135,18 @@ const mono = 'var(--mono)';
  * ('' for an advisory) already excludes them today; the explicit `kind` guard is
  * what keeps that true if a future advisory is ever given a requirement to group
  * under. Advisories reach the column through {@link advisorySignatures} instead.
+ *
+ * CONTRACT ONLY (by1c.7), the mirror's third guard: the §7 matrix grades
+ * the obligations in force, so a 'ds013' shadow signature is excluded even if a
+ * DS01.3 clause id ever collides with a §7 id.
  */
 export function signaturesForReq(
   signatures: readonly Signature[],
   requirement: string,
 ): Signature[] {
-  return signatures.filter((s) => s.kind !== 'advisory' && s.req === requirement);
+  return signatures.filter(
+    (s) => s.kind !== 'advisory' && s.profile === CONTRACT_PROFILE && s.req === requirement,
+  );
 }
 
 /**

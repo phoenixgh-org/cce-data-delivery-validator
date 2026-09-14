@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   computeSignatures,
+  contractIssueSignatures,
   generalizePath,
   isAdvisoryFinding,
   isIssue,
@@ -27,6 +28,8 @@ function finding(over: Partial<SignatureFinding>): SignatureFinding {
     instancePath: null,
     param: null,
     code: null,
+    // The contract lineage unless a test says otherwise (by1c.7).
+    profile: '2025',
     ...over,
   };
 }
@@ -63,20 +66,23 @@ test('sigKey generalizes the path and never includes the offending value', () =>
     param: 'date-time',
     detail: 'Schema validation failed: "data/0/ABST" must match format "date-time".',
   });
-  assert.equal(sigKey(f), '3.2|format|/data/*/ABST|date-time');
+  assert.equal(sigKey(f), '2025|3.2|format|/data/*/ABST|date-time');
   // The offending instance value / index must not leak into the key.
   assert.ok(!sigKey(f).includes('/0/'));
 });
 
-test('sigKey: check-code findings key off req|code', () => {
+test('sigKey: check-code findings key off profile|req|code', () => {
   assert.equal(
     sigKey(finding({ requirement: '1.2', code: 'tx.missing_charset' })),
-    '1.2|tx.missing_charset',
+    '2025|1.2|tx.missing_charset',
   );
 });
 
-test('sigKey: last-resort fallback uses req|detail when no keyword or code', () => {
-  assert.equal(sigKey(finding({ requirement: '1.3', detail: 'auth failed' })), '1.3|auth failed');
+test('sigKey: last-resort fallback uses profile|req|detail when no keyword or code', () => {
+  assert.equal(
+    sigKey(finding({ requirement: '1.3', detail: 'auth failed' })),
+    '2025|1.3|auth failed',
+  );
 });
 
 test('sigTitle: schema keywords get templated titles', () => {
@@ -134,7 +140,7 @@ test('computeSignatures: check-code case groups by code', () => {
   ]);
   assert.equal(sigs.length, 1);
   assert.equal(sigs[0]!.kind, 'check');
-  assert.equal(sigs[0]!.key, '1.2|tx.missing_charset');
+  assert.equal(sigs[0]!.key, '2025|1.2|tx.missing_charset');
   assert.equal(sigs[0]!.title, 'Content-Type missing “charset=utf-8”');
 });
 
@@ -164,7 +170,7 @@ test('computeSignatures: index-collapse — /data/0 and /data/7 fold into ONE si
   assert.equal(sigs.length, 1);
   assert.equal(sigs[0]!.count, 2);
   // Same key for both indices — and the index never appears in the key.
-  assert.equal(sigs[0]!.key, '3.2|format|/data/*/ABST|date-time');
+  assert.equal(sigs[0]!.key, '2025|3.2|format|/data/*/ABST|date-time');
   assert.ok(!sigs[0]!.key.includes('/0/') && !sigs[0]!.key.includes('/7/'));
 });
 
@@ -210,10 +216,10 @@ test('txMatchesSig: true only when a tx carries an issue with the given key', ()
     // A plain info finding is NOT an issue and must not match.
     finding({ requirement: '1.8', severity: 'info', outdated: false, detail: 'repeat candidate' }),
   ]);
-  assert.equal(txMatchesSig(t, '1.2|tx.missing_charset'), true);
-  assert.equal(txMatchesSig(t, '3.2|format|/data/*/ABST|date-time'), false);
+  assert.equal(txMatchesSig(t, '2025|1.2|tx.missing_charset'), true);
+  assert.equal(txMatchesSig(t, '2025|3.2|format|/data/*/ABST|date-time'), false);
   // The non-issue info finding's key must not match either.
-  assert.equal(txMatchesSig(t, '1.8|repeat candidate'), false);
+  assert.equal(txMatchesSig(t, '2025|1.8|repeat candidate'), false);
 });
 
 /* ── ADVISORY SIGNATURES (agj.15) ─────────────────────────────────────────────
@@ -301,7 +307,7 @@ test('computeSignatures: advisories never displace or merge with issue signature
   // The defect half is what any grading count reads.
   assert.deepEqual(
     issueSignatures(sigs).map((s) => s.key),
-    ['1.2|tx.missing_charset'],
+    ['2025|1.2|tx.missing_charset'],
     'issueSignatures drops advisories',
   );
 });
@@ -333,5 +339,118 @@ test('txMatchesSig: an advisory key matches a tx with ZERO failures', () => {
     finding({ requirement: '1.2', code: 'tx.missing_charset' }),
   ]);
   assert.equal(txMatchesSig(failing, 'adv|adv.null_padding'), false);
-  assert.equal(txMatchesSig(failing, '1.2|tx.missing_charset'), true);
+  assert.equal(txMatchesSig(failing, '2025|1.2|tx.missing_charset'), true);
+});
+
+/* ── PROFILE DISJOINTNESS (by1c.7) ────────────────────────────────────────────
+ *
+ * A finding grades against one requirement lineage: '2025' (the contract in
+ * force) or 'ds013' (the DS01.3 shadow run). The same Ajv keyword failing at the
+ * same path under the two lineages is TWO defects against two different clauses,
+ * so the key carries the profile and every verdict surface filters to the
+ * contract. */
+
+test('sigKey: the profile prefixes every non-advisory key, and advisories carry none', () => {
+  const schema = (profile: '2025' | 'ds013', requirement: string) =>
+    finding({ profile, requirement, keyword: 'required', instancePath: '/data/0', param: 'LSER' });
+  assert.equal(sigKey(schema('2025', '3.2')), '2025|3.2|required|/data/*|LSER');
+  assert.equal(sigKey(schema('ds013', '5.3.2')), 'ds013|5.3.2|required|/data/*|LSER');
+  // An advisory grades against no lineage, so its key is unchanged.
+  assert.equal(sigKey(adv('adv.null_padding', { profile: 'ds013' })), 'adv|adv.null_padding');
+});
+
+test('computeSignatures: same keyword+path under two profiles folds into TWO signatures', () => {
+  const schema = (profile: '2025' | 'ds013', requirement: string) =>
+    finding({ profile, requirement, keyword: 'required', instancePath: '/data/0', param: 'LSER' });
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [
+      schema('2025', '3.2'),
+      schema('ds013', '5.3.2'),
+    ]),
+  ]);
+  assert.equal(sigs.length, 2, 'the two lineages never merge');
+  assert.deepEqual(sigs.map((s) => s.key).sort(), [
+    '2025|3.2|required|/data/*|LSER',
+    'ds013|5.3.2|required|/data/*|LSER',
+  ]);
+  assert.deepEqual(
+    sigs.map((s) => s.profile).sort(),
+    ['2025', 'ds013'],
+    'each signature carries the lineage it folded from',
+  );
+  // Each still counts only its own findings.
+  assert.deepEqual(
+    sigs.map((s) => s.count),
+    [1, 1],
+  );
+});
+
+test('computeSignatures: an advisory signature carries a NULL profile', () => {
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [adv('adv.null_padding')]),
+  ]);
+  assert.equal(sigs[0]!.profile, null, 'an advisory grades against no lineage');
+});
+
+test('sigTitle: pattern and minLength read as a pattern miss and an empty value', () => {
+  assert.equal(
+    sigTitle(finding({ keyword: 'pattern', instancePath: '/data/0/LSER', param: '^[A-Z]+$' })),
+    'LSER does not match the required pattern',
+  );
+  // Annex 4's minLength is always 1: the defect is emptiness, not a short value.
+  assert.equal(
+    sigTitle(finding({ keyword: 'minLength', instancePath: '/data/0/LMFR', param: '1' })),
+    'LMFR must not be empty',
+  );
+});
+
+test('sigTitle: the null-explanation code has a title of its own', () => {
+  assert.equal(
+    sigTitle(finding({ requirement: '5.3.2', profile: 'ds013', code: 'tx.null_unexplained' })),
+    'Null sensed value without an explaining error code',
+  );
+});
+
+test('signaturesForReq returns CONTRACT signatures only, even on a colliding req id', () => {
+  // A ds013 signature whose clause id happens to equal a §7 id — the collision
+  // the profile filter exists to survive.
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [
+      finding({ requirement: '3.2', keyword: 'required', instancePath: '/data/0', param: 'EERR' }),
+      finding({
+        profile: 'ds013',
+        requirement: '3.2',
+        keyword: 'required',
+        instancePath: '/data/0',
+        param: 'LSER',
+      }),
+    ]),
+  ]);
+  assert.equal(sigs.length, 2);
+  const forReq = signaturesForReq(sigs, '3.2');
+  assert.equal(forReq.length, 1, 'the shadow signature never lands in a matrix row');
+  assert.equal(forReq[0]!.profile, '2025');
+  assert.equal(forReq[0]!.key, '2025|3.2|required|/data/*|EERR');
+});
+
+test('contractIssueSignatures drops ds013 signatures AND advisories', () => {
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [
+      finding({ requirement: '1.2', code: 'tx.missing_charset' }),
+      finding({ profile: 'ds013', requirement: '5.3.2', code: 'tx.null_unexplained' }),
+      adv('adv.null_padding'),
+    ]),
+  ]);
+  // The list still sees both lineages' defects...
+  assert.deepEqual(
+    issueSignatures(sigs)
+      .map((s) => s.key)
+      .sort(),
+    ['2025|1.2|tx.missing_charset', 'ds013|5.3.2|tx.null_unexplained'],
+  );
+  // ...but the headline count grades the contract alone.
+  assert.deepEqual(
+    contractIssueSignatures(sigs).map((s) => s.key),
+    ['2025|1.2|tx.missing_charset'],
+  );
 });

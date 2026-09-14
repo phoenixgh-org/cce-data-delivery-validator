@@ -207,6 +207,13 @@ export interface Signature {
   key: string;
   /** The requirement this signature belongs to (e.g. "3.2"); '' for an advisory. */
   req: string;
+  /**
+   * The requirement lineage this signature belongs to (by1c.7); NULL for an
+   * advisory, which grades against no lineage. Verdict surfaces filter this to
+   * {@link CONTRACT_PROFILE} — a 'ds013' signature is shadow information and
+   * must never land in a §7 matrix row or a defect count.
+   */
+  profile: Profile | null;
   /** Human title for the issue. */
   title: string;
   /**

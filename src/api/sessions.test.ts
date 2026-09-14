@@ -710,6 +710,8 @@ test(
         instancePath,
         param: 'ABST',
         code: null,
+        // The contract lineage — the key the ?signatureKey= filter carries (by1c.7).
+        profile: '2025',
       });
 
       const txA = await insertTxAt(uuid, new Date(Date.now() - 3 * 60_000).toISOString(), 'src');
@@ -772,8 +774,8 @@ test(
       uuid = session.uuid;
 
       // The outdated-schema signature keys off `code` (no schema keyword):
-      // sigKey = '3.2|tx.outdated_schema'. Built from signatures.ts sigKey, NOT a
-      // re-impl.
+      // sigKey = '2025|3.2|tx.outdated_schema'. Built from signatures.ts sigKey,
+      // NOT a re-impl.
       const outdatedFinding: SignatureFinding = {
         requirement: '3.2',
         severity: 'info',
@@ -784,6 +786,7 @@ test(
         instancePath: null,
         param: null,
         code: 'tx.outdated_schema',
+        profile: '2025',
       };
       const key = sigKey(outdatedFinding);
 
@@ -847,6 +850,8 @@ test(
         instancePath: null,
         param: null,
         code: 'adv.null_padding',
+        // Carried but unused: an advisory key never names a lineage (by1c.7).
+        profile: '2025',
       };
       const key = sigKey(advisoryFinding);
       assert.equal(key, 'adv|adv.null_padding', 'advisory keys are adv|<adv.id>');
@@ -1108,6 +1113,59 @@ test(
       }
       // No advisory leaked into the §7 findings, and none was dropped.
       assert.equal(after.transmissions[0]?.findings.length, GRADEABLE_REQUIREMENTS.length + 2);
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test(
+  'GET /api/sessions/:uuid → distinctIssues counts CONTRACT signatures only (by1c.7)',
+  { skip },
+  async () => {
+    // The shadow run grades the same payload against DS01.3 and writes 'ds013'
+    // findings beside the contract ones. They belong in the signature list — a
+    // supplier wants to see them — but never in the headline defect count, which
+    // grades the obligations in force.
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+      const tx = await insertTxAt(uuid, new Date().toISOString(), 'org.kano');
+      await insertFinding(tx, {
+        requirement: '3.2',
+        severity: 'fail',
+        keyword: 'required',
+        instancePath: '/data/0',
+        param: 'ABST',
+        profile: '2025',
+      });
+      await insertFinding(tx, {
+        requirement: '5.3.2',
+        severity: 'fail',
+        keyword: 'required',
+        instancePath: '/data/0',
+        param: 'LSER',
+        profile: 'ds013',
+      });
+
+      const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as {
+        scoped: { distinctIssues: number };
+        signatures: Array<{ key: string; profile: string | null }>;
+      };
+
+      // Both lineages fold, disjointly, and each signature says which it is.
+      assert.deepEqual(
+        body.signatures.map((sig) => sig.key).sort(),
+        ['2025|3.2|required|/data/*|ABST', 'ds013|5.3.2|required|/data/*|LSER'],
+        'the two lineages fold into two signatures',
+      );
+      assert.equal(body.scoped.distinctIssues, 1, 'the headline counts the contract defect alone');
     } finally {
       if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
       await app.close();
