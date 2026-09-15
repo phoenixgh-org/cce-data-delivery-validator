@@ -118,16 +118,23 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     // then renders the row `pass-outdated` off that modifier, which is the whole
     // point: an outdated-but-valid session must not read as `untested` (2kx).
     //
-    // WHY `severity: 'info'` IS THE OUTDATED ASSERTION. expectedFindings matches
-    // on (requirement, severity) only, so it cannot name the `outdated` flag
-    // directly — but schema.ts is the sole producer of §3.2 findings and its ONLY
-    // `info` branch is the outdated one (every other branch is pass or fail). A
-    // §3.2 info therefore cannot arise except from `outdated: true`. Pair that
-    // with the 200 and this case pins accepted-and-flagged rather than merely
-    // accepted. The CI half — that 0.8.0 really is registered, really is NOT
-    // current, and really does validate this payload under its own draft-07
-    // bytes — is asserted in ../cases.test.ts, which is also what now trips if
-    // the registry's shape changes under this case (bd aur).
+    // THE CASE NAMES THE OUTDATED FLAG DIRECTLY (73r). `expectedFindings` carries
+    // an optional `outdated` matcher, so the expectation below demands the
+    // modifier itself: `info` + `outdated: true`, which is precisely what the
+    // stage records. Paired with the 200, this pins accepted-and-flagged rather
+    // than merely accepted.
+    //
+    // HISTORY, because the reasoning used to be indirect. Until 73r an
+    // expectation could name only (requirement, severity), so this case asserted
+    // `severity: 'info'` and leaned on schema.ts being the sole producer of §3.2
+    // findings with exactly one `info` branch — the outdated one. That inference
+    // held, but a second §3.2 info branch would have weakened the assertion
+    // silently. Nothing about it is relied on now.
+    //
+    // The CI half — that 0.8.0 really is registered, really is NOT current, and
+    // really does validate this payload under its own draft-07 bytes — is
+    // asserted in ../cases.test.ts, which is also what trips if the registry's
+    // shape changes under this case (bd aur).
     //
     // The baseline is sent UNMODIFIED apart from the version string, having been
     // verified to validate against 0.8.0's draft-07 bytes as well as 0.8.1's
@@ -138,7 +145,7 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     // declared here. A future baseline that DOES trip a bound must declare the
     // adjustment in this case rather than quietly skipping the older version.
     posts: [{ transforms: [setSchemaVersion('0.8.0')], expectedStatus: 200 }],
-    expectedFindings: [{ requirement: '3.2', severity: 'info' }],
+    expectedFindings: [{ requirement: '3.2', severity: 'info', outdated: true }],
   },
 
   // ── §3.2 the EMS branch of the schema (1m8) ───────────────────────────────

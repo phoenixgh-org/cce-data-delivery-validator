@@ -248,24 +248,41 @@ export async function fetchFindingsByTransmission(
             (f: { requirement?: unknown; severity?: unknown }) =>
               typeof f.requirement === 'string' && SEVERITIES.has(f.severity as string),
           )
-          .map((f: { requirement: string; severity: string; profile?: unknown }) => ({
-            requirement: f.requirement,
-            severity: f.severity as Severity,
-            // WHICH LINEAGE graded it (by1c.15). `FindingView` has carried this
-            // since the session read learned about profiles, and the case
-            // expectations match on it, so dropping it here would collapse both
-            // lineages into one pool and let a draft finding satisfy a contract
-            // expectation.
-            //
-            // TOLERANT OF ABSENCE, and deliberately so: the runner points at
-            // whatever instance the operator names, which may be older than the
-            // field. An unrecognised value is treated the same way. Either way
-            // the finding is graded as the contract's, which is what an instance
-            // that does not know about lineages is in fact reporting — and a
-            // shadow expectation then fails loudly rather than matching
-            // something nobody graded.
-            profile: asProfile(f.profile),
-          })),
+          .map(
+            (f: {
+              requirement: string;
+              severity: string;
+              profile?: unknown;
+              outdated?: unknown;
+            }) => ({
+              requirement: f.requirement,
+              severity: f.severity as Severity,
+              // WHICH LINEAGE graded it (by1c.15). `FindingView` has carried this
+              // since the session read learned about profiles, and the case
+              // expectations match on it, so dropping it here would collapse both
+              // lineages into one pool and let a draft finding satisfy a contract
+              // expectation.
+              //
+              // TOLERANT OF ABSENCE, and deliberately so: the runner points at
+              // whatever instance the operator names, which may be older than the
+              // field. An unrecognised value is treated the same way. Either way
+              // the finding is graded as the contract's, which is what an instance
+              // that does not know about lineages is in fact reporting — and a
+              // shadow expectation then fails loudly rather than matching
+              // something nobody graded.
+              profile: asProfile(f.profile),
+              // The `outdated` MODIFIER (73r). `FindingView` has served it since
+              // 2kx, and a case may now name it, so the pass-outdated case asserts
+              // the flag itself rather than inferring it from a §3.2 `info`.
+              //
+              // TOLERANT OF ABSENCE like `profile`, but normalized rather than left
+              // undefined: a finding with no `outdated` key — from an older
+              // instance, or from any grader that simply never sets it — is a
+              // finding that is not flagged, which is exactly `false`. So the
+              // grading side never sees a third state.
+              outdated: f.outdated === true,
+            }),
+          ),
       );
     }
     if (typeof page.nextCursor !== 'string' || page.nextCursor.length === 0) break;

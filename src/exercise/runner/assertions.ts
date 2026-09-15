@@ -15,9 +15,10 @@
  *      `ExercisePost.expectedStatus` (DESIGN.md §6).
  *   2. FINDINGS, PRESENCE-BASED and POOLED PER CASE — see
  *      {@link ExerciseCase.expectedFindings}, which is the contract this
- *      implements: each expected `(requirement, severity)` pair must appear at
- *      least once among the findings attributable to the case's POSTs, and a
- *      pooled finding the case never named does NOT fail it.
+ *      implements: each expected `(requirement, severity)` pair — narrowed by the
+ *      `profile` and `outdated` qualifiers where the case names them — must
+ *      appear at least once among the findings attributable to the case's POSTs,
+ *      and a pooled finding the case never named does NOT fail it.
  *
  * ATTRIBUTION is by transmission id: the ingest response names the row it wrote,
  * and the dashboard API reports findings against that same id, so a case's pool
@@ -30,7 +31,7 @@ import type { Severity } from '../../db/repository.js';
 import { CONTRACT_PROFILE, type Profile } from '../../schema-registry.js';
 import { isAcceptedStatus, type ExerciseCase, type ExpectedFinding } from '../case.js';
 
-/** A finding as the dashboard API reports it, reduced to the graded triple. */
+/** A finding as the dashboard API reports it, reduced to the graded facts. */
 export interface ObservedFinding {
   readonly requirement: string;
   readonly severity: Severity;
@@ -42,6 +43,16 @@ export interface ObservedFinding {
    * {@link profileOf} for the default and why it is not a literal.
    */
   readonly profile?: Profile;
+  /**
+   * The `outdated` MODIFIER the finding carries (73r) — today set only by the
+   * schema stage, on a body that validates against a registered-but-older
+   * version. Required here, unlike {@link profile}: absence on the wire has one
+   * unambiguous reading (`false`, i.e. not flagged), so ./client.ts normalizes it
+   * at the boundary and the grading never has to ask a second question. Contrast
+   * `profile`, where absence means "an instance that does not know about
+   * lineages" and the default has to be read off the registry.
+   */
+  readonly outdated: boolean;
 }
 
 /**
@@ -113,24 +124,55 @@ export function poolCaseFindings(
 }
 
 /**
+ * The DEDUPE key for one expectation: the triple, plus the `outdated` demand
+ * when it makes one. Not the same thing as {@link findingKey} — two expectations
+ * that agree on the triple but disagree on the modifier are different demands,
+ * and collapsing them would let the first one answer for the second.
+ */
+function expectationKey(want: ExpectedFinding): string {
+  return `${findingKey(want)}/${want.outdated ?? 'any'}`;
+}
+
+/**
+ * One pooled finding as a failure message renders it: the matched triple, with
+ * the `outdated` modifier appended only when it is set. A case that missed an
+ * `outdated: true` expectation has to be able to see, from the line alone,
+ * whether the §3.2 info it did observe carried the flag.
+ */
+function describeFinding(found: ObservedFinding): string {
+  return found.outdated ? `${findingKey(found)}+outdated` : findingKey(found);
+}
+
+/**
  * The expected findings NOT present in the pool, matched on the `(requirement,
- * severity, profile)` triple {@link findingKey} builds. Presence-based: an
- * expectation listed twice is satisfied by one pooled occurrence (it names a
- * triple, not a count), and pooled findings the expectations do not name are
- * ignored entirely.
+ * severity, profile)` triple {@link findingKey} builds, plus the OPTIONAL
+ * `outdated` modifier (73r). Presence-based: an expectation listed twice is
+ * satisfied by one pooled occurrence (it names a demand, not a count), and pooled
+ * findings the expectations do not name are ignored entirely.
+ *
+ * `outdated` is a FILTER, not a key segment, because it is optional on the
+ * expectation side and absent means "do not care". An expectation that sets it is
+ * satisfied only by a pooled finding carrying the same boolean; one that leaves it
+ * unset matches either, which is what keeps every case written before this field
+ * existed grading exactly as it did.
  */
 export function missingFindings(
   expected: readonly ExpectedFinding[],
   pooled: readonly ObservedFinding[],
 ): ExpectedFinding[] {
-  const present = new Set(pooled.map(findingKey));
   const seen = new Set<string>();
   const missing: ExpectedFinding[] = [];
   for (const want of expected) {
-    const key = findingKey(want);
-    if (present.has(key) || seen.has(key)) continue;
+    const key = expectationKey(want);
+    if (seen.has(key)) continue;
     seen.add(key);
-    missing.push(want);
+    const wanted = findingKey(want);
+    const satisfied = pooled.some(
+      (found) =>
+        findingKey(found) === wanted &&
+        (want.outdated === undefined || found.outdated === want.outdated),
+    );
+    if (!satisfied) missing.push(want);
   }
   return missing;
 }
@@ -165,9 +207,11 @@ export function judgeCase(
   const pooled = poolCaseFindings(outcomes, findingsByTransmission);
   const missing = missingFindings(kase.expectedFindings, pooled);
   for (const want of missing) {
-    const observed = pooled.length === 0 ? 'none' : [...new Set(pooled.map(findingKey))].join(' ');
+    const observed =
+      pooled.length === 0 ? 'none' : [...new Set(pooled.map(describeFinding))].join(' ');
+    const demand = want.outdated === undefined ? '' : ` outdated=${want.outdated}`;
     failures.push(
-      `missing finding §${want.requirement} ${want.severity} [${profileOf(want)}] ` +
+      `missing finding §${want.requirement} ${want.severity} [${profileOf(want)}]${demand} ` +
         `(observed: ${observed})`,
     );
   }

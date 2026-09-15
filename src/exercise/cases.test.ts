@@ -591,12 +591,16 @@ for (const kase of EXERCISE_CASES) {
  */
 
 /**
- * A case claiming the outdated-but-valid grade. Keyed on the §3.2 `info` it
- * expects: schema.ts is the only producer of §3.2 findings and the outdated
- * branch is its only `info` one, so §3.2 info means outdated and nothing else.
+ * A case claiming the outdated-but-valid grade — by naming the `outdated`
+ * modifier on a §3.2 expectation (73r), or by expecting a §3.2 `info`, which is
+ * the same claim spelled the older way: schema.ts is the only producer of §3.2
+ * findings and the outdated branch is its only `info` one. Either spelling is
+ * caught, so a case cannot claim the grade and escape the registry check below.
  */
 function expectsOutdatedGrade(kase: ExerciseCase): boolean {
-  return kase.expectedFindings.some((f) => f.requirement === '3.2' && f.severity === 'info');
+  return kase.expectedFindings.some(
+    (f) => f.requirement === '3.2' && (f.outdated === true || f.severity === 'info'),
+  );
 }
 
 /** A case claiming the ordinary current-version §3.2 pass. */

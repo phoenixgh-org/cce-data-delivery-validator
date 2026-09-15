@@ -49,9 +49,10 @@ export type Direction = 'pass' | 'fail';
 
 /**
  * One finding the exercised session must show. Matched on `(requirement,
- * severity)` ONLY: a finding's `detail` is prose the graders are free to reword,
- * so it is deliberately not part of the contract. See
- * {@link ExerciseCase.expectedFindings} for the matching rule.
+ * severity)`, plus `profile` and `outdated` where the case names them — never on
+ * `detail`, which is prose the graders are free to reword and so is deliberately
+ * not part of the contract. See {@link ExerciseCase.expectedFindings} for the
+ * matching rule.
  */
 export interface ExpectedFinding {
   /** COMPLIANCE_MATRIX requirement id, e.g. '3.2'. */
@@ -73,6 +74,21 @@ export interface ExpectedFinding {
    * profile field exists to make impossible.
    */
   readonly profile?: Profile;
+  /**
+   * The `outdated` MODIFIER the finding must carry, when the case cares (73r).
+   *
+   * OPTIONAL, and absent means "do not care" rather than "must be false": the
+   * flag is set by one branch of one stage, so demanding it of every expectation
+   * would be noise on the other forty cases. An expectation that DOES set it is
+   * satisfied only by an observed finding carrying the same boolean.
+   *
+   * It exists because severity is a poor proxy for it. The outdated-but-valid
+   * grade (2kx) is `info` + `outdated: true`, and a case could only assert it by
+   * naming `severity: 'info'` and relying on src/ingest/stages/schema.ts being the
+   * sole producer of §3.2 `info` — true today, and silently weakened the day a
+   * second info branch appears. Naming the modifier says what the case means.
+   */
+  readonly outdated?: boolean;
 }
 
 /**

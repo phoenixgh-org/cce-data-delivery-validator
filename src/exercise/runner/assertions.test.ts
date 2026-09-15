@@ -8,7 +8,8 @@
  * `npm run exercise`.
  *
  * The contract under test is `ExerciseCase.expectedFindings` (bd 27m):
- * PRESENCE-based, pooled per case, matched on `(requirement, severity)`.
+ * PRESENCE-based, pooled per case, matched on `(requirement, severity)` plus the
+ * `profile` and `outdated` qualifiers where an expectation names them.
  */
 
 import { test } from 'node:test';
@@ -58,22 +59,22 @@ test('a case pools the findings of every transmission its POSTs created', () => 
   const pooled = poolCaseFindings(
     [post({ transmissionId: 'tx-1' }), post({ label: '#1', transmissionId: 'tx-2' })],
     findings({
-      'tx-1': [{ requirement: '1.8', severity: 'pass' }],
-      'tx-2': [{ requirement: '1.8', severity: 'fail' }],
+      'tx-1': [{ requirement: '1.8', severity: 'pass', outdated: false }],
+      'tx-2': [{ requirement: '1.8', severity: 'fail', outdated: false }],
       // Another case's transmission — must never leak into this case's pool.
-      'tx-9': [{ requirement: '3.2', severity: 'fail' }],
+      'tx-9': [{ requirement: '3.2', severity: 'fail', outdated: false }],
     }),
   );
   assert.deepEqual(pooled, [
-    { requirement: '1.8', severity: 'pass' },
-    { requirement: '1.8', severity: 'fail' },
+    { requirement: '1.8', severity: 'pass', outdated: false },
+    { requirement: '1.8', severity: 'fail', outdated: false },
   ]);
 });
 
 test('a POST that persisted no row contributes nothing to the pool', () => {
   const pooled = poolCaseFindings(
     [post({ status: 405, expectedStatus: 405, transmissionId: null })],
-    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass' }] }),
+    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass', outdated: false }] }),
   );
   assert.deepEqual(pooled, []);
 });
@@ -84,8 +85,8 @@ test('an expected finding is satisfied by a pooled (requirement, severity) match
   const missing = missingFindings(
     [{ requirement: '1.2', severity: 'fail' }],
     [
-      { requirement: '3.2', severity: 'pass' },
-      { requirement: '1.2', severity: 'fail' },
+      { requirement: '3.2', severity: 'pass', outdated: false },
+      { requirement: '1.2', severity: 'fail', outdated: false },
     ],
   );
   assert.deepEqual(missing, []);
@@ -94,7 +95,7 @@ test('an expected finding is satisfied by a pooled (requirement, severity) match
 test('severity is part of the match — a pass does not satisfy an expected fail', () => {
   const missing = missingFindings(
     [{ requirement: '1.8', severity: 'fail' }],
-    [{ requirement: '1.8', severity: 'pass' }],
+    [{ requirement: '1.8', severity: 'pass', outdated: false }],
   );
   assert.deepEqual(missing, [{ requirement: '1.8', severity: 'fail' }]);
 });
@@ -105,11 +106,11 @@ test('unlisted pooled findings never fail a case (presence, not exhaustiveness)'
     [post()],
     findings({
       'tx-1': [
-        { requirement: '3.2', severity: 'pass' },
+        { requirement: '3.2', severity: 'pass', outdated: false },
         // Ancillary findings an accepted POST legitimately accumulates.
-        { requirement: '1.2', severity: 'pass' },
-        { requirement: '3.1', severity: 'info' },
-        { requirement: '1.8', severity: 'pass' },
+        { requirement: '1.2', severity: 'pass', outdated: false },
+        { requirement: '3.1', severity: 'info', outdated: false },
+        { requirement: '1.8', severity: 'pass', outdated: false },
       ],
     }),
   );
@@ -123,9 +124,79 @@ test('a repeated expectation is satisfied once — it names a pair, not a count'
       { requirement: '3.2', severity: 'fail' },
       { requirement: '3.2', severity: 'fail' },
     ],
-    [{ requirement: '3.2', severity: 'fail' }],
+    [{ requirement: '3.2', severity: 'fail', outdated: false }],
   );
   assert.deepEqual(missing, []);
+});
+
+// ── the optional `outdated` matcher (73r) ───────────────────────────────────
+//
+// The modifier is a FILTER, not a key segment: an expectation that names it is
+// satisfied only by a pooled finding carrying the same boolean, and one that
+// leaves it unset matches either. That asymmetry is what lets the pass-outdated
+// case assert `outdated: true` directly while the other forty cases, which never
+// mention the flag, keep grading exactly as they did.
+
+test('an expectation naming outdated: true is satisfied only by an outdated finding', () => {
+  const want = { requirement: '3.2', severity: 'info', outdated: true } as const;
+  assert.deepEqual(
+    missingFindings([want], [{ requirement: '3.2', severity: 'info', outdated: true }]),
+    [],
+  );
+  assert.deepEqual(
+    missingFindings([want], [{ requirement: '3.2', severity: 'info', outdated: false }]),
+    [want],
+  );
+});
+
+test('an expectation naming outdated: false is satisfied only by a finding without the flag', () => {
+  const want = { requirement: '3.2', severity: 'info', outdated: false } as const;
+  assert.deepEqual(
+    missingFindings([want], [{ requirement: '3.2', severity: 'info', outdated: false }]),
+    [],
+  );
+  assert.deepEqual(
+    missingFindings([want], [{ requirement: '3.2', severity: 'info', outdated: true }]),
+    [want],
+  );
+});
+
+test('an expectation that omits outdated is satisfied by a finding either way', () => {
+  const want = { requirement: '3.2', severity: 'info' } as const;
+  assert.deepEqual(
+    missingFindings([want], [{ requirement: '3.2', severity: 'info', outdated: true }]),
+    [],
+  );
+  assert.deepEqual(
+    missingFindings([want], [{ requirement: '3.2', severity: 'info', outdated: false }]),
+    [],
+  );
+});
+
+test('two expectations differing only in outdated are graded separately', () => {
+  // The dedupe key has to carry the demand: collapsing these onto the shared
+  // triple would let the satisfied one answer for the unsatisfied one.
+  const missing = missingFindings(
+    [
+      { requirement: '3.2', severity: 'info', outdated: true },
+      { requirement: '3.2', severity: 'info', outdated: false },
+    ],
+    [{ requirement: '3.2', severity: 'info', outdated: true }],
+  );
+  assert.deepEqual(missing, [{ requirement: '3.2', severity: 'info', outdated: false }]);
+});
+
+test('a missing outdated expectation names the demand and what the pool carried', () => {
+  const verdict = judgeCase(
+    singlePostCase({
+      expectedFindings: [{ requirement: '3.2', severity: 'info', outdated: true }],
+    }),
+    [post()],
+    findings({ 'tx-1': [{ requirement: '3.2', severity: 'info', outdated: false }] }),
+  );
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.failures[0]!, /outdated=true/);
+  assert.doesNotMatch(verdict.failures[0]!, /\+outdated/);
 });
 
 test('an empty expectation list passes whatever the pool holds', () => {
@@ -143,7 +214,7 @@ test('a status mismatch fails the case and names both statuses', () => {
   const verdict = judgeCase(
     singlePostCase(),
     [post({ label: 'replay', status: 422 })],
-    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass' }] }),
+    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass', outdated: false }] }),
   );
   assert.equal(verdict.ok, false);
   assert.equal(verdict.failures.length, 1);
@@ -155,7 +226,7 @@ test('a missing expected finding fails the case and reports what was observed', 
   const verdict = judgeCase(
     singlePostCase({ expectedFindings: [{ requirement: '1.2', severity: 'fail' }] }),
     [post()],
-    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass' }] }),
+    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass', outdated: false }] }),
   );
   assert.equal(verdict.ok, false);
   assert.deepEqual(verdict.missing, [{ requirement: '1.2', severity: 'fail' }]);
@@ -182,14 +253,16 @@ test('a multi-POST case is judged on the pool of both POSTs, not on either alone
     post({ label: 'replay', transmissionId: 'tx-2' }),
   ];
   const observed = findings({
-    'tx-1': [{ requirement: '1.8', severity: 'pass' }],
-    'tx-2': [{ requirement: '1.8', severity: 'fail' }],
+    'tx-1': [{ requirement: '1.8', severity: 'pass', outdated: false }],
+    'tx-2': [{ requirement: '1.8', severity: 'fail', outdated: false }],
   });
 
   assert.equal(judgeCase(duplicateCase, outcomes, observed).ok, true);
 
   // Drop the second POST's evidence: the pooled expectation must now miss.
-  const halfObserved = findings({ 'tx-1': [{ requirement: '1.8', severity: 'pass' }] });
+  const halfObserved = findings({
+    'tx-1': [{ requirement: '1.8', severity: 'pass', outdated: false }],
+  });
   const verdict = judgeCase(duplicateCase, outcomes, halfObserved);
   assert.equal(verdict.ok, false);
   assert.deepEqual(verdict.missing, [{ requirement: '1.8', severity: 'fail' }]);
@@ -201,7 +274,7 @@ test('fewer outcomes than declared POSTs is itself a failure', () => {
       posts: [{ expectedStatus: 200 }, { expectedStatus: 200 }],
     }),
     [post()],
-    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass' }] }),
+    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass', outdated: false }] }),
   );
   assert.equal(verdict.ok, false);
   assert.match(verdict.failures[0]!, /played 1 of 2 POST\(s\)/);
@@ -213,7 +286,7 @@ test('tally counts cases, POSTs and accepted vs rejected by actual status', () =
   const passing = judgeCase(
     singlePostCase(),
     [post()],
-    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass' }] }),
+    findings({ 'tx-1': [{ requirement: '3.2', severity: 'pass', outdated: false }] }),
   );
   const failing = judgeCase(
     singlePostCase({ id: 'other' }),
