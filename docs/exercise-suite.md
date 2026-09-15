@@ -45,7 +45,9 @@ Each case declares:
   validator must catch), plus a `fault` naming the defect when it is a `fail`;
 - **`posts`** — an ORDERED list of one or more POSTs, each a set of named transforms
   applied to the baseline plus the HTTP status it should come back with;
-- **`expectedFindings`** — the findings the session must show afterwards.
+- **`expectedFindings`** — the findings the session must show afterwards, each naming
+  a `requirement` and a `severity`, plus an optional `profile` (which lineage graded
+  it) and an optional `outdated` (the modifier the finding must carry).
 
 …plus the three **declarative capabilities** below — `setup`, `delivery`, `baseline` —
 which say what a case needs, never how to arrange it.
@@ -57,9 +59,10 @@ case is just a list of one.
 ### Expected findings are presence-based, not exhaustive
 
 The runner pools the findings attributable to a case's POSTs and requires each
-expectation to appear at least once, matched on `(requirement, severity)` only.
-`detail` is prose the graders may reword, so it is deliberately not part of the
-contract; and pooled findings a case does not name never fail it.
+expectation to appear at least once, matched on `(requirement, severity, profile)`,
+narrowed further by `outdated` when an expectation names it. `detail` is prose the
+graders may reword, so it is deliberately not part of the contract; and pooled
+findings a case does not name never fail it.
 
 Exhaustive matching was considered and rejected: an accepted POST legitimately
 accumulates findings the case has no interest in — the §1.2/§1.6/§1.8 passes every
@@ -83,7 +86,7 @@ serialized bytes — and honors declaration order within each family.
 
 | Family | Examples | Reaches |
 |--------|----------|---------|
-| Payload | `dropRequiredField`, `setInvalidValue`, `setSchemaVersion`, `addCustomDataObject`, `declareCustomDataSchema`, `regularCadence` / `irregularCadence`, `setTransferId`, `addSolarPowerToMainsRecord` / `duplicateVersionStringsIntoRecords` (EMS-only) | §3.1, §3.2, §3.4, §1.8 |
+| Payload | `dropRequiredField`, `setInvalidValue`, `setSchemaVersion`, `addCustomDataObject`, `declareCustomDataSchema`, `regularCadence` / `irregularCadence`, `setTransferId`, `padToWireCap`, `addSolarPowerToMainsRecord` / `duplicateVersionStringsIntoRecords` (EMS-only) | §3.1, §3.2, §3.4, §1.4, §1.8 |
 | Transport | `method`, `unparseableBody`, `contentType`, `bearerCredential` / `noAuth` / `badAuth`, `oversize`, `gzip` / `doubleGzip` / `unsupportedEncoding` | §1.1, §1.2, §1.3, §1.4, §1.6 |
 
 Transport wrappers are what reach the §6 halts (405/413/400/401) that short-circuit
