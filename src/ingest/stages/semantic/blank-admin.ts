@@ -240,7 +240,7 @@ export const blankAdminCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
       `These objects describe the country, the appliance, the logger and the monitoring ` +
       `device rather than the readings taken from them, and they arrive once per report ` +
       `rather than once per reading. ems-report requires all fifteen of the keys read here; ` +
-      `eleven of them also accept null, none of them carries a minimum length, and so a null ` +
+      `ten of them also accept null, none of them carries a minimum length, and so a null ` +
       `or an empty string satisfies the schema.`
     : `administrative objects that rtmd-report requires, delivered blank — ${lead}${list}. ` +
       `These objects describe the country and the monitoring device rather than the readings ` +

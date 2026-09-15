@@ -274,7 +274,7 @@ test('EMS: a fully populated report is silence', () => {
 });
 
 test('EMS: one nullable administrative object sent as null fires, and is named', () => {
-  // The ordinary fully-conformant firing path: eleven of the fifteen are
+  // The ordinary fully-conformant firing path: ten of the fifteen are
   // ["string","null"], so the null is legal and only this check speaks to it.
   const detail = detailOf(emsPayload({ AMFR: null }));
   assert.match(detail, /AMFR is null/);
@@ -463,7 +463,7 @@ test('EMS: the detail reads as one whole observation', () => {
       'requires, delivered blank — AMFR is null and LMOD is empty. These objects describe the ' +
       'country, the appliance, the logger and the monitoring device rather than the readings ' +
       'taken from them, and they arrive once per report rather than once per reading. ' +
-      'ems-report requires all fifteen of the keys read here; eleven of them also accept null, ' +
+      'ems-report requires all fifteen of the keys read here; ten of them also accept null, ' +
       'none of them carries a minimum length, and so a null or an empty string satisfies the ' +
       'schema. The 3 records under it arrive complete and fully conformant, and the country ' +
       'receiving them holds readings whose description of the equipment is blank in those ' +
