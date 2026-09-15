@@ -85,13 +85,27 @@
  * not something the wire prose asserts about a particular supplier.
  *
  * ── THE DS01.3 SHADOW AND THIS CHECK NEED NO GATE ────────────────────────────
- * The DS01.3 Annex 4 draft makes ASER non-null and gives AMID a `minLength` of
- * 1, but it does NOT tighten any of the objects this advisory reads — they stay
- * required, mostly nullable, and without a length floor. So unlike parts of
- * null-identity.ts, nothing here is restated as a clause 5.3.2 failure under the
- * shadow profile, and there is nothing for a profile gate to suppress. The check
- * runs on every transmission that reaches stage 8, for the same reason
- * null-identity.ts does: stage order already settles which surface speaks.
+ * The DS01.3 Annex 4 draft TIGHTENS every object this advisory reads. Measured
+ * 2026-09-15 against src/schemas/pqs-e006-ds01-annex4-1.json: all of them but
+ * CID carry an `allOf` excluding the shared definition's null case, and each of
+ * the fifteen EMS and six RTMD fields gains a `minLength` of 1, a date
+ * `pattern`, or — on CID — `^[A-Z]{2}$`. So a null (except on CID, which stays
+ * nullable) and an empty string anywhere are restated as clause 5.3.2 schema
+ * failures under the shadow profile the schema stage now also grades (by1c.6),
+ * the same way null-identity.ts's ASER and AMID are.
+ *
+ * The check is nonetheless deliberately NOT gated to the 2025 profile, for the
+ * reason null-identity.ts gives: stage order already settles which surface
+ * speaks. A payload DECLARING the Annex 4 lineage is rejected 422 at stage 7,
+ * before stage 8 runs at all; a payload declaring the 0.8.x lineage is
+ * accepted; so the advisory (never a grade) and the shadow failure describe the
+ * same fact on two surfaces by design, and there is nothing a profile gate
+ * would usefully suppress.
+ *
+ * One part of the surface stays this advisory's own on BOTH lineages: a
+ * `minLength` of 1 accepts `"   "`, so a whitespace-only value on the eleven
+ * EMS and four RTMD fields whose only floor is that `minLength` satisfies the
+ * draft too, and is reported here or nowhere.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
