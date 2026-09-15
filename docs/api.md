@@ -258,8 +258,13 @@ dropped, because this response is the only surface an integrator who never opens
 dashboard will read.
 
 Findings appear in pipeline order (auth, size, content-type, encoding, parse, schema,
-then the semantic checks), so a schema failure yields one entry per Ajv error and the
-shadow findings sit with the schema stage that produced them.
+then the semantic checks), and the shadow findings sit with the schema stage that
+produced them. A schema failure lists one finding per non-container Ajv error: the
+combining keywords (`if`, `then`, `else`, `oneOf`, `anyOf`, `allOf`) are suppressed on
+both the primary and the shadow run, because they carry no location a supplier can act
+on — Ajv reports `if` at the document root — while the leaf errors beneath them name the
+actual defect. A failure consisting only of combining-keyword errors yields a single
+`tx.schema_invalid` finding, so a 422 never arrives with no §3.2 finding to explain it.
 
 `findingDetails` includes **passes**, not just problems: §1.4 within the cap, §1.2 an
 exact media type, §3.2 validated against the pinned schema, and so on. That is what
