@@ -28,10 +28,10 @@ import {
   enableAuth,
   type AuthMethod,
   type EnableAuthResponse,
-  type Profile,
   type SchemaProvenance,
   type SessionMeta,
 } from '../api';
+import { PROFILE_VOCABULARY } from '../profiles';
 import { Icon } from './ui/Icon';
 import { SyntheticDataNotice } from './ui/SyntheticDataNotice';
 
@@ -111,22 +111,6 @@ export interface SetupProps {
  * guaranteed 422 (beads 48h, auu) and both times only a manual audit caught it
  * (beads lg8).
  */
-/**
- * The reader-facing name of a lineage, for the "also loaded, not graded against"
- * line. The set that line renders is "every entry whose profile is not the
- * contract profile", and which profile that is flips with `CONTRACT_PROFILE`
- * (the registry header calls it the single flip point) — so the name has to come
- * off the entry. Naming the lineage in a literal instead would describe the
- * `cce-interop` entries as DS01.3 Annex 4 on the day the contract moves.
- *
- * Deliberately local and minimal: bd by1c.11 centralises the profile vocabulary
- * for every surface; this is not a down payment on it.
- */
-const LINEAGE_NAME: Record<Profile, string> = {
-  '2025': 'cce-interop',
-  ds013: 'DS01.3 Annex 4',
-};
-
 export function sampleBody(schemas: SchemaProvenance[]): string {
   // `schemas` is ordered oldest-first within each profile (SchemaRegistry
   // .provenance()), so the LAST contract-profile entry is the newest one — the
@@ -766,8 +750,8 @@ export function Setup(props: SetupProps) {
                 <div key={s.version} style={{ marginTop: 8 }}>
                   Also loaded, not graded against:{' '}
                   <strong style={{ color: 'var(--text)' }}>
-                    {LINEAGE_NAME[s.profile]} {s.draftDate === undefined ? 'version' : 'revision'}{' '}
-                    {s.version}
+                    {PROFILE_VOCABULARY[s.profile].longName}{' '}
+                    {s.draftDate === undefined ? 'version' : 'revision'} {s.version}
                   </strong>{' '}
                   <span style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
                     (sha256 {shortSha(s.sha256)})

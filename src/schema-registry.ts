@@ -80,6 +80,8 @@ import type { AnySchema, ValidateFunction } from 'ajv';
 import { Ajv } from 'ajv';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 
+import { PROFILES } from './profile-vocabulary.js';
+
 /**
  * The JSON Schema dialect a vendored file declares in its `$schema`, and hence
  * the Ajv build that can compile it. Not inferred from the bytes: which build a
@@ -98,10 +100,11 @@ export type Profile = '2025' | 'ds013';
 
 /**
  * Every profile, in the order the registry reports them — contract lineage
- * first. Only used to give cross-lineage listings a stable order; nothing infers
- * a profile from position.
+ * first. Defined with the rest of the profile vocabulary
+ * (src/profile-vocabulary.ts, bd by1c.32) and re-exported here so callers that
+ * think of the profile set as a registry fact still read it off the registry.
  */
-const PROFILES: readonly Profile[] = ['2025', 'ds013'];
+export { PROFILES };
 
 /**
  * Which lineage is the contract in force. THE single flip point: when DS01.3 is

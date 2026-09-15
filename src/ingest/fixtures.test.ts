@@ -315,9 +315,16 @@ test('an unresolvable version → 422 with no shadow entries and no shadow sente
 
 /**
  * ROLES SWAP WITH THE PAYLOAD (by1c.27). A supplier may declare the Annex 4
- * revision, which makes ds013 the primary lineage and cce-interop the shadow.
- * Nothing in the sentence is a literal, so it names the 2025 lineage — and
+ * revision, which makes ds013 the primary lineage and the 2025 lineage the
+ * shadow. Nothing in the sentence is a literal, so it names that lineage — and
  * describes published bytes as a schema rather than as a draft.
+ *
+ * The name is the shared vocabulary's short form, "2025" (bd by1c.32). The
+ * sentence said "cce-interop" while pipeline.ts kept a lineage map of its own;
+ * that is the fuller name the dashboard's provenance line still uses, and the
+ * two surfaces now read one vocabulary, taking the short form mid-sentence. The
+ * ordinary case — a contract-lineage payload shadowed by ds013 — is unaffected:
+ * that lineage is named "DS01.3" either way.
  */
 test('a ds013-primary payload names the 2025 lineage as its shadow', async () => {
   const payload = emsBaseline({ caseId: 'ds013-primary', index: 0 });
@@ -332,11 +339,11 @@ test('a ds013-primary payload names the 2025 lineage as its shadow', async () =>
   assert.match(
     body.message,
     new RegExp(
-      `Also passes the cce-interop ${current.version.replace(/\./g, '\\.')} schema ` +
+      `Also passes the 2025 ${current.version.replace(/\./g, '\\.')} schema ` +
         `\\(sha256 ${current.sha256}\\)\\.$`,
     ),
   );
-  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow today is the cce-interop lineage');
+  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow here is the 2025 lineage');
   assert.equal(
     body.findingDetails.filter((f) => f.profile === '2025' && f.requirement === '3.2').length,
     1,

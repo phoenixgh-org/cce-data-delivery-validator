@@ -15,9 +15,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { PROFILE_VOCABULARY as SERVER_VOCABULARY } from '../profile-vocabulary.js';
 import { CONTRACT_PROFILE, type Profile, type ShadowProvenance } from './api.js';
 import {
   PROFILE_NAME,
+  PROFILE_VOCABULARY,
   formatDraftDate,
   gradingLegend,
   profileLabel,
@@ -36,6 +38,23 @@ const publishedShadow: ShadowProvenance = { version: '0.9.0', sha256: 'b'.repeat
 
 /** Every registered lineage, read off the vocabulary rather than listed by hand. */
 const ALL_PROFILES = Object.keys(PROFILE_NAME) as Profile[];
+
+test('the mirrored vocabulary is the server vocabulary, name for name (by1c.32)', () => {
+  // src/profile-vocabulary.ts is the definition and this module re-declares it,
+  // because tsconfig.web.json's rootDir is src/web and browser code cannot reach
+  // outside it. What that mirror costs is a copy that can drift, and drift is
+  // exactly the defect by1c.32 removed: the ingest sentence and the dashboard's
+  // provenance line had come to call the same bytes by different names. Web
+  // tests are excluded from `typecheck:web`, so importing the server module here
+  // — the clauseMap.test.ts pattern — reaches nothing in the bundle.
+  assert.deepEqual(PROFILE_VOCABULARY, SERVER_VOCABULARY);
+});
+
+test("PROFILE_NAME is the vocabulary's short form, not a third list of names", () => {
+  for (const profile of ALL_PROFILES) {
+    assert.equal(PROFILE_NAME[profile], PROFILE_VOCABULARY[profile].name, profile);
+  }
+});
 
 test('the "(contract)" suffix follows CONTRACT_PROFILE, not the "2025" key', () => {
   assert.equal(profileLabel(CONTRACT_PROFILE), `${PROFILE_NAME[CONTRACT_PROFILE]} (contract)`);

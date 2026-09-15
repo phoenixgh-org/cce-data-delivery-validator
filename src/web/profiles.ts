@@ -24,20 +24,46 @@
  * The later web bites (by1c.12 verdict dots, by1c.13 readiness strip, by1c.14
  * detail groups) import this module rather than restating the words.
  *
- * NOT in scope here: the server-side `LINEAGE_NAME` in Setup.tsx / pipeline.ts.
- * Folding those in is by1c.32, a separate commit.
+ * The words are shared with the server (by1c.32). src/profile-vocabulary.ts is
+ * the definition; this module RE-DECLARES it because `tsconfig.web.json` sets
+ * `rootDir` to src/web and browser code therefore cannot import anything outside
+ * it. profiles.test.ts imports the server module and asserts the two are equal,
+ * the same mirror-plus-equality pattern src/web/clauseMap.ts uses for the clause
+ * map — so a name changed on one side and not the other fails a test rather than
+ * reaching a supplier.
  */
 import { CONTRACT_PROFILE, type Profile, type ShadowProvenance } from './api';
+
+/** How one lineage is named, in the two lengths the surfaces need. */
+export interface ProfileWords {
+  /** The short name, for mid-sentence use and column headers: `'DS01.3'`. */
+  name: string;
+  /** The fuller name, for a provenance line: `'DS01.3 Annex 4'`. */
+  longName: string;
+}
+
+/**
+ * The reader-facing name of each lineage, in both lengths. A mirror of
+ * `PROFILE_VOCABULARY` in src/profile-vocabulary.ts — held equal to it by
+ * profiles.test.ts, not by the type system.
+ */
+export const PROFILE_VOCABULARY: Record<Profile, ProfileWords> = {
+  '2025': { name: '2025', longName: 'cce-interop' },
+  ds013: { name: 'DS01.3', longName: 'DS01.3 Annex 4' },
+};
 
 /**
  * The bare reader-facing name of each lineage — no role suffix, no date. The
  * contract marker and the draft date are composed on top of this so one name
  * serves the legend, the verdict columns and the tooltips alike.
+ *
+ * A derived view of {@link PROFILE_VOCABULARY}'s short form rather than a third
+ * list of names: the legend, the verdict columns and the tooltips keep reading
+ * this, and the words they read come from the one vocabulary.
  */
-export const PROFILE_NAME: Record<Profile, string> = {
-  '2025': '2025',
-  ds013: 'DS01.3',
-};
+export const PROFILE_NAME: Record<Profile, string> = Object.fromEntries(
+  Object.entries(PROFILE_VOCABULARY).map(([profile, words]) => [profile, words.name]),
+) as Record<Profile, string>;
 
 /**
  * A lineage's name with its role: "2025 (contract)" for whichever profile is the

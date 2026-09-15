@@ -15,6 +15,7 @@
 import type { FastifyRequest } from 'fastify';
 
 import type { InsertFindingInput, Severity } from '../db/repository.js';
+import { PROFILE_VOCABULARY } from '../profile-vocabulary.js';
 import { CONTRACT_PROFILE } from '../schema-registry.js';
 import type { Profile, RegistryEntry, SchemaRegistry } from '../schema-registry.js';
 import { isAdvisoryId } from './stages/semantic/advisory.js';
@@ -287,13 +288,19 @@ function isAccepted(status: number): boolean {
 
 /**
  * The lineage a finding grades against, as the response reports it. A finding
- * from a transport stage carries no profile at all, and `insertFindings`
- * defaults those to `'2025'` on the way into the database, so the same default
- * is applied here — the wire and the stored row say the same thing rather than
- * the response inventing a third answer for "absent".
+ * from a transport stage carries no profile at all — only the schema stage
+ * stamps one — so "absent" has to resolve to something, and it resolves to the
+ * CONTRACT lineage: a §1.x transport obligation or a §3.3 semantic check grades
+ * against the contract in force, whichever lineage that is.
+ *
+ * Written as `CONTRACT_PROFILE` rather than as the literal `'2025'` so the flip
+ * stays one constant change. With the literal, the day the contract moves to
+ * `'ds013'` every unstamped finding would be echoed under the SHADOW lineage and
+ * dropped from {@link isContractFinding}'s count — the number a supplier reads
+ * as the outcome (bd by1c.31).
  */
 function profileOf(f: Finding): Profile {
-  return f.profile ?? '2025';
+  return f.profile ?? CONTRACT_PROFILE;
 }
 
 /**
@@ -305,24 +312,6 @@ function isContractFinding(f: Finding): boolean {
 }
 
 /**
- * The reader-facing name of a lineage, for the trailing shadow sentence.
- *
- * Read off the ENTRY's `profile`, never written as a literal, for the reason
- * src/web/components/Setup.tsx gives its own map (bd by1c.22): which lineage is
- * the shadow flips with `CONTRACT_PROFILE`, so a sentence that says "DS01.3"
- * outright would describe the `cce-interop` entry that way on the day the
- * contract moves. The two maps are deliberately separate — that one is browser
- * code, and this one names the lineage mid-sentence rather than as a heading, so
- * it says `DS01.3` where the dashboard heading says `DS01.3 Annex 4`. bd by1c.11
- * centralises the profile vocabulary for every surface; this is not a down
- * payment on it.
- */
-const LINEAGE_NAME: Record<Profile, string> = {
-  '2025': 'cce-interop',
-  ds013: 'DS01.3',
-};
-
-/**
  * How the trailing sentence names the bytes the shadow run used.
  *
  * Every fact comes from the registry entry, on the same reasoning as the §3.2
@@ -332,9 +321,15 @@ const LINEAGE_NAME: Record<Profile, string> = {
  * `draftDate` — because an unpublished proposal and a published schema are not
  * described the same way, and the shadow lineage is whichever one is not the
  * contract today.
+ *
+ * The lineage is named from the shared vocabulary's short form (bd by1c.32),
+ * which is what a sentence wants: "the DS01.3 draft of …" reads better than the
+ * provenance line's fuller "DS01.3 Annex 4". Read off the ENTRY's `profile`,
+ * never written as a literal — which lineage is the shadow flips with
+ * `CONTRACT_PROFILE`.
  */
 function describeShadowLineage(entry: RegistryEntry): string {
-  const name = LINEAGE_NAME[entry.profile];
+  const name = PROFILE_VOCABULARY[entry.profile].name;
   return entry.draftDate === undefined
     ? `the ${name} ${entry.version} schema (sha256 ${entry.sha256})`
     : `the ${name} draft of ${entry.draftDate} (sha256 ${entry.sha256})`;

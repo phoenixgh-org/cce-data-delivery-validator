@@ -18,7 +18,7 @@ import {
   type Stage,
 } from './pipeline.js';
 import { advisory } from './stages/semantic/advisory.js';
-import { SchemaRegistry, type Profile } from '../schema-registry.js';
+import { CONTRACT_PROFILE, SchemaRegistry, type Profile } from '../schema-registry.js';
 
 /** A bare context sufficient for runner tests (stages here ignore most fields). */
 function fakeCtx(): PipelineContext {
@@ -283,6 +283,25 @@ test('buildResponseBody: every echoed finding names the lineage that graded it (
   assert.equal(body.findings, 2, 'the count stays contract-only');
 });
 
+test('an unstamped finding resolves to the contract lineage through CONTRACT_PROFILE (by1c.31)', () => {
+  // Only the schema stage stamps a profile, so every transport and semantic
+  // finding arrives without one. The expectations below are written against the
+  // CONSTANT, not against the string it holds today: the point of the fix is
+  // that the echoed lineage and the contract tally both follow the flip point,
+  // and a test spelling out '2025' would still pass on the day they stop doing
+  // so (bd by1c.31).
+  const body = buildResponseBody(
+    200,
+    [{ requirement: '1.4', severity: 'pass' }, advisory({ id: 'adv.date_format', detail: 'd' })],
+    'tx-unstamped',
+    lineages('ds013'),
+  );
+
+  assert.equal(body.findingDetails[0]?.profile, CONTRACT_PROFILE, 'echoed as the contract lineage');
+  assert.equal(body.advisories[0]?.profile, CONTRACT_PROFILE, 'an advisory too');
+  assert.equal(body.findings, 1, 'and counted as a contract finding, not dropped');
+});
+
 test('message: shadow fails echoed → a trailing sentence with the count, date and hash', () => {
   const entry = entryOf('ds013');
   const shadowFails = [1, 2, 3, 4, 5].map(() => ({
@@ -342,9 +361,16 @@ test('message: no sentence at all when no shadow run happened', () => {
 
 test('message: the sentence follows ctx.shadowProfile, so the roles can swap', () => {
   // A payload declaring the Annex 4 revision is graded PRIMARY under ds013, and
-  // cce-interop becomes its shadow. Nothing in the sentence is written as a
-  // literal, so it names the 2025 lineage — and describes a published schema as
-  // a schema rather than as a draft.
+  // the 2025 lineage becomes its shadow. Nothing in the sentence is written as a
+  // literal, so it names that lineage — and describes a published schema as a
+  // schema rather than as a draft.
+  //
+  // The name is the shared vocabulary's short form, "2025" (bd by1c.32). The
+  // sentence said "cce-interop" while pipeline.ts kept its own map, which is the
+  // fuller name the dashboard's provenance line still uses; the two surfaces now
+  // read the same vocabulary, and a mid-sentence mention takes the short form on
+  // both. No message the service sends today changes — the shadow lineage is
+  // ds013, and it is named "DS01.3" either way.
   const entry = entryOf('2025');
   const body = buildResponseBody(
     200,
@@ -363,7 +389,7 @@ test('message: the sentence follows ctx.shadowProfile, so the roles can swap', (
   assert.equal(
     body.message,
     'Accepted (200): data recorded; 3 findings. ' +
-      `Also passes the cce-interop ${entry.version} schema (sha256 ${entry.sha256}).`,
+      `Also passes the 2025 ${entry.version} schema (sha256 ${entry.sha256}).`,
   );
   assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow today is the cce-interop lineage');
   assert.doesNotMatch(body.message, /draft/, 'published bytes are not called a draft');
