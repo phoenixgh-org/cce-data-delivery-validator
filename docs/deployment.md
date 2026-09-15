@@ -243,6 +243,56 @@ still applies — change the upstream from `app:3000` to `127.0.0.1:3000` and ru
 `caddy run --config deploy/Caddyfile`. The contract, not the packaging, is what
 matters; the smoke test is the acceptance criterion either way.
 
+### Upgrading an existing database volume
+
+Postgres replays `db/initdb/*.sql` only on the **first** boot of a fresh volume.
+A database created before a numbered file was added therefore never received it,
+and no later `docker compose up` will apply it. A fresh volume needs none of the
+steps below, because initdb replays the whole directory in filename order.
+
+Each file after the original four is a schema change that an existing deployment
+has to apply by hand:
+
+- `50-session-auth-bearer.sql` — admits `bearer` as a §1.3 auth method. Without
+  it, a session that opts into bearer auth is rejected by the old CHECK
+  constraint.
+- `60-finding-profile.sql` — adds `finding.profile`, the requirement lineage a
+  finding graded against. Without it, every ingest write fails: the column the
+  code inserts does not exist.
+- `70-finding-profile-no-default.sql` — drops the DEFAULT from that column, so an
+  unlabelled finding is rejected rather than quietly recorded as a contract
+  finding.
+- `80-contract-profile-marker.sql` — creates `service_marker`, the one-row table
+  the flip-day guard reads. Without it the service refuses to start, because a
+  guard that cannot read the marker cannot tell whether the stored findings were
+  written under the profile this build grades against.
+
+Apply them in order against a running database:
+
+```bash
+docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
+  < db/initdb/50-session-auth-bearer.sql
+docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
+  < db/initdb/60-finding-profile.sql
+docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
+  < db/initdb/70-finding-profile-no-default.sql
+docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
+  < db/initdb/80-contract-profile-marker.sql
+```
+
+Every one of these files is written to be idempotent — `DROP CONSTRAINT IF
+EXISTS` before `ADD`, `ADD COLUMN IF NOT EXISTS`, a `DROP DEFAULT` that is a
+no-op when there is no default, `CREATE TABLE IF NOT EXISTS`, and `COMMENT ON`
+statements that simply overwrite. Re-applying one that is already in place
+changes nothing, so an operator who is unsure which files a volume has can run
+all four rather than investigate. Order still matters on a database that has
+none of them: `70` drops a default that `60` creates.
+
+Discarding the volume (`docker compose down -v`) and letting initdb re-run is the
+other valid route. The service stores synthetic test data that retention deletes
+after 7 days of inactivity, so on most deployments the two options differ by very
+little.
+
 ---
 
 ## 6. Verifying the contract
@@ -314,7 +364,12 @@ the script asserts that reality rather than the absence of a row.
   start again. There is no migration, and no way to keep the stored findings —
   see [Adopting DS01.3 discards stored data](../README.md#adopting-ds013-discards-stored-data)
   for why. The refusal prints the stored profile, the profile the build runs, and
-  the same instruction.
+  the same instruction. The guard reads `service_marker`, so on a volume created
+  before `db/initdb/80-contract-profile-marker.sql` the service refuses to start
+  until that file is applied — see
+  [Upgrading an existing database volume](#upgrading-an-existing-database-volume).
+  A guard that failed open there would be inert on exactly the deployments that
+  hold pre-flip rows, which is the silent mislabelling it exists to prevent.
 - **Synthetic data only.** The service is for test/sandbox payloads. Capability
   UUIDs are bearer secrets that appear in URLs — and therefore in Caddy's access
   log. Treat the proxy logs accordingly (`DESIGN.md` §12).

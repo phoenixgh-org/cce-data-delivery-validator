@@ -240,12 +240,17 @@ stored data; there is no migration.** Stop the service, discard the database vol
 
 The service enforces this itself: the database records the contract profile it was
 last written under, and the app refuses to start — with that instruction — over
-data written under a different one. Two limits are worth knowing. The check reads
-the database only, so it cannot see the dashboard's copy of the profile in
-`src/web/api.ts`; a flip is still a two-edit change, server and web. And it is a
-guard against mislabelling, not a backup: retention already deletes everything
-after 7 days of inactivity, so the data a flip discards is at most one week of
-test traffic.
+data written under a different one. The marker lives in `service_marker`, created
+by `db/initdb/80-contract-profile-marker.sql`, and initdb runs only on the first
+boot of a fresh volume. On an existing volume the service therefore refuses to
+start until that file is applied by hand
+([Upgrading an existing database volume](docs/deployment.md#upgrading-an-existing-database-volume));
+a guard that started anyway would be inert on precisely the deployments that
+already hold rows. Two limits are worth knowing. The check reads the database
+only, so it cannot see the dashboard's copy of the profile in `src/web/api.ts`;
+a flip is still a two-edit change, server and web. And it is a guard against
+mislabelling, not a backup: retention already deletes everything after 7 days of
+inactivity, so the data a flip discards is at most one week of test traffic.
 
 ## Status and v1 scope
 
@@ -320,7 +325,9 @@ only number worth stating here since the totals move with every test that lands.
 If you see skips, the database is not reachable — or its schema predates a DDL
 file. `db/initdb/` is applied only on **first** boot of the volume, so a database
 created before a numbered file was added never got it; apply the missing files by
-hand, or `docker compose down -v` and let it re-initialize from scratch.
+hand — the commands are in
+[Upgrading an existing database volume](docs/deployment.md#upgrading-an-existing-database-volume)
+— or `docker compose down -v` and let it re-initialize from scratch.
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs lint, build and the
 full suite against a real Postgres, applying every `db/initdb/*.sql` in filename

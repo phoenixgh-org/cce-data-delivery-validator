@@ -24,6 +24,12 @@
  *
  * Cost: one indexed SELECT of at most one row, once, before `app.listen()`. The
  * guard is dormant until flip day and adds no measurable boot latency.
+ *
+ * A database whose volume predates db/initdb/80-contract-profile-marker.sql has
+ * no `service_marker` table at all. That read fails with SQLSTATE 42P01, and it
+ * is reported as its own outcome (`missing-table`) rather than as an unreadable
+ * marker, because it is permanent and operator-fixable — see
+ * {@link isMissingMarkerTable} (by1c.54).
  */
 
 import { CONTRACT_PROFILE, type Profile } from '../schema-registry.js';
@@ -70,12 +76,54 @@ export interface ContractProfileCheck {
    * `fresh` — no marker; this call stamped {@link expected}.
    * `match` — the stored profile is the one this build runs.
    * `mismatch` — the database holds data written under a different profile.
+   * `missing-table` — `service_marker` does not exist, so the guard cannot run:
+   * a database volume created before db/initdb/80-contract-profile-marker.sql
+   * was added (by1c.54).
    */
-  outcome: 'fresh' | 'match' | 'mismatch';
+  outcome: 'fresh' | 'match' | 'mismatch' | 'missing-table';
   /** The profile read from the database; null on a fresh database. */
   stored: Profile | null;
   /** The profile this build runs ({@link CONTRACT_PROFILE}). */
   expected: Profile;
+}
+
+/** Postgres SQLSTATE `undefined_table` — the relation in the query does not exist. */
+const UNDEFINED_TABLE = '42P01';
+
+/**
+ * True when `err` is Postgres reporting that the queried relation does not
+ * exist. Classifying by SQLSTATE is what separates the two failures that used to
+ * look identical to the boot guard: a missing `service_marker` table is a
+ * permanent, operator-fixable state of THIS database, whereas a refused
+ * connection, a timeout or an auth failure is transient and says nothing about
+ * what the database holds. Only the first justifies refusing to start (by1c.54).
+ *
+ * The shape is duck-typed rather than `instanceof DatabaseError`, because the
+ * error crosses a `Queryable` boundary that may be a pool, a client, or a test
+ * double.
+ */
+export function isMissingMarkerTable(err: unknown): boolean {
+  return (
+    typeof err === 'object' && err !== null && (err as { code?: unknown }).code === UNDEFINED_TABLE
+  );
+}
+
+/**
+ * The operator-facing refusal when the marker table is absent. db/initdb/*.sql is
+ * replayed only on the first boot of a fresh volume, so a database created before
+ * the marker file was added never got it — and until it is applied by hand the
+ * flip-day guard cannot see what the stored rows were written under. Naming the
+ * file and the deployment section keeps the fix to one command.
+ */
+export function missingMarkerTableMessage(): string {
+  return (
+    `contract profile marker table is missing; apply ` +
+    `db/initdb/80-contract-profile-marker.sql to this database and start again ` +
+    `(docs/deployment.md, "Upgrading an existing database volume"). ` +
+    `Until it is applied the flip-day guard cannot check what this database was ` +
+    `written under, so the service refuses to start rather than risk relabelling ` +
+    `stored findings.`
+  );
 }
 
 /**
@@ -102,7 +150,21 @@ export async function assertContractProfile(
   db: Queryable = getPool(),
 ): Promise<ContractProfileCheck> {
   const expected = CONTRACT_PROFILE;
-  const stored = await readContractMarker(db);
+
+  let stored: Profile | null;
+  try {
+    stored = await readContractMarker(db);
+  } catch (err) {
+    // A missing marker table is a verdict, not an outage: this database predates
+    // db/initdb/80 and the guard cannot run over it. Report it as an outcome so
+    // the caller refuses to start. Every other failure — connection refused,
+    // timeout, auth — is transient and still propagates to the caller's
+    // fail-open branch.
+    if (isMissingMarkerTable(err)) {
+      return { outcome: 'missing-table', stored: null, expected };
+    }
+    throw err;
+  }
 
   if (stored === null) {
     await writeContractMarker(expected, db);

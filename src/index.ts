@@ -14,7 +14,11 @@
 import type { FastifyBaseLogger } from 'fastify';
 
 import { buildApp } from './app.js';
-import { assertContractProfile, contractProfileMismatchMessage } from './db/contract-marker.js';
+import {
+  assertContractProfile,
+  contractProfileMismatchMessage,
+  missingMarkerTableMessage,
+} from './db/contract-marker.js';
 import { purgeExpiredSessions } from './db/repository.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -60,21 +64,35 @@ export function startRetentionSweep(log: SweepLogger): NodeJS.Timeout {
 }
 
 /**
- * The flip-day guard (by1c.52). Reads the database's contract-profile marker and
- * returns false when it disagrees with the profile this build runs — the caller
- * must then refuse to start, because adopting a new contract profile discards
- * all stored data rather than migrating it (see src/db/contract-marker.ts).
+ * The flip-day guard (by1c.52, by1c.54). Reads the database's contract-profile
+ * marker and returns false when the service must refuse to start, because
+ * adopting a new contract profile discards all stored data rather than migrating
+ * it (see src/db/contract-marker.ts). Four outcomes:
  *
- * A marker read that FAILS (typically: the database is not up yet) is logged and
- * treated as inconclusive rather than fatal, matching this module's existing
- * stance that DB trouble never crashes the process ({@link runSweep}). The guard
- * runs again on the next boot.
+ * - `fresh` / `match` — the marker was stamped, or already names the profile this
+ *   build runs. Logged at info; boot continues.
+ * - `mismatch` — the database holds data written under a different profile.
+ *   Logged at error with the operator action; boot is refused.
+ * - `missing-table` — `service_marker` does not exist (SQLSTATE 42P01), so this
+ *   database volume predates db/initdb/80-contract-profile-marker.sql and the
+ *   guard cannot run over it. Logged at error with the file to apply; boot is
+ *   refused. Failing open here would leave the guard permanently inert on exactly
+ *   the deployments it was written for — an existing one, carrying pre-flip rows.
+ * - any other read failure (connection refused, timeout, auth) — inconclusive
+ *   rather than fatal, matching this module's stance that DB trouble never
+ *   crashes the process ({@link runSweep}). It says nothing about what the
+ *   database holds, it clears by itself, and the guard runs again on the next
+ *   boot.
  */
 async function contractProfileOk(log: SweepLogger): Promise<boolean> {
   try {
     const check = await assertContractProfile();
     if (check.outcome === 'mismatch') {
       log.error(contractProfileMismatchMessage(check.stored!, check.expected));
+      return false;
+    }
+    if (check.outcome === 'missing-table') {
+      log.error(missingMarkerTableMessage());
       return false;
     }
     log.info(

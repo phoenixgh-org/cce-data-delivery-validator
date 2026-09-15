@@ -21,6 +21,8 @@ import { getPool, closePool } from './pool.js';
 import {
   assertContractProfile,
   contractProfileMismatchMessage,
+  isMissingMarkerTable,
+  missingMarkerTableMessage,
   readContractMarker,
   writeContractMarker,
 } from './contract-marker.js';
@@ -119,4 +121,64 @@ test('the mismatch message names both profiles and the operator action', () => {
   assert.match(message, /this build runs contract profile ds013/);
   assert.match(message, /docker compose down -v/);
   assert.match(message, /no migration/);
+});
+
+test(
+  'a database without the marker table reports missing-table, not an error',
+  { skip },
+  async () => {
+    // The volume that predates db/initdb/80-contract-profile-marker.sql (by1c.54).
+    // Reproduced by dropping the table inside a transaction that is rolled back,
+    // so the real SQLSTATE 42P01 reaches the check and no other test sees the
+    // table disappear.
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DROP TABLE service_marker');
+
+      const check = await assertContractProfile(client);
+      assert.equal(check.outcome, 'missing-table');
+      assert.equal(check.stored, null);
+      assert.equal(check.expected, CONTRACT_PROFILE);
+    } finally {
+      await client.query('ROLLBACK').catch(() => {});
+      client.release();
+    }
+
+    // The rollback put the table back: the guard is readable again.
+    await assert.doesNotReject(() => readContractMarker());
+  },
+);
+
+test('a read failure that is NOT a missing table still propagates', async () => {
+  // The fail-open branch in src/index.ts must keep seeing a thrown error for a
+  // connection refusal, a timeout or an auth failure — those say nothing about
+  // what the database holds, so they must not be reported as a verdict.
+  const refused = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5432'), {
+    code: 'ECONNREFUSED',
+  });
+  const db = {
+    query: () => Promise.reject(refused),
+  } as unknown as Parameters<typeof assertContractProfile>[0];
+
+  await assert.rejects(() => assertContractProfile(db), /ECONNREFUSED/);
+});
+
+test('isMissingMarkerTable selects 42P01 and nothing else', () => {
+  assert.equal(isMissingMarkerTable({ code: '42P01' }), true);
+  assert.equal(isMissingMarkerTable(Object.assign(new Error('nope'), { code: '42P01' })), true);
+  assert.equal(isMissingMarkerTable({ code: '42703' }), false); // undefined_column
+  assert.equal(isMissingMarkerTable({ code: 'ECONNREFUSED' }), false);
+  assert.equal(isMissingMarkerTable(new Error('no code at all')), false);
+  assert.equal(isMissingMarkerTable(null), false);
+  assert.equal(isMissingMarkerTable(undefined), false);
+  assert.equal(isMissingMarkerTable('42P01'), false);
+});
+
+test('the missing-table message names the file to apply and where to read', () => {
+  const message = missingMarkerTableMessage();
+  assert.match(message, /contract profile marker table is missing/);
+  assert.match(message, /db\/initdb\/80-contract-profile-marker\.sql/);
+  assert.match(message, /docs\/deployment\.md/);
+  assert.match(message, /Upgrading an existing database volume/);
 });
