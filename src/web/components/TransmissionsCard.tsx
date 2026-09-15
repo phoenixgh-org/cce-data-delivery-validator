@@ -351,6 +351,11 @@ function TxRow({
   const tone = dotTone(tx.findings);
   const outdated = tx.findings.some((f) => f.outdated);
   const findings = findingsCell(tx.findings);
+  const reports = reportCount(tx.body);
+  const reportsTitle =
+    reports === null
+      ? 'Report count unknown — the payload did not parse, so data[] could not be read'
+      : `${reportCountLabel(reports)} in this transmission`;
 
   return (
     <div
@@ -409,6 +414,18 @@ function TxRow({
       <span style={{ flex: 1 }} />
       <span style={{ ...mono, fontSize: 11, color: 'var(--text-faint)' }}>
         {tx.wire_bytes ?? '—'} bytes
+      </span>
+      {/* How many reports this POST carried (frk) — next to the byte count
+          because both size the delivery. It rides the flex spacer above rather
+          than taking a fixed width: the label is 8–10 characters and the row
+          already ends in fixed-width cells, so a nowrap span here costs the
+          spacer a little slack and nothing else. `—` when the payload did not
+          parse; never `0`. */}
+      <span
+        title={reportsTitle}
+        style={{ ...mono, fontSize: 11, color: 'var(--text-faint)', whiteSpace: 'nowrap' }}
+      >
+        {reportCountLabel(reports)}
       </span>
       <span
         title={findings.title}
@@ -881,6 +898,44 @@ export function deriveTransmissionType(body: unknown): string {
   return second === undefined ? first : 'mixed';
 }
 
+/**
+ * How many REPORTS a transmission carried — `data[]`'s length — or null when
+ * that is not knowable (frk).
+ *
+ * `data` is an array by schema: "Array of data reports for one or more pieces of
+ * cold-chain equipment", `minItems: 1`. One report per POST is the common case
+ * but nothing in the format says it must be, and a supplier batching several CCEs
+ * into one transmission should see that acknowledged rather than have the
+ * dashboard imply a single report.
+ *
+ * NULL IS NOT ZERO, and the distinction is the whole point of the return type.
+ * The count can only come from the PARSED body, which is absent whenever the
+ * pipeline halted before the parse stage or the payload did not parse at all. A
+ * transmission that failed to parse still carried whatever it carried; rendering
+ * `0 reports` would be a false statement about what was sent, so callers render
+ * an em-dash for null. A body whose `data` is missing or not an array is the same
+ * case: the count is unknown, not zero.
+ */
+export function reportCount(body: unknown): number | null {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return null;
+  const data = (body as { data?: unknown }).data;
+  return Array.isArray(data) ? data.length : null;
+}
+
+/** The detail grid's `reports` value: the bare count, or `—` when unknown. */
+function fmtReportCount(n: number | null): string {
+  return n === null ? '—' : String(n);
+}
+
+/**
+ * The list row's report count, which carries its own unit because the row has no
+ * eyebrow to name the column: `1 report`, `2 reports`, `—` when unknown.
+ */
+export function reportCountLabel(n: number | null): string {
+  if (n === null) return '—';
+  return `${n} report${n === 1 ? '' : 's'}`;
+}
+
 /** The fields the meta grid reads — a structural subset of TransmissionView. */
 type MetaSource = Pick<
   TransmissionView,
@@ -888,15 +943,20 @@ type MetaSource = Pick<
 >;
 
 /**
- * The meta grid's cells IN RENDER ORDER (j1s). With
- * {@link META_GRID_COLUMNS} columns and the raw-payload control appended as the
- * sixth cell, this reads:
+ * The meta grid's cells IN RENDER ORDER (j1s, frk). Six value cells over
+ * {@link META_GRID_COLUMNS} columns, with the raw-payload control on a row of
+ * its own below them:
  *
- *   transferId · schema · type
- *   bytes      · compression · raw payload
+ *   transferId · schema      · type
+ *   reports    · bytes       · compression
+ *   raw payload (spans all three columns)
  *
  * Top row is WHAT WAS SENT (its id, the schema it claims, the kind of data);
- * bottom row is HOW IT ARRIVED (size, encoding, and the bytes themselves).
+ * second row is HOW MUCH AND HOW IT ARRIVED (report count, size, encoding).
+ *
+ * `reports` sits beside `bytes` rather than beside `type` because both answer
+ * "how big was this delivery" — one in reports, one in bytes — and a batching
+ * supplier reads them together.
  *
  * `type` used to be the request `Content-Type`, which sat oddly next to the
  * §1.2 finding that already grades it; it now names the transmission type from
@@ -907,16 +967,22 @@ export function metaCells(tx: MetaSource): MetaCell[] {
     { key: 'transferId', value: tx.transfer_id ?? '—' },
     { key: 'schema', value: tx.schema_version ? `v${tx.schema_version}` : '—' },
     { key: 'type', value: deriveTransmissionType(tx.body) },
+    { key: 'reports', value: fmtReportCount(reportCount(tx.body)) },
     { key: 'bytes', value: tx.wire_bytes ?? '—' },
     compressionCell(tx.content_encoding),
   ];
 }
 
 /**
- * Column count of the detail meta grid. Six cells (the five {@link metaCells}
- * plus the raw-payload control) over three columns = two even rows; the row
- * split is the layout decision j1s made, so it lives here rather than inline in
- * the style.
+ * Column count of the detail meta grid. The six {@link metaCells} value cells
+ * over three columns = two even rows; the row split is the layout decision j1s
+ * made, so it lives here rather than inline in the style.
+ *
+ * The raw-payload control is NOT one of those six. It used to be the sixth cell
+ * of a five-cell grid, but frk's `reports` cell made the value cells six, and a
+ * seventh cell would leave a one-wide orphan on a third row. The control now
+ * spans all three columns on its own row (`gridColumn: '1 / -1'` in TxDetail),
+ * which reads as the full-width affordance it is rather than as another value.
  */
 export const META_GRID_COLUMNS = 3;
 
@@ -1581,19 +1647,20 @@ function TxDetail({
       </div>
 
       {/*
-        Six cells over three columns — two even rows (j1s):
+        Six value cells over three columns — two even rows (j1s, frk):
 
           transferId · schema      · type
-          bytes      · compression · raw payload
+          reports    · bytes       · compression
+          raw payload ─────────────────────────
 
-        The five meta cells come from metaCells() in that order; the raw-payload
-        expander is the sixth, still immediately after `compression` because
-        that cell is already the "what shape were the bytes in" signal — "and
-        here are the bytes" is the same question one step further in (9q4).
-
-        NOTE: frk adds a `reports` cell to this same grid, which would make
-        SEVEN — three columns then leave a one-wide orphan row, so the template
-        needs revisiting when that lands.
+        The six come from metaCells() in that order. The raw-payload expander
+        used to be the sixth cell of a five-cell grid; frk's `reports` cell made
+        the value cells six, so a seventh would leave a one-wide orphan. It now
+        takes a row of its own spanning all three columns, which is truer to what
+        it is — a full-width affordance, not another value — and it still sits
+        immediately after `compression`, because that cell is already the "what
+        shape were the bytes in" signal and "and here are the bytes" is the same
+        question one step further in (9q4).
       */}
       <div
         style={{
@@ -1648,6 +1715,7 @@ function TxDetail({
           title={rawOpen ? 'Collapse the raw payload' : 'Show the raw payload below the findings'}
           onClick={toggleRawFromHeader}
           style={{
+            gridColumn: '1 / -1',
             minWidth: 0,
             background: 'none',
             border: 'none',

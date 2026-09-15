@@ -4,13 +4,21 @@
  * Two claims are pinned here, both of which the component states in prose and
  * neither of which the compiler can hold:
  *
- *   1. THE ROW SPLIT. Six cells over `META_GRID_COLUMNS` columns is what puts
- *      transferId/schema/type on the top row and bytes/compression/raw payload
- *      on the bottom. Nothing about a CSS grid says so — reorder `metaCells()`
+ *   1. THE ROW SPLIT. Six VALUE cells over `META_GRID_COLUMNS` columns is what
+ *      puts transferId/schema/type on the top row and reports/bytes/compression
+ *      on the second. Nothing about a CSS grid says so — reorder `metaCells()`
  *      or move the column count and the two rows silently regroup. The test
  *      does the same arithmetic the browser does (fill left to right, wrap
- *      every `META_GRID_COLUMNS`) with the raw-payload control appended as the
- *      sixth cell, exactly as TxDetail renders it.
+ *      every `META_GRID_COLUMNS`).
+ *
+ *      The raw-payload control is NO LONGER part of that split. It was the sixth
+ *      cell of a five-cell grid until frk added `reports`; a seventh cell would
+ *      orphan a one-wide row, so TxDetail now gives the control a row of its own
+ *      spanning all three columns and it is outside the arithmetic here.
+ *
+ *   1b. THE `reports` COUNT. `reportCount()` returns null — rendered `—` — for
+ *      every case where `data[]` cannot be read, and never 0: a transmission
+ *      that failed to parse still carried whatever it carried (frk).
  *
  *   2. THE `type` VALUE. It used to be the request `Content-Type` and now names
  *      the transmission type off the payload, which is the one cell in the grid
@@ -39,6 +47,8 @@ import { groupDetailFindings } from '../detailGroups.js';
 const {
   metaCells,
   deriveTransmissionType,
+  reportCount,
+  reportCountLabel,
   META_GRID_COLUMNS,
   findingsCell,
   flaggedPointers,
@@ -77,14 +87,41 @@ function rows(keys: string[]): string[][] {
   return out;
 }
 
-test('the meta grid reads transferId/schema/type over bytes/compression/raw payload', () => {
-  // TxDetail renders metaCells() then the raw-payload control as the sixth cell.
-  const keys = [...metaCells(tx()).map((c) => c.key), 'raw payload'];
+test('the meta grid reads transferId/schema/type over reports/bytes/compression', () => {
+  // The raw-payload control spans all three columns on its own row below these,
+  // so it takes no part in the split.
+  const keys = metaCells(tx()).map((c) => c.key);
 
   assert.deepEqual(rows(keys), [
     ['transferId', 'schema', 'type'],
-    ['bytes', 'compression', 'raw payload'],
+    ['reports', 'bytes', 'compression'],
   ]);
+});
+
+test('reportCount reads the length of data[], and null wherever it cannot', () => {
+  assert.equal(reportCount({ meta: {}, data: [{ CID: 'a' }, { CID: 'b' }] }), 2);
+  assert.equal(reportCount({ meta: {}, data: [{ CID: 'a' }] }), 1);
+  // minItems is 1 in the schema, but an empty array is a real count, not unknown.
+  assert.equal(reportCount({ meta: {}, data: [] }), 0);
+
+  // Unknown, NOT zero: nothing to read, or the wrong shape to read it from.
+  assert.equal(reportCount({ meta: {} }), null);
+  assert.equal(reportCount({ data: { '0': { CID: 'a' } } }), null);
+  assert.equal(reportCount({ data: 3 }), null);
+  assert.equal(reportCount(null), null);
+  assert.equal(reportCount([{ CID: 'a' }]), null);
+  assert.equal(reportCount('{"data":[]}'), null);
+});
+
+test('a parse-failed transmission shows an em-dash for reports, never 0', () => {
+  // body null is exactly what the API sends when the payload did not parse.
+  const byKey = new Map(metaCells(tx({ body: null })).map((c) => [c.key, c.value]));
+  assert.equal(byKey.get('reports'), '—');
+
+  assert.equal(reportCountLabel(null), '—');
+  assert.equal(reportCountLabel(1), '1 report');
+  assert.equal(reportCountLabel(2), '2 reports');
+  assert.equal(reportCountLabel(0), '0 reports');
 });
 
 test('the meta cells carry the transmission values', () => {
@@ -96,6 +133,7 @@ test('the meta cells carry the transmission values', () => {
   assert.equal(byKey.get('transferId'), 'T-001');
   assert.equal(byKey.get('schema'), 'v0.8.1');
   assert.equal(byKey.get('type'), 'ems');
+  assert.equal(byKey.get('reports'), '1');
   assert.equal(byKey.get('bytes'), '512');
   assert.equal(byKey.get('compression'), 'gzip');
 });
