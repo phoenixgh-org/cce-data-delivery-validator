@@ -339,7 +339,7 @@ test('a ds013-primary payload names the 2025 lineage as its shadow', async () =>
   assert.match(
     body.message,
     new RegExp(
-      `Also passes the 2025 ${current.version.replace(/\./g, '\\.')} schema ` +
+      `Also passes the cce-interop ${current.version.replace(/\./g, '\\.')} schema ` +
         `\\(sha256 ${current.sha256}\\)\\.$`,
     ),
   );

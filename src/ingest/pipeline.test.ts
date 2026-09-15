@@ -389,9 +389,9 @@ test('message: the sentence follows ctx.shadowProfile, so the roles can swap', (
   assert.equal(
     body.message,
     'Accepted (200): data recorded; 3 findings. ' +
-      `Also passes the 2025 ${entry.version} schema (sha256 ${entry.sha256}).`,
+      `Also passes the cce-interop ${entry.version} schema (sha256 ${entry.sha256}).`,
   );
-  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow today is the cce-interop lineage');
+  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow here is the 2025 lineage');
   assert.doesNotMatch(body.message, /draft/, 'published bytes are not called a draft');
 });
 

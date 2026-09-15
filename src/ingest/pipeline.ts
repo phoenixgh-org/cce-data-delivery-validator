@@ -322,17 +322,22 @@ function isContractFinding(f: Finding): boolean {
  * described the same way, and the shadow lineage is whichever one is not the
  * contract today.
  *
- * The lineage is named from the shared vocabulary's short form (bd by1c.32),
- * which is what a sentence wants: "the DS01.3 draft of …" reads better than the
- * provenance line's fuller "DS01.3 Annex 4". Read off the ENTRY's `profile`,
- * never written as a literal — which lineage is the shadow flips with
- * `CONTRACT_PROFILE`.
+ * The lineage is named from the shared vocabulary (bd by1c.32), in the length
+ * the sentence needs — which is the same branch that chooses "schema" over
+ * "draft of" (bd by1c.49). A published entry takes the `longName`, because the
+ * version sits right after it and "the cce-interop 0.8.1 schema" names the
+ * artifact family the published filename and `$id` use, where "the 2025 0.8.1
+ * schema" puts two version-shaped tokens in a row. A draft takes the `name`,
+ * because a date follows instead: "the DS01.3 draft of …" reads better than the
+ * provenance line's fuller "DS01.3 Annex 4". Both are read off the ENTRY's
+ * `profile`, never written as a literal — which lineage is the shadow flips
+ * with `CONTRACT_PROFILE`.
  */
 function describeShadowLineage(entry: RegistryEntry): string {
-  const name = PROFILE_VOCABULARY[entry.profile].name;
+  const words = PROFILE_VOCABULARY[entry.profile];
   return entry.draftDate === undefined
-    ? `the ${name} ${entry.version} schema (sha256 ${entry.sha256})`
-    : `the ${name} draft of ${entry.draftDate} (sha256 ${entry.sha256})`;
+    ? `the ${words.longName} ${entry.version} schema (sha256 ${entry.sha256})`
+    : `the ${words.name} draft of ${entry.draftDate} (sha256 ${entry.sha256})`;
 }
 
 /**
