@@ -306,6 +306,15 @@ the script asserts that reality rather than the absence of a row.
 - **Retention.** Sessions idle for 7 days are purged with their transmissions
   and findings (`DESIGN.md` §11). Nothing else expires; the DB volume grows with
   active use.
+- **Contract profile flips discard the database.** The app records the
+  requirement lineage it was built to grade against (the _contract profile_) in
+  the database, and refuses to start over data written under a different one. A
+  build that adopts DS01.3 as the contract is therefore an operator action, not a
+  restart: stop the service, `docker compose down -v` to discard the volume, and
+  start again. There is no migration, and no way to keep the stored findings —
+  see [Adopting DS01.3 discards stored data](../README.md#adopting-ds013-discards-stored-data)
+  for why. The refusal prints the stored profile, the profile the build runs, and
+  the same instruction.
 - **Synthetic data only.** The service is for test/sandbox payloads. Capability
   UUIDs are bearer secrets that appear in URLs — and therefore in Caddy's access
   log. Treat the proxy logs accordingly (`DESIGN.md` §12).

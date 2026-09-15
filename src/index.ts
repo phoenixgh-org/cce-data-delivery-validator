@@ -6,12 +6,15 @@
  *
  * The retention worker (DESIGN.md §11) is started HERE, not in `buildApp`, so
  * `buildApp` stays side-effect-free and `app.inject(...)` tests never spawn a
- * background timer.
+ * background timer. The contract-profile guard (by1c.52) runs here for the same
+ * reason, and BEFORE `listen()`: a service that would mislabel stored findings
+ * must never accept a transmission first.
  */
 
 import type { FastifyBaseLogger } from 'fastify';
 
 import { buildApp } from './app.js';
+import { assertContractProfile, contractProfileMismatchMessage } from './db/contract-marker.js';
 import { purgeExpiredSessions } from './db/repository.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -56,8 +59,41 @@ export function startRetentionSweep(log: SweepLogger): NodeJS.Timeout {
   return timer;
 }
 
+/**
+ * The flip-day guard (by1c.52). Reads the database's contract-profile marker and
+ * returns false when it disagrees with the profile this build runs — the caller
+ * must then refuse to start, because adopting a new contract profile discards
+ * all stored data rather than migrating it (see src/db/contract-marker.ts).
+ *
+ * A marker read that FAILS (typically: the database is not up yet) is logged and
+ * treated as inconclusive rather than fatal, matching this module's existing
+ * stance that DB trouble never crashes the process ({@link runSweep}). The guard
+ * runs again on the next boot.
+ */
+async function contractProfileOk(log: SweepLogger): Promise<boolean> {
+  try {
+    const check = await assertContractProfile();
+    if (check.outcome === 'mismatch') {
+      log.error(contractProfileMismatchMessage(check.stored!, check.expected));
+      return false;
+    }
+    log.info(
+      `contract profile: ${check.expected} (${check.outcome === 'fresh' ? 'marker stamped on a fresh database' : 'matches the stored marker'})`,
+    );
+    return true;
+  } catch (err) {
+    log.error(err);
+    log.error('contract profile: marker unreadable, guard not run; starting anyway');
+    return true;
+  }
+}
+
 export async function main(): Promise<void> {
   const app = buildApp();
+  // Guard first: never listen over data written under a different contract profile.
+  if (!(await contractProfileOk(app.log))) {
+    process.exit(1);
+  }
   try {
     await app.listen({ port: PORT, host: HOST });
   } catch (err) {

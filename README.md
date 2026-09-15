@@ -227,6 +227,26 @@ or decompresses request bodies does not fail loudly — it silently changes the
 evidence, and the service goes on issuing confident findings against the wrong
 input. The smoke test exists to catch exactly that.
 
+### Adopting DS01.3 discards stored data
+
+Findings are stored with the requirement lineage they graded against, not with the
+role that lineage played at the time. The day DS01.3 becomes the contract in force,
+every row already in the database changes meaning: a transport rejection recorded
+under the 2025 lineage was a contract finding when it was written, and would read
+as a shadow finding afterwards — quietly dropping out of the supplier's grade. The
+rule is therefore a clean cut. **Adopting a new contract profile discards all
+stored data; there is no migration.** Stop the service, discard the database volume
+(`docker compose down -v`), and start again.
+
+The service enforces this itself: the database records the contract profile it was
+last written under, and the app refuses to start — with that instruction — over
+data written under a different one. Two limits are worth knowing. The check reads
+the database only, so it cannot see the dashboard's copy of the profile in
+`src/web/api.ts`; a flip is still a two-edit change, server and web. And it is a
+guard against mislabelling, not a backup: retention already deletes everything
+after 7 days of inactivity, so the data a flip discards is at most one week of
+test traffic.
+
 ## Status and v1 scope
 
 **Pre-release.** The service runs end to end — ingest pipeline, dashboard, semantic
