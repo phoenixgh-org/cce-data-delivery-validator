@@ -1,8 +1,9 @@
 /**
  * SHADOW-domain exercise cases — READINESS, the fourth case module (by1c.15).
  *
- * Since bd by1c.6 every transmission is graded twice: once against the contract
- * in force (`cce-interop`, profile `2025`) and once against the DS01.3 Annex 4
+ * Since bd by1c.6 a transmission whose declared `schemaVersion` resolves to a
+ * registered lineage is graded twice: once against the contract in force
+ * (`cce-interop`, profile `2025`) and once against the DS01.3 Annex 4
  * delivery-schema proposal (profile `ds013`). The second run changes no status
  * and no verdict — the draft is unpublished — so what it produces is readiness
  * information: what this supplier's traffic would score if the proposal were

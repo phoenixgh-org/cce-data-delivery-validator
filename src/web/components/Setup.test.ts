@@ -92,8 +92,9 @@ test('sampleBody() renders a body the newest registered schema accepts', () => {
 
 /**
  * The SECOND lineage (by1c.15). The sample is the first payload most suppliers
- * will ever send here, and every transmission is now graded twice: once against
- * the contract and once against the DS01.3 Annex 4 draft. A sample that passed
+ * will ever send here, and a transmission whose declared `schemaVersion`
+ * resolves to a registered lineage is graded twice: once against the contract
+ * and once against the DS01.3 Annex 4 draft. A sample that passed
  * only the contract would open their dashboard on five readiness failures that
  * are an artefact of OUR sample rather than of their system — so the body must
  * carry the logger identity the draft requires, and that is checked here rather
