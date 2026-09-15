@@ -218,7 +218,7 @@ export interface UnitTransmission {
 export interface UnitTotals {
   /** Distinct appliance identities seen across the scoped set. */
   units: number;
-  /** Reports in scope that carried neither AMID nor ASER. */
+  /** Reports in scope that carried neither ASER nor AMID. */
   unidentifiedReports: number;
 }
 
@@ -257,22 +257,28 @@ function identifier(value: unknown): string | null {
  *     doing the watching, not the equipment being watched. Counting those would
  *     be a different number (one CCE can be re-instrumented, one logger moved).
  *
- * So: `AMID` wins when present, else `AMFR` + `ASER`. The manufacturer is part
- * of the serial key because a serial is unique per manufacturer — the same
- * `ASER` under two `AMFR` values is two units.
+ * DECIDED 2026-08-04 (Benson, bd p98) — CCE IDENTITY IS THE EQUIPMENT ID. So
+ * `ASER`, the manufacturer’s serial for the appliance itself, is PREFERRED, and
+ * `AMID`, the supplier platform’s own handle on it, is the FALLBACK for the RTMD
+ * reports that carried no serial. Every EMS report keys on `ASER`; an RTMD report
+ * keys on `ASER` when the supplier sent one and on `AMID` otherwise.
  *
- * NOTE the two namespaces never reconcile here: a supplier-internal `AMID` and a
- * manufacturer serial for the same physical refrigerator count as two units.
- * That is inherent to a passive receiver; resolving identity is out of scope
- * (see p98’s notes), and it is the reason the label says "reported on" rather
- * than anything that sounds like fleet coverage.
+ * `AMFR` plays no part in the key. The serial identifies the equipment on its
+ * own here — this is a count of identifier values as they arrived, not an
+ * attempt to make them globally unique.
+ *
+ * NOTE the two namespaces never reconcile: a manufacturer serial and a
+ * supplier-internal id are different kinds of name, so the same physical
+ * refrigerator reported under each counts as TWO units. That is inherent to a
+ * passive receiver — resolving identity is out of scope (see p98’s notes) — and
+ * it is disclosed in the readout’s tooltip rather than fixed here.
  */
 function unitKey(report: Record<string, unknown>): string | null {
+  const aser = identifier(report['ASER']);
+  if (aser !== null) return `aser:${aser}`;
   const amid = identifier(report['AMID']);
   if (amid !== null) return `amid:${amid}`;
-  const aser = identifier(report['ASER']);
-  if (aser === null) return null;
-  return `aser:${identifier(report['AMFR']) ?? ''}|${aser}`;
+  return null;
 }
 
 /**

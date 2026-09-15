@@ -136,9 +136,14 @@ export function gradingLegendTitle(shadowProfile: Profile | null): string {
  * The CCE-unit readout's tooltip (p98). The number is DISTINCT APPLIANCES THAT
  * REPORTED, and the tooltip is the only thing standing between that and being
  * read as fleet coverage — DESIGN §7 says the receiving side can only speak for
- * what arrived, so the sentence says which identifier each lineage is counted on
- * and then says plainly what the number is not. Neither "coverage" nor "fleet
- * size" appears as a label anywhere.
+ * what arrived, so the sentence names the identifier the count is keyed on and
+ * then says plainly what the number is not. Neither "coverage" nor "fleet size"
+ * appears as a label anywhere.
+ *
+ * Naming both identifiers, in preference order, is also the disclosure that the
+ * two are different kinds of name: a supplier that sends a serial for one fridge
+ * and only its own appliance id for another has two units here either way, and a
+ * reader who knows which field is counted can see why.
  *
  * The second sentence appears only when some report named no appliance at all:
  * those reports are in the transmission count but in no unit, and without the
@@ -146,9 +151,9 @@ export function gradingLegendTitle(shadowProfile: Profile | null): string {
  */
 export function unitsTitle(unidentifiedReports: number): string {
   const base =
-    'Distinct appliances reported on in this scope — AMID for RTMD reports, ' +
-    'manufacturer + serial (AMFR/ASER) for EMS reports. Counts what was received, ' +
-    'not the fleet.';
+    'Distinct appliances reported on in this scope — the manufacturer serial ' +
+    "(ASER) where sent, otherwise the supplier's appliance id (AMID). Counts " +
+    'what was received, not the fleet.';
   if (unidentifiedReports <= 0) return base;
   // Pluralized: the brief's sentence is written with a placeholder N, and a
   // readout that says "1 reports" is a defect on a surface this careful.

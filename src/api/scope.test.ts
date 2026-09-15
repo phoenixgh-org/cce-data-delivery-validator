@@ -239,10 +239,10 @@ test('passTrend rate = pass/(pass+fail) for mixed buckets', () => {
 
 // ── scope totals ────────────────────────────────────────────────────────────
 
-/** One `rtmd-report`-shaped report: AMID is its required appliance identifier. */
+/** One `rtmd-report`-shaped report: AMID, the supplier-platform appliance id. */
 const rtmdReport = (amid: unknown) => ({ AMID: amid, records: [] });
 
-/** One `ems-report`-shaped report: AMFR + ASER, and no AMID property at all. */
+/** One `ems-report`-shaped report: ASER (with AMFR alongside), and no AMID. */
 const emsReport = (amfr: unknown, aser: unknown) => ({ AMFR: amfr, ASER: aser, records: [] });
 
 /** A transmission carrying an already-parsed body of `data[]` reports. */
@@ -279,47 +279,53 @@ test('scopeTotals folds the unit pair off the bodies it was handed', () => {
 
 // ── distinct CCE units (p98) ────────────────────────────────────────────────
 
-test('unitTotals keys an RTMD report on AMID', () => {
+test('unitTotals keys an EMS report on ASER, the appliance manufacturer serial', () => {
+  assert.deepEqual(unitTotals([withReports(emsReport('Alpha Fridge, Inc', 'sn-1'))]), {
+    units: 1,
+    unidentifiedReports: 0,
+  });
+  assert.equal(unitTotals([withReports({ ASER: 'sn-1' })]).units, 1, 'AMFR need not be there');
+});
+
+test('unitTotals falls back to AMID when an RTMD report sent no serial', () => {
   assert.deepEqual(unitTotals([withReports(rtmdReport('fridge-1'))]), {
     units: 1,
     unidentifiedReports: 0,
   });
-});
-
-test('unitTotals keys an EMS report on AMFR + ASER, with or without AMFR', () => {
-  assert.equal(unitTotals([withReports(emsReport('Alpha Fridge, Inc', 'sn-1'))]).units, 1);
-  // ASER alone still identifies a unit; the manufacturer half is simply empty.
-  assert.equal(unitTotals([withReports(emsReport(null, 'sn-1'))]).units, 1);
-  assert.equal(unitTotals([withReports({ ASER: 'sn-1' })]).units, 1);
-  // …and a null/absent AMFR keys the same unit as one carrying a blank string.
-  assert.equal(unitTotals([withReports(emsReport(null, 'sn-1'), { ASER: 'sn-1' })]).units, 1);
+  // A null ASER is the ordinary shape, not an edge case: the schema types it
+  // ["string","null"], so the fallback has to survive a present-but-null field.
+  assert.equal(unitTotals([withReports({ AMID: 'fridge-1', ASER: null })]).units, 1);
 });
 
 /**
- * A serial is unique PER MANUFACTURER, so the manufacturer is half the key. Two
- * makers that both stamp a unit `sn-1` are two refrigerators, and a key on the
- * serial alone would silently merge them into one.
+ * AMFR IS NOT PART OF THE KEY. The decision (p98, 2026-08-04) is that CCE
+ * identity is the equipment id, and the serial carries that on its own here —
+ * this counts identifier values as they arrived rather than trying to make them
+ * globally unique. Two makers that both stamp a unit `sn-1` therefore collapse
+ * into one unit, which is a known consequence, not an oversight.
  */
-test('unitTotals counts the same ASER under two AMFR values as two units', () => {
-  const tw = withReports(emsReport('Alpha', 'sn-1'), emsReport('Beta', 'sn-1'));
-  assert.equal(unitTotals([tw]).units, 2);
-  const same = withReports(emsReport('Alpha', 'sn-1'), emsReport('Alpha', 'sn-1'));
-  assert.equal(unitTotals([same]).units, 1);
+test('unitTotals ignores AMFR: the same ASER under two manufacturers is one unit', () => {
+  const two = withReports(emsReport('Alpha', 'sn-1'), emsReport('Beta', 'sn-1'));
+  assert.equal(unitTotals([two]).units, 1);
+  // …and a missing manufacturer changes nothing either.
+  const mixed = withReports(emsReport('Alpha', 'sn-1'), { ASER: 'sn-1' });
+  assert.equal(unitTotals([mixed]).units, 1);
 });
 
 /**
- * AMID wins when both arrive. `rtmd-report` permits both, and the two live in
- * DIFFERENT NAMESPACES (a supplier-platform handle vs a manufacturer serial), so
+ * ASER wins when both arrive. `rtmd-report` permits both, and the two live in
+ * DIFFERENT NAMESPACES (a manufacturer serial vs a supplier-platform handle), so
  * the rule has to be fixed rather than "whichever is present" — otherwise one
  * appliance would key two ways across two reports from the same supplier.
  */
-test('unitTotals prefers AMID when a report carries both identifiers', () => {
+test('unitTotals prefers ASER when a report carries both identifiers', () => {
   const both = { AMID: 'fridge-1', AMFR: 'Alpha', ASER: 'sn-1' };
-  assert.equal(unitTotals([withReports(both, rtmdReport('fridge-1'))]).units, 1);
-  // The ASER on that report never becomes a second unit of its own — but a
-  // SEPARATE report carrying only the serial does, and that is the disclosed
-  // limitation, not a bug: a passive receiver cannot reconcile the namespaces.
-  assert.equal(unitTotals([withReports(both, emsReport('Alpha', 'sn-1'))]).units, 2);
+  assert.equal(unitTotals([withReports(both, emsReport('Alpha', 'sn-1'))]).units, 1);
+  // The AMID on that report never becomes a second unit of its own — but a
+  // SEPARATE report carrying only the supplier's id does, and that is the
+  // disclosed limitation, not a bug: a passive receiver cannot reconcile the
+  // two namespaces (resolving them is what a device-identity service is for).
+  assert.equal(unitTotals([withReports(both, rtmdReport('fridge-1'))]).units, 2);
 });
 
 test('unitTotals treats blank, null, missing and non-string identifiers as unidentified', () => {
@@ -337,6 +343,9 @@ test('unitTotals treats blank, null, missing and non-string identifiers as unide
 });
 
 test('unitTotals trims an identifier but does not case-fold it', () => {
+  assert.equal(unitTotals([withReports({ ASER: ' sn-1 ' }, { ASER: 'sn-1' })]).units, 1);
+  assert.equal(unitTotals([withReports({ ASER: 'sn-1' }, { ASER: 'SN-1' })]).units, 2);
+  // The same rule on the fallback key.
   assert.equal(
     unitTotals([withReports(rtmdReport(' fridge-1 '), rtmdReport('fridge-1'))]).units,
     1,

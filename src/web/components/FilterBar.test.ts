@@ -64,8 +64,9 @@ test('with no shadow lineage the tooltip names no shadow surfaces', () => {
  * dashboard a supplier could mistake for a statement about their fleet, so what
  * is pinned here is the disclaimer, not the decoration:
  *
- *   1. IT NAMES THE IDENTIFIER PER LINEAGE, so "units" cannot be read as loggers
- *      or as sources — both are different counts of the same traffic.
+ *   1. IT NAMES THE IDENTIFIER THE COUNT IS KEYED ON, in preference order, so
+ *      "units" cannot be read as loggers or as sources — both are different
+ *      counts of the same traffic.
  *   2. IT SAYS WHAT THE NUMBER IS NOT. DESIGN §7: a passive receiver can only
  *      count equipment that REPORTED. The words "coverage" and "fleet size"
  *      appear nowhere.
@@ -73,14 +74,16 @@ test('with no shadow lineage the tooltip names no shadow surfaces', () => {
  *      number — reports that named no appliance are in the tx count but in no
  *      unit, and without the sentence the two numbers look inconsistent.
  */
-test('the unit tooltip names the identifier for each lineage and refuses fleet coverage', () => {
+test('the unit tooltip names the identifiers in preference order and refuses fleet coverage', () => {
   const title = unitsTitle(0);
   assert.equal(
     title,
-    'Distinct appliances reported on in this scope — AMID for RTMD reports, ' +
-      'manufacturer + serial (AMFR/ASER) for EMS reports. Counts what was received, ' +
-      'not the fleet.',
+    'Distinct appliances reported on in this scope — the manufacturer serial ' +
+      "(ASER) where sent, otherwise the supplier's appliance id (AMID). Counts " +
+      'what was received, not the fleet.',
   );
+  // ASER is the preferred key (p98, decided 2026-08-04), so it is named first.
+  assert.ok(title.indexOf('ASER') < title.indexOf('AMID'), 'ASER is named first');
   for (const word of ['coverage', 'fleet size', 'logger', 'source']) {
     assert.ok(!title.toLowerCase().includes(word), `must not say "${word}"`);
   }
