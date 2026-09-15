@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { buildApp } from '../app.js';
 import { closePool, getPool } from '../db/pool.js';
 import { createSession } from '../db/repository.js';
+import { CONTRACT_PROFILE } from '../schema-registry.js';
 
 async function dbReachable(): Promise<boolean> {
   try {
@@ -172,6 +173,50 @@ test('POST to a valid session → 200, persists a transmission row', { skip }, a
     await app.close();
   }
 });
+
+test(
+  'an unstamped transport finding is persisted under CONTRACT_PROFILE (by1c.50)',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let sessionUuid: string | undefined;
+    try {
+      const session = await createSession();
+      sessionUuid = session.uuid;
+
+      // A body that never parses halts before the schema stage, so every finding
+      // on the transmission was emitted WITHOUT a profile. The repository applies
+      // no default and the column has none, so the only thing that can have
+      // labelled these rows is the route's stamp — the one default in the system.
+      const res = await app.inject({
+        method: 'POST',
+        url: `/i/${session.uuid}`,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        payload: Buffer.from('{ not json'),
+      });
+      assert.equal(res.statusCode, 400, 'parse failure short-circuits 400');
+
+      const { rows } = await getPool().query<{ profile: string; n: string }>(
+        `SELECT f.profile, count(*) AS n
+           FROM finding f JOIN transmission t ON t.id = f.transmission_id
+          WHERE t.session_uuid = $1
+          GROUP BY f.profile`,
+        [session.uuid],
+      );
+      assert.equal(rows.length, 1, 'all findings share one lineage');
+      assert.ok(Number(rows[0]?.n) > 0, 'the halted request still recorded findings');
+      // Asserted against the CONSTANT, never the string it holds today: the flip
+      // must move the stored lineage with it (bd by1c.31, by1c.50).
+      assert.equal(rows[0]?.profile, CONTRACT_PROFILE);
+    } finally {
+      if (sessionUuid) {
+        await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
+      }
+      await app.close();
+    }
+  },
+);
 
 test.after(async () => {
   await closePool().catch(() => {});

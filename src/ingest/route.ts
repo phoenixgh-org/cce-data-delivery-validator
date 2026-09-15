@@ -33,6 +33,7 @@ import { enterSession, leaveSession } from './concurrency-tracker.js';
 import {
   buildResponseBody,
   runPipeline,
+  stampProfiles,
   type Finding,
   type PipelineContext,
   type Stage,
@@ -212,7 +213,11 @@ async function persistTransmission(
       client,
     );
 
-    await insertFindings(tx.id, findings, client);
+    // THE one profile default in the system (by1c.50): the repository requires an
+    // explicit profile and applies no fallback, so an unstamped transport or
+    // semantic finding acquires the contract lineage here — through the same
+    // `profileOf` the response body uses, so wire and row can never disagree.
+    await insertFindings(tx.id, stampProfiles(findings), client);
 
     await client.query('COMMIT');
     return tx.id;

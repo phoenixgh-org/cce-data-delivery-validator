@@ -390,10 +390,15 @@ The three tables are:
 - `finding`: `id`, `transmission_id` (foreign key to `transmission`), `requirement`
   (e.g., `1.4`), `severity` (`pass`, `fail`, or `info`), `detail`, `pointer` (a JSON
   Pointer into the payload, where relevant), `outdated bool`, and `profile`
-  (`2025` or `ds013`, defaulting to `2025`, added in
-  `db/initdb/60-finding-profile.sql`). `profile` names the requirement lineage the
-  finding graded against, so the contract findings and the shadow findings of one
-  transmission share a table without either being counted into the other's totals.
+  (`2025` or `ds013`, added in `db/initdb/60-finding-profile.sql`). `profile` names
+  the requirement lineage the finding graded against, so the contract findings and
+  the shadow findings of one transmission share a table without either being counted
+  into the other's totals. The column has no default (dropped in
+  `db/initdb/70-finding-profile-no-default.sql`): every writer supplies the lineage
+  explicitly, and a finding that arrives without one is rejected by `NOT NULL` rather
+  than quietly labelled. The single place an absent profile is resolved is the
+  ingest route, which stamps unstamped stage findings with `CONTRACT_PROFILE` on the
+  way into storage.
   The `outdated` flag is set only on the §3.2 informational finding raised when a
   transmission validates against a valid but older registered version; the body is
   accepted and the dashboard shows an amber "Outdated schema" tag. The table also carries structured

@@ -121,8 +121,15 @@ export interface InsertFindingInput {
   param?: string | null;
   /** Stable check code for transport/heuristic findings (e.g. tx.missing_charset). */
   code?: string | null;
-  /** Requirement lineage this finding grades against. Defaults to '2025'. */
-  profile?: Profile;
+  /**
+   * Requirement lineage this finding grades against. REQUIRED, with no default
+   * anywhere in the storage layer (by1c.50): a finding that reaches storage
+   * without a profile must fail loudly rather than be quietly labelled. The one
+   * place an absent profile is resolved is the grading/storage boundary in
+   * `src/ingest/route.ts`, which stamps unstamped pipeline findings with
+   * `CONTRACT_PROFILE` before calling in here.
+   */
+  profile: Profile;
 }
 
 /** A `finding` row (DESIGN.md §8). */
@@ -526,8 +533,10 @@ export async function insertFinding(
       input.instancePath ?? null,
       input.param ?? null,
       input.code ?? null,
-      // Default lineage: a finding with no explicit profile grades the contract.
-      input.profile ?? '2025',
+      // No fallback: `profile` is required on the input type, so an emitter that
+      // omits it fails at compile time, and a value that is undefined at runtime
+      // binds as NULL and is rejected by the NOT NULL column (by1c.50).
+      input.profile,
     ],
   );
   return rows[0]!;
@@ -558,7 +567,8 @@ export async function insertFindings(
       f.instancePath ?? null,
       f.param ?? null,
       f.code ?? null,
-      f.profile ?? '2025',
+      // No fallback — see the note on the single-row path above (by1c.50).
+      f.profile,
     );
     const ph = Array.from({ length: COLS }, (_, j) => `$${base + j + 1}`);
     return `(${ph.join(', ')})`;

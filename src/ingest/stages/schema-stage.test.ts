@@ -28,11 +28,11 @@ import type { ErrorObject, ValidateFunction } from 'ajv';
 
 import { buildApp } from '../../app.js';
 import { closePool, getPool } from '../../db/pool.js';
-import { createSession, type InsertFindingInput } from '../../db/repository.js';
+import { createSession } from '../../db/repository.js';
 import { emsBaseline } from '../../exercise/baseline.js';
 import { SchemaRegistry, type Profile, type RegistryEntry } from '../../schema-registry.js';
 import { cloneValid } from '../fixtures/transmissions.js';
-import type { PipelineContext, StageOutcome } from '../pipeline.js';
+import type { Finding, PipelineContext, StageOutcome } from '../pipeline.js';
 import {
   identifyingParam,
   isContainerError,
@@ -124,7 +124,7 @@ function makeCtx(parsedBody: unknown, reg: SchemaRegistry = registry): PipelineC
   };
 }
 
-function findingsBy(findings: InsertFindingInput[], requirement: string, severity: string) {
+function findingsBy(findings: Finding[], requirement: string, severity: string) {
   return findings.filter((f) => f.requirement === requirement && f.severity === severity);
 }
 
@@ -343,7 +343,7 @@ test('schema: valid-but-OUTDATED version → continue, schemaOk true, one 3.2 in
 // or as shadow, and a cce-interop validator files §3.2 either way.
 
 /** Findings attributed to one profile. */
-function byProfile(findings: InsertFindingInput[], profile: Profile) {
+function byProfile(findings: Finding[], profile: Profile) {
   return findings.filter((f) => f.profile === profile);
 }
 

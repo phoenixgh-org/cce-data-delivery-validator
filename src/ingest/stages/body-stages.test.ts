@@ -36,8 +36,8 @@ import { gzipSync } from 'node:zlib';
 import { buildApp } from '../../app.js';
 import { generateCredential } from '../../auth/credential.js';
 import { closePool, getPool } from '../../db/pool.js';
-import { createSession, enableAuth, type InsertFindingInput } from '../../db/repository.js';
-import type { PipelineContext, StageOutcome } from '../pipeline.js';
+import { createSession, enableAuth } from '../../db/repository.js';
+import type { Finding, PipelineContext, StageOutcome } from '../pipeline.js';
 import { contentTypeStage } from './content-type.js';
 import { decodeGzipBounded, encodingStage } from './encoding.js';
 import { parseStage } from './parse.js';
@@ -65,17 +65,13 @@ function makeCtx(overrides: Partial<PipelineContext> & { rawBody: Buffer }): Pip
   };
 }
 
-function hasFinding(
-  findings: InsertFindingInput[],
-  requirement: string,
-  severity: string,
-): boolean {
+function hasFinding(findings: Finding[], requirement: string, severity: string): boolean {
   return findings.some((f) => f.requirement === requirement && f.severity === severity);
 }
 
 /** The stable signature `code` of the (requirement, severity) finding, if any (4h4.1). */
 function findingCode(
-  findings: InsertFindingInput[],
+  findings: Finding[],
   requirement: string,
   severity: string,
 ): string | null | undefined {

@@ -18,10 +18,26 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from '../app.js';
 import { SchemaRegistry } from '../schema-registry.js';
 import { closePool, getPool } from '../db/pool.js';
-import { createSession, insertFinding, insertTransmission } from '../db/repository.js';
+import {
+  createSession,
+  insertFinding,
+  insertTransmission,
+  type InsertFindingInput,
+} from '../db/repository.js';
+import { stampProfiles, type Finding } from '../ingest/pipeline.js';
 import { advisory } from '../ingest/stages/semantic/advisory.js';
 import { sigKey } from './signatures.js';
 import type { SignatureFinding } from './signatures.js';
+
+/**
+ * Stamp a stage-emitted finding for storage exactly as `src/ingest/route.ts` does
+ * (by1c.50). A semantic advisory carries no profile — only the schema stage
+ * stamps one — and the repository has no default, so the test goes through the
+ * production stamp rather than hard-coding a lineage the route would pick.
+ */
+function stamped(f: Finding): InsertFindingInput {
+  return stampProfiles([f])[0]!;
+}
 
 async function dbReachable(): Promise<boolean> {
   try {
@@ -121,6 +137,7 @@ test(
         severity: 'fail',
         detail: 'too big',
         code: 'tx.body_too_large',
+        profile: '2025',
       });
 
       // Tiny gap so received_at ordering is unambiguous for the assertion.
@@ -136,7 +153,7 @@ test(
         parseOk: true,
         schemaOk: true,
       });
-      await insertFinding(newer.id, { requirement: '1.2', severity: 'pass' });
+      await insertFinding(newer.id, { requirement: '1.2', severity: 'pass', profile: '2025' });
 
       const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
       assert.equal(res.statusCode, 200);
@@ -321,6 +338,7 @@ test(
         outdated: true,
         detail: 'accepted, but validated against an OUTDATED schema (§3.2)',
         code: 'tx.outdated_schema',
+        profile: '2025',
       });
 
       const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
@@ -384,10 +402,10 @@ test(
 
       // Insert OUT of section order, including a two-digit minor (1.10) so a plain
       // string sort (which ranks "1.10" < "1.2") would be visibly wrong.
-      await insertFinding(tx.id, { requirement: '3.2', severity: 'pass' });
-      await insertFinding(tx.id, { requirement: '1.10', severity: 'info' });
-      await insertFinding(tx.id, { requirement: '1.2', severity: 'pass' });
-      await insertFinding(tx.id, { requirement: '2.1', severity: 'fail' });
+      await insertFinding(tx.id, { requirement: '3.2', severity: 'pass', profile: '2025' });
+      await insertFinding(tx.id, { requirement: '1.10', severity: 'info', profile: '2025' });
+      await insertFinding(tx.id, { requirement: '1.2', severity: 'pass', profile: '2025' });
+      await insertFinding(tx.id, { requirement: '2.1', severity: 'fail', profile: '2025' });
 
       const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
       assert.equal(res.statusCode, 200);
@@ -439,7 +457,7 @@ test(
         parseOk: true,
         schemaOk: true,
       });
-      await insertFinding(tx.id, { requirement: '1.2', severity: 'pass' });
+      await insertFinding(tx.id, { requirement: '1.2', severity: 'pass', profile: '2025' });
 
       const res = await app.inject({ method: 'DELETE', url: `/api/sessions/${uuid}/data` });
       assert.equal(res.statusCode, 200);
@@ -628,13 +646,23 @@ test(
         new Date(now - 5 * 60_000).toISOString(),
         '  org.kano ',
       );
-      await insertFinding(recentFail, { requirement: '1.4', severity: 'fail', code: 'tx.x' });
+      await insertFinding(recentFail, {
+        requirement: '1.4',
+        severity: 'fail',
+        code: 'tx.x',
+        profile: '2025',
+      });
       // Within 15m, PASS only, unknown source (null).
       const recentPass = await insertTxAt(uuid, new Date(now - 6 * 60_000).toISOString(), null);
-      await insertFinding(recentPass, { requirement: '1.2', severity: 'pass' });
+      await insertFinding(recentPass, { requirement: '1.2', severity: 'pass', profile: '2025' });
       // OUTSIDE 15m (40m ago), fail — must be excluded by the window bound.
       const oldFail = await insertTxAt(uuid, new Date(now - 40 * 60_000).toISOString(), 'org.kano');
-      await insertFinding(oldFail, { requirement: '1.4', severity: 'fail', code: 'tx.x' });
+      await insertFinding(oldFail, {
+        requirement: '1.4',
+        severity: 'fail',
+        code: 'tx.x',
+        profile: '2025',
+      });
 
       // window=15m → only the two recent tx are candidates.
       const w = await app.inject({
@@ -721,6 +749,7 @@ test(
         keyword: 'required',
         instancePath: '/data/0',
         param: 'ABST',
+        profile: '2025',
       });
       const txB = await insertTxAt(uuid, new Date(Date.now() - 2 * 60_000).toISOString(), 'src');
       await insertFinding(txB, {
@@ -729,9 +758,15 @@ test(
         keyword: 'required',
         instancePath: '/data/7', // different index → SAME generalized sigKey as txA
         param: 'ABST',
+        profile: '2025',
       });
       const txC = await insertTxAt(uuid, new Date(Date.now() - 1 * 60_000).toISOString(), 'src');
-      await insertFinding(txC, { requirement: '1.4', severity: 'fail', code: 'tx.body_too_large' });
+      await insertFinding(txC, {
+        requirement: '1.4',
+        severity: 'fail',
+        code: 'tx.body_too_large',
+        profile: '2025',
+      });
 
       // The expected key comes from signatures.ts sigKey — NOT a re-impl here.
       const key = sigKey(schemaFinding('/data/*'));
@@ -798,6 +833,7 @@ test(
         severity: 'info',
         outdated: true,
         code: 'tx.outdated_schema',
+        profile: '2025',
       });
       const txMiss = await insertTxAt(uuid, new Date(Date.now() - 1 * 60_000).toISOString(), 'src');
       await insertFinding(txMiss, {
@@ -805,6 +841,7 @@ test(
         severity: 'info',
         outdated: false,
         code: 'tx.outdated_schema',
+        profile: '2025',
       });
 
       const res = await app.inject({
@@ -863,17 +900,19 @@ test(
         new Date(Date.now() - 3 * 60_000).toISOString(),
         'src',
       );
-      await insertFinding(txClean, { requirement: '3.2', severity: 'pass' });
+      await insertFinding(txClean, { requirement: '3.2', severity: 'pass', profile: '2025' });
       await insertFinding(
         txClean,
-        advisory({
-          id: 'adv.null_padding',
-          detail:
-            'TCON was null in all 480 records of this transmission — if the equipment has ' +
-            'no condenser sensor, omitting the property communicates that more clearly ' +
-            'than sending null, and costs you bytes against the 1 MB limit',
-          pointer: '/data/0/records/0/TCON',
-        }),
+        stamped(
+          advisory({
+            id: 'adv.null_padding',
+            detail:
+              'TCON was null in all 480 records of this transmission — if the equipment has ' +
+              'no condenser sensor, omitting the property communicates that more clearly ' +
+              'than sending null, and costs you bytes against the 1 MB limit',
+            pointer: '/data/0/records/0/TCON',
+          }),
+        ),
       );
 
       // txOther: a real failure, and a DIFFERENT advisory — matches neither
@@ -887,10 +926,13 @@ test(
         requirement: '1.4',
         severity: 'fail',
         code: 'tx.body_too_large',
+        profile: '2025',
       });
       await insertFinding(
         txOther,
-        advisory({ id: 'adv.sample_gap', detail: 'readings 3600 s apart', pointer: '/data/0' }),
+        stamped(
+          advisory({ id: 'adv.sample_gap', detail: 'readings 3600 s apart', pointer: '/data/0' }),
+        ),
       );
 
       const res = await app.inject({
@@ -1000,7 +1042,7 @@ test(
 
       // A fully conformant supplier: every gradeable row green.
       for (const requirement of GRADEABLE_REQUIREMENTS) {
-        await insertFinding(tx.id, { requirement, severity: 'pass' });
+        await insertFinding(tx.id, { requirement, severity: 'pass', profile: '2025' });
       }
 
       interface AdvResp {
@@ -1059,7 +1101,7 @@ test(
           pointer: '/data/0/records/0/TCON',
         }),
       ];
-      for (const f of advisories) await insertFinding(tx.id, f);
+      for (const f of advisories) await insertFinding(tx.id, stamped(f));
 
       const second = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
       assert.equal(second.statusCode, 200);
@@ -1281,11 +1323,13 @@ test(
       await insertFinding(passing.id, missingUnderAnnex4('LSER'));
       await insertFinding(
         passing.id,
-        advisory({
-          id: 'adv.null_padding',
-          detail: 'TCON was null in all records of this transmission',
-          pointer: '/data/0/records/0/TCON',
-        }),
+        stamped(
+          advisory({
+            id: 'adv.null_padding',
+            detail: 'TCON was null in all records of this transmission',
+            pointer: '/data/0/records/0/TCON',
+          }),
+        ),
       );
       await insertFinding(failing.id, missingUnderAnnex4('LMFR'));
 

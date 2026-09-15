@@ -22,10 +22,15 @@ import { isAdvisoryId } from './stages/semantic/advisory.js';
 
 /**
  * One finding accumulated as the pipeline runs. Shape matches
- * {@link InsertFindingInput} verbatim so persistence (3bn.7) hands the array
- * straight to `insertFindings` with no remapping.
+ * {@link InsertFindingInput} EXCEPT for `profile`, which is optional here and
+ * required there (by1c.50): only the schema stage knows which lineage it graded,
+ * so a transport or semantic stage emits a finding with no profile at all.
+ *
+ * Resolving that absence is the job of exactly one place — {@link stampProfiles},
+ * called at the grading/storage boundary in `src/ingest/route.ts` just before
+ * `insertFindings`. The storage layer itself carries no default.
  */
-export type Finding = InsertFindingInput;
+export type Finding = Omit<InsertFindingInput, 'profile'> & { profile?: Profile };
 
 export type { Severity };
 
@@ -299,8 +304,22 @@ function isAccepted(status: number): boolean {
  * dropped from {@link isContractFinding}'s count — the number a supplier reads
  * as the outcome (bd by1c.31).
  */
-function profileOf(f: Finding): Profile {
+export function profileOf(f: Finding): Profile {
   return f.profile ?? CONTRACT_PROFILE;
+}
+
+/**
+ * Stamp an explicit profile onto every finding on the way into storage — THE one
+ * default in the system (by1c.50). The repository requires `profile` and applies
+ * no fallback, so this is where an unstamped transport or semantic finding
+ * acquires the contract lineage, on exactly the reasoning {@link profileOf} gives.
+ *
+ * Keeping the stamp here rather than in the repository means the wire (the
+ * response body) and the stored row resolve absence through the same function,
+ * so the day `CONTRACT_PROFILE` flips they cannot disagree (bd by1c.31).
+ */
+export function stampProfiles(findings: readonly Finding[]): InsertFindingInput[] {
+  return findings.map((f) => ({ ...f, profile: profileOf(f) }));
 }
 
 /**

@@ -104,8 +104,9 @@ test('buildResponseBody echoes id, status, count, and per-finding details (teach
   assert.equal(body.status, 200);
   assert.equal(body.findings, 2, 'count is preserved from the original shape');
   // Per-finding echo carries requirement/severity/profile/detail (no internal
-  // pointer). A finding written with no profile echoes the contract lineage, the
-  // same default `insertFindings` applies on the way into the database.
+  // pointer). A finding written with no profile echoes the contract lineage —
+  // the same resolution `stampProfiles` applies on the way into the database,
+  // through the same `profileOf` (by1c.50).
   assert.deepEqual(body.findingDetails, [
     {
       requirement: '1.4',

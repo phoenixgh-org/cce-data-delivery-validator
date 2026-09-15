@@ -29,6 +29,7 @@ import {
   insertFindings,
   insertTransmission,
   purgeExpiredSessions,
+  type Profile,
 } from './repository.js';
 
 /** Probe the DB once; if unreachable, the whole suite is skipped. */
@@ -140,6 +141,51 @@ test('bumpLastPostAt stamps last_post_at; null for an unknown uuid', { skip }, a
   await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
 });
 
+test(
+  'a finding with no profile is rejected, not quietly labelled (by1c.50)',
+  { skip },
+  async () => {
+    const session = await createSession();
+    const tx = await insertTransmission({ sessionUuid: session.uuid });
+
+    // The type makes this unreachable from compiled code; the cast reproduces what
+    // a future emitter bug would do at runtime. node-postgres binds `undefined` as
+    // NULL, and with the column's DEFAULT dropped (db/initdb/70-finding-profile-no-
+    // default.sql) NOT NULL rejects it. The alternative — a default that silently
+    // labels the row '2025' — would count an ungraded finding into a supplier's
+    // contract result, which is the failure mode this guards.
+    await assert.rejects(
+      () =>
+        insertFinding(tx.id, {
+          requirement: '1.4',
+          severity: 'fail',
+          profile: undefined as unknown as Profile,
+        }),
+      /null value in column "profile"|not-null constraint/i,
+    );
+
+    // The multi-row path rejects the same way, and writes nothing at all — the
+    // statement is atomic, so the conformant sibling in the same array is rolled
+    // back with it rather than landing half a transmission's findings.
+    await assert.rejects(
+      () =>
+        insertFindings(tx.id, [
+          { requirement: '1.2', severity: 'pass', profile: '2025' },
+          { requirement: '3.2', severity: 'fail', profile: undefined as unknown as Profile },
+        ]),
+      /null value in column "profile"|not-null constraint/i,
+    );
+
+    const { rows } = await getPool().query<{ n: string }>(
+      'SELECT count(*) AS n FROM finding WHERE transmission_id = $1',
+      [tx.id],
+    );
+    assert.equal(rows[0]?.n, '0', 'nothing was persisted by either rejected insert');
+
+    await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+  },
+);
+
 test('insertFinding / insertFindings record rows against a transmission', { skip }, async () => {
   const session = await createSession();
   const tx = await insertTransmission({ sessionUuid: session.uuid });
@@ -149,6 +195,7 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
     severity: 'fail',
     detail: 'too big',
     code: 'tx.body_too_large',
+    profile: '2025',
   });
   assert.match(single.id, /^[0-9a-f-]{36}$/);
   assert.equal(single.transmission_id, tx.id);
@@ -158,7 +205,8 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
   assert.equal(single.keyword, null);
   assert.equal(single.instance_path, null);
   assert.equal(single.param, null);
-  // Lineage (by1c.5): omitted on insert, so the column default applies.
+  // Lineage (by1c.5): written explicitly — there is no default in the storage
+  // layer, in the input type or in the column (by1c.50).
   assert.equal(single.profile, '2025');
 
   // An explicit lineage round-trips — the shadow run (by1c.6) writes 'ds013'.
@@ -170,7 +218,7 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
   assert.equal(shadow.profile, 'ds013');
 
   const many = await insertFindings(tx.id, [
-    { requirement: '1.2', severity: 'pass' },
+    { requirement: '1.2', severity: 'pass', profile: '2025' },
     {
       requirement: '3.2',
       severity: 'fail',
@@ -183,7 +231,7 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
     },
   ]);
   assert.equal(many.length, 2);
-  // Per-row lineage in the multi-row INSERT: default on the first, explicit on
+  // Per-row lineage in the multi-row INSERT: contract on the first, shadow on
   // the second — proving the column is bound per tuple, not once per statement.
   assert.equal(many[0]?.profile, '2025');
   assert.equal(many[1]?.profile, 'ds013');
@@ -277,7 +325,7 @@ test(
       [oldSession.uuid],
     );
     const oldTx = await insertTransmission({ sessionUuid: oldSession.uuid });
-    await insertFinding(oldTx.id, { requirement: '1.4', severity: 'info' });
+    await insertFinding(oldTx.id, { requirement: '1.4', severity: 'info', profile: '2025' });
 
     // OLD session with NO posts: last_post_at NULL, created_at >7 days ago.
     // Exercises the COALESCE fallback to created_at.
