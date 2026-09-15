@@ -50,7 +50,7 @@ the redline.
 | 2.1 | Serial delivery by default | 5.2.1 | "concurrency limit" → "rate-limiting strategy" |
 | 2.2 | Batching; ideally within minutes | 5.2.2 | Unchanged ("remote data system" → "supplier's platform") |
 | 2.3 | Alarms ≤ 15 min, incl. data since last attempt | 5.2.3 | **Unchanged** — the "include all data since the last attempted transmission" duty was already in the 2025 text |
-| 3.1 | Adopt DS01 objects + transmission meta fields | **5.3.3** | See [§3.1 detail](#31--513-metadata-table) below — several changes |
+| 3.1 | Adopt DS01 objects + transmission meta fields | **5.3.3** | See [§3.1 detail](#31--533-metadata-table) below — several changes |
 | 3.2 | Validates against the schema | **5.3.2** | **Precedence rule removed** — see [§3.2 detail](#32--532-precedence) below |
 | 3.3 | Transmit all collected objects | 5.3.4 | "objects they collect" → "objects they recorded" |
 | 3.4 | Preserve logger time resolution | 5.3.6 | "recorded on the logger" → "on the monitoring device" (covers RTMD) |
@@ -112,7 +112,7 @@ in DS01.3 and will not be.
 
 ## Clause-level detail
 
-### 3.1 → 5.1.3 metadata table
+### 3.1 → 5.3.3 metadata table
 
 The five metadata fields (`transferId`, `transferSrc`, `transferType`,
 `schemaVersion`, `transferredAt`) survive, with these changes:
