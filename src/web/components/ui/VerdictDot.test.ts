@@ -26,7 +26,8 @@ import * as React from 'react';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
-const { verdictPairTitle } = await import('./VerdictDot.js');
+const { VerdictPair, verdictPairTitle, verdictColumns, VERDICT_COL_PX } =
+  await import('./VerdictDot.js');
 
 test('the tooltip names both lineages, with the shadow fail count', () => {
   assert.equal(
@@ -86,4 +87,45 @@ test('with no shadow lineage registered the tooltip is the contract half alone',
     verdictPairTitle({ contract: 'fail', shadow: undefined, shadowProfile: null }),
     '2025: fail',
   );
+});
+
+/**
+ * THE DOTS SIT UNDER THEIR OWN COLUMN LABELS (by1c.34).
+ *
+ * The list header draws one right-aligned {@link VERDICT_COL_PX} column per
+ * lineage, and the pair used to pack both dots together at the right edge of the
+ * whole group — which put the contract dot under the shadow label and told a
+ * supplier the wrong lineage had failed. The pair is a grid on the same columns
+ * now, one dot per cell, so the two layouts cannot disagree.
+ *
+ * Read off the element tree rather than a rendered DOM: these are pure-function
+ * tests, and the structure is the claim.
+ */
+function pairOf(shadowProfile: 'ds013' | null): {
+  columns: string;
+  cells: number;
+} {
+  const el = VerdictPair({
+    contract: 'fail',
+    shadow: 'pass',
+    shadowProfile,
+  }) as unknown as {
+    props: { style: { gridTemplateColumns: string }; children: unknown[] };
+  };
+  return {
+    columns: el.props.style.gridTemplateColumns,
+    cells: el.props.children.filter((c) => c !== false && c !== null).length,
+  };
+}
+
+test('the pair lays out one cell per verdict column, at the header’s width', () => {
+  const withShadow = pairOf('ds013');
+  assert.equal(withShadow.cells, verdictColumns('ds013').length);
+  assert.equal(withShadow.columns, `repeat(2, ${VERDICT_COL_PX}px)`);
+});
+
+test('with no shadow lineage the pair is one column wide, like the header', () => {
+  const contractOnly = pairOf(null);
+  assert.equal(contractOnly.cells, verdictColumns(null).length);
+  assert.equal(contractOnly.columns, `repeat(1, ${VERDICT_COL_PX}px)`);
 });

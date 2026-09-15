@@ -36,7 +36,11 @@ import {
 import { PROFILE_NAME } from '../profiles';
 import { Icon } from './ui/Icon';
 import { StatusPill } from './ui/StatusPill';
-import { VerdictPair } from './ui/VerdictDot';
+import { VERDICT_COL_PX, VerdictPair, verdictColumns } from './ui/VerdictDot';
+
+// The verdict columns are declared beside the dots that fill them (by1c.34) and
+// re-exported here, where the list header and its colocated test read them.
+export { verdictColumns };
 
 /** Props mirror Dashboard.tsx's TransmissionsPaneProps (lines 186-194) verbatim. */
 export interface TransmissionsCardProps {
@@ -208,12 +212,19 @@ const LIST_VISIBLE_ROWS = 10;
  *
  * Height budget above the detail pane, at 16px root padding:
  *   header ~66 + setup bar ~40 + scorecard ~62 + filter bar ~40  ≈ 208
- *   + body padding 16 + card header ~44 + list 340                = 608
- * so the docked detail starts at ~610px and clears the fold on an 800px-tall
- * viewport (~190px of detail visible, above its own 120px min-height) and
- * comfortably so at 1000px (~390px). An active issue chip adds ~33px, still
- * inside the budget. The list keeps its own scrollbar and stays virtualized —
- * this caps the region, it does not page the data.
+ *   + body padding 16 + card header ~44 + verdict column header 26 + list 340
+ *                                                                 = 634
+ * so the docked detail starts at ~636px. The verdict column header (by1c.12) is
+ * the strip of lineage labels rendered immediately above this region: 5px padding
+ * top and bottom + a 10px eyebrow at the inherited line-height 1.5 (15px) + a 1px
+ * bottom border = 26px.
+ *
+ * That still clears the fold on an 800px-tall viewport (~164px of detail visible,
+ * above its own 120px min-height) and comfortably so at 1000px (~364px). An
+ * active issue chip adds ~33px, leaving ~131px — still inside the budget, but the
+ * margin is now thin enough that the next strip added above the list has to be
+ * measured rather than assumed. The list keeps its own scrollbar and stays
+ * virtualized — this caps the region, it does not page the data.
  */
 const LIST_MAX_HEIGHT_PX = ROW_ESTIMATE_PX * LIST_VISIBLE_ROWS;
 
@@ -291,30 +302,18 @@ export function findingsCell(findings: FindingView[]): FindingsCell {
   };
 }
 
-/** Width of one verdict column — header label and the dot slot under it. */
-const VERDICT_COL_PX = 50;
-
-/**
- * The verdict columns the list shows, left to right (by1c.12): the contract
- * lineage always, the shadow lineage only when one is registered.
- *
- * This is the header-visibility rule AND the label source in one function, so
- * the column count the header draws and the dots a row draws cannot drift apart.
- * The names come from the profile vocabulary (by1c.11), never from a literal —
- * the day CONTRACT_PROFILE flips, the header follows.
- */
-export function verdictColumns(shadowProfile: Profile | null): Profile[] {
-  return shadowProfile === null ? [CONTRACT_PROFILE] : [CONTRACT_PROFILE, shadowProfile];
-}
-
 /**
  * How many findings the SHADOW lineage failed this transmission on — the count
- * in the verdict pair's tooltip parenthetical.
+ * in the verdict pair's tooltip parenthetical AND the count on the detail pane's
+ * "Would also fail under DS01.3" header, which is the same question asked twice
+ * and must not come back with two numbers (by1c.39).
  *
  * Advisories are excluded for the reason {@link findingsCell} gives: an advisory
  * is not a verdict and must never inflate a number a supplier has to explain.
+ * Zero when no shadow lineage is registered, and zero when one is but never ran
+ * on this transmission — in neither case is there a shadow failure to report.
  */
-function shadowFailCount(findings: FindingView[], shadowProfile: Profile | null): number {
+export function shadowFailCount(findings: FindingView[], shadowProfile: Profile | null): number {
   if (shadowProfile === null) return 0;
   return findings.filter(
     (f) => f.profile === shadowProfile && f.severity === 'fail' && !isAdvisory(f),
@@ -423,10 +422,11 @@ function TxRow({
       >
         {findings.text}
       </span>
-      {/* Verdict dots (by1c.12) — one per registered lineage, right-aligned under
-          the header's columns. Neutral by design: the 6px tone dot at the head of
-          the row already colours the contract verdict. The slot is 11px tall, so
-          it sits inside the existing line box and ROW_ESTIMATE_PX holds. */}
+      {/* Verdict dots (by1c.12) — one per registered lineage, each right-aligned
+          in its own VERDICT_COL_PX cell so it sits under the header label that
+          names its lineage (by1c.34). Neutral by design: the 6px tone dot at the
+          head of the row already colours the contract verdict. The slot is 11px
+          tall, so it sits inside the existing line box and ROW_ESTIMATE_PX holds. */}
       <span
         style={{
           display: 'flex',
@@ -455,26 +455,34 @@ const eyebrow: CSSProperties = {
 };
 
 /**
- * The `pointer: …` line under a finding or an advisory — a button that opens the
- * raw-payload inspector at that JSON Pointer when one is locatable, and plain
- * text when it is not. Shared by {@link FindingItem} and {@link AdvisoryItem} so
- * the drill-down cannot work in one and quietly rot in the other.
+ * The `pointer: …` line under a finding, an advisory or a shadow row — a button
+ * that opens the raw-payload inspector at that JSON Pointer when one is
+ * locatable, and plain text when it is not. Shared by {@link FindingItem},
+ * {@link AdvisoryItem} and {@link ShadowFindingRow} so the drill-down cannot work
+ * in one and quietly rot in the others (by1c.40).
+ *
+ * Two pointers, because what a row SHOWS and what it OPENS are not always the
+ * same string: a collapsed shadow row shows the generalized path it folds
+ * (`/data/*`) and opens the first concrete one. For a finding they are its own
+ * `pointer` and its `instancePath` — Ajv's path into the payload, where
+ * `pointer` is the same value normalized to null at the root.
  */
 function PointerLine({
-  finding,
+  pointer,
+  locatable,
   onLocate,
 }: {
-  finding: FindingView;
+  /** The pointer as text. Null renders nothing. */
+  pointer: string | null;
+  /** The path the inspector scrolls to, or null when nothing is locatable. */
+  locatable: string | null;
   onLocate?: (pointer: string) => void;
 }): ReactElement | null {
-  if (finding.pointer === null) return null;
-  // Ajv's instancePath is the pointer into the payload; `pointer` is the same
-  // value normalized to null at the root. Prefer the former, fall back.
-  const locatable = finding.instancePath ?? finding.pointer;
+  if (pointer === null) return null;
   if (!onLocate || locatable === null || locatable === '') {
     return (
       <div style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2 }}>
-        pointer: {finding.pointer}
+        pointer: {pointer}
       </div>
     );
   }
@@ -497,7 +505,7 @@ function PointerLine({
         textDecoration: 'underline',
       }}
     >
-      pointer: {finding.pointer}
+      pointer: {pointer}
     </button>
   );
 }
@@ -555,7 +563,11 @@ function AdvisoryItem({
         </span>
       </div>
       {finding.detail && <div style={{ color: 'var(--text-muted)' }}>{finding.detail}</div>}
-      <PointerLine finding={finding} onLocate={onLocate} />
+      <PointerLine
+        pointer={finding.pointer}
+        locatable={finding.instancePath ?? finding.pointer}
+        onLocate={onLocate}
+      />
     </div>
   );
 }
@@ -644,7 +656,11 @@ function FindingItem({
         )}
       </div>
       {finding.detail && <div style={{ color: 'var(--text-muted)' }}>{finding.detail}</div>}
-      <PointerLine finding={finding} onLocate={onLocate} />
+      <PointerLine
+        pointer={finding.pointer}
+        locatable={finding.instancePath ?? finding.pointer}
+        onLocate={onLocate}
+      />
     </div>
   );
 }
@@ -652,21 +668,32 @@ function FindingItem({
 /**
  * One row of the "Would also fail under DS01.3" group (by1c.14).
  *
- * The row is a button on the same `?signatureKey=` cross-filter the compliance
- * signatures use, so picking one asks "which other transmissions would this
- * affect?" — the question a supplier reads this group to answer. It is quieter
- * than a FindingItem on purpose: nothing here grades the contract in force, and
- * a row that looked like a verdict would say otherwise.
+ * Two affordances, both of which a shadow failure had before this group existed
+ * and by1c.40 restored: the row's text is a button on the same `?signatureKey=`
+ * cross-filter the compliance signatures use — "which other transmissions would
+ * this affect?", the question a supplier reads this group to answer — and the
+ * `pointer:` line beneath it opens the raw-payload inspector where the defect is.
+ *
+ * The shape is {@link FindingItem}'s for the same reason: the container is a
+ * div, and the cross-filter button and the PointerLine button are SIBLINGS
+ * inside it. Making the whole row one button, with the pointer line nested,
+ * would nest a button in a button — invalid, and the inner click is swallowed.
+ *
+ * The row is quieter than a FindingItem on purpose: nothing here grades the
+ * contract in force, and a row that looked like a verdict would say otherwise.
  */
 function ShadowFindingRow({
   row,
   hint,
   onSelectSignature,
+  onLocate,
 }: {
   row: ShadowRow;
   /** Tooltip for the clickable row — built by the caller, which knows the lineage. */
   hint: string;
   onSelectSignature: (sig: Signature) => void;
+  /** Open the raw-payload inspector at this row's JSON Pointer (5bs.3). */
+  onLocate?: (pointer: string) => void;
 }): ReactElement {
   const body = (
     <>
@@ -681,34 +708,51 @@ function ShadowFindingRow({
     </>
   );
   const shell: CSSProperties = {
+    padding: '6px 10px',
+    borderRadius: 6,
+    fontSize: 12,
+    lineHeight: 1.5,
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+  };
+  const line: CSSProperties = {
     display: 'flex',
     alignItems: 'baseline',
     gap: 6,
     flexWrap: 'wrap',
     width: '100%',
-    padding: '6px 10px',
-    borderRadius: 6,
-    fontSize: 12,
-    lineHeight: 1.5,
     textAlign: 'left',
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
   };
   const sig = row.sig;
-  // A finding of a transmission in scope always folded into one of the session's
-  // signatures — the server rolls them from these same findings — so this branch
-  // is unreachable in practice. It renders the finding's own detail rather than
-  // nothing, so a lookup that somehow misses costs the click, not the row.
-  if (sig === null) return <div style={shell}>{body}</div>;
   return (
-    <button
-      type="button"
-      title={hint}
-      onClick={() => onSelectSignature(sig)}
-      style={{ ...shell, font: 'inherit', cursor: 'pointer' }}
-    >
-      {body}
-    </button>
+    <div style={shell}>
+      {/* A finding of a transmission in scope always folded into one of the
+          session's signatures — the server rolls them from these same findings —
+          so the no-signature branch is unreachable in practice. It renders the
+          text without a button rather than nothing, so a lookup that somehow
+          misses costs the cross-filter, not the row. */}
+      {sig === null ? (
+        <div style={line}>{body}</div>
+      ) : (
+        <button
+          type="button"
+          title={hint}
+          onClick={() => onSelectSignature(sig)}
+          style={{
+            ...line,
+            font: 'inherit',
+            color: 'inherit',
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+          }}
+        >
+          {body}
+        </button>
+      )}
+      <PointerLine pointer={row.pointer} locatable={row.locate} onLocate={onLocate} />
+    </div>
   );
 }
 
@@ -1680,9 +1724,14 @@ function TxDetail({
 
       {/* "Would also fail under DS01.3" (by1c.14) — rendered ONLY when the shadow
           run failed on its own. A contract failure that re-tags forward is marked
-          in place above instead, so nothing appears twice. The count is the
-          number of rows, which is what the reader can see and act on: several
-          missing properties at one path are collapsed into one of them. */}
+          in place above instead, so nothing appears twice.
+
+          The count is the number of shadow FAILURES, which is the number the
+          row's verdict tooltip shows for the same transmission — one question,
+          one answer (by1c.39). It is deliberately not the number of rows: rows
+          collapse several missing properties at one path into one line, so a
+          count of rows would read as a second, smaller total sitting directly
+          under the first. */}
       {shadow.length > 0 && copy.shadowHeading !== null && (
         <>
           <div
@@ -1695,7 +1744,7 @@ function TxDetail({
             }}
           >
             <span style={eyebrow}>{copy.shadowHeading}</span>
-            <span style={eyebrow}>{shadow.length}</span>
+            <span style={eyebrow}>{shadowFailCount(tx.findings, shadowProfile)}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {shadow.map((row) => (
@@ -1704,6 +1753,7 @@ function TxDetail({
                 row={row}
                 hint={rowHint}
                 onSelectSignature={onSelectSignature}
+                onLocate={onLocate}
               />
             ))}
           </div>

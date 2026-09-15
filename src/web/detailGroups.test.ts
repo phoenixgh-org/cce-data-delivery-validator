@@ -30,6 +30,7 @@ import {
   alsoFailsClause,
   detailGroupCopy,
   groupDetailFindings,
+  shadowRowPointer,
   shadowRowText,
   transferredAtPhrase,
 } from './detailGroups.js';
@@ -85,29 +86,48 @@ function missing(index: number, param: string): FindingView {
   });
 }
 
+/** The one `pass` finding a clean shadow run writes — the proof that it ran. */
+function shadowRan(): FindingView {
+  return finding({
+    requirement: '5.3.2',
+    profile: SHADOW,
+    severity: 'pass',
+    detail: 'validated against DRAFT 1 (§5.3.2)',
+  });
+}
+
 // ── 1. the "· also 5.x.x" suffix ───────────────────────────────────────────
 
 test('a contract failure carrying a forward mapping is suffixed with its clause', () => {
-  assert.equal(alsoFailsClause(finding({ requirement: '1.1' }), SHADOW), '5.1.3');
-  assert.equal(alsoFailsClause(finding({ requirement: '4.3' }), SHADOW), '5.4.1');
+  assert.equal(alsoFailsClause(finding({ requirement: '1.1' }), SHADOW, true), '5.1.3');
+  assert.equal(alsoFailsClause(finding({ requirement: '4.3' }), SHADOW, true), '5.4.1');
 });
 
 test('§3.2 is never suffixed — the shadow validator re-runs it and files its own', () => {
-  assert.equal(alsoFailsClause(finding({ requirement: '3.2', keyword: 'type' }), SHADOW), null);
+  assert.equal(
+    alsoFailsClause(finding({ requirement: '3.2', keyword: 'type' }), SHADOW, true),
+    null,
+  );
 });
 
 test('only a failure is suffixed, and only against a shadow lineage', () => {
-  assert.equal(alsoFailsClause(finding({ requirement: '1.1', severity: 'pass' }), SHADOW), null);
-  assert.equal(alsoFailsClause(finding({ requirement: '1.1', severity: 'info' }), SHADOW), null);
-  assert.equal(alsoFailsClause(finding({ requirement: '1.1' }), null), null);
   assert.equal(
-    alsoFailsClause(finding({ requirement: 'adv.null_padding', severity: 'info' }), SHADOW),
+    alsoFailsClause(finding({ requirement: '1.1', severity: 'pass' }), SHADOW, true),
+    null,
+  );
+  assert.equal(
+    alsoFailsClause(finding({ requirement: '1.1', severity: 'info' }), SHADOW, true),
+    null,
+  );
+  assert.equal(alsoFailsClause(finding({ requirement: '1.1' }), null, true), null);
+  assert.equal(
+    alsoFailsClause(finding({ requirement: 'adv.null_padding', severity: 'info' }), SHADOW, true),
     null,
   );
 });
 
 test('a requirement outside the clause map gets no suffix', () => {
-  assert.equal(alsoFailsClause(finding({ requirement: '9.9' }), SHADOW), null);
+  assert.equal(alsoFailsClause(finding({ requirement: '9.9' }), SHADOW, true), null);
 });
 
 // ── 2. the two groups ──────────────────────────────────────────────────────
@@ -131,9 +151,32 @@ test('group 2 appears only when the shadow run failed on its own', () => {
 
 test('a contract failure that re-tags forward is not repeated as a shadow row', () => {
   const transport = finding({ requirement: '1.1', code: 'tx.missing_charset' });
-  const groups = groupDetailFindings([transport], SHADOW);
+  const groups = groupDetailFindings([transport, shadowRan()], SHADOW);
   assert.equal(groups.contract.length, 1);
   assert.equal(groups.contract[0]?.alsoFails, '5.1.3');
+  assert.deepEqual(groups.shadow, []);
+});
+
+/**
+ * THE SUFFIX GATES ON THE SHADOW HAVING RUN (by1c.41). `verdict()` returns null
+ * for a lineage that filed no finding at all — a transport halt stops the
+ * pipeline before the schema stage — and the list row then reads "not graded".
+ * The detail pane must not claim the DS01.3 failure the verdict engine declined
+ * to assert, so the same gate is applied here.
+ */
+test('no shadow finding on the transmission means no suffix, whatever the clause map says', () => {
+  const halted = finding({ requirement: '1.3', code: 'auth.missing_bearer' });
+  assert.equal(alsoFailsClause(halted, SHADOW, false), null);
+  const groups = groupDetailFindings([halted], SHADOW);
+  assert.equal(groups.contract.length, 1);
+  assert.equal(groups.contract[0]?.alsoFails, null);
+});
+
+test('a clean shadow run is a run: the re-tag suffix appears against its pass finding', () => {
+  const halted = finding({ requirement: '1.3', code: 'auth.missing_bearer' });
+  assert.equal(alsoFailsClause(halted, SHADOW, true), '5.1.5');
+  const groups = groupDetailFindings([halted, shadowRan()], SHADOW);
+  assert.equal(groups.contract[0]?.alsoFails, '5.1.5');
   assert.deepEqual(groups.shadow, []);
 });
 
@@ -299,4 +342,44 @@ test('with no shadow lineage the eyebrow is the one it has always been', () => {
   assert.equal(copy.contractHeading, 'Findings · click § to open the requirement');
   assert.equal(copy.contractNote, null);
   assert.equal(copy.shadowHeading, null);
+});
+
+// ── 5. the row's pointer (by1c.40) ─────────────────────────────────────────
+
+/**
+ * A shadow row is clickable into the raw payload, the way every finding row is.
+ * The collapsed row is the awkward one: it folds several records, so what it
+ * SHOWS is the generalized path the fold buckets on and what it OPENS is the
+ * first concrete path — a generalized path matches no line in the inspector.
+ */
+test('a collapsed row shows the generalized path and opens the first concrete one', () => {
+  const findings = [missing(0, 'LSER'), missing(0, 'LMOD'), missing(7, 'LSER')];
+  const signatures = findings.map((f) => signatureFor(f, `Missing required property ${f.param}`));
+  const { shadow } = groupDetailFindings(findings, SHADOW, { signatures });
+  assert.equal(shadow.length, 1);
+  assert.equal(shadow[0]?.pointer, '/data/*');
+  assert.equal(shadow[0]?.locate, '/data/0');
+});
+
+test('a row that folds nothing shows and opens its own pointer', () => {
+  const f = finding({
+    requirement: '5.3.2',
+    profile: SHADOW,
+    keyword: 'type',
+    instancePath: '/data/0/TVC',
+    detail: 'schema violation at /data/0/TVC: must be number (§5.3.2)',
+  });
+  const { shadow } = groupDetailFindings([f], SHADOW, {
+    signatures: [signatureFor(f, 'TVC has the wrong type')],
+  });
+  assert.equal(shadow[0]?.pointer, '/data/0/TVC');
+  assert.equal(shadow[0]?.locate, '/data/0/TVC');
+});
+
+test('the pointer helper generalizes only for the collapse, and nulls the locate with no path', () => {
+  const at = missing(3, 'LSER');
+  assert.deepEqual(shadowRowPointer(at, true), { pointer: '/data/*', locate: '/data/3' });
+  assert.deepEqual(shadowRowPointer(at, false), { pointer: '/data/3', locate: '/data/3' });
+  const rootless = finding({ profile: SHADOW, instancePath: null, pointer: null });
+  assert.deepEqual(shadowRowPointer(rootless, false), { pointer: null, locate: null });
 });

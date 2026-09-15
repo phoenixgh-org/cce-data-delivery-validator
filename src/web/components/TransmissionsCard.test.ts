@@ -30,6 +30,7 @@ import * as React from 'react';
 
 import { CONTRACT_PROFILE } from '../api';
 import type { FindingView, Severity } from '../api';
+import { groupDetailFindings } from '../detailGroups.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
@@ -43,6 +44,7 @@ const {
   flaggedPointers,
   signatureEyebrow,
   verdictColumns,
+  shadowFailCount,
   chipTitle,
 } = await import('./TransmissionsCard.js');
 
@@ -341,4 +343,73 @@ test('a shadow signature prefixes the chip title with its lineage; a contract on
     chipTitle({ title: 'Null padding observed', profile: null }),
     'Null padding observed',
   );
+});
+
+/**
+ * The SHADOW FAIL COUNT (by1c.38, by1c.39) — the number in the verdict tooltip's
+ * parenthetical ("DS01.3: fail (5 findings)") and, since by1c.39, the number on
+ * the detail pane's "Would also fail under DS01.3" header.
+ *
+ * Three rules ride on it, none of them visible in its signature:
+ *
+ *   1. it counts the SHADOW lineage's failures, never the row's total — a
+ *      contract failure is a different lineage's verdict and belongs to the
+ *      other dot;
+ *   2. advisories are excluded, the rule `findingsCell` follows for the same
+ *      reason: an advisory is not a verdict and must never inflate a number a
+ *      supplier has to explain;
+ *   3. it is zero when the shadow never ran, and zero when no shadow lineage is
+ *      registered at all — in neither case is there a failure to report.
+ */
+test('the count is the shadow lineage’s failures, not the transmission’s', () => {
+  const findings = [
+    finding('fail'),
+    finding('fail'),
+    shadowFinding('fail'),
+    shadowFinding('fail'),
+    shadowFinding('pass'),
+  ];
+  assert.equal(shadowFailCount(findings, 'ds013'), 2);
+});
+
+test('advisories never join the shadow fail count', () => {
+  const advisory: FindingView = {
+    ...finding('info'),
+    requirement: 'adv.null_padding',
+    code: 'adv.null_padding',
+    profile: 'ds013',
+  };
+  assert.equal(shadowFailCount([shadowFinding('fail'), advisory], 'ds013'), 1);
+});
+
+test('a transmission the shadow never graded counts zero, and so does no shadow lineage', () => {
+  assert.equal(shadowFailCount([finding('fail'), finding('pass')], 'ds013'), 0);
+  assert.equal(shadowFailCount([shadowFinding('fail'), shadowFinding('fail')], null), 0);
+});
+
+/**
+ * ONE TRANSMISSION, ONE NUMBER (by1c.39). The detail pane's group header used to
+ * show the number of rows, which is the count AFTER several missing properties at
+ * one path collapse into a single line — so the list row said "(5 findings)" and
+ * the header immediately below it said "1". The header shows the raw fail count
+ * now; the collapse still governs what the rows look like, not what they total.
+ */
+test('the DS01.3 group header shows the same count as the row’s tooltip', () => {
+  const missing = (index: number, param: string): FindingView => ({
+    ...shadowFinding('fail'),
+    keyword: 'required',
+    instancePath: `/data/${index}`,
+    param,
+    detail: `schema violation at /data/${index}: must have required property '${param}'`,
+  });
+  const findings = [
+    missing(0, 'LSER'),
+    missing(0, 'LMOD'),
+    missing(0, 'LMFR'),
+    missing(0, 'LTYP'),
+    missing(0, 'LID'),
+  ];
+  const { shadow } = groupDetailFindings(findings, 'ds013');
+  assert.equal(shadow.length, 1, 'five omissions at one path are one row');
+  assert.equal(shadowFailCount(findings, 'ds013'), 5);
 });

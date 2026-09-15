@@ -29,8 +29,29 @@ export type VerdictDotState = 'pass' | 'fail' | 'na';
 /** Diameter of one dot, in px. Small enough to sit inside the row's line box. */
 const DOT_PX = 11;
 
-/** Gap between the two dots of a pair, in px. */
-const PAIR_GAP_PX = 3;
+/**
+ * Width of one verdict column, in px — the header label's cell AND the cell one
+ * dot sits in, so a dot is always under the label that names its lineage.
+ *
+ * It lives here, next to the pair that fills the columns, and the list header
+ * imports it: the two used to declare the width separately and the dots drifted
+ * out from under their labels (by1c.34).
+ */
+export const VERDICT_COL_PX = 50;
+
+/**
+ * The verdict columns a list shows, left to right (by1c.12): the contract
+ * lineage always, the shadow lineage only when one is registered.
+ *
+ * This is the header-visibility rule AND the label source in one function, and
+ * {@link VerdictPair} lays its cells out on the same list, so the column count
+ * the header draws and the dots a row draws cannot drift apart. The names come
+ * from the profile vocabulary (by1c.11), never from a literal — the day
+ * CONTRACT_PROFILE flips, the header follows.
+ */
+export function verdictColumns(shadowProfile: Profile | null): Profile[] {
+  return shadowProfile === null ? [CONTRACT_PROFILE] : [CONTRACT_PROFILE, shadowProfile];
+}
 
 export interface VerdictDotProps {
   state: VerdictDotState;
@@ -127,27 +148,44 @@ export function verdictPairTitle({
 }
 
 /**
- * The two verdict dots of a list row, 3px apart under a shared tooltip.
+ * The verdict dots of a list row, one per column of {@link verdictColumns}.
  *
- * A dot is rendered only for a lineage that actually graded the transmission:
- * no shadow lineage registered, or a shadow that never ran, leaves ONE dot. The
- * hatched `na` dot is not used here (see {@link VerdictDotState}).
+ * The pair is a grid of {@link VERDICT_COL_PX}-wide cells that matches the list
+ * header's columns, and each dot is right-aligned in its own cell — so the
+ * contract dot sits under the contract label and the shadow dot under the shadow
+ * one. Packing the two dots together at a fixed gap instead put both of them
+ * under the second label (by1c.34), which told a supplier the wrong lineage had
+ * failed.
+ *
+ * A dot is rendered only for a lineage that actually graded the transmission: no
+ * shadow lineage registered, or a shadow that never ran, leaves its cell EMPTY
+ * rather than shifting the other dot. The hatched `na` dot is not used here (see
+ * {@link VerdictDotState}).
  */
 export function VerdictPair(props: VerdictPairInput): ReactElement {
   const { contract, shadow, shadowProfile } = props;
+  const columns = verdictColumns(shadowProfile).length;
+  const cell: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  };
   return (
     <span
       title={verdictPairTitle(props)}
       style={{
-        display: 'inline-flex',
+        display: 'inline-grid',
+        gridTemplateColumns: `repeat(${columns}, ${VERDICT_COL_PX}px)`,
         alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: PAIR_GAP_PX,
       }}
     >
-      {(contract === 'pass' || contract === 'fail') && <VerdictDot state={contract} />}
-      {shadowProfile !== null && (shadow === 'pass' || shadow === 'fail') && (
-        <VerdictDot state={shadow} />
+      <span style={cell}>
+        {(contract === 'pass' || contract === 'fail') && <VerdictDot state={contract} />}
+      </span>
+      {shadowProfile !== null && (
+        <span style={cell}>
+          {(shadow === 'pass' || shadow === 'fail') && <VerdictDot state={shadow} />}
+        </span>
       )}
     </span>
   );

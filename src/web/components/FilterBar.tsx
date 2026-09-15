@@ -13,7 +13,8 @@
  */
 import type { ReactElement } from 'react';
 import type { Profile, ShadowProvenance, SourceCount, ScopeTotals } from '../api';
-import { gradingLegend } from '../profiles';
+import { CONTRACT_PROFILE } from '../api';
+import { PROFILE_NAME, gradingLegend } from '../profiles';
 import { Icon } from './ui/Icon';
 
 /** Local window union — api.ts types `window` as a plain string. */
@@ -106,14 +107,30 @@ export interface FilterBarProps {
 }
 
 /**
- * The legend's tooltip (by1c.11, verbatim). It says which lineage the numbers a
- * supplier is graded on come from, and where the shadow lineage's answers show
- * up instead — the shadow is previewed, never scored.
+ * The legend's tooltip (by1c.11). It says which lineage the numbers a supplier is
+ * graded on come from, and where the shadow lineage's answers show up instead —
+ * the shadow is previewed, never scored.
+ *
+ * The sentence reads exactly as by1c.11 specified it, but both lineage names are
+ * composed from the vocabulary rather than written here (by1c.36). This was the
+ * one user-facing string that named a lineage from a literal, and a literal is
+ * wrong in a particular way on the day the contract moves: every other surface
+ * would re-word itself off CONTRACT_PROFILE while this tooltip went on telling a
+ * supplier the matrix grades against a lineage that is no longer their contract.
+ *
+ * The shadow sentence is omitted entirely when no shadow lineage is registered —
+ * null is the hide signal for every shadow surface, and a tooltip that named
+ * DS01.3 on a session with no shadow lineage would describe columns and strips
+ * that are not on the page.
  */
-export const GRADING_LEGEND_TITLE =
-  'The matrix and pass rate grade against the 2025 requirements. DS01.3 is graded in the ' +
-  'shadow and shown in the readiness strip, the second verdict column and the transmission ' +
-  'detail.';
+export function gradingLegendTitle(shadowProfile: Profile | null): string {
+  const graded = `The matrix and pass rate grade against the ${PROFILE_NAME[CONTRACT_PROFILE]} requirements.`;
+  if (shadowProfile === null) return graded;
+  return (
+    `${graded} ${PROFILE_NAME[shadowProfile]} is graded in the shadow and shown in the ` +
+    'readiness strip, the second verdict column and the transmission detail.'
+  );
+}
 
 export function FilterBar({
   window,
@@ -183,7 +200,7 @@ export function FilterBar({
         </span>
       </span>
       <span
-        title={GRADING_LEGEND_TITLE}
+        title={gradingLegendTitle(shadowProfile)}
         style={{
           marginLeft: 'auto',
           fontSize: 11.5,

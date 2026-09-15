@@ -55,9 +55,22 @@ const SCHEMA_ROW_TITLE = 'schema';
  * {@link RE_RUN_UNDER_SHADOW}), for a requirement outside the clause map, and
  * for every session with no shadow lineage — where the whole shadow vocabulary
  * is hidden and the detail pane reads exactly as it did before this bite.
+ *
+ * Null too when the shadow lineage never ran on this transmission (by1c.41).
+ * `verdict()` in src/api/verdicts.ts:153 refuses to grade a transmission that
+ * carries no finding of the shadow lineage at all — a transport halt files its
+ * §1.3 or §1.6 failure and halts the pipeline before the schema stage, so no
+ * shadow finding is ever written — and the dot on the list row therefore reads
+ * "not graded". A suffix here would assert the shadow result the verdict engine
+ * has just declined to assert.
  */
-export function alsoFailsClause(f: FindingView, shadowProfile: Profile | null): string | null {
+export function alsoFailsClause(
+  f: FindingView,
+  shadowProfile: Profile | null,
+  shadowRan: boolean,
+): string | null {
   if (shadowProfile === null) return null;
+  if (!shadowRan) return null;
   if (f.profile !== CONTRACT_PROFILE) return null;
   if (f.severity !== 'fail') return null;
   if (isAdvisory(f)) return null;
@@ -70,6 +83,35 @@ export interface ContractRow {
   finding: FindingView;
   /** The DS01.3 clause for the "· also 5.1.3" suffix, or null for no suffix. */
   alsoFails: string | null;
+}
+
+/**
+ * The JSON Pointer a shadow row shows, and the one its `pointer:` button opens
+ * the raw-payload inspector at (by1c.40).
+ *
+ * Two values, because a collapsed row folds several findings at different record
+ * indexes into one defect. What the row SHOWS is the generalized path —
+ * `/data/*`, the path the collapse buckets on — because the defect is the shape
+ * of every record, not of record 0. What it OPENS is the first folded finding's
+ * own concrete path, because that is a line the inspector can scroll to: a
+ * generalized path matches no `data-path` and the click would do nothing.
+ *
+ * A row that folds nothing shows and opens the same pointer, exactly as a
+ * FindingItem does. `pointer` null renders no line at all, again like a
+ * FindingItem.
+ */
+export interface ShadowRowPointer {
+  /** The pointer as text under the row, generalized for a collapsed row. */
+  pointer: string | null;
+  /** The concrete path the inspector scrolls to, or null when there is none. */
+  locate: string | null;
+}
+
+/** {@link ShadowRowPointer} for one finding — `collapses` is the `required` fold. */
+export function shadowRowPointer(f: FindingView, collapses: boolean): ShadowRowPointer {
+  const own = f.instancePath ?? f.pointer;
+  if (own === null || own === '') return { pointer: f.pointer, locate: null };
+  return { pointer: collapses ? generalizePath(own) : own, locate: own };
 }
 
 /**
@@ -89,6 +131,10 @@ export interface ShadowRow {
   detail: string | null;
   /** Whether an em dash separates title from detail. */
   dash: boolean;
+  /** The pointer shown under the row, or null — see {@link ShadowRowPointer}. */
+  pointer: string | null;
+  /** The concrete path the raw-payload inspector opens at, or null. */
+  locate: string | null;
   /** The signature this row cross-filters to, or null when none matched. */
   sig: Signature | null;
 }
@@ -189,9 +235,15 @@ export function groupDetailFindings(
   ctx: DetailGroupContext = {},
 ): DetailGroups {
   const graded = findings.filter((f) => !isAdvisory(f));
+  // Whether the shadow validator ran on this transmission at all — the presence
+  // of ANY finding of that lineage, which is the test `verdict()` makes at
+  // src/api/verdicts.ts:153. A clean shadow run still writes one `pass` finding,
+  // so a lineage that ran is always detectable; nothing here infers it from the
+  // session's `shadowProfile`, which only says a shadow lineage is registered.
+  const shadowRan = shadowProfile !== null && findings.some((f) => f.profile === shadowProfile);
   const contract: ContractRow[] = graded
     .filter((f) => f.profile === CONTRACT_PROFILE)
-    .map((f) => ({ finding: f, alsoFails: alsoFailsClause(f, shadowProfile) }));
+    .map((f) => ({ finding: f, alsoFails: alsoFailsClause(f, shadowProfile, shadowRan) }));
 
   if (shadowProfile === null) return { contract, shadow: [] };
 
@@ -209,12 +261,14 @@ export function groupDetailFindings(
       const sig = signatures.find((s) => s.key === key) ?? null;
       const bespoke =
         f.keyword === 'pattern' && f.instancePath === '/meta/transferredAt' && offset !== null;
-      const row: ShadowRow = bespoke
-        ? { key, req: f.requirement, title: 'transferredAt', detail: offset, dash: false, sig }
-        : sig === null
-          ? { key, req: f.requirement, title: '', detail: f.detail, dash: false, sig }
-          : { key, req: f.requirement, title: sig.title, detail: f.detail, dash: true, sig };
       const collapses = !bespoke && f.keyword === 'required';
+      const { pointer, locate } = shadowRowPointer(f, collapses);
+      const base = { key, req: f.requirement, pointer, locate, sig };
+      const row: ShadowRow = bespoke
+        ? { ...base, title: 'transferredAt', detail: offset, dash: false }
+        : sig === null
+          ? { ...base, title: '', detail: f.detail, dash: false }
+          : { ...base, title: sig.title, detail: f.detail, dash: true };
       return {
         row,
         bucket: collapses ? `${f.requirement}|${generalizePath(f.instancePath)}` : null,
