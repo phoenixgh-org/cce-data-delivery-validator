@@ -42,6 +42,7 @@
  */
 
 import type { ExerciseCase } from '../case.js';
+import { padToWireCap } from '../transforms/payload.js';
 import {
   badAuth,
   bearerCredential,
@@ -169,11 +170,34 @@ export const TRANSPORT_CASES: readonly ExerciseCase[] = [
     requirements: ['1.4'],
     direction: 'pass',
     // The baseline is a few hundred bytes, so this is a comfortable pass rather
-    // than an at-the-boundary one. A true at-cap case (exactly 1MB of wire bytes,
-    // still schema-valid) would need a padding wrapper the vocabulary does not
-    // have yet; the boundary itself is already pinned by the size stage's own
-    // unit tests (src/ingest/stages/body-stages.test.ts).
+    // than an at-the-boundary one. That used to be the whole story — the
+    // vocabulary had no way to pad a body — and the boundary is now covered by
+    // '1.4-pass-at-cap' below. Both are worth keeping: this one proves an
+    // ordinary transmission is measured and graded at all, without the 1MB body
+    // that makes the other case slow.
     posts: [{ expectedStatus: 200 }],
+    expectedFindings: [{ requirement: '1.4', severity: 'pass' }],
+  },
+  {
+    id: '1.4-pass-at-cap',
+    title: 'A body of exactly 1MB of wire bytes passes §1.4 at the boundary',
+    requirements: ['1.4'],
+    direction: 'pass',
+    // THE BOUNDARY, END TO END (b0i). src/ingest/stages/size.ts halts only on
+    // `wireBytes > 1_048_576`, so exactly the cap is a pass — but the unit tests
+    // that pin that (src/ingest/stages/body-stages.test.ts) hand the stage a
+    // buffer directly. What they cannot show is that a body this size SURVIVES
+    // the route to it: undici, Fastify's own 2MB `bodyLimit` and the `*`
+    // raw-buffer parser (src/app.ts). The fail side leans on that path being
+    // forgiving — ../runner/client.ts tolerates a generic outer 413 for the
+    // oversize case — and this case is what resolves the ambiguity.
+    //
+    // The body is sent UNCOMPRESSED on purpose: §1.4 measures the wire bytes
+    // after any content-encoding, so composing `gzip()` here would put a
+    // kilobyte of compressed padding in front of the stage instead of a megabyte.
+    // See `padToWireCap` for what it pads (FNAM, an Annex 1 free-text object, so
+    // the §3.1 custom-object check stays silent) and why.
+    posts: [{ transforms: [padToWireCap()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: '1.4', severity: 'pass' }],
   },
   {

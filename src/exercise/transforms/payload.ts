@@ -128,6 +128,83 @@ export function setSchemaVersion(version: string): PayloadTransform {
   });
 }
 
+// ── §1.4 wire size ──────────────────────────────────────────────────────────
+
+/**
+ * The §1.4 cap, in bytes. Mirrors `MAX_WIRE_BYTES` in src/ingest/stages/size.ts,
+ * which is the authority; restated here rather than imported because the exercise
+ * vocabulary describes what a SUPPLIER sends and must keep working if the stage's
+ * own constant ever moves — a padder that tracked the stage automatically would
+ * make the at-cap case unfalsifiable.
+ */
+const WIRE_CAP_BYTES = 1_048_576;
+
+/**
+ * Pad the payload with free text until its serialization is EXACTLY
+ * `targetBytes` — 1MB by default, the §1.4 cap (b0i).
+ *
+ * The suite already sends a comfortable pass (a few hundred bytes) and a
+ * one-byte-over fail. This is the third point that matters: the boundary itself,
+ * end to end, through undici, Fastify's own 2MB `bodyLimit` and the `*` raw-body
+ * parser before src/ingest/stages/size.ts measures `ctx.rawBody.length` against
+ * `wireBytes > MAX_WIRE_BYTES`. Exactly at the cap is a §1.4 PASS.
+ *
+ * WHY `FNAM`. It is an Annex 1 data object — Facility Name — declared on
+ * `rtmd-report` as `["string","null"]` with no `maxLength`, `pattern` or `enum`,
+ * and absent from the rtm baseline. Three properties earn it the job:
+ *
+ *   - It is a KNOWN DS01 code, so src/ingest/stages/semantic/custom-schema.ts
+ *     classifies it as a DS01 object, never CUSTOM, and the §3.1 conditional
+ *     stays silent. An unknown key would be CUSTOM by elimination and, with no
+ *     `meta.customDataSchema` declared, would raise a §3.1 FAIL — a stray finding
+ *     on a case that is supposed to prove one thing about size.
+ *   - It is FREE TEXT with no length bound, so a megabyte of it is schema-valid
+ *     under both registered versions rather than a §3.2 violation.
+ *   - It is semantically HARMLESS: a facility name is read by nothing else in the
+ *     pipeline, so no semantic check changes its mind about the payload.
+ *
+ * `meta` is not an option: its properties are enumerated, so padding there means
+ * inventing a key.
+ *
+ * HOW THE COUNT IS EXACT. The field is set to the empty string first and the
+ * payload serialized once to measure; the difference is then filled with ASCII
+ * `A`s, which JSON never escapes and UTF-8 encodes one byte per character, so the
+ * serialization grows by exactly the number of characters added. The key keeps
+ * its insertion position across the two writes, so nothing else about the
+ * serialization moves.
+ *
+ * ORDERING — DO NOT COMPOSE WITH A TRANSPORT WRAPPER. Payload mutators run BEFORE
+ * serialization and transport wrappers operate on the serialized bytes
+ * (../case.ts `materializePost`), so `gzip()` after this padder would send about
+ * a kilobyte of compressed `A`s and the size stage would measure THAT. The at-cap
+ * case sends the body uncompressed on purpose: the §1.4 cap is measured on the
+ * wire bytes, after any content-encoding, so only an unencoded body puts a known
+ * number in front of the stage.
+ */
+export function padToWireCap(targetBytes = WIRE_CAP_BYTES, reportIndex = 0): PayloadTransform {
+  const name = `padToWireCap(${targetBytes}: ${reportIndex}/FNAM)`;
+  return payloadTransform({
+    name,
+    targets: ['1.4'],
+    apply: (payload) => {
+      if (payload.data[reportIndex] === undefined) {
+        throw new Error(`${name}: /data/${reportIndex} is missing`);
+      }
+      const pointer = `/data/${reportIndex}/FNAM`;
+      setAtPointer(payload, pointer, '');
+      const withoutPadding = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+      const fill = targetBytes - withoutPadding;
+      if (fill < 0) {
+        throw new Error(
+          `${name}: the payload is already ${withoutPadding} bytes, past the ${targetBytes}-byte target`,
+        );
+      }
+      setAtPointer(payload, pointer, 'A'.repeat(fill));
+      return payload;
+    },
+  });
+}
+
 // ── §3.2 schema violations ──────────────────────────────────────────────────
 
 /**
