@@ -29,6 +29,7 @@ import {
   duplicateVersionStringsIntoRecords,
   longSamplePeriod,
   nullApplianceSerial,
+  nullRuntimeDuringOutage,
   repeatRecord,
   setInvalidValue,
   setCompressorAboveSupply,
@@ -555,5 +556,39 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [shortApplianceMonitoringId()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.short_identifier', severity: 'info' }],
+  },
+
+  // A compressor runtime sent as null in a period the same record says carried
+  // no AC supply (agj.9). It declares `baseline: emsBaseline`: SVA, CMPR and the
+  // mains/solar partition are ems-record properties, and the baseline's other
+  // two records keep a numeric CMPR, which is what makes this null the
+  // INTERMITTENT one this advisory reads rather than the padded column
+  // `adv.null_padding` owns. Both baseline codes are already null, so the null
+  // arrives unexplained without touching them.
+  //
+  // THE SHADOW RUN IS PART OF THE CASE. The DS01.3 Annex 4 draft requires a
+  // non-null LERR beside a null CMPR, so the same payload that earns an advisory
+  // on the contract lineage earns a clause 5.3.2 fail on the shadow one — the
+  // advisory/shadow pairing readiness.date_pattern shows for dates, here for a
+  // null accumulator. `requirements: []` because the case targets no matrix row:
+  // the §3.2 pass it also earns is the incidental one every accepted POST earns.
+  {
+    id: 'adv.null_accumulator-fail-null-runtime-during-outage',
+    title: 'A compressor runtime sent as null for a period with no AC supply',
+    requirements: [],
+    shadowClauses: ['5.3.2'],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        'SVA set to 0 and CMPR to null on one record — legal because ems-record types both ' +
+        '["number","null"] and ties a null reading to an explaining LERR for TVC only',
+    },
+    posts: [{ transforms: [nullRuntimeDuringOutage()], expectedStatus: 200 }],
+    expectedFindings: [
+      { requirement: 'adv.null_accumulator', severity: 'info' },
+      { requirement: '5.3.2', severity: 'fail', profile: 'ds013' },
+    ],
   },
 ];

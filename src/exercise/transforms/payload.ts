@@ -835,6 +835,44 @@ export function unexplainedNullTemperature(recordIndex = 0, reportIndex = 0): Pa
 }
 
 /**
+ * Take the AC supply to zero on one EMS record and null that record's compressor
+ * runtime — which is what `adv.null_accumulator` observes (agj.9).
+ *
+ * Schema-VALID by design, and that is the point: `ems-record` types SVA and CMPR
+ * alike as `["number","null"]` bounded 0..900, and the only record-level rule
+ * either takes part in is the mains/solar `oneOf`, which asks for SVA's PRESENCE
+ * and nothing about its value. The 0.8.x lineage ties a null reading to an
+ * explanation for TVC ONLY, so a null CMPR beside null LERR and EERR satisfies
+ * the branch. ../cases.test.ts runs the materialized payload through the real
+ * validator, so this declaration is checked rather than asserted.
+ *
+ * BOTH MUTATIONS ARE THE CASE. The advisory reads the correlated form: SVA 0
+ * says the period carried no AC supply, so the compressor could not have run and
+ * its runtime for that period is a known 0. A null CMPR on its own is the bare
+ * intermittent form the issue defers, and the check stays silent on it.
+ *
+ * It takes the EMS baseline, whose three records each carry `SVA: 900`, a
+ * numeric CMPR (320/285/300) and `LERR: null, EERR: null` — so the null lands
+ * unexplained without touching either code, and records 0 and 2 keep the numeric
+ * CMPR that makes this null an INTERMITTENT one rather than a padded column
+ * (`adv.null_padding` needs twelve records of nulls and stays silent here).
+ *
+ * THE DS01.3 SHADOW RESTATES IT. The Annex 4 draft requires a non-null LERR
+ * beside a null CMPR, so the shadow run records a clause 5.3.2 fail on this
+ * payload — measured, and asserted by the case that uses this transform.
+ */
+export function nullRuntimeDuringOutage(recordIndex = 1, reportIndex = 0): PayloadTransform {
+  return payloadTransform({
+    name: `nullRuntimeDuringOutage(${reportIndex}: records/${recordIndex} SVA=0, CMPR=null)`,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/SVA`, 0);
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/CMPR`, null);
+      return payload;
+    },
+  });
+}
+
+/**
  * Shorten the appliance monitoring ID on one RTMD report to three characters —
  * which is what `adv.short_identifier` observes (krh).
  *

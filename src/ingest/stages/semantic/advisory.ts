@@ -73,6 +73,7 @@ import { cmprMinutesCheck } from './cmpr-minutes.js';
 import { compressorSupplyCheck } from './compressor-supply.js';
 import { dateFormatCheck } from './date-format.js';
 import { duplicateRecordsCheck } from './duplicate-records.js';
+import { nullAccumulatorCheck } from './null-accumulator.js';
 import { nullIdentityCheck } from './null-identity.js';
 import { nullPaddingCheck } from './null-padding.js';
 import { sampleGapCheck } from './sample-gap.js';
@@ -105,8 +106,9 @@ export {
  * (bva slice C) plus `adv.date_format` (agj.1), `adv.time_not_increasing`
  * (agj.4), `adv.compressor_exceeds_supply` (agj.3), `adv.cmpr_minutes` (agj.7),
  * `adv.sample_gap` (agj.6), `adv.duplicate_records` (agj.8),
- * `adv.blank_admin` (agj.5), `adv.unexplained_null_temp` (agj.2) and
- * `adv.short_identifier` (krh); it grows from here. Each is written in the ordinary
+ * `adv.blank_admin` (agj.5), `adv.unexplained_null_temp` (agj.2),
+ * `adv.short_identifier` (krh) and `adv.null_accumulator` (agj.9); it grows from
+ * here. Each is written in the ordinary
  * `export const …Check: SemanticCheck =` idiom the §7 checks use: the imports
  * run ONE WAY (checks ← advisory-finding.ts, this registry ← checks), so there
  * is no cycle and no load-order hazard to work around (igw). A new check needs
@@ -124,6 +126,7 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   blankAdminCheck,
   unexplainedNullTempCheck,
   shortIdentifierCheck,
+  nullAccumulatorCheck,
 ];
 
 /**

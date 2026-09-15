@@ -355,6 +355,7 @@ raw-payload inspector) in
 | `adv.blank_admin` | An administrative object the report's own branch requires, delivered blank — absent, `null`, or an empty string; the identity trio and `DLST` excluded | [`blank-admin.ts`](src/ingest/stages/semantic/blank-admin.ts) |
 | `adv.unexplained_null_temp` | An `rtmd-report` record whose `TVC` is `null` while neither `LERR` nor `EERR` accounts for it; the EMS branch is a §3.2 failure and is excluded | [`unexplained-null-temp.ts`](src/ingest/stages/semantic/unexplained-null-temp.ts) |
 | `adv.short_identifier` | An identifier delivered populated and shorter than four characters — `ASER`, `LSER`, `ESER`, `AMID`, `AID`, `LID`, `EID`, and `SID` under every `DLST` sensor; product and place codes (`CSER`, `CSER2`, `FID`, `CID`) excluded | [`short-identifier.ts`](src/ingest/stages/semantic/short-identifier.ts) |
+| `adv.null_accumulator` | A mains EMS record whose compressor runtime (`CMPR`, `CMPR2`) is `null` in a period whose own `SVA` is 0, with neither `LERR` nor `EERR` accounting for it and the same accumulator numeric elsewhere in the report | [`null-accumulator.ts`](src/ingest/stages/semantic/null-accumulator.ts) |
 
 All modules are under `src/ingest/stages/semantic/`.
 
