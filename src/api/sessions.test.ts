@@ -1191,7 +1191,7 @@ test(
       };
       // One source: two reports on one appliance plus a second appliance.
       await post('org.kano', [{ AMID: 'fridge-1' }, { AMID: 'fridge-1' }, { AMID: 'fridge-2' }]);
-      // Another: an EMS report keyed on AMFR+ASER, and one that names nothing.
+      // Another: an EMS report keyed on ASER, and one that names nothing.
       await post('org.lagos', [{ AMFR: 'Alpha', ASER: 'sn-1' }, { ASER: null }]);
 
       type UnitResp = { scoped: { units: number; unidentifiedReports: number } };
