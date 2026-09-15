@@ -947,16 +947,21 @@ export function reportCountLabel(n: number | null): string {
  * verdict, and the exercise suite drives those rejects as standard cases, so
  * such rows are routine rather than exotic.
  *
- * `parse_ok` is the field that separates the two: `false` means the parse stage
- * ran and the payload did not parse; null means the stage never ran. The same
- * discipline frk's acceptance turned on — do not make a false statement about
- * what was sent — applies to the explanation of why the count is unknown.
+ * `parse_ok` is the field that separates the three: `false` means the parse stage
+ * ran and the payload did not parse; null means the stage never ran; `true` means
+ * it ran and succeeded, and the count is unknown only because the body it
+ * produced is JSON null (the four bytes `null` are valid JSON, so §1.1 passes and
+ * the row carries `body` null beside that pass — g11f). The same discipline frk's
+ * acceptance turned on — do not make a false statement about what was sent —
+ * applies to the explanation of why the count is unknown.
  */
 export function reportCountTitle(reports: number | null, parseOk: boolean | null): string {
   if (reports !== null) return `${reportCountLabel(reports)} in this transmission`;
-  return parseOk === false
-    ? 'Report count unknown — the payload did not parse, so data[] could not be read'
-    : 'Report count unknown — the pipeline halted before the payload was parsed, so data[] was never read';
+  if (parseOk === false)
+    return 'Report count unknown — the payload did not parse, so data[] could not be read';
+  if (parseOk === true)
+    return 'Report count unknown — the payload parsed to JSON null, so there is no data[] to read';
+  return 'Report count unknown — the pipeline halted before the payload was parsed, so data[] was never read';
 }
 
 /** The fields the meta grid reads — a structural subset of TransmissionView. */
@@ -1382,13 +1387,21 @@ type RawPayloadSource = Pick<TransmissionView, 'body' | 'raw_body' | 'parse_ok'>
  * did not parse contradicts the "too large" or "unsupported encoding" verdict
  * rendered beside it, so `false` (the stage ran and rejected the bytes) and null
  * (the stage never ran) get different words.
+ *
+ * `true` is the THIRD state and needs a third sentence (g11f). The four bytes
+ * `null` are valid JSON, so the parse stage sets `parse_ok` true and stores the
+ * parsed value — which is JSON null and persists as a null `body`. Such a row has
+ * a §1.1 pass saying the body parsed cleanly, so neither of the other two
+ * sentences is true of it: nothing halted and nothing failed to parse, there is
+ * simply no object to pretty-print.
  */
 export function rawPayloadSummary(tx: RawPayloadSource): string {
   if (tx.body !== null && tx.body !== undefined) return 'parsed JSON';
   if (tx.raw_body !== null) {
-    return tx.parse_ok === false
-      ? 'raw bytes — payload did not parse'
-      : 'raw bytes — the pipeline halted before the payload was parsed';
+    if (tx.parse_ok === false) return 'raw bytes — payload did not parse';
+    if (tx.parse_ok === true)
+      return 'raw bytes — the payload parsed to JSON null, so there is nothing to render';
+    return 'raw bytes — the pipeline halted before the payload was parsed';
   }
   return 'not retained';
 }

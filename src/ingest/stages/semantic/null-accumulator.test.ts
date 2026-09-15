@@ -129,6 +129,16 @@ const OUTAGE = emsPayload([
   emsRecord('0400'),
 ]);
 
+/**
+ * The same outage with BOTH accumulators null, so the detail has to name two of
+ * them. The plural form of every phrase in the sentence turns on this fixture.
+ */
+const OUTAGE_BOTH = emsPayload([
+  emsRecord('0330', { CMPR2: 300 }),
+  emsRecord('0345', { SVA: 0, CMPR: null, CMPR2: null }),
+  emsRecord('0400', { CMPR2: 300 }),
+]);
+
 /** Twelve records at 15-minute cadence, every one an outage with a null CMPR. */
 function everyRecordNull(): Record<string, unknown> {
   const times = [
@@ -426,6 +436,60 @@ test('the detail observes rather than concludes, and states the remedy as a fact
   // What the RECEIVING side cannot do is the only thing we can speak to.
   assert.match(detail, /unable to tell a period in which nothing ran/);
   assert.match(detail, /complete and fully conformant/, 'the payload is not faulted');
+});
+
+test('the sentence reads as English with one accumulator named and with two (c4c4)', () => {
+  // Pinned VERBATIM in both forms. The sentence is assembled from per-number
+  // fragments, so a fragment that is right in one form can be broken in the
+  // other and the suite would not notice: "with nothing beside it is to account
+  // for the null" and "both are accumulators" beside three named objects both
+  // shipped and were read by suppliers. A supplier reads this string as sent.
+  const one = detailOf(OUTAGE);
+  const two = detailOf(OUTAGE_BOTH);
+
+  assert.ok(
+    one.includes(
+      'carries CMPR as null in a period whose own SVA is 0, and nothing beside it explains ' +
+        'the null — LERR and EERR are both absent, null, or blank.',
+    ),
+    `singular opening reads wrong: ${one}`,
+  );
+  assert.ok(
+    two.includes(
+      'carries CMPR and CMPR2 as null in a period whose own SVA is 0, and nothing beside them ' +
+        'explains the nulls — LERR and EERR are both absent, null, or blank.',
+    ),
+    `plural opening reads wrong: ${two}`,
+  );
+
+  // The clause that used to say "both" while naming SVA and two accumulators.
+  const shared =
+    'On a mains appliance these are all accumulators over the same 15-minute period: SVA ' +
+    'counts the seconds the AC supply sat within the bounds the appliance operates in, and ';
+  assert.ok(one.includes(`${shared}CMPR counts the seconds the compressor ran.`), one);
+  assert.ok(two.includes(`${shared}CMPR and CMPR2 count the seconds the compressor ran.`), two);
+
+  // The closing clause agrees in number too.
+  assert.ok(one.includes('The same accumulator arrives as a number in other records'), one);
+  assert.ok(two.includes('The same accumulators arrive as numbers in other records'), two);
+
+  // No pronoun+copula survives anywhere in either form.
+  for (const detail of [one, two]) {
+    assert.doesNotMatch(detail, /beside (it is|they are)\b/, `pronoun+copula splice: ${detail}`);
+    assert.doesNotMatch(detail, /\bboth are accumulators\b/, detail);
+  }
+});
+
+test('the plural form clears the same wording bars as the singular', () => {
+  // The category's two rules are acceptance for every form of the sentence, not
+  // only the one the other copy tests happen to drive.
+  const detail = detailOf(OUTAGE_BOTH);
+  assert.doesNotMatch(
+    detail,
+    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i,
+    `detail reads as a defect: ${detail}`,
+  );
+  assert.doesNotMatch(detail, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${detail}`);
 });
 
 test('the detail stands alone per transmission and names its first record', () => {

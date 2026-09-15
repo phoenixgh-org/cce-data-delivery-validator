@@ -147,6 +147,17 @@ test('the unknown-count tooltip says which of the two unknowns it is (8js8)', ()
   assert.doesNotMatch(reportCountTitle(null, false), /halted/);
 });
 
+test('an unknown count on a cleanly parsed row says the body was JSON null (g11f)', () => {
+  // The third state: POSTing the four bytes `null` parses cleanly, so the row
+  // carries parse_ok true, body null and a §1.1 pass. Neither of the other two
+  // sentences is true of it — nothing halted and nothing failed to parse.
+  assert.equal(
+    reportCountTitle(null, true),
+    'Report count unknown — the payload parsed to JSON null, so there is no data[] to read',
+  );
+  assert.doesNotMatch(reportCountTitle(null, true), /did not parse|halted/);
+});
+
 test('a known count keeps its own tooltip whatever parse_ok says', () => {
   assert.equal(reportCountTitle(1, true), '1 report in this transmission');
   assert.equal(reportCountTitle(2, true), '2 reports in this transmission');
@@ -174,6 +185,22 @@ test('the raw-payload summary says which of the two unparsed rows it is (i83q)',
     /did not parse/,
   );
   assert.doesNotMatch(rawPayloadSummary({ body: null, raw_body: 'x', parse_ok: false }), /halted/);
+});
+
+test('the raw-payload summary names the row whose JSON was the literal null (g11f)', () => {
+  // Measured live: POST the four bytes `null` and the row persists as parse_ok
+  // true, body null, raw_body "null", beside a §1.1 pass. The summary moves with
+  // reportCountTitle, which reads parse_ok the same way (26b6a0e).
+  assert.equal(
+    rawPayloadSummary({ body: null, raw_body: 'null', parse_ok: true }),
+    'raw bytes — the payload parsed to JSON null, so there is nothing to render',
+  );
+  assert.doesNotMatch(
+    rawPayloadSummary({ body: null, raw_body: 'null', parse_ok: true }),
+    /did not parse|halted/,
+  );
+  // Nothing retained still wins over parse_ok, in the new state as in the others.
+  assert.equal(rawPayloadSummary({ body: null, raw_body: null, parse_ok: true }), 'not retained');
 });
 
 test('the raw-payload summary names the parsed and the not-retained rows', () => {

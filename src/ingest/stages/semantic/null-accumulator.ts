@@ -101,10 +101,13 @@
  * ── THE DS01.3 SHADOW RESTATES THIS ONE, AND NEEDS NO GATE ──────────────────
  * Measured 2026-09-15 against src/schemas/pqs-e006-ds01-annex4-1.json: the
  * draft's `ems-record` carries SEVEN allOf/oneOf rules where 0.8.x carries two,
- * and five of them require a non-null LERR to explain a null BEMD, CMPR, DORV,
- * TAMB or BLOG. So under the draft an UNEXPLAINED null CMPR is already a clause
- * 5.3.2 failure, and the shadow run restates this advisory's case the way it
- * restates ./null-identity.ts's. The check is NOT gated to the contract profile,
+ * and five of them tie a null reading to a non-null error code: four require
+ * LERR to explain a null CMPR, DORV, TAMB or BLOG, and the fifth requires EERR
+ * to explain a null BEMD. (The draft's two remaining rules — the mains/solar
+ * partition and TVC null requiring LERR — are the two 0.8.x already carries.)
+ * So under the draft an UNEXPLAINED null CMPR is already a clause 5.3.2 failure,
+ * and the shadow run restates this advisory's case the way it restates
+ * ./null-identity.ts's. The check is NOT gated to the contract profile,
  * for the reason null-identity.ts gives: stage order already settles which
  * surface speaks. A payload declaring the Annex 4 lineage is rejected 422 at
  * stage 7 before stage 8 runs; a payload declaring the 0.8.x lineage — where a
@@ -249,8 +252,14 @@ export const nullAccumulatorCheck: SemanticCheck = (ctx: PipelineContext): Findi
   // would leave a supplier guessing whether one appliance or several are meant.
   const spread = reportsAffected === 1 ? ' ' : `, across ${reportsAffected} reports, `;
   const list = joinPhrases([...named].sort());
-  const listIs = named.size === 1 ? 'it is' : 'they are';
+  // A bare pronoun and a bare noun, not a pronoun+copula: these are spliced into
+  // "nothing beside ___ explains ___", which takes its own verb from "nothing"
+  // (the sibling ./unexplained-null-temp.ts says "nothing beside it explains why").
+  const listThem = named.size === 1 ? 'it' : 'them';
+  const nullNoun = named.size === 1 ? 'the null' : 'the nulls';
   const listCounts = named.size === 1 ? 'counts' : 'count';
+  const listArrives =
+    named.size === 1 ? 'accumulator arrives as a number' : 'accumulators arrive as numbers';
 
   return [
     advisory({
@@ -258,17 +267,17 @@ export const nullAccumulatorCheck: SemanticCheck = (ctx: PipelineContext): Findi
       pointer,
       detail:
         `${affected} of ${totalRecords} ${recordNoun} in this transmission${spread}${verb} ` +
-        `${list} as null in a period whose own ${SUPPLY_KEY} is 0, with nothing beside ` +
-        `${listIs} to account for the null — LERR and EERR are both absent, null, or blank. ` +
-        `The first is at ${pointer}. On a mains appliance both are accumulators over the same ` +
-        `15-minute period: ${SUPPLY_KEY} counts the seconds the AC supply sat within the bounds ` +
-        `the appliance operates in, and ${list} ${listCounts} the seconds the compressor ran. A ` +
-        `period with no supply at all is a period in which the compressor could not have run, ` +
-        `so its total is a known 0 — a number the receiving country can add up, where a null ` +
-        `leaves it unable to tell a period in which nothing ran from a reading the device could ` +
-        `not take. The same accumulator arrives as a number in other records of the same report, ` +
-        `so the records are complete and fully conformant as sent, and this is an observation ` +
-        `offered to the supplier rather than a verdict on the payload.`,
+        `${list} as null in a period whose own ${SUPPLY_KEY} is 0, and nothing beside ` +
+        `${listThem} explains ${nullNoun} — LERR and EERR are both absent, null, or blank. ` +
+        `The first is at ${pointer}. On a mains appliance these are all accumulators over the ` +
+        `same 15-minute period: ${SUPPLY_KEY} counts the seconds the AC supply sat within the ` +
+        `bounds the appliance operates in, and ${list} ${listCounts} the seconds the compressor ` +
+        `ran. A period with no supply at all is a period in which the compressor could not ` +
+        `have run, so its total is a known 0 — a number the receiving country can add up, ` +
+        `where a null leaves it unable to tell a period in which nothing ran from a reading the ` +
+        `device could not take. The same ${listArrives} in other records of ` +
+        `the same report, so the records are complete and fully conformant as sent, and this ` +
+        `is an observation offered to the supplier rather than a verdict on the payload.`,
     }),
   ];
 };
