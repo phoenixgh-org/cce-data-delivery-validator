@@ -352,10 +352,7 @@ function TxRow({
   const outdated = tx.findings.some((f) => f.outdated);
   const findings = findingsCell(tx.findings);
   const reports = reportCount(tx.body);
-  const reportsTitle =
-    reports === null
-      ? 'Report count unknown — the payload did not parse, so data[] could not be read'
-      : `${reportCountLabel(reports)} in this transmission`;
+  const reportsTitle = reportCountTitle(reports, tx.parse_ok);
 
   return (
     <div
@@ -934,6 +931,32 @@ function fmtReportCount(n: number | null): string {
 export function reportCountLabel(n: number | null): string {
   if (n === null) return '—';
   return `${n} report${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * The list row's report-count tooltip: the count when it is known, and WHY it is
+ * not when it is not (8js8).
+ *
+ * `reportCount()` returns null for two different reasons, and the tooltip used to
+ * state only one of them — "the payload did not parse" — which is a causal claim
+ * that is false for every row persisted by a halt UPSTREAM of the parse stage.
+ * The size 413, the encoding stage's own 400s and the enabled-auth 401 all store
+ * a transmission row with `body` null and `raw_body` set, and nothing ever
+ * attempted to parse those bytes; they may be perfectly good JSON. Asserting a
+ * parse failure beside a §1.4 "too large" finding contradicts the row's own
+ * verdict, and the exercise suite drives those rejects as standard cases, so
+ * such rows are routine rather than exotic.
+ *
+ * `parse_ok` is the field that separates the two: `false` means the parse stage
+ * ran and the payload did not parse; null means the stage never ran. The same
+ * discipline frk's acceptance turned on — do not make a false statement about
+ * what was sent — applies to the explanation of why the count is unknown.
+ */
+export function reportCountTitle(reports: number | null, parseOk: boolean | null): string {
+  if (reports !== null) return `${reportCountLabel(reports)} in this transmission`;
+  return parseOk === false
+    ? 'Report count unknown — the payload did not parse, so data[] could not be read'
+    : 'Report count unknown — the pipeline halted before the payload was parsed, so data[] was never read';
 }
 
 /** The fields the meta grid reads — a structural subset of TransmissionView. */

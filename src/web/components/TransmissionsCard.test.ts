@@ -18,7 +18,9 @@
  *
  *   1b. THE `reports` COUNT. `reportCount()` returns null — rendered `—` — for
  *      every case where `data[]` cannot be read, and never 0: a transmission
- *      that failed to parse still carried whatever it carried (frk).
+ *      that failed to parse still carried whatever it carried (frk). The row's
+ *      tooltip then has to say WHICH of the two unknowns it is, which is
+ *      `parse_ok`'s job and not something the count itself can tell (8js8).
  *
  *   2. THE `type` VALUE. It used to be the request `Content-Type` and now names
  *      the transmission type off the payload, which is the one cell in the grid
@@ -49,6 +51,7 @@ const {
   deriveTransmissionType,
   reportCount,
   reportCountLabel,
+  reportCountTitle,
   META_GRID_COLUMNS,
   findingsCell,
   flaggedPointers,
@@ -122,6 +125,33 @@ test('a parse-failed transmission shows an em-dash for reports, never 0', () => 
   assert.equal(reportCountLabel(1), '1 report');
   assert.equal(reportCountLabel(2), '2 reports');
   assert.equal(reportCountLabel(0), '0 reports');
+});
+
+test('the unknown-count tooltip says which of the two unknowns it is (8js8)', () => {
+  // reportCount() returns null for two different reasons and `parse_ok` is what
+  // tells them apart. Claiming a parse failure on a row the parse stage never
+  // reached is a false causal statement — the size 413, the encoding 400s and
+  // the enabled-auth 401 all persist a row with body null and parse_ok null.
+  assert.equal(
+    reportCountTitle(null, false),
+    'Report count unknown — the payload did not parse, so data[] could not be read',
+  );
+  assert.equal(
+    reportCountTitle(null, null),
+    'Report count unknown — the pipeline halted before the payload was parsed, so data[] ' +
+      'was never read',
+  );
+  // A halted row must not be told it failed to parse, in either direction.
+  assert.doesNotMatch(reportCountTitle(null, null), /did not parse/);
+  assert.doesNotMatch(reportCountTitle(null, false), /halted/);
+});
+
+test('a known count keeps its own tooltip whatever parse_ok says', () => {
+  assert.equal(reportCountTitle(1, true), '1 report in this transmission');
+  assert.equal(reportCountTitle(2, true), '2 reports in this transmission');
+  // parse_ok is read ONLY on the unknown branch, so a count of 0 — a body that
+  // parsed to an empty data[] — never reads as an unknown.
+  assert.equal(reportCountTitle(0, true), '0 reports in this transmission');
 });
 
 test('the meta cells carry the transmission values', () => {
