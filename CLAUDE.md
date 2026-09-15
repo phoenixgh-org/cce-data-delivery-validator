@@ -6,8 +6,8 @@ Instructions and orientation for AI agents working on the **CCE Data Delivery Va
 
 WHO/PQS **E006/DS01, Clause 5** obliges CCE data suppliers (RTMD and EMS
 manufacturers/resellers) to deliver performance data to the countries that own
-the equipment. PQS test labs prequalify the *equipment* but never test the *data
-delivery* implementation — so suppliers self-grade today.
+the equipment. PQS test labs prequalify the _equipment_ but never test the _data
+delivery_ implementation — so suppliers self-grade today.
 
 This project is a **public service that plays the employer/country (receiving)
 side** of that interface, plus a web dashboard giving suppliers an independent
@@ -31,12 +31,12 @@ key; retention keyed to POST inactivity (`RETENTION_MS` in
 
 ## Important references
 
-| Location | Content |
-|----------|---------|
-| `DESIGN.md` | Scope, locked decisions, ingest pipeline, verifiability matrix. Start here. |
-| `src/schemas/*.json` | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts` under two lineages: the `2025` contract profile (`cce-interop-*.json`, where 0.8.1 (JSON Schema 2020-12) is current and 0.8.0 (draft-07, compiled per-entry with the matching Ajv build) is the deliberate outdated cohort) and the `ds013` shadow profile (`pqs-e006-ds01-annex4-1.json`, the DS01.3 Annex 4 delivery-schema change proposal — an unpublished draft, and the one file here that MAY be re-pinned in place when the proposal is revised). Registering a further version is a spec decision, not mechanical work — ask before vendoring one. |
-| `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. **Local-only**: `docs/internal/` is gitignored, so it is absent from a fresh clone. |
-| WHO PQS E006/DS01 (PQS catalogue) and `https://docs.2to8.cc/cce-data-interop/` | **Authoritative** public sources for the spec, Annex 1 data objects, and the published `cce-interop` schemas. |
+| Location                                                                       | Content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DESIGN.md`                                                                    | Scope, locked decisions, ingest pipeline, verifiability matrix. Start here.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `src/schemas/*.json`                                                           | Vendored transmission JSON Schemas — the **only** copy in this repo. Registered in `src/schema-registry.ts` under two lineages: the `2025` contract profile (`cce-interop-*.json`, where 0.8.1 (JSON Schema 2020-12) is current and 0.8.0 (draft-07, compiled per-entry with the matching Ajv build) is the deliberate outdated cohort) and the `ds013` shadow profile (`pqs-e006-ds01-annex4-1.json`, the DS01.3 Annex 4 delivery-schema change proposal — an unpublished draft, and the one file here that MAY be re-pinned in place when the proposal is revised). Registering a further version is a spec decision, not mechanical work — ask before vendoring one. |
+| `docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf` | The prose requirements from the Q1 2025 UNICEF consultation. **Local-only**: `docs/internal/` is gitignored, so it is absent from a fresh clone.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| WHO PQS E006/DS01 (PQS catalogue) and `https://docs.2to8.cc/cce-data-interop/` | **Authoritative** public sources for the spec, Annex 1 data objects, and the published `cce-interop` schemas.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 **When prose and schema disagree, the schema wins** — except for data-object
 bounds and units, where Annex 1 is authoritative over the schema.
@@ -68,7 +68,7 @@ sha256sum src/schemas/cce-interop-0.8.1.json   # must match
 host does not resolve**. The artifact lives at
 `https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-<version>.json` —
 different host, different path. This is the live proof of DESIGN §9's rule that
-`$id` is an *identifier*, never a locator, and that we never fetch at runtime.
+`$id` is an _identifier_, never a locator, and that we never fetch at runtime.
 
 ## Issue tracking
 

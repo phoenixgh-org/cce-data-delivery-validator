@@ -1,8 +1,7 @@
 dist/
 node_modules/
-docs/
+docs/internal/
 .beads/
 .claude/
 design_handoff_*/
-*.md
 *.json

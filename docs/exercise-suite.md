@@ -17,18 +17,18 @@ how-to-run lives in the [README](../README.md#exercising-a-running-instance--npm
 
 The code is `src/exercise/`:
 
-| Path | Role |
-|------|------|
-| `case.ts` | The case model — what a case may declare, and how a POST is materialized. |
-| `baseline.ts` | The pluggable baseline generators (one canonical, schema-valid payload — `rtm` or `ems`). |
-| `transforms/payload.ts` | Payload mutators: what is in the body. |
-| `transforms/transport.ts` | Transport wrappers: how it goes on the wire. |
-| `cases/{transport,payload,sequence}.ts` | The case table, one module per requirement domain. |
-| `cases.ts` | The index that concatenates them into `EXERCISE_CASES`. |
-| `runner/client.ts` | The only module that opens a socket. |
-| `runner/assertions.ts` | Pure grading of a case from statuses + findings. |
-| `runner/coverage.ts` | The join onto `COMPLIANCE_MATRIX`. |
-| `runner/run.ts` | The CLI: resolve target, play, print, exit code, and --help. |
+| Path                                    | Role                                                                                      |
+| --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `case.ts`                               | The case model — what a case may declare, and how a POST is materialized.                 |
+| `baseline.ts`                           | The pluggable baseline generators (one canonical, schema-valid payload — `rtm` or `ems`). |
+| `transforms/payload.ts`                 | Payload mutators: what is in the body.                                                    |
+| `transforms/transport.ts`               | Transport wrappers: how it goes on the wire.                                              |
+| `cases/{transport,payload,sequence}.ts` | The case table, one module per requirement domain.                                        |
+| `cases.ts`                              | The index that concatenates them into `EXERCISE_CASES`.                                   |
+| `runner/client.ts`                      | The only module that opens a socket.                                                      |
+| `runner/assertions.ts`                  | Pure grading of a case from statuses + findings.                                          |
+| `runner/coverage.ts`                    | The join onto `COMPLIANCE_MATRIX`.                                                        |
+| `runner/run.ts`                         | The CLI: resolve target, play, print, exit code, and --help.                              |
 
 ## The case model: data, not code
 
@@ -68,14 +68,14 @@ Exhaustive matching was considered and rejected: an accepted POST legitimately
 accumulates findings the case has no interest in — the §1.2/§1.6/§1.8 passes every
 200 earns — so exhaustiveness would make cases brittle against grader evolution
 rather than against the defect they target. The accepted cost is that a case cannot
-prove a defect did not *leak*; that is a property of the whole session, not of one
+prove a defect did not _leak_; that is a property of the whole session, not of one
 case.
 
 Attribution is by **transmission id**: the ingest response names the row it wrote and
 the dashboard API reports findings against that same id, so a case's pool is exactly
 the findings its own POSTs produced, even though the whole table shares one session.
 Expectations pool per case, not per POST. A case may expect **no** findings at all —
-a 405 halts before persistence, so the status *is* the grade.
+a 405 halts before persistence, so the status _is_ the grade.
 
 ## Two transform families
 
@@ -84,10 +84,10 @@ delivered. Materialization always runs the payload family first and the transpor
 family second, whatever order a case lists them in — a wrapper operates on the
 serialized bytes — and honors declaration order within each family.
 
-| Family | Examples | Reaches |
-|--------|----------|---------|
-| Payload | `dropRequiredField`, `setInvalidValue`, `setSchemaVersion`, `addCustomDataObject`, `declareCustomDataSchema`, `regularCadence` / `irregularCadence`, `setTransferId`, `padToWireCap`, `addSolarPowerToMainsRecord` / `duplicateVersionStringsIntoRecords` (EMS-only) | §3.1, §3.2, §3.4, §1.4, §1.8 |
-| Transport | `method`, `unparseableBody`, `contentType`, `bearerCredential` / `noAuth` / `badAuth`, `oversize`, `gzip` / `doubleGzip` / `unsupportedEncoding` | §1.1, §1.2, §1.3, §1.4, §1.6 |
+| Family    | Examples                                                                                                                                                                                                                                                             | Reaches                      |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| Payload   | `dropRequiredField`, `setInvalidValue`, `setSchemaVersion`, `addCustomDataObject`, `declareCustomDataSchema`, `regularCadence` / `irregularCadence`, `setTransferId`, `padToWireCap`, `addSolarPowerToMainsRecord` / `duplicateVersionStringsIntoRecords` (EMS-only) | §3.1, §3.2, §3.4, §1.4, §1.8 |
+| Transport | `method`, `unparseableBody`, `contentType`, `bearerCredential` / `noAuth` / `badAuth`, `oversize`, `gzip` / `doubleGzip` / `unsupportedEncoding`                                                                                                                     | §1.1, §1.2, §1.3, §1.4, §1.6 |
 
 Transport wrappers are what reach the §6 halts (405/413/400/401) that short-circuit
 the pipeline before any schema work — a suite that only mutated payloads would never
@@ -153,7 +153,7 @@ instead of the `rtmd` pair, and the two are materially different. Absent means t
 default (`rtm`) baseline, which is every case written before the field existed.
 
 Precedence runs **case first**: `materializeCase(kase, { baseline })` substitutes for
-the *default*, so a caller can retarget a case that declared nothing but can never
+the _default_, so a caller can retarget a case that declared nothing but can never
 quietly downgrade one that named its branch. That asymmetry is the point — "declares
 EMS, materializes rtm" is precisely the silent cap the field exists to prevent, and
 neither consumer names a baseline (`runner/run.ts` passes only the transport context,
@@ -185,7 +185,7 @@ generator holding `transferId` constant — the obvious shape for one seeded fro
 https://github.com/phoenixgh-org/ems-data-simulator/ output — would make every
 non-replay case record a §1.8 fail
 from table ordering alone. Both shipped generators stamp `<caseId>#<index>`; a case
-that *wants* a duplicate pins the id itself with `setTransferId` on every POST rather
+that _wants_ a duplicate pins the id itself with `setTransferId` on every POST rather
 than trusting two baseline calls to return identical bytes.
 
 Cases must not lean on more than those three clauses.
@@ -201,11 +201,11 @@ primary E006 audience and RTMD is the interop schema's deviation.
 Three §3.2 cases use it, filed in `cases/payload.ts` with the other schema-conformance
 cases — grouping is by requirement domain, never by payload type:
 
-| Case | What it proves |
-|---|---|
-| `3.2-pass-ems-baseline` | A conformant EMS transmission validates and is accepted 200. Its three 15-minute-spaced records also earn the incidental §3.4 and §3.1 passes the single-record rtm fixture cannot. |
-| `3.2-fail-ems-mains-and-solar-power` | `ems-record`'s power `oneOf` is mains (`SVA`) XOR solar (`DCSV`+`DCCD`); each branch carries an explicit `not` against the other's fields, so a record claiming both matches **neither** — and zero matches violates a `oneOf` exactly as two do. |
-| `3.2-fail-ems-version-strings-in-both-places` | `ems-report` lets `LSV`/`EMSV` sit on the report **or** on every record; putting them in both places matches **both** branches, which a `oneOf` also rejects. |
+| Case                                          | What it proves                                                                                                                                                                                                                                    |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `3.2-pass-ems-baseline`                       | A conformant EMS transmission validates and is accepted 200. Its three 15-minute-spaced records also earn the incidental §3.4 and §3.1 passes the single-record rtm fixture cannot.                                                               |
+| `3.2-fail-ems-mains-and-solar-power`          | `ems-record`'s power `oneOf` is mains (`SVA`) XOR solar (`DCSV`+`DCCD`); each branch carries an explicit `not` against the other's fields, so a record claiming both matches **neither** — and zero matches violates a `oneOf` exactly as two do. |
+| `3.2-fail-ems-version-strings-in-both-places` | `ems-report` lets `LSV`/`EMSV` sit on the report **or** on every record; putting them in both places matches **both** branches, which a `oneOf` also rejects.                                                                                     |
 
 The two fails are deliberately the opposite ways a `oneOf` can break, and between them
 they produce the multi-branch Ajv error set no rtm case can: a failed `oneOf` reports
@@ -223,13 +223,13 @@ The suite itself never runs in CI: it needs a server, so it has its own npm scri
 sits outside `npm test`'s glob. But the case table and transforms are pure, so the
 colocated tests — which **do** run in CI — check the half that needs no server:
 
-| Checked in CI (`npm test`) | Only checkable live (`npm run exercise`) |
-|---|---|
-| Every materialized payload really behaves as its case DECLARED: `invalid` rejected by the vendored Ajv, `unsupported-version` unresolvable in the registry, `valid` clean (`cases.test.ts`). Direction is not the test — most fail-direction cases carry a schema-valid payload whose defect lives above Ajv: transport, sequence, or §3.1/§3.4 semantics | The HTTP status each POST actually returns |
-| A case expecting the §3.2 outdated grade names a registered version that really is older than current | That the finding the grader records is the one expected |
-| Transport wrappers really produce the method/headers/bytes they claim | The §2.1 overlap (a timing fact — see below) |
-| Table invariants: unique ids, distinct transferIds outside deliberate replays, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload | The end-to-end pipeline, database and dashboard API |
-| The coverage join, that every gradeable requirement is claimed in both directions, and that no claimed row is printed without the payload types it was exercised with | |
+| Checked in CI (`npm test`)                                                                                                                                                                                                                                                                                                                                | Only checkable live (`npm run exercise`)                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Every materialized payload really behaves as its case DECLARED: `invalid` rejected by the vendored Ajv, `unsupported-version` unresolvable in the registry, `valid` clean (`cases.test.ts`). Direction is not the test — most fail-direction cases carry a schema-valid payload whose defect lives above Ajv: transport, sequence, or §3.1/§3.4 semantics | The HTTP status each POST actually returns              |
+| A case expecting the §3.2 outdated grade names a registered version that really is older than current                                                                                                                                                                                                                                                     | That the finding the grader records is the one expected |
+| Transport wrappers really produce the method/headers/bytes they claim                                                                                                                                                                                                                                                                                     | The §2.1 overlap (a timing fact — see below)            |
+| Table invariants: unique ids, distinct transferIds outside deliberate replays, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload                                                                                                              | The end-to-end pipeline, database and dashboard API     |
+| The coverage join, that every gradeable requirement is claimed in both directions, and that no claimed row is printed without the payload types it was exercised with                                                                                                                                                                                     |                                                         |
 
 The live script and the CI-tested core import the **same** case definitions, so they
 cannot drift apart.
@@ -249,7 +249,7 @@ Which requirements the suite exercises is computed, never annotated. `computeCov
 joins the case table onto `COMPLIANCE_MATRIX` — the same 27 rows the dashboard grades
 against — and reports per row:
 
-- **`covered`** — at least one pass-direction *and* one fail-direction case;
+- **`covered`** — at least one pass-direction _and_ one fail-direction case;
 - **`partial`** — claimed in one direction only;
 - **`uncovered`** — a gradeable row no case claims (the visible gap);
 - **`uncovered-by-design`** — not gradeable from the receiving side at all.
@@ -262,7 +262,7 @@ design rather than as gaps. Reusing the matrix's classes means a requirement tha
 becomes gradeable later joins the gradeable set here automatically.
 
 **A claim is `requirements`, not `expectedFindings`.** A case targeting §1.2 while
-observing the incidental §3.2 pass every accepted POST earns is not an exercise *of*
+observing the incidental §3.2 pass every accepted POST earns is not an exercise _of_
 §3.2 — letting it count as one would make coverage look complete the moment any case
 passed the schema stage. A requirement id the matrix does not carry (a typo, a retired
 id) is surfaced separately rather than silently dropped.
@@ -275,7 +275,7 @@ current state as a CI fact: every gradeable requirement — §1.1, §1.2, §1.3,
 
 The join counts **requirements**, not payload types. That was an honest answer only
 while every case sent the same payload: the moment the table gained EMS cases,
-`covered (both directions)` started meaning *covered for rtm* on every row but §3.2 —
+`covered (both directions)` started meaning _covered for rtm_ on every row but §3.2 —
 a green line claiming more than it has, which is the one thing this report exists not
 to do.
 
@@ -324,7 +324,7 @@ Three fields carry that:
 
 Coverage ignores the 5.x clauses because `COMPLIANCE_MATRIX` is 2025-only by
 construction. A DS01.3 clause is not a row there, so an id added to `requirements` would
-be reported as an *unknown requirement* rather than as coverage — and building a second
+be reported as an _unknown requirement_ rather than as coverage — and building a second
 matrix for a lineage that is not in force would print a coverage claim about a draft. So
 the clause is recorded on the case, where it is read, and what the case actually asserts
 about the shadow run is its `expectedFindings` entries carrying `profile`.

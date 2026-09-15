@@ -10,7 +10,7 @@ at a test endpoint and get back an independent evaluation on what conforms, what
 
 > [!IMPORTANT]
 > Following the **UNICEF CCE Data Delivery industry consultation**, WHO PQS took
-> responsibilty for incorporating these requirements within the EMS Data Standard 
+> responsibilty for incorporating these requirements within the EMS Data Standard
 > (E006/DS01.x). The PQS review process is anticipated to conclude in **Q3 or Q4 2026**.
 > This project will be updated as soon as new requirements are published.
 
@@ -51,13 +51,13 @@ Every requirement is classified by **what a passive receiver can establish**,
 and a requirement that cannot be graded is labelled as such rather than quietly
 counted as a pass. Details below.
 
-| | Class | Meaning | Rows |
-|---|---|---|---|
-| ✅ | Passively verified | Graded from the supplier's own traffic | 7 |
-| 🟡 | Heuristic / partial | Observable, but the system cannot judge intent or justification | 3 |
-| 🔌 | Active-only (deferred) | Needs deliberate error injection or a guided scenario; out of v1 scope | 8 |
-| 📝 | Self-attestation | Not provable from the receiving side at all | 9 |
-| 🔒 | Enforced by us | Guaranteed by the endpoint, so not a test of the supplier's choice | 1 |
+|     | Class                  | Meaning                                                                | Rows |
+| --- | ---------------------- | ---------------------------------------------------------------------- | ---- |
+| ✅  | Passively verified     | Graded from the supplier's own traffic                                 | 7    |
+| 🟡  | Heuristic / partial    | Observable, but the system cannot judge intent or justification        | 3    |
+| 🔌  | Active-only (deferred) | Needs deliberate error injection or a guided scenario; out of v1 scope | 8    |
+| 📝  | Self-attestation       | Not provable from the receiving side at all                            | 9    |
+| 🔒  | Enforced by us         | Guaranteed by the endpoint, so not a test of the supplier's choice     | 1    |
 
 27 requirements in total; two carry a split classification (§1.1 is ✅/🔒, §4.4 is
 🔌/📝), and §1.7 has nothing to grade. A gradeable requirement with no findings yet
@@ -71,7 +71,7 @@ mirrored in `src/api/compliance-matrix.ts` and rendered live in the dashboard.
 
 A transmission whose declared `schemaVersion` resolves to a registered lineage is
 graded a second time, against the DS01.3 Annex 4 delivery-schema proposal — an
-unpublished draft, registered here as a *shadow* lineage. Resolving the version is
+unpublished draft, registered here as a _shadow_ lineage. Resolving the version is
 what selects the shadow, so a transmission that never gets that far carries no
 shadow result at all: an unrecognized `schemaVersion`, a body that does not parse,
 and a transport rejection before either are each answered under the 2025
@@ -146,8 +146,18 @@ outcome without opening the dashboard (findings abridged here):
   "message": "Accepted (200): data recorded; 9 findings (2 info). Also passes the DS01.3 draft of 2026-09-08 (sha256 7e22de27…).",
   "findings": 9,
   "findingDetails": [
-    { "requirement": "3.2", "severity": "pass", "profile": "2025", "detail": "validated against official 0.8.1 (sha256 290290fd…) (§3.2)" },
-    { "requirement": "5.3.2", "severity": "pass", "profile": "ds013", "detail": "validated against DRAFT 1 (draft 2026-09-08, sha256 7e22de27…) (§5.3.2)" }
+    {
+      "requirement": "3.2",
+      "severity": "pass",
+      "profile": "2025",
+      "detail": "validated against official 0.8.1 (sha256 290290fd…) (§3.2)"
+    },
+    {
+      "requirement": "5.3.2",
+      "severity": "pass",
+      "profile": "ds013",
+      "detail": "validated against DRAFT 1 (draft 2026-09-08, sha256 7e22de27…) (§5.3.2)"
+    }
   ],
   "advisories": [],
   "notice": "Synthetic test data only: this is a sandbox endpoint. …"
@@ -168,7 +178,7 @@ Useful things to know while testing:
 - **`200` is the only success code on ingest.** `POST /i/<uuid>` is synchronous —
   findings are computed before the response is written — so there is no `202` path
   to handle. (Other routes differ: minting a session in step 1 above returns `201
-  Created`. See [`docs/api.md`](docs/api.md).)
+Created`. See [`docs/api.md`](docs/api.md).)
 - Gzip is supported — send `Content-Encoding: gzip` with the gzipped body. Do not
   double-encode (§1.6).
 - The §1.4 grading cap is 1MB **of wire bytes, after content-encoding**. Going over
@@ -176,18 +186,18 @@ Useful things to know while testing:
 - Authentication (§1.3) is **opt-in** and off by default. Enable it from the
   dashboard, which generates the credential for one of the three methods DS01.3
   recognises — token in a configurable header, HTTP Basic, or `Authorization:
-  Bearer` (RFC 6750) — and then enforces it so §1.3 becomes gradeable.
+Bearer` (RFC 6750) — and then enforces it so §1.3 becomes gradeable.
 - Transmissions are validated against vendored, content-hash-pinned schemas. Two
   `cce-interop` versions are registered as the contract lineage, both
   byte-identical to the copies published upstream: **0.8.1** (sha256
   `290290fd…`) is **current**, and the older **0.8.0** (sha256 `e6614cc7…`) is
-  still accepted but graded *outdated* — a `200` with a §3.2 note telling you to
+  still accepted but graded _outdated_ — a `200` with a §3.2 note telling you to
   upgrade, not a rejection. Outdated is judged within a lineage only. The DS01.3
   Annex 4 draft is registered beside them as the shadow lineage; its
   `schemaVersion` is the integer-valued string `"1"`, because that annex versions
   by revision rather than by semver. Any other declared `schemaVersion` gets a
   `422` listing what is supported, never a silent fallback. The schema is never fetched at runtime and the `$id` URL inside it is
-  an *identifier*, not a download location: that host does not currently resolve,
+  an _identifier_, not a download location: that host does not currently resolve,
   and the published artifact lives elsewhere. `DESIGN.md` §9 has the full version
   and publication picture.
 - An endpoint and all its data are **purged after 7 days without a POST**. The clock
@@ -208,6 +218,7 @@ an optional compose profile:
 docker compose --profile edge up -d
 deploy/smoke-proxy-contract.sh https://your.host
 ```
+
 (not extensively tested at present; feedback welcome)
 
 **Read [`docs/deployment.md`](docs/deployment.md) before deploying.** The proxy
@@ -239,14 +250,14 @@ Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
 
 ## Further reading
 
-| Where | What |
-|---|---|
-| [`DESIGN.md`](DESIGN.md) | Scope, locked decisions, the ingest pipeline and response codes, and the full §7 verifiability matrix. The authority on all of it. |
-| [`docs/api.md`](docs/api.md) | The HTTP API reference: every route, request and response shape, and status code — what you need to integrate server-side without reading source. |
-| [`docs/deployment.md`](docs/deployment.md) | Operating it behind a TLS edge: the proxy contract, the environment surface, and how each violation fails silently. |
-| [`docs/clause-mapping.md`](docs/clause-mapping.md) | How the 2025 requirement numbers used throughout this project map to the DS01.3 rewrite. |
-| [`docs/exercise-suite.md`](docs/exercise-suite.md) | Internals of the `npm run exercise` conformance suite: the case model, the transform vocabulary, the coverage join, and how to add a case. |
-| `src/schemas/` + `src/schema-registry.ts` | The vendored transmission schemas and the registry that pins them by content hash. Schemas are never fetched at runtime — `schemaVersion` is a lookup key, not a locator. |
+| Where                                              | What                                                                                                                                                                      |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`DESIGN.md`](DESIGN.md)                           | Scope, locked decisions, the ingest pipeline and response codes, and the full §7 verifiability matrix. The authority on all of it.                                        |
+| [`docs/api.md`](docs/api.md)                       | The HTTP API reference: every route, request and response shape, and status code — what you need to integrate server-side without reading source.                         |
+| [`docs/deployment.md`](docs/deployment.md)         | Operating it behind a TLS edge: the proxy contract, the environment surface, and how each violation fails silently.                                                       |
+| [`docs/clause-mapping.md`](docs/clause-mapping.md) | How the 2025 requirement numbers used throughout this project map to the DS01.3 rewrite.                                                                                  |
+| [`docs/exercise-suite.md`](docs/exercise-suite.md) | Internals of the `npm run exercise` conformance suite: the case model, the transform vocabulary, the coverage join, and how to add a case.                                |
+| `src/schemas/` + `src/schema-registry.ts`          | The vendored transmission schemas and the registry that pins them by content hash. Schemas are never fetched at runtime — `schemaVersion` is a lookup key, not a locator. |
 
 ## Development
 

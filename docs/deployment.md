@@ -6,11 +6,11 @@ How to run the CCE Data Delivery Validator behind a TLS edge without corrupting
 the verdicts it issues. The design authority is `DESIGN.md` §4.1 (edge / proxy
 contract); this document is its operational half, and the files it describes are:
 
-| File | Role |
-|------|------|
-| `deploy/Caddyfile` | The §4.1 contract, encoded and commented. |
-| `docker-compose.yml` | `postgres` + `app`, plus an optional `caddy` service behind the `edge` profile. |
-| `deploy/smoke-proxy-contract.sh` | Post-deploy verification that the contract actually holds. |
+| File                             | Role                                                                            |
+| -------------------------------- | ------------------------------------------------------------------------------- |
+| `deploy/Caddyfile`               | The §4.1 contract, encoded and commented.                                       |
+| `docker-compose.yml`             | `postgres` + `app`, plus an optional `caddy` service behind the `edge` profile. |
+| `deploy/smoke-proxy-contract.sh` | Post-deploy verification that the contract actually holds.                      |
 
 ---
 
@@ -47,15 +47,15 @@ HTTPS aspect is known, and the app's port is never publicly exposed.
 Caddy's `reverse_proxy` sets `X-Forwarded-For` / `-Proto` / `-Host` itself,
 replacing whatever the client sent — so the edge half of this term needs **no
 directive at all**. (Adding `header_up X-Forwarded-Proto {scheme}` is a no-op
-Caddy warns about at startup: *"Unnecessary header_up X-Forwarded-Proto"*,
+Caddy warns about at startup: _"Unnecessary header_up X-Forwarded-Proto"_,
 observed on v2.11.4. `deploy/Caddyfile` therefore documents the default rather
-than restating it.) The half that *is* configurable is `TRUSTED_PROXY`, below.
+than restating it.) The half that _is_ configurable is `TRUSTED_PROXY`, below.
 
 **Failure mode — trust too narrow** (the common one: `TRUSTED_PROXY` still
 `127.0.0.1` while the proxy is a container on the bridge network). The header is
 ignored, `request.protocol` reads `http`, and the service's claim that "§1.1 is
 enforced at the edge" is no longer backed by anything it can observe. Nothing
-*errors* — but it is no longer silent either: the first time an
+_errors_ — but it is no longer silent either: the first time an
 `X-Forwarded-Proto` arrives from an address `TRUSTED_PROXY` does not cover, the
 app writes one `warn` line (`src/app.ts`) naming the offending peer address, the
 configured `TRUSTED_PROXY`, and the scheme requests are being treated as. That
@@ -65,7 +65,7 @@ will not repeat per request and it will not reappear after the first occurrence
 without a restart. Note the app is deliberately lenient about scheme today — the method
 stage reads `request.protocol` for awareness and never rejects
 (`src/ingest/stages/method.ts`) — so this misconfiguration currently degrades a
-*claim* rather than a finding. Fix it anyway: the claim is on the dashboard.
+_claim_ rather than a finding. Fix it anyway: the claim is on the dashboard.
 
 **Failure mode — trust too broad** (`TRUSTED_PROXY` set to `0.0.0.0/0`, `true`,
 or a range wider than the proxy). Any client can now spoof `X-Forwarded-Proto`
@@ -82,10 +82,10 @@ and reach the app only through the edge network.
 The **app owns** the §1.4 cap. Two ceilings live in the app and must not be
 shadowed by the edge:
 
-| Ceiling | Value | Where | Purpose |
-|---------|-------|-------|---------|
-| §1.4 grading cap | 1 MiB (1 048 576 B) | `MAX_WIRE_BYTES`, `src/ingest/stages/size.ts` | Over this → §1.4 FAIL finding + a teaching `413`, with the transmission recorded. |
-| Fastify `bodyLimit` | 2 MiB | `DEFAULT_BODY_LIMIT`, `src/app.ts` | Outer memory bound, deliberately **above** the grading cap so oversized-but-bounded bodies still reach the size stage. |
+| Ceiling             | Value               | Where                                         | Purpose                                                                                                                |
+| ------------------- | ------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| §1.4 grading cap    | 1 MiB (1 048 576 B) | `MAX_WIRE_BYTES`, `src/ingest/stages/size.ts` | Over this → §1.4 FAIL finding + a teaching `413`, with the transmission recorded.                                      |
+| Fastify `bodyLimit` | 2 MiB               | `DEFAULT_BODY_LIMIT`, `src/app.ts`            | Outer memory bound, deliberately **above** the grading cap so oversized-but-bounded bodies still reach the size stage. |
 
 Any proxy-level cap must therefore be **strictly greater than 2 MiB**, or
 absent. `deploy/Caddyfile` sets `request_body { max_size 8MB }` purely as an
@@ -104,7 +104,7 @@ setting nobody looked at. (Reproduced deliberately during development with
 
 No request decompression, no re-encoding, no rewriting of `Content-Type`,
 `Content-Encoding` or `Content-Length`. §1.4 is measured on the wire bytes
-*after* content-encoding, and §1.6 grades `Content-Encoding` handling and
+_after_ content-encoding, and §1.6 grades `Content-Encoding` handling and
 detects illegal double-encoding (`src/ingest/stages/encoding.ts`), so both need
 the supplier's exact bytes.
 
@@ -120,14 +120,14 @@ labelled `Content-Encoding: gzip`, fails to gunzip it, and emits a §1.6 **FAIL*
 ("could not be decompressed") plus a `400` against a supplier whose request was
 perfectly correct. A false accusation, delivered confidently.
 
-**Failure mode — the edge decompresses *and* strips the header.** Now §1.4 is
+**Failure mode — the edge decompresses _and_ strips the header.** Now §1.4 is
 measured on the decompressed size, so a compliant 900 KB-on-the-wire submission
 can be graded as over the 1 MiB cap, and §1.6 is never exercised at all — the
 supplier gets neither the pass they earned nor any hint why.
 
 **Failure mode — HTTP/2 or HTTP/3 to the edge.** Framing legitimately differs
 between the client hop and the upstream hop; what matters is that the body
-*bytes* and the content headers are unchanged. That is exactly what the smoke
+_bytes_ and the content headers are unchanged. That is exactly what the smoke
 test asserts, which is why it is not optional after a topology change.
 
 ---
@@ -138,11 +138,11 @@ test asserts, which is why it is not optional after a topology change.
 single address, a comma-separated list, a CIDR subnet, or one of the named
 groups (`loopback`, `linklocal`, `uniquelocal`).
 
-| Topology | Value |
-|----------|-------|
-| Caddy on the same host, app on loopback | `127.0.0.1` (the default) |
-| Caddy in the compose `edge` profile | the compose network's own subnet — read it off the running network, see below |
-| Caddy on another host | that host's address, e.g. `10.0.2.7` |
+| Topology                                | Value                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------- |
+| Caddy on the same host, app on loopback | `127.0.0.1` (the default)                                                     |
+| Caddy in the compose `edge` profile     | the compose network's own subnet — read it off the running network, see below |
+| Caddy on another host                   | that host's address, e.g. `10.0.2.7`                                          |
 
 Find the compose network's subnet before setting it, rather than guessing:
 
@@ -180,15 +180,15 @@ not a trade worth making. `DESIGN.md` §4.1 states the contract as trusting
 
 Everything the app reads. Anything not listed here is not consulted.
 
-| Variable | Default | Read at | Notes |
-|----------|---------|---------|-------|
-| `PORT` | `3000` | `src/index.ts` | Listen port. |
-| `HOST` | `0.0.0.0` | `src/index.ts` | Listen address. `0.0.0.0` is correct inside a container; the container's *publication* is what must be restricted (term 1). |
-| `TRUSTED_PROXY` | `127.0.0.1` | `src/app.ts` | Whose `X-Forwarded-*` headers are believed. See §3. |
-| `RETENTION_SWEEP_MS` | `3600000` (1 h) | `src/index.ts` | Cadence of the §11 retention sweep. Cadence only — the 7-day window itself is not env-tunable. |
-| `DATABASE_URL` | unset | `src/db/pool.ts` | Preferred when set; passed to `pg` verbatim. |
-| `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD` | unset | `pg` (node-postgres) | Fallback used only when `DATABASE_URL` is unset. |
-| `NODE_ENV` | `production` in the image | `Dockerfile` runtime stage | Not read by app code directly. |
+| Variable                                             | Default                   | Read at                    | Notes                                                                                                                       |
+| ---------------------------------------------------- | ------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                               | `3000`                    | `src/index.ts`             | Listen port.                                                                                                                |
+| `HOST`                                               | `0.0.0.0`                 | `src/index.ts`             | Listen address. `0.0.0.0` is correct inside a container; the container's _publication_ is what must be restricted (term 1). |
+| `TRUSTED_PROXY`                                      | `127.0.0.1`               | `src/app.ts`               | Whose `X-Forwarded-*` headers are believed. See §3.                                                                         |
+| `RETENTION_SWEEP_MS`                                 | `3600000` (1 h)           | `src/index.ts`             | Cadence of the §11 retention sweep. Cadence only — the 7-day window itself is not env-tunable.                              |
+| `DATABASE_URL`                                       | unset                     | `src/db/pool.ts`           | Preferred when set; passed to `pg` verbatim.                                                                                |
+| `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD` | unset                     | `pg` (node-postgres)       | Fallback used only when `DATABASE_URL` is unset.                                                                            |
+| `NODE_ENV`                                           | `production` in the image | `Dockerfile` runtime stage | Not read by app code directly.                                                                                              |
 
 There is **no** TLS/cert/HTTPS variable in the app: TLS is entirely the edge's
 job, and the app must never be asked to terminate it.
@@ -259,8 +259,8 @@ asserting each time that the **app** produced the response — its JSON envelope
    back as the app's `413` carrying a `"requirement":"1.4"` finding **and** a
    non-null `transmissionId`. A `413` without a finding is the proxy's, and
    means term 2 is violated.
-2. **gzip body** must come back with the app's §1.6 *"gzip decoded cleanly"*
-   pass finding. A §1.6 *"could not be decompressed"* failure means the edge
+2. **gzip body** must come back with the app's §1.6 _"gzip decoded cleanly"_
+   pass finding. A §1.6 _"could not be decompressed"_ failure means the edge
    decompressed the request — term 3 violated.
 3. **Advisory:** plain HTTP is redirected to HTTPS at the edge.
 
@@ -268,8 +268,8 @@ Run it after every deployment, proxy upgrade, or Caddyfile edit. It is cheap and
 it is the only thing standing between a config typo and a stream of wrong
 verdicts.
 
-**What it cannot check.** `X-Forwarded-Proto` produces no *finding*: §1.1 is
-classified 🔒 *enforced by us* in the §7 matrix and the app emits no scheme
+**What it cannot check.** `X-Forwarded-Proto` produces no _finding_: §1.1 is
+classified 🔒 _enforced by us_ in the §7 matrix and the app emits no scheme
 finding, so term 1 is not asserted by the script — it is verified by config
 review plus `TRUSTED_PROXY` agreement. Check 3 covers only the visible half (the
 edge redirect).

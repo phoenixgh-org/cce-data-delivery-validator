@@ -34,17 +34,17 @@ public origin belongs to the reverse proxy, so `POST /api/sessions` hands back
 
 ## Route index
 
-| Method   | Path                                | Purpose                                              | Authorization                          |
-| -------- | ----------------------------------- | ---------------------------------------------------- | -------------------------------------- |
-| `POST`   | `/api/sessions`                     | Mint a test endpoint (session)                       | none — open                            |
-| `POST`   | `/i/{uuid}`                         | Ingest one transmission; returns findings            | session UUID + opt-in §1.3 credential  |
-| _any_    | `/i/{uuid}`                         | Anything but `POST` is rejected `405`                | —                                      |
-| `POST`   | `/api/sessions/{uuid}/auth`         | Enable (or rotate) the §1.3 credential               | session UUID                           |
-| `DELETE` | `/api/sessions/{uuid}/auth`         | Disable §1.3 auth and clear the credential           | session UUID                           |
-| `DELETE` | `/api/sessions/{uuid}/data`         | **Destructive** — purge all captured data            | session UUID                           |
-| `GET`    | `/api/sessions/{uuid}`              | Session report: findings, §7 matrix, aggregates      | session UUID                           |
-| `GET`    | `/api/sessions/{uuid}/transmissions` | Paginated, filterable transmission list               | session UUID                           |
-| `GET`    | `/health`                           | Liveness probe                                       | none — open                            |
+| Method   | Path                                 | Purpose                                         | Authorization                         |
+| -------- | ------------------------------------ | ----------------------------------------------- | ------------------------------------- |
+| `POST`   | `/api/sessions`                      | Mint a test endpoint (session)                  | none — open                           |
+| `POST`   | `/i/{uuid}`                          | Ingest one transmission; returns findings       | session UUID + opt-in §1.3 credential |
+| _any_    | `/i/{uuid}`                          | Anything but `POST` is rejected `405`           | —                                     |
+| `POST`   | `/api/sessions/{uuid}/auth`          | Enable (or rotate) the §1.3 credential          | session UUID                          |
+| `DELETE` | `/api/sessions/{uuid}/auth`          | Disable §1.3 auth and clear the credential      | session UUID                          |
+| `DELETE` | `/api/sessions/{uuid}/data`          | **Destructive** — purge all captured data       | session UUID                          |
+| `GET`    | `/api/sessions/{uuid}`               | Session report: findings, §7 matrix, aggregates | session UUID                          |
+| `GET`    | `/api/sessions/{uuid}/transmissions` | Paginated, filterable transmission list         | session UUID                          |
+| `GET`    | `/health`                            | Liveness probe                                  | none — open                           |
 
 There is **no route that deletes a session itself**. `DELETE /api/sessions/{uuid}`
 is not registered and returns `404`; sessions disappear only via the retention sweep
@@ -92,11 +92,11 @@ headers, and requires no authorization: this is the open front door.
 }
 ```
 
-| Field          | Meaning                                                          |
-| -------------- | ---------------------------------------------------------------- |
+| Field          | Meaning                                                            |
+| -------------- | ------------------------------------------------------------------ |
 | `uuid`         | The capability secret. Both the ingest path and the dashboard key. |
-| `ingestUrl`    | Relative path to POST transmissions to.                          |
-| `dashboardUrl` | Relative path of the browser report.                             |
+| `ingestUrl`    | Relative path to POST transmissions to.                            |
+| `dashboardUrl` | Relative path of the browser report.                               |
 
 The session starts with **auth disabled** (zero-friction default, `DESIGN.md` §3).
 
@@ -110,15 +110,15 @@ The endpoint under test. One POST = one transmission = one graded row.
 
 ### Request
 
-| Header             | Expected                                             | Effect                                                                              |
-| ------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `Content-Type`     | `application/json; charset=utf-8` (§1.2)             | A missing header, a non-JSON media type, or a missing/incorrect charset is a §1.2 **fail** finding — but never a rejection; the pipeline continues. |
-| `Content-Encoding` | absent, `identity`, or `gzip` (§1.6)                 | `gzip` bodies are decompressed (bounded at 1 MiB decompressed, as a zip-bomb guard). Any other token, a body that will not gunzip, or gzip-inside-gzip is a §1.6 fail + `400`. |
-| §1.3 credential    | only when the session has opted in                   | See [Authorization](#post-apisessionsuuidauth--enable-or-rotate-13-auth) for the per-method header.                                               |
+| Header             | Expected                                 | Effect                                                                                                                                                                         |
+| ------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Content-Type`     | `application/json; charset=utf-8` (§1.2) | A missing header, a non-JSON media type, or a missing/incorrect charset is a §1.2 **fail** finding — but never a rejection; the pipeline continues.                            |
+| `Content-Encoding` | absent, `identity`, or `gzip` (§1.6)     | `gzip` bodies are decompressed (bounded at 1 MiB decompressed, as a zip-bomb guard). Any other token, a body that will not gunzip, or gzip-inside-gzip is a §1.6 fail + `400`. |
+| §1.3 credential    | only when the session has opted in       | See [Authorization](#post-apisessionsuuidauth--enable-or-rotate-13-auth) for the per-method header.                                                                            |
 
 Body: the `cce-interop` transmission JSON. `meta.schemaVersion` selects the validating
 schema; the registered versions are **`0.8.1` (current)** and **`0.8.0`**, which is
-still accepted but graded *outdated* — a `200` carrying a §3.2 `info` finding with
+still accepted but graded _outdated_ — a `200` carrying a §3.2 `info` finding with
 `outdated: true`, never a rejection. Any other value is a `422` listing what is
 supported (never a silent fallback). Ask the API for the authoritative list rather
 than trusting this sentence: `schemas` in the session read below is the registered
@@ -133,17 +133,17 @@ The response code is part of what this service teaches, so the full table is bel
 "Row recorded" means the transmission is persisted and shows up in the dashboard and
 the `GET` routes.
 
-| Status | Raised by                | Condition                                                                                       | Row recorded | Body shape           |
-| ------ | ------------------------ | ----------------------------------------------------------------------------------------------- | ------------ | -------------------- |
-| `200`  | pipeline completed       | The body parsed and validated; semantic checks never reject. **Data accepted.**                 | yes          | ingest response      |
-| `400`  | stage 5 — Content-Encoding | Unsupported encoding, undecodable gzip, or illegal double-encoding (§1.6).                     | yes          | ingest response      |
-| `400`  | stage 6 — JSON parse      | Body is not valid UTF-8 JSON (§1.1). Non-UTF-8 bytes fail here too, before `JSON.parse`.        | yes          | ingest response      |
-| `401`  | stage 2 — auth            | The session opted into §1.3 and the credential is absent, malformed, wrong scheme, or wrong.    | yes          | ingest response      |
-| `404`  | stage 0 — session         | No such session UUID (unknown, or already purged/expired).                                      | no           | ingest response      |
-| `405`  | stage 1 — method          | Any method other than `POST` on `/i/{uuid}` — `GET`, `HEAD`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`. | no          | ingest response      |
-| `413`  | stage 3 — size            | Wire body over the 1 MiB §1.4 cap (and within the 2 MiB server ceiling): a **teaching** 413.    | yes          | ingest response      |
-| `413`  | framework                | Body over the 2 MiB server ceiling — rejected before any handler.                               | no           | framework error      |
-| `422`  | stage 7 — schema          | `meta.schemaVersion` missing/not a string, an unsupported version, or Ajv validation failed.    | yes          | ingest response      |
+| Status | Raised by                  | Condition                                                                                         | Row recorded | Body shape      |
+| ------ | -------------------------- | ------------------------------------------------------------------------------------------------- | ------------ | --------------- |
+| `200`  | pipeline completed         | The body parsed and validated; semantic checks never reject. **Data accepted.**                   | yes          | ingest response |
+| `400`  | stage 5 — Content-Encoding | Unsupported encoding, undecodable gzip, or illegal double-encoding (§1.6).                        | yes          | ingest response |
+| `400`  | stage 6 — JSON parse       | Body is not valid UTF-8 JSON (§1.1). Non-UTF-8 bytes fail here too, before `JSON.parse`.          | yes          | ingest response |
+| `401`  | stage 2 — auth             | The session opted into §1.3 and the credential is absent, malformed, wrong scheme, or wrong.      | yes          | ingest response |
+| `404`  | stage 0 — session          | No such session UUID (unknown, or already purged/expired).                                        | no           | ingest response |
+| `405`  | stage 1 — method           | Any method other than `POST` on `/i/{uuid}` — `GET`, `HEAD`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`. | no           | ingest response |
+| `413`  | stage 3 — size             | Wire body over the 1 MiB §1.4 cap (and within the 2 MiB server ceiling): a **teaching** 413.      | yes          | ingest response |
+| `413`  | framework                  | Body over the 2 MiB server ceiling — rejected before any handler.                                 | no           | framework error |
+| `422`  | stage 7 — schema           | `meta.schemaVersion` missing/not a string, an unsupported version, or Ajv validation failed.      | yes          | ingest response |
 
 Notes on the table:
 
@@ -171,6 +171,7 @@ The same shape on success and on rejection, so a `4xx` is as self-explanatory as
 `2xx` (`DESIGN.md` §6 teaching surface). The body below is a real response to the
 0.8.1 RTM baseline fixture, abridged where entries repeat.
 
+<!-- prettier-ignore -->
 ```jsonc
 {
   "transmissionId": "5dc715af-4b18-44fe-9767-56c4cddd3aed",
@@ -203,15 +204,15 @@ The same shape on success and on rejection, so a `4xx` is as self-explanatory as
 }
 ```
 
-| Field            | Type             | Meaning                                                                                                                                                                                                                                                                 |
-| ---------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `transmissionId` | `string \| null` | Id of the persisted row; `null` on the `404`/`405` rejections, which record nothing.                                                                                                                                                                                     |
-| `status`         | `number`         | Same as the HTTP status.                                                                                                                                                                                                                                                 |
+| Field            | Type             | Meaning                                                                                                                                                                                                                                                                         |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `transmissionId` | `string \| null` | Id of the persisted row; `null` on the `404`/`405` rejections, which record nothing.                                                                                                                                                                                            |
+| `status`         | `number`         | Same as the HTTP status.                                                                                                                                                                                                                                                        |
 | `message`        | `string`         | One-line summary: `Accepted (200): data recorded; N findings (…)` or `Rejected (NNN): …`, with the **contract-lineage** fail and info tally. A sentence about advisories is appended when any were raised, and a sentence naming the shadow lineage when a shadow run happened. |
-| `findings`       | `number`         | Count of the **contract-lineage** graded findings for this transmission — shadow findings and advisories excluded.                                                                                                                                                       |
-| `findingDetails` | `array`          | Each `{ requirement, severity, profile, detail }`, from **both lineages**. `severity` is `pass`, `fail`, or `info`. The JSON pointer and structured signature fields are omitted here — read them from the dashboard routes.                                              |
-| `advisories`     | `array`          | Advisories (`adv.*` ids) in the same shape, `profile` included, in a field of their own. Usually empty.                                                                                                                                                                  |
-| `notice`         | `string`         | The standing synthetic-data-only warning, on every response.                                                                                                                                                                                                             |
+| `findings`       | `number`         | Count of the **contract-lineage** graded findings for this transmission — shadow findings and advisories excluded.                                                                                                                                                              |
+| `findingDetails` | `array`          | Each `{ requirement, severity, profile, detail }`, from **both lineages**. `severity` is `pass`, `fail`, or `info`. The JSON pointer and structured signature fields are omitted here — read them from the dashboard routes.                                                    |
+| `advisories`     | `array`          | Advisories (`adv.*` ids) in the same shape, `profile` included, in a field of their own. Usually empty.                                                                                                                                                                         |
+| `notice`         | `string`         | The standing synthetic-data-only warning, on every response.                                                                                                                                                                                                                    |
 
 #### Two lineages in one body
 
@@ -232,18 +233,18 @@ teaching surface is for, but only the contract findings decide the status.
   supplier reads that they are DS01.3-ready rather than inferring it from an absence.
 - `message` gains a trailing sentence whenever a shadow run happened:
 
-| Shadow outcome    | Sentence appended to `message`                                                                       |
-| ----------------- | ---------------------------------------------------------------------------------------------------- |
-| findings echoed   | `N further findings under the DS01.3 draft of {date} (sha256 {hash}) did not affect this status.`     |
-| a clean pass      | `Also passes the DS01.3 draft of {date} (sha256 {hash}).`                                             |
-| no shadow run     | none                                                                                                   |
+| Shadow outcome  | Sentence appended to `message`                                                                    |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| findings echoed | `N further findings under the DS01.3 draft of {date} (sha256 {hash}) did not affect this status.` |
+| a clean pass    | `Also passes the DS01.3 draft of {date} (sha256 {hash}).`                                         |
+| no shadow run   | none                                                                                              |
 
 The date and the full 64-char hash are read from the registry entry, in the same
 `(sha256 …)` form the §3.2 pass detail uses, so the sentence and the dashboard legend
 name the same bytes. The lineage is described as the entry describes itself: an
 unpublished proposal reads "draft of {date}", published bytes read
 "the cce-interop {version} schema", and a payload declaring the Annex 4 revision
-therefore names cce-interop as *its* shadow.
+therefore names cce-interop as _its_ shadow.
 
 Nothing is appended when no shadow run happened at all — an unresolved
 `meta.schemaVersion`, a body that never parsed, or a transport stage that halted
@@ -308,11 +309,11 @@ with defaults". The body is parsed as JSON regardless of `Content-Type`.
 { "method": "header", "headerName": "X-CCE-Token", "username": "cce" }
 ```
 
-| Field        | Applies to      | Default        | Meaning                                              |
-| ------------ | --------------- | -------------- | ---------------------------------------------------- |
-| `method`     | —               | `header`       | One of `header`, `basic`, `bearer`.                  |
-| `headerName` | `header` only   | `X-CCE-Token`  | The header the token must ride in.                   |
-| `username`   | `basic` only    | `cce`          | The Basic-auth username (not secret).                |
+| Field        | Applies to    | Default       | Meaning                               |
+| ------------ | ------------- | ------------- | ------------------------------------- |
+| `method`     | —             | `header`      | One of `header`, `basic`, `bearer`.   |
+| `headerName` | `header` only | `X-CCE-Token` | The header the token must ride in.    |
+| `username`   | `basic` only  | `cce`         | The Basic-auth username (not secret). |
 
 `bearer` (RFC 6750) has nothing configurable: the header is always `Authorization` and
 `headerName`/`username` are ignored. An **unrecognised** `method` is rejected rather
@@ -337,23 +338,23 @@ must not be told auth was configured the way they asked.
   "username": "acme", "password": "d65bc158…" }
 ```
 
-| Status | Body                                                        | When                                     |
-| ------ | ----------------------------------------------------------- | ---------------------------------------- |
-| `201`  | one of the three arms above                                 | auth enabled (or rotated)                |
-| `400`  | `{"error":"invalid_json"}`                                  | a non-empty body that is not JSON        |
+| Status | Body                                                               | When                              |
+| ------ | ------------------------------------------------------------------ | --------------------------------- |
+| `201`  | one of the three arms above                                        | auth enabled (or rotated)         |
+| `400`  | `{"error":"invalid_json"}`                                         | a non-empty body that is not JSON |
 | `400`  | `{"error":"invalid_method","allowed":["header","basic","bearer"]}` | `method` present but unrecognised |
-| `404`  | `{"error":"not_found","uuid":"…"}`                          | unknown session                          |
+| `404`  | `{"error":"not_found","uuid":"…"}`                                 | unknown session                   |
 
 ### Sending the credential to `/i/{uuid}`
 
-| Method   | Request header                                             |
-| -------- | ---------------------------------------------------------- |
-| `header` | `<auth_header_name>: <token>` (default `X-CCE-Token: …`)   |
-| `bearer` | `Authorization: Bearer <token>`                            |
-| `basic`  | `Authorization: Basic base64(username:password)`           |
+| Method   | Request header                                           |
+| -------- | -------------------------------------------------------- |
+| `header` | `<auth_header_name>: <token>` (default `X-CCE-Token: …`) |
+| `bearer` | `Authorization: Bearer <token>`                          |
+| `basic`  | `Authorization: Basic base64(username:password)`         |
 
 The scheme token is matched case-insensitively (RFC 9110 §11.1). Because `basic` and
-`bearer` share the `Authorization` header, presenting the *wrong scheme* is a distinct
+`bearer` share the `Authorization` header, presenting the _wrong scheme_ is a distinct
 failure from presenting the wrong token, and the §1.3 finding says which.
 
 While auth is **disabled**, every transmission still records a §1.3 `info` finding
@@ -403,15 +404,16 @@ the selected scope.
 
 ### Query parameters
 
-| Param    | Values                   | Default | Meaning                                                       |
-| -------- | ------------------------ | ------- | ------------------------------------------------------------- |
-| `window` | `15m`, `1h`, `6h`, `all` | `all`   | Time window the aggregates are computed over.                 |
+| Param    | Values                   | Default | Meaning                                                                           |
+| -------- | ------------------------ | ------- | --------------------------------------------------------------------------------- |
+| `window` | `15m`, `1h`, `6h`, `all` | `all`   | Time window the aggregates are computed over.                                     |
 | `source` | a raw source key, `all`  | `all`   | Restrict to one source (`meta.transferSrc`); `""` is the "unknown source" bucket. |
 
 Unrecognised values fall back to the defaults; this route never returns `400`.
 
 ### `200 OK`
 
+<!-- prettier-ignore -->
 ```jsonc
 {
   "session": {
@@ -465,12 +467,12 @@ the session read names them rather than leaving the dashboard to infer them from
 version numbers. The first three are read off the schema registry; `readiness` is
 computed over the traffic in scope.
 
-| Field                     | Type                | Purpose                                                                                                                                                  |
-| ------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session.contractProfile` | `string`            | The lineage in force (`2025`) — what the compliance summary, `rollup`, `trend` and `scoped.distinctIssues` grade.                                         |
-| `session.shadowProfile`   | `string \| null`    | The lineage previewed beside it (`ds013`), or `null` when the registry holds a single lineage. That `null` is the one signal that hides every shadow surface. |
-| `shadow`                  | `object \| null`    | Provenance of the shadow lineage's current bytes: `version`, the full 64-char `sha256`, and `draftDate` when the entry is an unpublished proposal.        |
-| `readiness`               | `object \| null`    | How much of the in-scope traffic that passes the contract would also pass the shadow lineage — see [Readiness object](#readiness-object).                 |
+| Field                     | Type             | Purpose                                                                                                                                                       |
+| ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session.contractProfile` | `string`         | The lineage in force (`2025`) — what the compliance summary, `rollup`, `trend` and `scoped.distinctIssues` grade.                                             |
+| `session.shadowProfile`   | `string \| null` | The lineage previewed beside it (`ds013`), or `null` when the registry holds a single lineage. That `null` is the one signal that hides every shadow surface. |
+| `shadow`                  | `object \| null` | Provenance of the shadow lineage's current bytes: `version`, the full 64-char `sha256`, and `draftDate` when the entry is an unpublished proposal.            |
+| `readiness`               | `object \| null` | How much of the in-scope traffic that passes the contract would also pass the shadow lineage — see [Readiness object](#readiness-object).                     |
 
 `shadow` and `readiness` are **top-level**, beside `schemas`, not nested under
 `session`: `shadow` is a service-global fact about the registry, and `readiness` is
@@ -483,22 +485,22 @@ computed over the selected scope rather than over the session as a whole. Both a
 
 Identical on this route and on the paginated list.
 
-| Field                              | Meaning                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `id`                               | Transmission id — the `transmissionId` the ingest response returned.        |
-| `received_at`                      | ISO timestamp.                                                              |
-| `http_status`                      | The status this service returned for it.                                    |
-| `content_type`, `content_encoding` | Request headers exactly as sent (`null` when absent).                       |
-| `wire_bytes`                       | Wire byte count — a **string** (64-bit column).                             |
-| `schema_version`                   | Normalized `meta.schemaVersion`, `null` if unresolved.                      |
-| `transfer_id`, `transfer_src`      | Lifted from `meta`, `null` when the body never parsed.                      |
-| `source`, `sourceCode`, `sourceLabel` | Presentation triple derived from `transfer_src`; blank/absent collapses to `""` / `---` / `Unknown source`. |
-| `parse_ok`, `schema_ok`            | `true`/`false`, or `null` when that stage never ran.                        |
-| `body`                             | Parsed JSON payload, `null` if it never parsed.                             |
-| `raw_body`                         | Drill-down text (gzip-decoded when applicable, NUL-stripped) — kept especially when parsing failed. |
-| `findings`                         | The findings for this transmission, ordered by requirement number.          |
-| `verdicts`                         | `object` — this transmission's verdict under each registered lineage, keyed by profile id: `{ "2025": "pass", "ds013": "fail" }`. Each value is `pass`, `fail`, or `null` when that lineage never ran on it; the shadow key is **absent**, not `null`, when no shadow lineage is registered. |
-| `primaryProfile`                   | `string \| null` — which lineage drove the HTTP status, resolved from `schema_version` through the registry; `null` when the version never resolved. |
+| Field                                 | Meaning                                                                                                                                                                                                                                                                                      |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                                  | Transmission id — the `transmissionId` the ingest response returned.                                                                                                                                                                                                                         |
+| `received_at`                         | ISO timestamp.                                                                                                                                                                                                                                                                               |
+| `http_status`                         | The status this service returned for it.                                                                                                                                                                                                                                                     |
+| `content_type`, `content_encoding`    | Request headers exactly as sent (`null` when absent).                                                                                                                                                                                                                                        |
+| `wire_bytes`                          | Wire byte count — a **string** (64-bit column).                                                                                                                                                                                                                                              |
+| `schema_version`                      | Normalized `meta.schemaVersion`, `null` if unresolved.                                                                                                                                                                                                                                       |
+| `transfer_id`, `transfer_src`         | Lifted from `meta`, `null` when the body never parsed.                                                                                                                                                                                                                                       |
+| `source`, `sourceCode`, `sourceLabel` | Presentation triple derived from `transfer_src`; blank/absent collapses to `""` / `---` / `Unknown source`.                                                                                                                                                                                  |
+| `parse_ok`, `schema_ok`               | `true`/`false`, or `null` when that stage never ran.                                                                                                                                                                                                                                         |
+| `body`                                | Parsed JSON payload, `null` if it never parsed.                                                                                                                                                                                                                                              |
+| `raw_body`                            | Drill-down text (gzip-decoded when applicable, NUL-stripped) — kept especially when parsing failed.                                                                                                                                                                                          |
+| `findings`                            | The findings for this transmission, ordered by requirement number.                                                                                                                                                                                                                           |
+| `verdicts`                            | `object` — this transmission's verdict under each registered lineage, keyed by profile id: `{ "2025": "pass", "ds013": "fail" }`. Each value is `pass`, `fail`, or `null` when that lineage never ran on it; the shadow key is **absent**, not `null`, when no shadow lineage is registered. |
+| `primaryProfile`                      | `string \| null` — which lineage drove the HTTP status, resolved from `schema_version` through the registry; `null` when the version never resolved.                                                                                                                                         |
 
 **A verdict is by lineage, not by HTTP status.** The status records what the primary
 validator decided; a verdict records what one lineage decided, and the two differ in a
@@ -539,23 +541,23 @@ the role varies per transmission while the dashboard's contract column does not.
   runs alongside the primary one, a conformant transmission carries `2025` passes and
   may carry `ds013` fails at the same time.
 
-| `code`                          | Req   | Raised when                                          |
-| ------------------------------- | ----- | ---------------------------------------------------- |
-| `tx.bad_media_type`             | §1.2  | `Content-Type` missing or not `application/json`     |
-| `tx.missing_charset`            | §1.2  | JSON media type without `charset=utf-8`              |
-| `tx.body_too_large`             | §1.4  | Wire body over the 1 MiB cap                         |
-| `tx.unsupported_encoding`       | §1.6  | `Content-Encoding` other than `gzip`/`identity`      |
-| `tx.undecodable_body`           | §1.6  | gzip body would not decompress (or exceeded the cap) |
-| `tx.double_encoded`             | §1.6  | gzip inside gzip                                     |
-| `tx.parse_failed`               | §1.1  | Body is not valid UTF-8 JSON                         |
-| `tx.missing_schema_version`     | §3.2  | `meta.schemaVersion` absent or not a string          |
-| `tx.unsupported_schema_version` | §3.2  | Declared version is not registered                   |
-| `tx.schema_invalid`             | §3.2  | Validation failed with no per-error detail           |
-| `tx.outdated_schema`            | §3.2  | Valid, but against an older registered version (info)|
-| `tx.duplicate_transfer`         | §1.8  | Repeated `transferId` or identical content           |
-| `tx.concurrent_delivery`        | §2.1  | Another POST for this session was in flight          |
-| `tx.irregular_interval`         | §3.4  | `ABST` reading cadence looks irregular               |
-| `tx.missing_custom_schema`      | §3.1  | Custom data objects sent without `meta.customDataSchema` |
+| `code`                          | Req  | Raised when                                              |
+| ------------------------------- | ---- | -------------------------------------------------------- |
+| `tx.bad_media_type`             | §1.2 | `Content-Type` missing or not `application/json`         |
+| `tx.missing_charset`            | §1.2 | JSON media type without `charset=utf-8`                  |
+| `tx.body_too_large`             | §1.4 | Wire body over the 1 MiB cap                             |
+| `tx.unsupported_encoding`       | §1.6 | `Content-Encoding` other than `gzip`/`identity`          |
+| `tx.undecodable_body`           | §1.6 | gzip body would not decompress (or exceeded the cap)     |
+| `tx.double_encoded`             | §1.6 | gzip inside gzip                                         |
+| `tx.parse_failed`               | §1.1 | Body is not valid UTF-8 JSON                             |
+| `tx.missing_schema_version`     | §3.2 | `meta.schemaVersion` absent or not a string              |
+| `tx.unsupported_schema_version` | §3.2 | Declared version is not registered                       |
+| `tx.schema_invalid`             | §3.2 | Validation failed with no per-error detail               |
+| `tx.outdated_schema`            | §3.2 | Valid, but against an older registered version (info)    |
+| `tx.duplicate_transfer`         | §1.8 | Repeated `transferId` or identical content               |
+| `tx.concurrent_delivery`        | §2.1 | Another POST for this session was in flight              |
+| `tx.irregular_interval`         | §3.4 | `ABST` reading cadence looks irregular                   |
+| `tx.missing_custom_schema`      | §3.1 | Custom data objects sent without `meta.customDataSchema` |
 
 ### Compliance summary rows
 
@@ -600,19 +602,19 @@ numbers map to the DS01.3 rewrite.
 A signature collapses identical defects across transmissions into one distinct issue —
 the answer to "what are the distinct things to fix, and how widespread is each?".
 
-| Field            | Meaning                                                              |
-| ---------------- | -------------------------------------------------------------------- |
-| `key`            | Stable key; pass it as `signatureKey` to the list route to cross-filter. |
-| `req`            | Requirement, e.g. `3.2`; empty string for an advisory.               |
+| Field            | Meaning                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| `key`            | Stable key; pass it as `signatureKey` to the list route to cross-filter.                   |
+| `req`            | Requirement, e.g. `3.2`; empty string for an advisory.                                     |
 | `profile`        | Requirement lineage the defect grades against (`2025` or `ds013`); `null` for an advisory. |
-| `title`          | Human title for the defect (for an advisory, the label derived from its id). |
-| `kind`           | `schema` (Ajv keyword), `check` (a `tx.*` code), or `advisory` (an `adv.*` observation). |
-| `sev`            | `fail`, or `info` for the outdated-schema signature and every advisory. |
-| `count`          | Raw finding count.                                                   |
-| `txCount`        | Distinct transmissions exhibiting it.                                |
-| `sourceCount`    | Distinct sources exhibiting it.                                      |
-| `first`, `last`  | ISO timestamps of the earliest and latest occurrence.                |
-| `examplePointer` | Representative JSON Pointer, may be `null`.                          |
+| `title`          | Human title for the defect (for an advisory, the label derived from its id).               |
+| `kind`           | `schema` (Ajv keyword), `check` (a `tx.*` code), or `advisory` (an `adv.*` observation).   |
+| `sev`            | `fail`, or `info` for the outdated-schema signature and every advisory.                    |
+| `count`          | Raw finding count.                                                                         |
+| `txCount`        | Distinct transmissions exhibiting it.                                                      |
+| `sourceCount`    | Distinct sources exhibiting it.                                                            |
+| `first`, `last`  | ISO timestamps of the earliest and latest occurrence.                                      |
+| `examplePointer` | Representative JSON Pointer, may be `null`.                                                |
 
 **Profiles keep the two lineages apart.** `key` is prefixed with `profile` for every
 non-advisory signature (`2025|3.2|required|/data/*|LSER` versus
@@ -633,10 +635,10 @@ merely carries an observation is a legitimate hit.
 that satisfy the obligations in force, how many would also satisfy the DS01.3 draft,
 and what stands in the way. It is `null` when no shadow lineage is registered.
 
-| Field             | Type     | Meaning                                                                                                         |
-| ----------------- | -------- | ----------------------------------------------------------------------------------------------------------------- |
-| `passingContract` | `number` | In-scope transmissions whose contract verdict is `pass`.                                                        |
-| `passingBoth`     | `number` | Of those, the ones whose shadow verdict is also `pass`.                                                         |
+| Field             | Type     | Meaning                                                                                                                                                   |
+| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passingContract` | `number` | In-scope transmissions whose contract verdict is `pass`.                                                                                                  |
+| `passingBoth`     | `number` | Of those, the ones whose shadow verdict is also `pass`.                                                                                                   |
 | `reasons`         | `array`  | What stands between the two counts: the shadow-lineage fail [signatures](#signature-object) of the contract-passing transmissions, most widespread first. |
 
 ```json
@@ -679,14 +681,14 @@ holds thousands of transmissions.
 
 ### Query parameters
 
-| Param          | Values                          | Default | Meaning                                        |
-| -------------- | ------------------------------- | ------- | ---------------------------------------------- |
-| `window`       | `15m`, `1h`, `6h`, `all`        | `all`   | Same scope semantics as the summary route.     |
-| `source`       | a raw source key, `all`         | `all`   | Exact match on the trimmed `transfer_src`.     |
-| `failuresOnly` | `true`, `1`                     | off     | Keep only transmissions with ≥1 `fail` finding.|
+| Param          | Values                          | Default | Meaning                                            |
+| -------------- | ------------------------------- | ------- | -------------------------------------------------- |
+| `window`       | `15m`, `1h`, `6h`, `all`        | `all`   | Same scope semantics as the summary route.         |
+| `source`       | a raw source key, `all`         | `all`   | Exact match on the trimmed `transfer_src`.         |
+| `failuresOnly` | `true`, `1`                     | off     | Keep only transmissions with ≥1 `fail` finding.    |
 | `signatureKey` | a `signatures[].key`            | none    | Keep only transmissions exhibiting that signature. |
-| `cursor`       | a prior response's `nextCursor` | none    | Continue after that page.                      |
-| `limit`        | integer                         | `50`    | Page size, clamped to `[1, 200]`.              |
+| `cursor`       | a prior response's `nextCursor` | none    | Continue after that page.                          |
+| `limit`        | integer                         | `50`    | Page size, clamped to `[1, 200]`.                  |
 
 Unrecognised values fall back to defaults; a malformed `cursor` simply starts from the
 top. This route never returns `400`.

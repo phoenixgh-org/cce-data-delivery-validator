@@ -6,7 +6,7 @@ This project's requirement IDs (`1.1` … `5.3`, stored in `finding.requirement`
 rendered throughout the dashboard, and enumerated in
 `src/api/compliance-matrix.ts`) come from:
 
-> *Interoperable CCE Data Delivery — REQUIREMENTS*, 30 March 2025
+> _Interoperable CCE Data Delivery — REQUIREMENTS_, 30 March 2025
 > (`docs/internal/Interoperable CCE Data Delivery - REQUIREMENTS - 20250330 .pdf`,
 > local-only — `docs/internal/` is gitignored)
 
@@ -37,35 +37,35 @@ the redline.
 
 ## Forward map: 2025 → DS01.3
 
-| 2025 | Summary | DS01.3 | Change |
-|------|---------|--------|--------|
-| 1.1 | UTF-8 JSON via HTTPS POST | 5.1.3 | Merged with 1.2 into one clause |
-| 1.2 | `Content-Type` header | 5.1.3 | Merged into 5.1.3; no standalone clause |
-| 1.3 | Auth: token header or Basic | **5.1.5** | **+Bearer (RFC 6750)** — three methods; RFC 7617 cited for Basic; employer specifies method and supplies credentials; "per-country" → "per-employer" |
-| 1.4 | Body ≤ 1MB post-encoding | 5.1.6 | Unchanged |
-| 1.5 | Expect standard 2xx/4xx/5xx | **5.1.7** | **Expanded**: 2xx = employer accepted responsibility; **3xx must not be auto-followed on POST**; **response body is not authoritative** for success/failure |
-| 1.6 | Gzip, no double-encoding | 5.1.8 | Unchanged |
-| 1.7 | Custom headers permitted | **5.1.9** | **+constraint**: custom headers "shall not carry information that is required by employers to correctly process the payload" |
-| 1.8 | No duplicates except allowed conditions | **5.1.10** | **should → shall.** Three exception conditions unchanged |
-| 2.1 | Serial delivery by default | 5.2.1 | "concurrency limit" → "rate-limiting strategy" |
-| 2.2 | Batching; ideally within minutes | 5.2.2 | Unchanged ("remote data system" → "supplier's platform") |
-| 2.3 | Alarms ≤ 15 min, incl. data since last attempt | 5.2.3 | **Unchanged** — the "include all data since the last attempted transmission" duty was already in the 2025 text |
-| 3.1 | Adopt DS01 objects + transmission meta fields | **5.3.3** | See [§3.1 detail](#31--533-metadata-table) below — several changes |
-| 3.2 | Validates against the schema | **5.3.2** | **Precedence rule removed** — see [§3.2 detail](#32--532-precedence) below |
-| 3.3 | Transmit all collected objects | 5.3.4 | "objects they collect" → "objects they recorded" |
-| 3.4 | Preserve logger time resolution | 5.3.6 | "recorded on the logger" → "on the monitoring device" (covers RTMD) |
-| 4.1 | Retry on non-2xx | **5.4.1** | Restated as "receive an HTTP **4xx or 5xx**, **or no response** (connection failure or timeout)". 3xx moves to 5.1.7 |
-| 4.2 | ≥6 retries / 24h, non-blocking | 5.4.1 | Unchanged; folded into 5.4.1 |
-| 4.3 | Abandon on permanent failures | **5.4.1** | **should → shall not retry.** Code list **unchanged** (501, 505, all 4xx except 404/408/409/429) |
-| 4.4 | Backoff strategy + describe to employer | 5.4.2 | Unchanged |
-| 4.5 | 429 `Retry-After`, longer of the two | 5.4.2 | Merged into 5.4.2; unchanged |
-| 4.6 | Log failed attempts | 5.4.3 | Unchanged |
-| 4.7 | Email contact + SLA | 5.4.5 | Unchanged |
-| 4.8 | Monitor transmission status | 5.4.6 | Unchanged |
-| 4.9 | Notify staff/employer on elevated failures | 5.4.7 | Unchanged |
-| 5.1 | Retransmit last 6 months | 5.4.4 | Merged into one clause; **"manually"** added — no API obligation |
-| 5.2 | Filter retransmit by time range | 5.4.4 | Merged into 5.4.4 |
-| 5.3 | Filter all vs never-sent | 5.4.4 | Merged into 5.4.4 |
+| 2025 | Summary                                        | DS01.3     | Change                                                                                                                                                      |
+| ---- | ---------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1  | UTF-8 JSON via HTTPS POST                      | 5.1.3      | Merged with 1.2 into one clause                                                                                                                             |
+| 1.2  | `Content-Type` header                          | 5.1.3      | Merged into 5.1.3; no standalone clause                                                                                                                     |
+| 1.3  | Auth: token header or Basic                    | **5.1.5**  | **+Bearer (RFC 6750)** — three methods; RFC 7617 cited for Basic; employer specifies method and supplies credentials; "per-country" → "per-employer"        |
+| 1.4  | Body ≤ 1MB post-encoding                       | 5.1.6      | Unchanged                                                                                                                                                   |
+| 1.5  | Expect standard 2xx/4xx/5xx                    | **5.1.7**  | **Expanded**: 2xx = employer accepted responsibility; **3xx must not be auto-followed on POST**; **response body is not authoritative** for success/failure |
+| 1.6  | Gzip, no double-encoding                       | 5.1.8      | Unchanged                                                                                                                                                   |
+| 1.7  | Custom headers permitted                       | **5.1.9**  | **+constraint**: custom headers "shall not carry information that is required by employers to correctly process the payload"                                |
+| 1.8  | No duplicates except allowed conditions        | **5.1.10** | **should → shall.** Three exception conditions unchanged                                                                                                    |
+| 2.1  | Serial delivery by default                     | 5.2.1      | "concurrency limit" → "rate-limiting strategy"                                                                                                              |
+| 2.2  | Batching; ideally within minutes               | 5.2.2      | Unchanged ("remote data system" → "supplier's platform")                                                                                                    |
+| 2.3  | Alarms ≤ 15 min, incl. data since last attempt | 5.2.3      | **Unchanged** — the "include all data since the last attempted transmission" duty was already in the 2025 text                                              |
+| 3.1  | Adopt DS01 objects + transmission meta fields  | **5.3.3**  | See [§3.1 detail](#31--533-metadata-table) below — several changes                                                                                          |
+| 3.2  | Validates against the schema                   | **5.3.2**  | **Precedence rule removed** — see [§3.2 detail](#32--532-precedence) below                                                                                  |
+| 3.3  | Transmit all collected objects                 | 5.3.4      | "objects they collect" → "objects they recorded"                                                                                                            |
+| 3.4  | Preserve logger time resolution                | 5.3.6      | "recorded on the logger" → "on the monitoring device" (covers RTMD)                                                                                         |
+| 4.1  | Retry on non-2xx                               | **5.4.1**  | Restated as "receive an HTTP **4xx or 5xx**, **or no response** (connection failure or timeout)". 3xx moves to 5.1.7                                        |
+| 4.2  | ≥6 retries / 24h, non-blocking                 | 5.4.1      | Unchanged; folded into 5.4.1                                                                                                                                |
+| 4.3  | Abandon on permanent failures                  | **5.4.1**  | **should → shall not retry.** Code list **unchanged** (501, 505, all 4xx except 404/408/409/429)                                                            |
+| 4.4  | Backoff strategy + describe to employer        | 5.4.2      | Unchanged                                                                                                                                                   |
+| 4.5  | 429 `Retry-After`, longer of the two           | 5.4.2      | Merged into 5.4.2; unchanged                                                                                                                                |
+| 4.6  | Log failed attempts                            | 5.4.3      | Unchanged                                                                                                                                                   |
+| 4.7  | Email contact + SLA                            | 5.4.5      | Unchanged                                                                                                                                                   |
+| 4.8  | Monitor transmission status                    | 5.4.6      | Unchanged                                                                                                                                                   |
+| 4.9  | Notify staff/employer on elevated failures     | 5.4.7      | Unchanged                                                                                                                                                   |
+| 5.1  | Retransmit last 6 months                       | 5.4.4      | Merged into one clause; **"manually"** added — no API obligation                                                                                            |
+| 5.2  | Filter retransmit by time range                | 5.4.4      | Merged into 5.4.4                                                                                                                                           |
+| 5.3  | Filter all vs never-sent                       | 5.4.4      | Merged into 5.4.4                                                                                                                                           |
 
 ## Tightened clauses
 
@@ -73,12 +73,12 @@ Most of the forward map is renumbering. Four rows are not: the DS01.3 clause
 changes what conformance means, so a payload that satisfied the 2025 text may
 not satisfy its successor. These are the ids carried in `TIGHTENED`:
 
-| 2025 | DS01.3 | What changed |
-|------|--------|--------------|
-| 1.8 | 5.1.10 | `should` not duplicate becomes `shall` not duplicate. The three exception conditions are unchanged |
-| 3.1 | 5.3.3 | `meta.customDataSchema` added for manufacturer-specific objects; `transferredAt` narrowed to UTC RFC 3339 with the `Z` specifier; `transferType` `should` → `shall`; metadata location fixed in the `meta` envelope |
-| 3.2 | 5.3.2 | The schema-precedence tiebreaker is replaced by a duty to notify the employer of discrepancies — no successor rule is supplied |
-| 4.3 | 5.4.1 | `should` abandon permanent failures becomes `shall not` retry. The response-code list is unchanged |
+| 2025 | DS01.3 | What changed                                                                                                                                                                                                        |
+| ---- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.8  | 5.1.10 | `should` not duplicate becomes `shall` not duplicate. The three exception conditions are unchanged                                                                                                                  |
+| 3.1  | 5.3.3  | `meta.customDataSchema` added for manufacturer-specific objects; `transferredAt` narrowed to UTC RFC 3339 with the `Z` specifier; `transferType` `should` → `shall`; metadata location fixed in the `meta` envelope |
+| 3.2  | 5.3.2  | The schema-precedence tiebreaker is replaced by a duty to notify the employer of discrepancies — no successor rule is supplied                                                                                      |
+| 4.3  | 5.4.1  | `should` abandon permanent failures becomes `shall not` retry. The response-code list is unchanged                                                                                                                  |
 
 The other bolded rows in the forward map (1.3, 1.5, 1.7, 4.1) also carry new
 text, but none of it changes how this project grades the requirement: 1.3 adds
@@ -89,14 +89,14 @@ set.
 
 ## Reverse map: DS01.3 clauses with no 2025 equivalent
 
-| DS01.3 | Requirement | Note |
-|--------|-------------|------|
-| 5.1.1 | Data access — employer has exclusive rights over who may access hosted data | Inherited from DS01.2 prose |
-| 5.1.2 | Transmission of data; **alternate transports** (MQTT, AMQP, WebSockets) permitted by mutual agreement, HTTPS must remain available | Inherited from DS01.2 prose |
-| 5.1.11 | **Frequency: within 24 hours** of receipt, best-effort | **New outer bound.** Does *not* replace 5.2.2's "ideally within a few minutes" — that survives verbatim |
-| 5.1.12 | Pull API permitted but does not satisfy the push obligation; if implemented must serve Annex-4-compliant JSON | New |
-| 5.3.1 | General payload contents (country, device, manufacturer identification, all objects/alarms/errors) | Inherited from DS01.2 prose |
-| 5.3.5 | **Manufacturer-specific data objects** must be described by a schema carried in `meta.customDataSchema` | New; depends on the new metadata field |
+| DS01.3 | Requirement                                                                                                                        | Note                                                                                                    |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| 5.1.1  | Data access — employer has exclusive rights over who may access hosted data                                                        | Inherited from DS01.2 prose                                                                             |
+| 5.1.2  | Transmission of data; **alternate transports** (MQTT, AMQP, WebSockets) permitted by mutual agreement, HTTPS must remain available | Inherited from DS01.2 prose                                                                             |
+| 5.1.11 | **Frequency: within 24 hours** of receipt, best-effort                                                                             | **New outer bound.** Does _not_ replace 5.2.2's "ideally within a few minutes" — that survives verbatim |
+| 5.1.12 | Pull API permitted but does not satisfy the push obligation; if implemented must serve Annex-4-compliant JSON                      | New                                                                                                     |
+| 5.3.1  | General payload contents (country, device, manufacturer identification, all objects/alarms/errors)                                 | Inherited from DS01.2 prose                                                                             |
+| 5.3.5  | **Manufacturer-specific data objects** must be described by a schema carried in `meta.customDataSchema`                            | New; depends on the new metadata field                                                                  |
 
 ## Dropped with no successor
 
@@ -147,11 +147,11 @@ The five metadata fields (`transferId`, `transferSrc`, `transferType`,
 
 ### 3.2 → 5.3.2 precedence
 
-2025 §3.2 ended: *"If there are discrepancies between this document and the JSON
-schema published in Attachment 1, **the JSON schema shall take precedence**."*
+2025 §3.2 ended: _"If there are discrepancies between this document and the JSON
+schema published in Attachment 1, **the JSON schema shall take precedence**."_
 
-DS01.3 §5.3.2 replaces that with: *"…**the supplier shall notify the employer of
-any discrepancies**."* The phrase "take precedence" appears **zero times** in the
+DS01.3 §5.3.2 replaces that with: _"…**the supplier shall notify the employer of
+any discrepancies**."_ The phrase "take precedence" appears **zero times** in the
 DS01.3 draft. The new text imposes a notification duty and supplies no tiebreaker.
 
 **Decision (2026-07-31): this project keeps schema-precedence as its internal
