@@ -144,3 +144,5 @@ npm run build                   # tsc + copy-schemas + web typecheck + vite buil
   and cannot prove. `DESIGN.md` §7 is the verifiability matrix — respect the
   "cannot prove passively" column rather than inventing confident verdicts.
 - **Commit messages should be clear and concise**
+- **`DESIGN.md` carries a "Last updated" header.** Whoever edits its prose
+  bumps that date in the same commit, so the header never lags the text.
