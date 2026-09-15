@@ -68,6 +68,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck, SemanticDeps } from '../semantic.js';
+import { blankAdminCheck } from './blank-admin.js';
 import { cmprMinutesCheck } from './cmpr-minutes.js';
 import { compressorSupplyCheck } from './compressor-supply.js';
 import { dateFormatCheck } from './date-format.js';
@@ -101,11 +102,12 @@ export {
  * The checks below are the catalogue today — the two the category shipped with
  * (bva slice C) plus `adv.date_format` (agj.1), `adv.time_not_increasing`
  * (agj.4), `adv.compressor_exceeds_supply` (agj.3), `adv.cmpr_minutes` (agj.7),
- * `adv.sample_gap` (agj.6) and `adv.duplicate_records` (agj.8); it grows from
- * here. Each is written in the ordinary `export const …Check: SemanticCheck =`
- * idiom the §7 checks use: the imports run ONE WAY (checks ← advisory-finding.ts,
- * this registry ← checks), so there is no cycle and no load-order hazard to work
- * around (igw). A new check needs nothing but a module and an entry below.
+ * `adv.sample_gap` (agj.6), `adv.duplicate_records` (agj.8) and
+ * `adv.blank_admin` (agj.5); it grows from here. Each is written in the ordinary
+ * `export const …Check: SemanticCheck =` idiom the §7 checks use: the imports
+ * run ONE WAY (checks ← advisory-finding.ts, this registry ← checks), so there
+ * is no cycle and no load-order hazard to work around (igw). A new check needs
+ * nothing but a module and an entry below.
  */
 export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   nullIdentityCheck,
@@ -116,6 +118,7 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   cmprMinutesCheck,
   sampleGapCheck,
   duplicateRecordsCheck,
+  blankAdminCheck,
 ];
 
 /**

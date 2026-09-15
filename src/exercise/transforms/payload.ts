@@ -692,3 +692,32 @@ export function repeatRecord(index = 0, reportIndex = 0): PayloadTransform {
     },
   });
 }
+
+/**
+ * Blank two of the administrative objects `ems-report` REQUIRES — one nullable
+ * one set to `null`, one non-nullable one set to the empty string — which is
+ * what `adv.blank_admin` observes.
+ *
+ * Schema-VALID by design, and both halves are the case rather than scaffolding.
+ * `AMFR` is typed `["string","null"]` in the shared `$defs`, so the key is
+ * satisfied by a null. `LMOD` is typed `["string"]` — null and absent are §3.2
+ * failures there — but it carries no `minLength`, so `""` satisfies it. Between
+ * them they cover both halves of the advisory's conformant surface in one
+ * payload, and ../cases.test.ts runs the materialized payload through the real
+ * validator, so this declaration is checked rather than asserted.
+ *
+ * ASER IS DELIBERATELY LEFT POPULATED. The identity trio belongs to
+ * `adv.null_identity` (2km, 38p) and is not read by this advisory at all, so a
+ * blanked ASER would raise a second, unrelated finding and blur what the case
+ * proves.
+ */
+export function blankAdminObjects(reportIndex = 0): PayloadTransform {
+  return payloadTransform({
+    name: `blankAdminObjects(${reportIndex}: AMFR=null, LMOD="")`,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/AMFR`, null);
+      setAtPointer(payload, `/data/${reportIndex}/LMOD`, '');
+      return payload;
+    },
+  });
+}

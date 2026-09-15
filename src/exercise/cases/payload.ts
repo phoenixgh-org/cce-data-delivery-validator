@@ -23,6 +23,7 @@ import type { ExerciseCase } from '../case.js';
 import {
   addCustomDataObject,
   addSolarPowerToMainsRecord,
+  blankAdminObjects,
   declareCustomDataSchema,
   dropRequiredField,
   duplicateVersionStringsIntoRecords,
@@ -478,5 +479,29 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [nullApplianceSerial()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.null_identity', severity: 'info' }],
+  },
+
+  // The administrative objects the ems branch requires, delivered blank (agj.5).
+  // emsBaseline again, because the fields are ems-report's. The two blanks are
+  // the two halves of the advisory's conformant surface: AMFR is nullable, so a
+  // null satisfies the schema, and LMOD is not, but carries no minLength, so a
+  // blank string does. ASER stays populated on purpose — the identity trio is
+  // adv.null_identity's (2km), so leaving it alone keeps this case a single
+  // observation rather than two.
+  {
+    id: 'adv.blank_admin-fail-blank-required-admin',
+    title: 'Required administrative objects delivered blank, as a null and as an empty string',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        'AMFR set to null and LMOD set to "" — legal because ems-report requires both keys, ' +
+        'the shared $defs types AMFR ["string","null"], and nothing on the branch carries a ' +
+        'minLength',
+    },
+    posts: [{ transforms: [blankAdminObjects()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.blank_admin', severity: 'info' }],
   },
 ];

@@ -352,6 +352,7 @@ raw-payload inspector) in
 | `adv.cmpr_minutes` | EMS compressor runtimes that never exceed 15, suggesting a minutes-valued feed in a seconds-valued envelope | [`cmpr-minutes.ts`](src/ingest/stages/semantic/cmpr-minutes.ts) |
 | `adv.sample_gap` | Two consecutive readings more than 900 s apart, allowing 60 s of quantization tolerance | [`sample-gap.ts`](src/ingest/stages/semantic/sample-gap.ts) |
 | `adv.duplicate_records` | The same record delivered twice inside one transmission | [`duplicate-records.ts`](src/ingest/stages/semantic/duplicate-records.ts) |
+| `adv.blank_admin` | An administrative object the report's own branch requires, delivered blank — absent, `null`, or an empty string; the identity trio and `DLST` excluded | [`blank-admin.ts`](src/ingest/stages/semantic/blank-admin.ts) |
 
 All modules are under `src/ingest/stages/semantic/`.
 
