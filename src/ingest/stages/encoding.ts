@@ -20,6 +20,13 @@
  * gzip-of-gzip layering that §1.6 forbids — and reject it as a §1.6 finding +
  * 400. (Base64 / other illegal wrappers simply fail to gunzip and are caught by
  * the same 400 path.)
+ *
+ * The guarded decode itself lives in {@link decodeGzipBounded}, a pure function
+ * this stage shares with `storedRawBody` in src/ingest/route.ts (0d4). A request
+ * that fails §1.3 auth halts at stage 2, so this stage never runs for it, yet its
+ * stored drill-down copy must still be readable text — and must reach it through
+ * the SAME 1 MiB guard, so that an unauthenticated POST cannot become a
+ * decompression-bomb vector. One function, two callers, no second copy to drift.
  */
 
 import { gunzipSync } from 'node:zlib';
@@ -44,6 +51,44 @@ const GZIP_MAGIC_1 = 0x8b;
 /** True if `buf` starts with the gzip magic header. */
 function looksGzipped(buf: Buffer): boolean {
   return buf.length >= 2 && buf[0] === GZIP_MAGIC_0 && buf[1] === GZIP_MAGIC_1;
+}
+
+/**
+ * The outcome of a bounded gzip decode. `undecodable` covers everything that
+ * failed to gunzip — truncated members, base64 wrapping, and a zip bomb over the
+ * cap alike — and carries zlib's message for the §1.6 finding detail.
+ */
+export type GzipDecodeResult =
+  | { kind: 'decoded'; bytes: Buffer }
+  | { kind: 'undecodable'; reason: string }
+  | { kind: 'double-encoded' };
+
+/**
+ * Gunzip `bytes` under the 1 MiB zip-bomb guard, reporting the illegal
+ * gzip-of-gzip layering separately. Pure: it emits no findings and never throws,
+ * so the two callers (this stage, and the storage-side decode in route.ts) can
+ * each map the outcome to their own concern — grading in one case, what text
+ * gets stored in the other.
+ */
+export function decodeGzipBounded(bytes: Buffer): GzipDecodeResult {
+  let decoded: Buffer;
+  try {
+    decoded = gunzipSync(bytes, { maxOutputLength: MAX_DECODED_BYTES });
+  } catch (err) {
+    // Not valid gzip (e.g. base64-of-gzip, truncated, or zip-bomb over cap).
+    return {
+      kind: 'undecodable',
+      reason: err instanceof Error ? err.message : 'decompression failed',
+    };
+  }
+
+  // Illegal double-encoding: a gzip member that decompresses to ANOTHER gzip
+  // member is the forbidden double-wrapping (§1.6).
+  if (looksGzipped(decoded)) {
+    return { kind: 'double-encoded' };
+  }
+
+  return { kind: 'decoded', bytes: decoded };
 }
 
 export function encodingStage(): Stage {
@@ -71,24 +116,19 @@ export function encodingStage(): Stage {
         return halt(400);
       }
 
-      let decoded: Buffer;
-      try {
-        decoded = gunzipSync(ctx.rawBody, { maxOutputLength: MAX_DECODED_BYTES });
-      } catch (err) {
-        // Not valid gzip (e.g. base64-of-gzip, truncated, or zip-bomb over cap).
-        const reason = err instanceof Error ? err.message : 'decompression failed';
+      const result = decodeGzipBounded(ctx.rawBody);
+
+      if (result.kind === 'undecodable') {
         ctx.findings.push({
           requirement: '1.6',
           severity: 'fail',
-          detail: `gzip body could not be decompressed: ${reason} (§1.6)`,
+          detail: `gzip body could not be decompressed: ${result.reason} (§1.6)`,
           code: 'tx.undecodable_body',
         });
         return halt(400);
       }
 
-      // Illegal double-encoding: a gzip member that decompresses to ANOTHER gzip
-      // member is the forbidden double-wrapping (§1.6).
-      if (looksGzipped(decoded)) {
+      if (result.kind === 'double-encoded') {
         ctx.findings.push({
           requirement: '1.6',
           severity: 'fail',
@@ -99,7 +139,7 @@ export function encodingStage(): Stage {
       }
 
       // Good single-layer gzip: hand the decoded bytes to stage 6, record a pass.
-      setDecodedBody(ctx, decoded);
+      setDecodedBody(ctx, result.bytes);
       return record(ctx, {
         requirement: '1.6',
         severity: 'pass',

@@ -33,11 +33,12 @@ import assert from 'node:assert/strict';
 import { gzipSync } from 'node:zlib';
 
 import { buildApp } from '../../app.js';
+import { generateCredential } from '../../auth/credential.js';
 import { closePool, getPool } from '../../db/pool.js';
-import { createSession, type InsertFindingInput } from '../../db/repository.js';
+import { createSession, enableAuth, type InsertFindingInput } from '../../db/repository.js';
 import type { PipelineContext, StageOutcome } from '../pipeline.js';
 import { contentTypeStage } from './content-type.js';
-import { encodingStage } from './encoding.js';
+import { decodeGzipBounded, encodingStage } from './encoding.js';
 import { parseStage } from './parse.js';
 import { sizeStage } from './size.js';
 
@@ -209,6 +210,27 @@ test('encoding: zip-bomb over the 1MB decoded cap → halt 400, 1.6 fail', async
   assert.ok(hasFinding(ctx.findings, '1.6', 'fail'));
 });
 
+// ── unit: the guarded decoder shared with route.ts's storedRawBody (0d4) ─────
+
+test('decodeGzipBounded: zip-bomb over the cap → undecodable, never throws (0d4)', () => {
+  // The same input as the stage test above, but against the pure decoder that
+  // storedRawBody also calls. It must REPORT the failure rather than throw, so a
+  // 401 persist path cannot be turned into a decompression bomb or a 500.
+  const bomb = gzipSync(Buffer.alloc(2 * 1_048_576, 0x20));
+  const result = decodeGzipBounded(bomb);
+  assert.equal(result.kind, 'undecodable', 'over-cap expansion is reported, not returned decoded');
+});
+
+test('decodeGzipBounded: single-layer gzip → decoded; gzip-of-gzip → double-encoded', () => {
+  const json = '{"meta":{"transferId":"T-dec"}}';
+  const good = decodeGzipBounded(gzipSync(Buffer.from(json, 'utf8')));
+  assert.equal(good.kind, 'decoded');
+  assert.equal(good.kind === 'decoded' ? good.bytes.toString('utf8') : null, json);
+
+  assert.equal(decodeGzipBounded(gzipSync(gzipSync(Buffer.from(json)))).kind, 'double-encoded');
+  assert.equal(decodeGzipBounded(Buffer.from(json, 'utf8')).kind, 'undecodable');
+});
+
 // ── stage-unit: parse (stage 6) ─────────────────────────────────────────────
 
 test('parse: valid UTF-8 JSON → continue, sets parsedBody + parseOk, 1.1 pass', async () => {
@@ -278,6 +300,38 @@ async function postToSession(
       body: res.json() as { transmissionId: string | null; status: number; findings: number },
       sessionUuid: session.uuid,
     };
+  } finally {
+    await app.close();
+  }
+}
+
+/**
+ * Mint a session with §1.3 auth ENABLED and POST `payload` with a WRONG token, so
+ * the request halts at stage 2 with a 401 — the one pre-body halt that still
+ * persists a transmission row (route.ts module header). Used to prove what the
+ * drill-down copy holds when the encoding stage never ran (0d4).
+ */
+async function postToAuthedSessionWithWrongToken(
+  payload: Buffer,
+  headers: Record<string, string>,
+): Promise<{ statusCode: number; sessionUuid: string }> {
+  const session = await createSession();
+  const cred = generateCredential('header', { headerName: 'X-CCE-Token' });
+  await enableAuth(session.uuid, {
+    authMethod: cred.store.auth_method,
+    authHeaderName: cred.store.auth_header_name,
+    authSecretHash: cred.store.auth_secret_hash,
+  });
+  const app = makeApp();
+  await app.ready();
+  try {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/i/${session.uuid}`,
+      headers: { ...headers, 'x-cce-token': 'wrong-token' },
+      payload,
+    });
+    return { statusCode: res.statusCode, sessionUuid: session.uuid };
   } finally {
     await app.close();
   }
@@ -502,6 +556,106 @@ test(
       );
 
       assert.ok(hasFinding(await findingsFor(sessionUuid), '1.6', 'pass'), '1.6 pass recorded');
+    } finally {
+      if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
+    }
+  },
+);
+
+test(
+  'full-flow: gzip body that fails auth → 401, decoded text persisted in raw_body (0d4)',
+  { skip },
+  async () => {
+    // The auth stage halts at stage 2, so the encoding stage (5) never runs and
+    // nothing is stashed for getDecodedBody(). storedRawBody used to fall back to
+    // the gzip wire bytes, whose invalid sequences became U+FFFD — an INFLATED,
+    // binary-looking copy the dashboard had to disclose as "Decoding unconfirmed".
+    // The storage-side decode now produces the readable payload instead.
+    const json = JSON.stringify({
+      meta: {
+        schemaVersion: '0.8.1',
+        transferType: 'rtm',
+        transferId: 'T-gz-401',
+        transferSrc: 'com.example',
+        transferredAt: '2024-01-15T04:05:54Z',
+      },
+      data: [
+        {
+          AMID: 'appliance-1',
+          CID: 'US',
+          EDOP: '2021-06-01',
+          EMFR: 'EMD_Name',
+          EMOD: 'EMD-ModelNo',
+          EPQS: 'E006/999',
+          ESER: 'EMD-SerialNum',
+          EMSV: 'v01.02.123',
+          DLST: { TVC: { SID: 'sensor-1', SMFR: 'SensMfr', SMOD: 'SensMod' } },
+          records: [{ ABST: '20200115T040554Z', ALRM: 'HEAT', BEMD: 14.3, EERR: 'none', TVC: 3.2 }],
+        },
+      ],
+    });
+    const gzipped = gzipSync(Buffer.from(json, 'utf8'));
+    let sessionUuid: string | undefined;
+    try {
+      const out = await postToAuthedSessionWithWrongToken(gzipped, {
+        'content-type': JSON_UTF8,
+        'content-encoding': 'gzip',
+      });
+      sessionUuid = out.sessionUuid;
+
+      assert.equal(out.statusCode, 401, 'wrong credential → 401');
+
+      const { rows } = await getPool().query<{
+        http_status: number;
+        wire_bytes: string;
+        raw_body: string | null;
+      }>(`SELECT http_status, wire_bytes, raw_body FROM transmission WHERE session_uuid = $1`, [
+        sessionUuid,
+      ]);
+      assert.equal(rows.length, 1, 'the enabled-auth 401 still persists exactly one row');
+      assert.equal(rows[0]?.http_status, 401);
+      assert.equal(rows[0]?.wire_bytes, String(gzipped.length), 'wire bytes = compressed length');
+      assert.equal(rows[0]?.raw_body, json, 'raw_body holds the decoded JSON text, not gzip bytes');
+      assert.equal(
+        rows[0]?.raw_body?.length,
+        json.length,
+        'no U+FFFD inflation — stored length equals the decoded length',
+      );
+
+      // Storage, not grading: the 401 still carries exactly the §1.3 FAIL.
+      const findings = await findingsFor(sessionUuid);
+      assert.equal(findings.length, 1, 'the decode adds no finding of its own');
+      assert.ok(hasFinding(findings, '1.3', 'fail'), 'the 401 still carries exactly the §1.3 FAIL');
+    } finally {
+      if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
+    }
+  },
+);
+
+test(
+  'full-flow: non-gzip body labelled gzip that fails auth → 401, wire bytes stored (0d4)',
+  { skip },
+  async () => {
+    // The other half of 0d4: a body that does NOT gunzip must keep storing the
+    // wire bytes, so the dashboard's honest "not readable payload" disclosure
+    // still fires. The fix must never claim a decode that did not happen.
+    const notGzip = Buffer.from('{"meta":{"transferId":"T-not-gz"}}', 'utf8');
+    let sessionUuid: string | undefined;
+    try {
+      const out = await postToAuthedSessionWithWrongToken(notGzip, {
+        'content-type': JSON_UTF8,
+        'content-encoding': 'gzip',
+      });
+      sessionUuid = out.sessionUuid;
+
+      assert.equal(out.statusCode, 401, 'auth halts first; the bad encoding is never graded');
+
+      const { rows } = await getPool().query<{ raw_body: string | null }>(
+        `SELECT raw_body FROM transmission WHERE session_uuid = $1`,
+        [sessionUuid],
+      );
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.raw_body, notGzip.toString('utf8'), 'wire bytes stored, as before');
     } finally {
       if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
     }

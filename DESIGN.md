@@ -583,8 +583,12 @@ Resource limits are set in two places. Fastify's `bodyLimit` bounds buffered req
 memory at 2 MiB. This is deliberately above the 1 MB grading cap in §1.4, so that
 oversized but bounded bodies still reach the size stage and receive a teaching `413`
 with a persisted row, instead of Fastify's opaque one. Gzip decompression is bounded
-at 1 MiB of output as a zip-bomb guard. The `raw_body` copy (§8) has no write-side
-cap of its own, a decision recorded on August 2, 2026
+at 1 MiB of output as a zip-bomb guard. That guard covers both places a gzip body is
+decompressed: the encoding stage, and the storage-side decode that produces the
+`raw_body` drill-down copy for a request which halted at the auth stage before the
+encoding stage could run. Both call the same guarded decoder, so an unauthenticated
+POST cannot become a decompression-bomb vector. The `raw_body` copy (§8) has no
+write-side cap of its own, a decision recorded on August 2, 2026
 (`cce-data-delivery-validator-1z9`); those two transport ceilings are its only bounds,
 and they bound it only loosely.
 

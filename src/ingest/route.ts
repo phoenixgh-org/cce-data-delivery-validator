@@ -40,7 +40,7 @@ import {
 import { authStage } from './stages/auth.js';
 import { contentTypeStage } from './stages/content-type.js';
 import { getDecodedBody } from './stages/decoded-body.js';
-import { encodingStage } from './stages/encoding.js';
+import { decodeGzipBounded, encodingStage } from './stages/encoding.js';
 import { methodStage } from './stages/method.js';
 import { parseStage } from './stages/parse.js';
 import { schemaStage } from './stages/schema.js';
@@ -139,7 +139,16 @@ function buildContext(
  *
  *   - When stage 5 decoded a `Content-Encoding` (gzip), store the DECODED text —
  *     the readable payload a human drills into — instead of the binary gzip
- *     bytes. Falls back to the raw wire bytes when nothing was decoded.
+ *     bytes. When stage 5 never ran because the request halted earlier (the
+ *     enabled-auth 401 is the only halt that still persists a row), a `gzip`
+ *     `Content-Encoding` is decoded HERE instead, through the same guarded
+ *     decoder the stage uses — so a failed authentication still drills down to
+ *     readable text (bug 0d4) and an unauthenticated POST still cannot expand
+ *     past the 1 MiB zip-bomb ceiling. Falls back to the raw wire bytes when
+ *     there is nothing decodable: no gzip encoding, bytes that do not gunzip, or
+ *     an illegal gzip-of-gzip. Those keep the wire bytes deliberately, so the
+ *     dashboard's honest "not readable payload" disclosure still fires rather
+ *     than claiming a decode that never happened.
  *   - Strip NUL (0x00): Postgres `text` rejects 0x00 ("invalid byte sequence for
  *     encoding UTF8: 0x00"), so a binary/gzip body would otherwise throw and turn
  *     the whole insert — hence the ingest response — into a 500 (bug do5).
@@ -156,10 +165,27 @@ function buildContext(
  * quoting a cap.
  */
 function storedRawBody(ctx: PipelineContext): string {
-  const bytes = getDecodedBody(ctx) ?? ctx.rawBody;
+  const bytes = getDecodedBody(ctx) ?? decodeForStorage(ctx) ?? ctx.rawBody;
   // toString('utf8') maps invalid byte sequences to U+FFFD; NUL is valid UTF-8
   // but illegal in a Postgres text column, so strip it explicitly.
   return bytes.toString('utf8').replaceAll(String.fromCharCode(0), '');
+}
+
+/**
+ * Storage-side gzip decode for a request that halted BEFORE stage 5 (bug 0d4).
+ *
+ * Only the enabled-auth 401 both halts pre-body and persists a row, so this is
+ * the sole path that reaches it. It is storage, not grading: it emits no finding
+ * and leaves the 401's findings as exactly the §1.3 FAIL the auth stage recorded.
+ *
+ * Returns `undefined` — keep the wire bytes — for anything but a clean
+ * single-layer gzip, which is what preserves the dashboard's "not readable"
+ * disclosure for bodies that genuinely are not readable.
+ */
+function decodeForStorage(ctx: PipelineContext): Buffer | undefined {
+  if (ctx.contentEncoding?.trim().toLowerCase() !== 'gzip') return undefined;
+  const result = decodeGzipBounded(ctx.rawBody);
+  return result.kind === 'decoded' ? result.bytes : undefined;
 }
 
 /**
