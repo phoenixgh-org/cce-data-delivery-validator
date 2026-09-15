@@ -23,13 +23,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { ErrorObject } from 'ajv';
+import type { ErrorObject, ValidateFunction } from 'ajv';
 
 import { buildApp } from '../../app.js';
 import { closePool, getPool } from '../../db/pool.js';
 import { createSession, type InsertFindingInput } from '../../db/repository.js';
 import { emsBaseline } from '../../exercise/baseline.js';
-import { SchemaRegistry, type Profile } from '../../schema-registry.js';
+import { SchemaRegistry, type Profile, type RegistryEntry } from '../../schema-registry.js';
 import { cloneValid } from '../fixtures/transmissions.js';
 import type { PipelineContext, StageOutcome } from '../pipeline.js';
 import {
@@ -225,6 +225,52 @@ test('schema: parseable-but-invalid body → halt 422, one finding per Ajv error
   assert.ok(requiredFail, 'a required-keyword error is present');
   assert.equal(requiredFail?.instancePath, '/meta', 'required error sits at /meta');
   assert.equal(typeof requiredFail?.param, 'string', 'param is the missing property name');
+});
+
+/**
+ * A registry whose single entry always fails with the given Ajv errors.
+ *
+ * The container-only failure below cannot be produced from the vendored bytes —
+ * Ajv always reports the leaf errors underneath a combining keyword — so the
+ * guard's new trigger is exercised with a hand-built ErrorObject list, the way
+ * the pure-translation tests further down do.
+ */
+function failingRegistry(errors: ErrorObject[]): SchemaRegistry {
+  const validate = Object.assign(() => false, { errors }) as unknown as ValidateFunction;
+  const entry: RegistryEntry = {
+    version: '0.8.1',
+    sha256: 'f'.repeat(64),
+    profile: '2025',
+    validate,
+  };
+  return {
+    lookup: () => ({ ok: true as const, entry }),
+    shadowFor: () => null,
+    acceptedVersions: () => ['0.8.1'],
+    currentVersion: () => '0.8.1',
+  } as unknown as SchemaRegistry;
+}
+
+test('schema: a failure of ONLY container errors still halts 422 with one finding', () => {
+  // The never-zero-findings guard (bd bt8o): suppressing every error Ajv
+  // returned must not leave a rejected transmission with no §3.2 finding to
+  // explain it, so the stage falls back to the single tx.schema_invalid.
+  const errors = [
+    { keyword: 'if', instancePath: '', schemaPath: '#/if', params: { failingKeyword: 'then' } },
+    { keyword: 'oneOf', instancePath: '/data/0', schemaPath: '#/allOf/0/oneOf', params: {} },
+  ] as unknown as ErrorObject[];
+  const ctx = makeCtx(validPayload(), failingRegistry(errors));
+  const outcome = schemaStage().run(ctx) as StageOutcome;
+
+  assert.deepEqual(outcome, { kind: 'halt', status: 422 }, 'the rejection still stands');
+  assert.equal(ctx.schemaOk, false);
+  assert.equal(ctx.findings.length, 1, 'exactly one finding, not zero and not the containers');
+  const only = ctx.findings[0];
+  assert.equal(only?.code, 'tx.schema_invalid');
+  assert.equal(only?.requirement, '3.2');
+  assert.equal(only?.severity, 'fail');
+  assert.equal(only?.profile, '2025');
+  assert.match(only?.detail ?? '', /failed validation against schema 0\.8\.1/);
 });
 
 // ── stage-unit: valid payload ───────────────────────────────────────────────
@@ -543,10 +589,15 @@ test('ds013 primary: a body failing Annex 4 → 422 with ONLY ds013 5.3.x findin
     ['LDOP', 'LMFR', 'LMOD', 'LPQS', 'LSER'],
     'the five logger-identity objects',
   );
-  // The PRIMARY run still carries Ajv's root `if` error. Container suppression
-  // is deliberately shadow-only in by1c.6; bd bt8o extends it to the primary run
-  // and will drop this last finding.
-  assert.equal(primary.length, 6, 'five identity fails plus the unsuppressed root `if`');
+  // Ajv also emits a root `if` alongside them. by1c.6 suppressed containers on
+  // the shadow run only; bd bt8o extended the same predicate to the primary run,
+  // so that finding is gone and the five identity fails are the whole verdict.
+  assert.equal(primary.length, 5, 'the five identity fails, and nothing else');
+  assert.equal(
+    ctx.findings.filter((f) => f.keyword === 'if').length,
+    0,
+    'no container-keyword finding reaches the supplier on the primary run either',
+  );
   assert.equal(
     ctx.findings.filter((f) => f.requirement === '3.2' && f.severity === 'fail').length,
     0,

@@ -128,8 +128,10 @@ function describePass(entry: RegistryEntry, clause: string): string {
  * errors underneath adds a readiness reason that reads "if at (root)" and names
  * no defect. The leaf errors beneath them are kept and say the actual thing.
  *
- * Exported as a predicate because the primary §3.2 run has the same noise and
- * will adopt it (bd bt8o); this bite changes the shadow run only.
+ * Exported as a predicate because BOTH runs suppress them: the shadow run
+ * adopted it first (bd by1c.6), and bd bt8o extended it to the primary §3.2 /
+ * 5.3.2 run, which carried the same noise. A failure consisting only of
+ * container errors still reports — see the guard in {@link schemaStage}.
  */
 export function isContainerError(err: ErrorObject): boolean {
   return (
@@ -484,8 +486,13 @@ export function schemaStage(): Stage {
 
       if (!ok) {
         ctx.schemaOk = false;
-        // ONE finding per Ajv error, each carrying its JSON Pointer.
+        // ONE finding per Ajv error, each carrying its JSON Pointer — except the
+        // combining keywords, which carry no location a supplier can act on and
+        // are suppressed on this run as they are on the shadow (bd bt8o).
+        let emitted = 0;
         for (const err of errors) {
+          if (isContainerError(err)) continue;
+          emitted += 1;
           const clause = clauseFor(primary, err.instancePath);
           ctx.findings.push({
             requirement: clause,
@@ -500,9 +507,10 @@ export function schemaStage(): Stage {
             param: identifyingParam(err),
           });
         }
-        // Guard: Ajv should always populate errors on failure, but never let a
-        // 422 go out with zero findings.
-        if (errors.length === 0) {
+        // Guard: never let a 422 go out with zero findings — whether because Ajv
+        // populated no errors at all, or because every error it did populate was
+        // a suppressed container (bd bt8o).
+        if (emitted === 0) {
           ctx.findings.push({
             requirement: clauseFor(primary, ''),
             severity: 'fail',
