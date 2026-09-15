@@ -404,11 +404,12 @@ function shadowSentence(entry: RegistryEntry | null, graded: readonly Finding[])
  * ("not graded, and not counted in the findings above", `ADVISORY_COPY`).
  *
  * It excludes SHADOW-lineage findings for the same reason (by1c.8). Since bd
- * by1c.6 every transmission is also graded against the DS01.3 Annex 4 draft, and
- * those findings never touch the HTTP status; letting them into the one number a
- * supplier reads as the outcome would tell a conformant integrator they had five
- * failures against obligations that do not yet exist. They stay in
- * `findingDetails`, each naming its own profile.
+ * by1c.6 a transmission whose declared `schemaVersion` resolves to a registered
+ * lineage is also graded against the DS01.3 Annex 4 draft, and those findings
+ * never touch the HTTP status; letting them into the one number a supplier reads
+ * as the outcome would tell a conformant integrator they had five failures
+ * against obligations that do not yet exist. They stay in `findingDetails`, each
+ * naming its own profile.
  *
  * `shadow` is that lineage's own trailing sentence, appended LAST (by1c.27) —
  * after the advisory sentence, so both of the "this is outside the tally" notes

@@ -287,12 +287,12 @@ test('schema: valid-but-OUTDATED version → continue, schemaOk true, one 3.2 in
 
 // ── stage-unit: the shadow run (by1c.6, by1c.21) ────────────────────────────
 //
-// Every transmission is graded twice: the lineage it declares is the PRIMARY and
-// drives the status, the current entry of the other lineage runs as SHADOW and
-// never does. Findings are numbered by the PROFILE that produced them, not by
-// the role it played — the Annex 4 validator files 5.3.2 (or 5.3.3 under /meta)
-// whether it ran as primary or as shadow, and a cce-interop validator files
-// §3.2 either way.
+// A transmission whose declared `schemaVersion` resolves to a registered lineage
+// is graded twice: that lineage is the PRIMARY and drives the status, the
+// current entry of the other lineage runs as SHADOW and never does. Findings are
+// numbered by the PROFILE that produced them, not by the role it played — the
+// Annex 4 validator files 5.3.2 (or 5.3.3 under /meta) whether it ran as primary
+// or as shadow, and a cce-interop validator files §3.2 either way.
 
 /** Findings attributed to one profile. */
 function byProfile(findings: InsertFindingInput[], profile: Profile) {

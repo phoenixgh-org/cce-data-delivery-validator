@@ -215,9 +215,10 @@ The same shape on success and on rejection, so a `4xx` is as self-explanatory as
 
 #### Two lineages in one body
 
-Every transmission is graded twice (`DESIGN.md` §6.1): against the **contract**
-lineage in force (`2025` — cce-interop and the March 2025 requirements) and against
-the **DS01.3 shadow** lineage (`ds013` — the unpublished Annex 4 draft). Both sets of
+A transmission whose declared `schemaVersion` resolves to a registered lineage is
+graded twice (`DESIGN.md` §6.1): against the **contract** lineage in force (`2025` —
+cce-interop and the March 2025 requirements) and against the **DS01.3 shadow**
+lineage (`ds013` — the unpublished Annex 4 draft). Both sets of
 findings are echoed, because previewing the next revision is exactly what this
 teaching surface is for, but only the contract findings decide the status.
 

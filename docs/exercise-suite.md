@@ -302,9 +302,9 @@ mutators wrote: `3.2-fail-invalid-transfer-type` sets `meta.transferType` to
 
 ### Shadow cases, and why coverage ignores them
 
-Every transmission is graded twice: once against the contract in force (`cce-interop`,
-profile `2025`) and once against the DS01.3 Annex 4 delivery-schema proposal (profile
-`ds013`). The second run changes no status and no verdict, because the draft is
+A transmission whose declared `schemaVersion` resolves to a registered lineage is graded
+twice: once against the contract in force (`cce-interop`, profile `2025`) and once
+against the DS01.3 Annex 4 delivery-schema proposal (profile `ds013`). The second run changes no status and no verdict, because the draft is
 unpublished — what it produces is readiness information. The `readiness.*` cases in
 `cases/shadow.ts` exercise it.
 
