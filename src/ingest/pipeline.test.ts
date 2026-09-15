@@ -365,12 +365,19 @@ test('message: the sentence follows ctx.shadowProfile, so the roles can swap', (
   // literal, so it names that lineage — and describes a published schema as a
   // schema rather than as a draft.
   //
-  // The name is the shared vocabulary's short form, "2025" (bd by1c.32). The
-  // sentence said "cce-interop" while pipeline.ts kept its own map, which is the
-  // fuller name the dashboard's provenance line still uses; the two surfaces now
-  // read the same vocabulary, and a mid-sentence mention takes the short form on
-  // both. No message the service sends today changes — the shadow lineage is
-  // ds013, and it is named "DS01.3" either way.
+  // Both surfaces now read ONE vocabulary (bd by1c.32): pipeline.ts kept a
+  // lineage map of its own until the names moved to src/profile-vocabulary.ts,
+  // where the dashboard's provenance line reads them too. Which of the two forms
+  // the sentence takes is read off the ENTRY, not written at the call site (bd
+  // by1c.49). A PUBLISHED entry — `draftDate === undefined` — takes the
+  // `longName`, because a version number follows it: "the cce-interop 0.8.1
+  // schema" names the artifact family the published filename and `$id` use,
+  // where "the 2025 0.8.1 schema" would put two version-shaped tokens in a row.
+  // A draft takes the `name`, because a date follows instead: "the DS01.3 draft
+  // of 2026-09-08". The shadow entry here is published, so the assertion below
+  // pins "cce-interop". No message the service sends today changes — the
+  // ordinary shadow lineage is the ds013 draft, and it is named "DS01.3" either
+  // way.
   const entry = entryOf('2025');
   const body = buildResponseBody(
     200,

@@ -319,12 +319,16 @@ test('an unresolvable version → 422 with no shadow entries and no shadow sente
  * shadow. Nothing in the sentence is a literal, so it names that lineage — and
  * describes published bytes as a schema rather than as a draft.
  *
- * The name is the shared vocabulary's short form, "2025" (bd by1c.32). The
- * sentence said "cce-interop" while pipeline.ts kept a lineage map of its own;
- * that is the fuller name the dashboard's provenance line still uses, and the
- * two surfaces now read one vocabulary, taking the short form mid-sentence. The
+ * The name comes from the ONE vocabulary both surfaces now read (bd by1c.32):
+ * pipeline.ts kept a lineage map of its own until the names moved to
+ * src/profile-vocabulary.ts, which the dashboard's provenance line reads too.
+ * Which of the two forms the sentence takes is read off the ENTRY (bd by1c.49).
+ * A published entry takes the `longName`, because a version number follows it —
+ * "the cce-interop 0.8.1 schema" — where a draft takes the `name`, because a
+ * date follows instead: "the DS01.3 draft of 2026-09-08". The shadow entry here
+ * is published, so the regex below requires the literal "cce-interop". The
  * ordinary case — a contract-lineage payload shadowed by ds013 — is unaffected:
- * that lineage is named "DS01.3" either way.
+ * that draft is named "DS01.3" either way.
  */
 test('a ds013-primary payload names the 2025 lineage as its shadow', async () => {
   const payload = emsBaseline({ caseId: 'ds013-primary', index: 0 });
