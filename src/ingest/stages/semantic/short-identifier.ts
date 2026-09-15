@@ -217,8 +217,11 @@ function shortValuesIn(
 
   // `DLST` is an rtmd-report property, and the branch's field list is what puts
   // us on that branch, so the sensor walk is guarded by the list rather than by
-  // a second branch test. A report may nonetheless carry it as an additional
-  // property, in which case reading it is the same observation.
+  // a second branch test. An ems-report MAY carry `DLST` as an additional
+  // property (`ems-report` sets `additionalProperties: true`, so such a payload
+  // validates and reaches this stage); that case is deliberately NOT read,
+  // because `SID` is an rtmd-sensor-schema value — the header's table says the
+  // same. `EMS_IDENTIFIER_FIELDS` carries no `AMID`, so the guard below skips it.
   const sensors = report[SENSOR_LIST];
   if (fields.includes('AMID') && isPlainObject(sensors)) {
     for (const [prop, sensor] of Object.entries(sensors)) {

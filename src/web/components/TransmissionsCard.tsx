@@ -1362,18 +1362,34 @@ interface LocateRequest {
   seq: number;
 }
 
+/** The fields the raw-payload summary reads — a structural subset of TransmissionView. */
+type RawPayloadSource = Pick<TransmissionView, 'body' | 'raw_body' | 'parse_ok'>;
+
 /**
- * What the stored payload IS, in three words — `parsed JSON`, raw bytes that
- * failed to parse, or nothing retained at all.
+ * What the stored payload IS — `parsed JSON`, raw bytes the parse stage rejected,
+ * raw bytes nothing ever tried to parse, or nothing retained at all.
  *
  * Extracted (9q4) because the expand control now lives in TxDetail's meta grid
  * while the region stays at the bottom of the pane: two components need this
  * string and neither may recompute it, or the header and the section could
  * disagree about what is down there.
+ *
+ * `parse_ok` is read exactly as {@link reportCountTitle} reads it (i83q). Bytes
+ * on hand with `body` null is NOT the same fact as a parse failure: the size 413,
+ * the encoding stage's own 400s and the enabled-auth 401 all persist a row with
+ * `body` null, `raw_body` set and `parse_ok` NULL, and nothing attempted to parse
+ * those bytes — they may be perfectly good JSON. Telling such a row its payload
+ * did not parse contradicts the "too large" or "unsupported encoding" verdict
+ * rendered beside it, so `false` (the stage ran and rejected the bytes) and null
+ * (the stage never ran) get different words.
  */
-function rawPayloadSummary(tx: TransmissionView): string {
+export function rawPayloadSummary(tx: RawPayloadSource): string {
   if (tx.body !== null && tx.body !== undefined) return 'parsed JSON';
-  if (tx.raw_body !== null) return 'raw bytes — payload did not parse';
+  if (tx.raw_body !== null) {
+    return tx.parse_ok === false
+      ? 'raw bytes — payload did not parse'
+      : 'raw bytes — the pipeline halted before the payload was parsed';
+  }
   return 'not retained';
 }
 

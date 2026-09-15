@@ -847,13 +847,14 @@ export function unexplainedNullTemperature(recordIndex = 0, reportIndex = 0): Pa
  * THE VALUE STAYS NON-BLANK, deliberately. A blank AMID belongs to
  * `adv.null_identity` (the trimmed length is zero, and short-identifier.ts never
  * reads a blank), so blanking it would raise a different, unrelated finding and
- * blur what the case proves. `"A1"` is two characters of content.
+ * blur what the case proves. `"A1B"` is three characters of content — the
+ * sharpest value the advisory still speaks to, since it observes one to three.
  *
  * It takes the DEFAULT (rtm) baseline, whose other identifiers — ASER, ESER and
  * the lone `DLST.TVC` sensor's SID — are all comfortably longer than the
  * threshold, so AMID is the only value the advisory speaks to.
  */
-export function shortApplianceMonitoringId(value = 'A1', reportIndex = 0): PayloadTransform {
+export function shortApplianceMonitoringId(value = 'A1B', reportIndex = 0): PayloadTransform {
   return payloadTransform({
     name: `shortApplianceMonitoringId(${reportIndex}: AMID="${value}")`,
     apply: (payload) => {

@@ -59,6 +59,7 @@ const {
   verdictColumns,
   shadowFailCount,
   chipTitle,
+  rawPayloadSummary,
 } = await import('./TransmissionsCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
@@ -152,6 +153,37 @@ test('a known count keeps its own tooltip whatever parse_ok says', () => {
   // parse_ok is read ONLY on the unknown branch, so a count of 0 — a body that
   // parsed to an empty data[] — never reads as an unknown.
   assert.equal(reportCountTitle(0, true), '0 reports in this transmission');
+});
+
+test('the raw-payload summary says which of the two unparsed rows it is (i83q)', () => {
+  // Same false causal claim as the tooltip above, in the detail pane. A row the
+  // parse stage rejected and a row it never reached both arrive here with body
+  // null and raw_body set; parse_ok is the only thing that tells them apart.
+  assert.equal(
+    rawPayloadSummary({ body: null, raw_body: '{"meta":{}}', parse_ok: false }),
+    'raw bytes — payload did not parse',
+  );
+  assert.equal(
+    rawPayloadSummary({ body: null, raw_body: '{"meta":{}}', parse_ok: null }),
+    'raw bytes — the pipeline halted before the payload was parsed',
+  );
+  // The §1.4 413, the §1.6 encoding 400s and the enabled-auth 401 are the rows
+  // that carry parse_ok null, and none of them may be told its payload failed.
+  assert.doesNotMatch(
+    rawPayloadSummary({ body: null, raw_body: 'x', parse_ok: null }),
+    /did not parse/,
+  );
+  assert.doesNotMatch(rawPayloadSummary({ body: null, raw_body: 'x', parse_ok: false }), /halted/);
+});
+
+test('the raw-payload summary names the parsed and the not-retained rows', () => {
+  // A parsed body wins over anything parse_ok says: the bytes are on hand AS JSON.
+  assert.equal(
+    rawPayloadSummary({ body: { meta: {} }, raw_body: null, parse_ok: true }),
+    'parsed JSON',
+  );
+  assert.equal(rawPayloadSummary({ body: null, raw_body: null, parse_ok: false }), 'not retained');
+  assert.equal(rawPayloadSummary({ body: null, raw_body: null, parse_ok: null }), 'not retained');
 });
 
 test('the meta cells carry the transmission values', () => {

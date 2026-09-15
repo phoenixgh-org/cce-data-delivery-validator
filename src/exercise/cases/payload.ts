@@ -550,7 +550,7 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     fault: {
       layer: 'payload',
       note:
-        'AMID set to "A1" — legal because rtmd-report types it a required non-null string and ' +
+        'AMID set to "A1B" — legal because rtmd-report types it a required non-null string and ' +
         'no identifier object in the registered schema versions carries a minLength',
     },
     posts: [{ transforms: [shortApplianceMonitoringId()], expectedStatus: 200 }],
