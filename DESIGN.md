@@ -72,6 +72,7 @@ The following decisions are settled for v1.
 | Stack                 | Node and TypeScript end to end, with Ajv for schema validation.                                                                                                                                                                                                                                                                                                                                                           |
 | Grading profiles      | A transmission whose declared `schemaVersion` resolves to a registered lineage is graded twice. That lineage is the primary profile, and the current schema of the other lineage runs as the shadow: `2025` `cce-interop` is the contract in force today, `ds013` DS01.3 Annex 4 the shadow. The shadow never affects the response code, and a transmission whose version never resolves carries no shadow result (§6.1). |
 | Schema versioning     | `schemaVersion` is treated as an opaque registry key. Its shape is per lineage: a bare semver triple for `cce-interop`, an integer revision for the Annex 4 draft. Schemas are vendored and validated against pre-registered copies, never fetched at runtime, and each version is pinned by content hash so the service can prove which bytes it validated against.                                                      |
+| Schema evolution      | Hand-applied numbered DDL files in `db/initdb/`, with no migration runner. An existing volume is upgraded by the checklist in `docs/deployment.md` (§8).                                                                                                                                                                                                                                                                  |
 
 ## 4. Architecture
 
@@ -414,8 +415,19 @@ DESC)` for the dashboard's reverse-chronological list and per-session rollups, a
 detection (§1.8). Concurrency observation (§2.1) is in-flight request tracking per
 session and is not stored.
 
-The schema is applied as ordered SQL on first boot from `db/initdb/`. A migration
-runner is deferred until the schema needs to evolve in production.
+The schema is applied as ordered SQL on first boot from `db/initdb/`. Hand-applied
+numbered DDL files are the chosen mechanism for evolving it, and there is no
+migration runner; the alternative was weighed and declined on September 15, 2026.
+Two properties make the manual route safe enough: every file added after the first
+cut (`50-session-auth-bearer`, `60-finding-profile`, `70-finding-profile-no-default`,
+`80-contract-profile-marker`) is idempotent and applies in a single command, and the
+flip-day guard fails closed when `service_marker` is absent
+([`contract-marker.ts`](src/db/contract-marker.ts)), so a forgotten apply refuses to
+boot rather than running on. The operator procedure for an existing volume is
+[Upgrading an existing database volume](docs/deployment.md#upgrading-an-existing-database-volume)
+in `docs/deployment.md`; the decision is worth revisiting if a second external
+operator appears, or if a post-first-boot file that cannot be made idempotent
+becomes necessary.
 
 ## 9. Schema registry and versioning
 
