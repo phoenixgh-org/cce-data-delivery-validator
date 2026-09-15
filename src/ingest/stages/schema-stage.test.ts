@@ -7,9 +7,10 @@
  *     {@link PipelineContext} carrying a REAL {@link SchemaRegistry} (loaded from
  *     the vendored bytes). No DB, no HTTP — these always run and prove the
  *     stage's branches: unknown version → 422, invalid body → 422 with one
- *     finding per Ajv error (each with a JSON Pointer), a genuinely-valid
- *     current-version transmission → continue with schemaOk = true + a §3.2 pass,
- *     and a valid-but-outdated version → continue + a §3.2 info(outdated).
+ *     finding per non-container Ajv error (each with a JSON Pointer), a
+ *     genuinely-valid current-version transmission → continue with
+ *     schemaOk = true + a §3.2 pass, and a valid-but-outdated version →
+ *     continue + a §3.2 info(outdated).
  *
  *  2. FULL-FLOW tests — drive the real route via `app.inject` so the stages run
  *     in order and persist records the outcome. SKIPPED gracefully when no DB is
@@ -186,7 +187,7 @@ test('schema: version given as a full $id URL normalizes + resolves', () => {
 
 // ── stage-unit: invalid-but-parseable body ──────────────────────────────────
 
-test('schema: parseable-but-invalid body → halt 422, one finding per Ajv error with pointers', () => {
+test('schema: parseable-but-invalid body → halt 422, one finding per non-container Ajv error with pointers', () => {
   // Valid JSON, valid known version, but the body violates the schema:
   //   - data is empty (minItems: 1) → a root-level error (instancePath '')
   //   - meta is missing required fields (transferType/transferId/...) → errors
@@ -199,7 +200,7 @@ test('schema: parseable-but-invalid body → halt 422, one finding per Ajv error
   assert.equal(ctx.normalizedSchemaVersion, '0.8.1');
 
   const fails = findingsBy(ctx.findings, '3.2', 'fail');
-  assert.ok(fails.length >= 1, 'at least one fail finding per Ajv error');
+  assert.ok(fails.length >= 1, 'at least one fail finding per non-container Ajv error');
   // Every finding carries a string detail; pointers are either null (root) or a
   // JSON Pointer beginning with '/'.
   for (const f of fails) {
@@ -253,8 +254,9 @@ function failingRegistry(errors: ErrorObject[]): SchemaRegistry {
 
 test('schema: a failure of ONLY container errors still halts 422 with one finding', () => {
   // The never-zero-findings guard (bd bt8o): suppressing every error Ajv
-  // returned must not leave a rejected transmission with no §3.2 finding to
-  // explain it, so the stage falls back to the single tx.schema_invalid.
+  // returned must not leave a rejected transmission with no §3.2 / 5.3.2
+  // finding to explain it, so the stage falls back to the single
+  // tx.schema_invalid.
   const errors = [
     { keyword: 'if', instancePath: '', schemaPath: '#/if', params: { failingKeyword: 'then' } },
     { keyword: 'oneOf', instancePath: '/data/0', schemaPath: '#/allOf/0/oneOf', params: {} },
@@ -874,7 +876,7 @@ test(
       const fails = (await findingsFor(sessionUuid)).filter(
         (f) => f.requirement === '3.2' && f.severity === 'fail',
       );
-      assert.ok(fails.length >= 1, 'one finding per Ajv error');
+      assert.ok(fails.length >= 1, 'one finding per non-container Ajv error');
       assert.ok(
         fails.some((f) => typeof f.pointer === 'string' && f.pointer.startsWith('/')),
         'at least one finding carries a non-trivial JSON Pointer',

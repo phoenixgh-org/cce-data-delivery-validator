@@ -169,7 +169,7 @@ source for.
 | 4. Content-Type | `application/json; charset=utf-8` (§1.2) | A finding; processing continues. `415` is optional under the guidance and is never returned. |
 | 5. Content-Encoding | If `gzip`, decompress; detect illegal double encoding such as base64 (§1.6) | A finding; `400` if the body cannot be decoded |
 | 6. JSON parse | The body is valid UTF-8 JSON (§1.1) | `400` |
-| 7. Schema validation | Ajv validation against the schema named by `meta.schemaVersion` (§3.2) | `422` plus one finding per error |
+| 7. Schema validation | Ajv validation against the schema named by `meta.schemaVersion` (§3.2) | `422` plus one finding per non-container error (a container-only failure yields a single `tx.schema_invalid` finding) |
 | 8. Semantic checks | Duplicate `transferId` (§1.8), interval regularity (§3.4), concurrency (§2.1), an inventory of present objects (§3.3, informational), and custom data object declaration (§3.1) | Findings only; `200`, and the data is accepted |
 
 Stage 8 never halts the request. Every §1.8, §2.1, and §3.x concern is a teaching
