@@ -25,15 +25,20 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.beads', '.git', 'coverage']);
 const SKIP_PATHS = new Set(['docs/internal']);
 
-const EXTENSIONS = ['.md', '.ts', '.tsx'];
+/**
+ * Scanned file types. `.json` is deliberately absent: `src/schemas/*.json` are
+ * vendored upstream bytes that must stay byte-identical to the published
+ * artifact, so they must never be edited to satisfy a guard.
+ */
+const EXTENSIONS = ['.md', '.ts', '.tsx', '.sql', '.yml', '.yaml', '.mjs', '.cjs'];
 
 /**
- * TEMPORARY EXEMPTION. The root CLAUDE.md is the agent-orientation file and
- * still carries the sibling map; its cleanup is in flight on a separate branch
- * (chore/claude-md-no-sibling-refs). Delete this entry once that lands — the
- * guard is meant to cover CLAUDE.md too.
+ * The guard exempts itself by path: the PATTERNS table below has to spell the
+ * sibling names out to match them, so scanning this file would report every
+ * entry as a violation. The exemption is on the path, not on the pattern list,
+ * so that moving the list elsewhere later stays an open decision.
  */
-const EXEMPT_FILES = new Set(['CLAUDE.md']);
+const EXEMPT_FILES = new Set(['scripts/check-sibling-refs.mjs']);
 
 /**
  * Sibling repos in this workspace. `ems-data-simulator` is public and may be
