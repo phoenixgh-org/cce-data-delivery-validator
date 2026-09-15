@@ -37,6 +37,7 @@ import {
   setSchemaVersion,
   setUnsupportedSchemaVersion,
   swapRecordTimestamps,
+  unexplainedNullTemperature,
 } from '../transforms/payload.js';
 
 export const PAYLOAD_CASES: readonly ExerciseCase[] = [
@@ -503,5 +504,28 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [blankAdminObjects()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.blank_admin', severity: 'info' }],
+  },
+
+  // A null reading with nothing beside it to account for it (agj.2). This one
+  // takes the DEFAULT (rtm) baseline rather than declaring emsBaseline, and that
+  // is the case rather than a convenience: ems-record's allOf requires a
+  // minLength-1 LERR beside a null TVC in both registered versions, so the EMS
+  // form of this payload is a §3.2 rejection and never reaches stage 8. The rtm
+  // branch has no such conditional, which is the gap the advisory covers.
+  {
+    id: 'adv.unexplained_null_temp-fail-null-temperature-no-error-code',
+    title: 'A vaccine compartment temperature sent as null with no error code beside it',
+    requirements: [],
+    direction: 'fail',
+    fault: {
+      layer: 'payload',
+      note:
+        'TVC and EERR both set to null on the lone rtm record — legal because rtmd-record ' +
+        'types TVC ["number","null"] and EERR ["string","null"] and ties neither to the ' +
+        'other; the baseline\'s EERR "none" is cleared because a non-empty string reads as ' +
+        'an explanation',
+    },
+    posts: [{ transforms: [unexplainedNullTemperature()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.unexplained_null_temp', severity: 'info' }],
   },
 ];

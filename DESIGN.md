@@ -353,6 +353,7 @@ raw-payload inspector) in
 | `adv.sample_gap` | Two consecutive readings more than 900 s apart, allowing 60 s of quantization tolerance | [`sample-gap.ts`](src/ingest/stages/semantic/sample-gap.ts) |
 | `adv.duplicate_records` | The same record delivered twice inside one transmission | [`duplicate-records.ts`](src/ingest/stages/semantic/duplicate-records.ts) |
 | `adv.blank_admin` | An administrative object the report's own branch requires, delivered blank — absent, `null`, or an empty string; the identity trio and `DLST` excluded | [`blank-admin.ts`](src/ingest/stages/semantic/blank-admin.ts) |
+| `adv.unexplained_null_temp` | An `rtmd-report` record whose `TVC` is `null` while neither `LERR` nor `EERR` accounts for it; the EMS branch is a §3.2 failure and is excluded | [`unexplained-null-temp.ts`](src/ingest/stages/semantic/unexplained-null-temp.ts) |
 
 All modules are under `src/ingest/stages/semantic/`.
 

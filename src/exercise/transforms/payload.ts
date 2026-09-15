@@ -721,3 +721,38 @@ export function blankAdminObjects(reportIndex = 0): PayloadTransform {
     },
   });
 }
+
+/**
+ * Null the vaccine compartment temperature on one RTMD record and null its EERR
+ * — which is what `adv.unexplained_null_temp` observes on the rtm branch (agj.2).
+ *
+ * Schema-VALID by design, and that is the point: `rtmd-record` types TVC
+ * `["number","null"]`, requires EERR as `["string","null"]`, and carries NO
+ * `allOf` tying the two together, so a reading that did not arrive and an error
+ * code that does not explain it both satisfy the branch. `ems-record` is the
+ * opposite — its `allOf` requires a `minLength`-1 LERR beside a null TVC in both
+ * registered versions — which is why this transform is rtm-only and the case
+ * that uses it takes the DEFAULT (rtm) baseline. ../cases.test.ts runs the
+ * materialized payload through the real validator, so this declaration is
+ * checked rather than asserted.
+ *
+ * BOTH MUTATIONS ARE THE CASE. The rtm baseline record sends `EERR: "none"` —
+ * a non-empty string, which the check reads as an explanation and stays quiet
+ * for — so nulling TVC alone would prove nothing. The record carries no LERR to
+ * begin with, so nothing else has to be cleared.
+ *
+ * On the single-record rtm baseline `adv.null_padding` stays silent: it needs at
+ * least twelve records before it will call a column padded. On a longer series
+ * both would fire, and neither is suppressed for the other — see the header of
+ * src/ingest/stages/semantic/unexplained-null-temp.ts.
+ */
+export function unexplainedNullTemperature(recordIndex = 0, reportIndex = 0): PayloadTransform {
+  return payloadTransform({
+    name: `unexplainedNullTemperature(${reportIndex}: records/${recordIndex} TVC=null, EERR=null)`,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/TVC`, null);
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/EERR`, null);
+      return payload;
+    },
+  });
+}
