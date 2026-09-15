@@ -42,10 +42,11 @@
  *      halts **422** — unchanged, and with NO shadow run: without a resolved
  *      entry there is no primary lineage, so there is no other lineage to be the
  *      shadow of, and both profile slots stay null.
- *   3. On a known version, runs that entry's compiled Ajv validator. Each Ajv
- *      error becomes ONE fail finding carrying the error's JSON Pointer and the
- *      clause the attribution rule gives it; the stage sets `ctx.schemaOk =
- *      false` and halts **422**.
+ *   3. On a known version, runs that entry's compiled Ajv validator. Each
+ *      non-container Ajv error becomes ONE fail finding carrying the error's
+ *      JSON Pointer and the clause the attribution rule gives it (a failure
+ *      that leaves none emitted falls back to a single `tx.schema_invalid`);
+ *      the stage sets `ctx.schemaOk = false` and halts **422**.
  *   4. A clean validation sets `ctx.schemaOk = true` and records a pass finding
  *      citing the content-pinned sha256 (the §9 provenance surface). An entry
  *      that carries a `draftDate` is named as a DRAFT rather than as official —
@@ -53,9 +54,10 @@
  *      unpublished proposal.
  *   5. Runs the shadow validator over the same parsed body, recording its errors
  *      (or its own single pass finding) with `profile` set to the shadow
- *      lineage. Two translations apply to the shadow run only, both as exported
- *      pure functions so the primary run can adopt them later (bd bt8o):
- *      container-keyword suppression and null-explanation collapsing.
+ *      lineage. Of the two exported pure translations, container-keyword
+ *      suppression has applied to BOTH runs since bd bt8o; null-explanation
+ *      collapsing stays shadow-only by decision, because moving it would change
+ *      which pointers and params a §3.2 failure reports.
  *
  * Pointer mapping: Ajv `instancePath` is already an RFC-6901 JSON Pointer, which
  * we surface verbatim as the finding `pointer`. Ajv emits '' (empty) for a

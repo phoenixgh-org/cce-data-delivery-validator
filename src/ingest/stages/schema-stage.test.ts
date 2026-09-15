@@ -590,7 +590,7 @@ test('ds013 primary: a body failing Annex 4 → 422 with ONLY ds013 5.3.x findin
     'the five logger-identity objects',
   );
   // Ajv also emits a root `if` alongside them. by1c.6 suppressed containers on
-  // the shadow run only; bd bt8o extended the same predicate to the primary run,
+  // the shadow run first; bd bt8o extended the same predicate to the primary run,
   // so that finding is gone and the five identity fails are the whole verdict.
   assert.equal(primary.length, 5, 'the five identity fails, and nothing else');
   assert.equal(
@@ -642,7 +642,8 @@ test('a published entry is still called official', () => {
   assert.doesNotMatch(pass?.detail ?? '', /DRAFT/);
 });
 
-// ── unit: the two pure translations (bt8o reuses both) ──────────────────────
+// ── unit: the two pure translations (bt8o reuses isContainerError; the
+//    null-explanation collapse stays shadow-only) ────────────────────────────
 
 test('isContainerError names the combining keywords and nothing else', () => {
   const err = (keyword: string) => ({ keyword }) as unknown as ErrorObject;
