@@ -39,7 +39,7 @@ import {
 } from './pipeline.js';
 import { authStage } from './stages/auth.js';
 import { contentTypeStage } from './stages/content-type.js';
-import { getDecodedBody } from './stages/decoded-body.js';
+import { getDecodedBody, setDecodedBody } from './stages/decoded-body.js';
 import { decodeGzipBounded, encodingStage } from './stages/encoding.js';
 import { methodStage } from './stages/method.js';
 import { parseStage } from './stages/parse.js';
@@ -137,16 +137,14 @@ function buildContext(
  * `content_hash` + `wire_bytes` + `content_encoding` preserve the wire facts for
  * §1.4/§1.8):
  *
- *   - When stage 5 decoded a `Content-Encoding` (gzip), store the DECODED text —
+ *   - When a decoded body was stashed for this request, store the DECODED text —
  *     the readable payload a human drills into — instead of the binary gzip
- *     bytes. When stage 5 never ran because the request halted earlier (the
- *     enabled-auth 401 is the only halt that still persists a row), a `gzip`
- *     `Content-Encoding` is decoded HERE instead, through the same guarded
- *     decoder the stage uses — so a failed authentication still drills down to
- *     readable text (bug 0d4) and an unauthenticated POST still cannot expand
- *     past the 1 MiB zip-bomb ceiling. Falls back to the raw wire bytes when
- *     there is nothing decodable: no gzip encoding, bytes that do not gunzip, or
- *     an illegal gzip-of-gzip. Those keep the wire bytes deliberately, so the
+ *     bytes. Stage 5 stashes it on the normal path; the enabled-auth 401 branch
+ *     stashes it before persisting (bug 0d4), because that halt never reaches
+ *     stage 5. Everything else keeps the exact wire bytes: no gzip encoding, a
+ *     body that does not gunzip, an illegal gzip-of-gzip, and the other halts
+ *     that persist a row without running stage 5 (the size 413 and the encoding
+ *     stage's own 400s). Those keep the wire bytes deliberately, so the
  *     dashboard's honest "not readable payload" disclosure still fires rather
  *     than claiming a decode that never happened.
  *   - Strip NUL (0x00): Postgres `text` rejects 0x00 ("invalid byte sequence for
@@ -165,27 +163,10 @@ function buildContext(
  * quoting a cap.
  */
 function storedRawBody(ctx: PipelineContext): string {
-  const bytes = getDecodedBody(ctx) ?? decodeForStorage(ctx) ?? ctx.rawBody;
+  const bytes = getDecodedBody(ctx) ?? ctx.rawBody;
   // toString('utf8') maps invalid byte sequences to U+FFFD; NUL is valid UTF-8
   // but illegal in a Postgres text column, so strip it explicitly.
   return bytes.toString('utf8').replaceAll(String.fromCharCode(0), '');
-}
-
-/**
- * Storage-side gzip decode for a request that halted BEFORE stage 5 (bug 0d4).
- *
- * Only the enabled-auth 401 both halts pre-body and persists a row, so this is
- * the sole path that reaches it. It is storage, not grading: it emits no finding
- * and leaves the 401's findings as exactly the §1.3 FAIL the auth stage recorded.
- *
- * Returns `undefined` — keep the wire bytes — for anything but a clean
- * single-layer gzip, which is what preserves the dashboard's "not readable"
- * disclosure for bodies that genuinely are not readable.
- */
-function decodeForStorage(ctx: PipelineContext): Buffer | undefined {
-  if (ctx.contentEncoding?.trim().toLowerCase() !== 'gzip') return undefined;
-  const result = decodeGzipBounded(ctx.rawBody);
-  return result.kind === 'decoded' ? result.bytes : undefined;
 }
 
 /**
@@ -266,6 +247,20 @@ export function registerIngestRoute(app: FastifyInstance): void {
       const pre = await runPipeline(ctx, preBodyStages());
       if (pre.haltedAt !== null) {
         if (pre.haltedAt === 'auth') {
+          // The 401 halts before stage 5, so nothing has decoded the body yet.
+          // Decode a gzip body HERE, through the same guarded decoder the stage
+          // uses, so a failed authentication still drills down to readable text
+          // (bug 0d4) while an unauthenticated POST still cannot expand past the
+          // 1 MiB zip-bomb ceiling. The decode is deliberately confined to this
+          // branch: the other row-persisting halts that skip stage 5 (the size
+          // 413, the encoding stage's own 400s) must NOT pay an inflate the size
+          // stage exists to avoid, and must keep their wire bytes (bug ynby).
+          // Storage, not grading — it emits no finding, leaving the 401's
+          // findings as exactly the §1.3 FAIL the auth stage recorded.
+          if (ctx.contentEncoding?.trim().toLowerCase() === 'gzip') {
+            const decoded = decodeGzipBounded(ctx.rawBody);
+            if (decoded.kind === 'decoded') setDecodedBody(ctx, decoded.bytes);
+          }
           const transmissionId = await persistTransmission(ctx, pre.status, ctx.findings);
           return reply
             .code(pre.status)

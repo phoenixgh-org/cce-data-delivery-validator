@@ -30,6 +30,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomBytes } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 
 import { buildApp } from '../../app.js';
@@ -656,6 +657,60 @@ test(
       );
       assert.equal(rows.length, 1);
       assert.equal(rows[0]?.raw_body, notGzip.toString('utf8'), 'wire bytes stored, as before');
+    } finally {
+      if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
+    }
+  },
+);
+
+test(
+  'full-flow: oversized gzip body → 413, wire bytes stored, never inflated (ynby)',
+  { skip },
+  async () => {
+    // The 413 halts at stage 3, so stage 5 never runs and nothing is stashed for
+    // getDecodedBody(). The storage-side decode is confined to the 401 branch, so
+    // this row keeps its wire bytes — the size stage deliberately measures the
+    // wire and never decompresses (size.ts header), and a body rejected for size
+    // must not pay an inflate on the way to the database.
+    //
+    // The sizes put the row squarely in the window the bug described: the
+    // incompressible plaintext is just UNDER the 1 MiB gzip ceiling (so a decode
+    // would have succeeded) while its gzip wire form is just OVER the 1 MiB §1.4
+    // cap (so the size stage halts). Random bytes do not compress, so deflate
+    // emits stored blocks and the wire form is a few hundred bytes larger than
+    // the plaintext.
+    const plaintext = randomBytes(1_048_500);
+    const gzipped = gzipSync(plaintext);
+    assert.ok(gzipped.length > 1_048_576, 'wire body is over the §1.4 cap');
+    assert.ok(plaintext.length < 1_048_576, 'plaintext is under the gzip output ceiling');
+
+    let sessionUuid: string | undefined;
+    try {
+      const out = await postToSession(gzipped, {
+        'content-type': JSON_UTF8,
+        'content-encoding': 'gzip',
+      });
+      sessionUuid = out.sessionUuid;
+
+      assert.equal(out.statusCode, 413, 'the size stage halts before any decode');
+      assert.match(out.body.transmissionId ?? '', /^[0-9a-f-]{36}$/, 'row persisted on 413');
+
+      const { rows } = await getPool().query<{
+        http_status: number;
+        wire_bytes: string;
+        raw_body: string | null;
+      }>(`SELECT http_status, wire_bytes, raw_body FROM transmission WHERE session_uuid = $1`, [
+        sessionUuid,
+      ]);
+      assert.equal(rows.length, 1, 'exactly one row recorded');
+      assert.equal(rows[0]?.http_status, 413);
+      assert.equal(rows[0]?.wire_bytes, String(gzipped.length), 'wire bytes measured pre-decode');
+      assert.equal(
+        rows[0]?.raw_body,
+        gzipped.toString('utf8').replaceAll(String.fromCharCode(0), ''),
+        'raw_body holds the gzip wire bytes, not the decoded payload',
+      );
+      assert.ok(hasFinding(await findingsFor(sessionUuid), '1.4', 'fail'), '1.4 fail recorded');
     } finally {
       if (sessionUuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
     }
