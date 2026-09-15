@@ -130,10 +130,15 @@ export interface VerdictPairInput {
 /**
  * The pair's native tooltip: `2025: pass · DS01.3: fail (2 findings)`.
  *
- * Two narrower cases: with no shadow lineage registered the tooltip is the
- * contract half alone, and when the shadow lineage never ran on this
- * transmission it reads `DS01.3: not graded (unknown schema version)` — the one
- * fact the row cannot otherwise show, since the second dot is dropped.
+ * One narrower case: with no shadow lineage registered the tooltip is the
+ * contract half alone.
+ *
+ * When the shadow lineage never ran on this transmission the tooltip keeps the
+ * two-half shape — `2025: fail · DS01.3: not graded (unknown schema version)`
+ * (by1c.37). The row is still drawing the CONTRACT dot at that moment (the
+ * contract verdict is never null, src/api/verdicts.ts), so dropping the contract
+ * half would leave the one dot on screen unnamed. The shadow half carries the
+ * other fact the row cannot show, since the second dot is dropped.
  */
 export function verdictPairTitle({
   contract,
@@ -143,7 +148,8 @@ export function verdictPairTitle({
 }: VerdictPairInput): string {
   const contractHalf = verdictHalf(CONTRACT_PROFILE, contract);
   if (shadowProfile === null) return contractHalf;
-  if (shadow === null || shadow === undefined) return verdictHalf(shadowProfile, shadow);
+  if (shadow === null || shadow === undefined)
+    return `${contractHalf} · ${verdictHalf(shadowProfile, shadow)}`;
   return `${contractHalf} · ${verdictHalf(shadowProfile, shadow, findingsCount)}`;
 }
 

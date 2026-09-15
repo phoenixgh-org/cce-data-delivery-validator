@@ -69,15 +69,18 @@ test('a zero count drops the parenthetical rather than printing "(0 findings)"',
 });
 
 test('a shadow lineage that never ran reads as not graded, not as a fail', () => {
-  const expected = 'DS01.3: not graded (unknown schema version)';
+  // The contract half stays in front (by1c.37): the row is still drawing the
+  // contract dot, so the tooltip has to name the dot that is on screen. In
+  // practice the contract verdict is 'fail' whenever the shadow one is null.
+  const expected = '2025: fail · DS01.3: not graded (unknown schema version)';
   assert.equal(
-    verdictPairTitle({ contract: 'pass', shadow: null, shadowProfile: 'ds013' }),
+    verdictPairTitle({ contract: 'fail', shadow: null, shadowProfile: 'ds013' }),
     expected,
   );
   // The web mirror types the verdicts map as Partial, so an ABSENT key means the
   // same thing as a null one and must not read differently (by1c.9).
   assert.equal(
-    verdictPairTitle({ contract: 'pass', shadow: undefined, shadowProfile: 'ds013' }),
+    verdictPairTitle({ contract: 'fail', shadow: undefined, shadowProfile: 'ds013' }),
     expected,
   );
 });
