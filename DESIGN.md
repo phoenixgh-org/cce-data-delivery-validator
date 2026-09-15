@@ -4,7 +4,7 @@ Status: living document. The v1 scope is locked, and §3 records the decisions t
 are settled and are not reopened casually. Everything else describes the system as
 built and is updated as it ships.
 
-Last updated: September 14, 2026
+Last updated: September 15, 2026
 
 ## 1. Overview
 
