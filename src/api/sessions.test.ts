@@ -1163,6 +1163,61 @@ test(
 );
 
 test(
+  'GET /api/sessions/:uuid → scoped.units counts distinct CCE units in the scope (p98)',
+  { skip },
+  async () => {
+    // The end-to-end shape of the p98 headline: the two numbers ship on the
+    // SUMMARY `scoped` object, they are folded off the stored bodies, and they
+    // move with the source filter exactly like every other scope-relative
+    // number. No grading input is involved — units are profile-independent.
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+      const post = async (transferSrc: string, data: unknown[]) => {
+        const body = { meta: { transferSrc }, data };
+        await insertTransmission({
+          sessionUuid: uuid!,
+          wireBytes: 100,
+          httpStatus: 200,
+          transferSrc,
+          body,
+          rawBody: JSON.stringify(body),
+          parseOk: true,
+          schemaOk: true,
+        });
+      };
+      // One source: two reports on one appliance plus a second appliance.
+      await post('org.kano', [{ AMID: 'fridge-1' }, { AMID: 'fridge-1' }, { AMID: 'fridge-2' }]);
+      // Another: an EMS report keyed on AMFR+ASER, and one that names nothing.
+      await post('org.lagos', [{ AMFR: 'Alpha', ASER: 'sn-1' }, { ASER: null }]);
+
+      type UnitResp = { scoped: { units: number; unidentifiedReports: number } };
+      const all = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      assert.equal(all.statusCode, 200);
+      assert.deepEqual(
+        (all.json() as UnitResp).scoped,
+        { scoped: 2, withFailures: 0, distinctIssues: 0, units: 3, unidentifiedReports: 1 },
+        'three appliances across two transmissions, one report naming none',
+      );
+
+      const kano = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}?source=org.kano`,
+      });
+      const scopedKano = (kano.json() as UnitResp).scoped;
+      assert.equal(scopedKano.units, 2, 'the unit count follows the source filter');
+      assert.equal(scopedKano.unidentifiedReports, 0, 'so does the unidentified count');
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test(
   'GET /api/sessions/:uuid → distinctIssues counts CONTRACT signatures only (by1c.7)',
   { skip },
   async () => {

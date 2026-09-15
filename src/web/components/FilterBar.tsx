@@ -132,6 +132,30 @@ export function gradingLegendTitle(shadowProfile: Profile | null): string {
   );
 }
 
+/**
+ * The CCE-unit readout's tooltip (p98). The number is DISTINCT APPLIANCES THAT
+ * REPORTED, and the tooltip is the only thing standing between that and being
+ * read as fleet coverage — DESIGN §7 says the receiving side can only speak for
+ * what arrived, so the sentence says which identifier each lineage is counted on
+ * and then says plainly what the number is not. Neither "coverage" nor "fleet
+ * size" appears as a label anywhere.
+ *
+ * The second sentence appears only when some report named no appliance at all:
+ * those reports are in the transmission count but in no unit, and without the
+ * sentence the two numbers would look inconsistent for no visible reason.
+ */
+export function unitsTitle(unidentifiedReports: number): string {
+  const base =
+    'Distinct appliances reported on in this scope — AMID for RTMD reports, ' +
+    'manufacturer + serial (AMFR/ASER) for EMS reports. Counts what was received, ' +
+    'not the fleet.';
+  if (unidentifiedReports <= 0) return base;
+  // Pluralized: the brief's sentence is written with a placeholder N, and a
+  // readout that says "1 reports" is a defect on a surface this careful.
+  const noun = unidentifiedReports === 1 ? 'report' : 'reports';
+  return `${base} ${unidentifiedReports} ${noun} carried no appliance identifier.`;
+}
+
 export function FilterBar({
   window,
   source,
@@ -190,6 +214,13 @@ export function FilterBar({
       <span style={{ flex: 1 }} />
       <span style={{ fontSize: 11.5, color: 'var(--text-muted)', fontFamily: 'var(--mono)' }}>
         <strong style={{ color: 'var(--text)' }}>{scoped.scoped}</strong> tx
+        {' · '}
+        <span title={unitsTitle(scoped.unidentifiedReports)}>
+          <strong style={{ color: scoped.units ? 'var(--text)' : 'var(--text-muted)' }}>
+            {scoped.units}
+          </strong>{' '}
+          CCE unit{scoped.units === 1 ? '' : 's'}
+        </span>
         {' · '}
         <span style={{ color: scoped.withFailures ? 'var(--fail)' : 'var(--text-muted)' }}>
           {scoped.withFailures} with failures

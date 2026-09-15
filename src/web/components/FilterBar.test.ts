@@ -30,7 +30,7 @@ import { PROFILE_NAME } from '../profiles.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
-const { gradingLegendTitle } = await import('./FilterBar.js');
+const { gradingLegendTitle, unitsTitle } = await import('./FilterBar.js');
 
 test('the tooltip reads exactly as by1c.11 specified it', () => {
   assert.equal(
@@ -57,4 +57,42 @@ test('with no shadow lineage the tooltip names no shadow surfaces', () => {
     `The matrix and pass rate grade against the ${PROFILE_NAME[CONTRACT_PROFILE]} requirements.`,
   );
   assert.ok(!title.includes(PROFILE_NAME['ds013']));
+});
+
+/**
+ * The CCE-unit tooltip (p98). The count above the list is the one number on this
+ * dashboard a supplier could mistake for a statement about their fleet, so what
+ * is pinned here is the disclaimer, not the decoration:
+ *
+ *   1. IT NAMES THE IDENTIFIER PER LINEAGE, so "units" cannot be read as loggers
+ *      or as sources — both are different counts of the same traffic.
+ *   2. IT SAYS WHAT THE NUMBER IS NOT. DESIGN §7: a passive receiver can only
+ *      count equipment that REPORTED. The words "coverage" and "fleet size"
+ *      appear nowhere.
+ *   3. THE UNIDENTIFIED SENTENCE APPEARS ONLY WHEN IT IS TRUE, and agrees in
+ *      number — reports that named no appliance are in the tx count but in no
+ *      unit, and without the sentence the two numbers look inconsistent.
+ */
+test('the unit tooltip names the identifier for each lineage and refuses fleet coverage', () => {
+  const title = unitsTitle(0);
+  assert.equal(
+    title,
+    'Distinct appliances reported on in this scope — AMID for RTMD reports, ' +
+      'manufacturer + serial (AMFR/ASER) for EMS reports. Counts what was received, ' +
+      'not the fleet.',
+  );
+  for (const word of ['coverage', 'fleet size', 'logger', 'source']) {
+    assert.ok(!title.toLowerCase().includes(word), `must not say "${word}"`);
+  }
+});
+
+test('the unidentified sentence is added only when some report named no appliance', () => {
+  assert.ok(!unitsTitle(0).includes('no appliance identifier'));
+  assert.ok(unitsTitle(1).startsWith(unitsTitle(0)));
+  assert.ok(unitsTitle(3).endsWith(' 3 reports carried no appliance identifier.'));
+});
+
+test('the unidentified sentence agrees in number', () => {
+  assert.ok(unitsTitle(1).endsWith(' 1 report carried no appliance identifier.'));
+  assert.ok(unitsTitle(2).endsWith(' 2 reports carried no appliance identifier.'));
 });

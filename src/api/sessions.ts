@@ -608,6 +608,9 @@ export function registerSessionsApi(app: FastifyInstance): void {
         sources,
         // CONTRACT only (by1c.7): the headline counts defects against the
         // obligations in force, so a DS01.3 shadow signature never inflates it.
+        // The distinct-CCE-unit pair (p98) is folded here too, off the `body` the
+        // scoped views already carry — profile-independent and verdict-independent,
+        // so it needs no second read and no grading input.
         scoped: scopeTotals(scopedViews, contractIssueSignatures(signatures).length),
         expiresAt,
         // The shadow lineage's current bytes — version, the hash computed over

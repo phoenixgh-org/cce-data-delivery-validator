@@ -19,6 +19,7 @@ import {
   scopeTotals,
   scopeTransmissions,
   txFailing,
+  unitTotals,
   windowLowerBound,
 } from './scope.js';
 import { computeComplianceSummary } from './compliance-matrix.js';
@@ -238,10 +239,166 @@ test('passTrend rate = pass/(pass+fail) for mixed buckets', () => {
 
 // ── scope totals ────────────────────────────────────────────────────────────
 
-test('scopeTotals reports scoped / withFailures / distinctIssues', () => {
+/** One `rtmd-report`-shaped report: AMID is its required appliance identifier. */
+const rtmdReport = (amid: unknown) => ({ AMID: amid, records: [] });
+
+/** One `ems-report`-shaped report: AMFR + ASER, and no AMID property at all. */
+const emsReport = (amfr: unknown, aser: unknown) => ({ AMFR: amfr, ASER: aser, records: [] });
+
+/** A transmission carrying an already-parsed body of `data[]` reports. */
+const withReports = (...reports: unknown[]) => ({ body: { data: reports } });
+
+test('scopeTotals reports scoped / withFailures / distinctIssues / units', () => {
   const scoped = [tx(0, false), tx(1, true), tx(2, true)];
   const totals = scopeTotals(scoped, 4 /* distinct sig count passed in */);
-  assert.deepEqual(totals, { scoped: 3, withFailures: 2, distinctIssues: 4 });
+  // These fixtures carry no body at all, so the unit pair is the empty answer:
+  // the trend fixtures predate p98 and must keep meaning what they meant.
+  assert.deepEqual(totals, {
+    scoped: 3,
+    withFailures: 2,
+    distinctIssues: 4,
+    units: 0,
+    unidentifiedReports: 0,
+  });
+});
+
+test('scopeTotals folds the unit pair off the bodies it was handed', () => {
+  const totals = scopeTotals(
+    [
+      { ...tx(0, false), ...withReports(rtmdReport('fridge-1')) },
+      { ...tx(1, true), ...withReports(rtmdReport('fridge-2')) },
+      // Failing, and still a unit: the count is what was RECEIVED, not what passed.
+      { ...tx(2, true), ...withReports(emsReport('Alpha', 'sn-9')) },
+    ],
+    0,
+  );
+  assert.equal(totals.units, 3);
+  assert.equal(totals.withFailures, 2);
+  assert.equal(totals.unidentifiedReports, 0);
+});
+
+// ── distinct CCE units (p98) ────────────────────────────────────────────────
+
+test('unitTotals keys an RTMD report on AMID', () => {
+  assert.deepEqual(unitTotals([withReports(rtmdReport('fridge-1'))]), {
+    units: 1,
+    unidentifiedReports: 0,
+  });
+});
+
+test('unitTotals keys an EMS report on AMFR + ASER, with or without AMFR', () => {
+  assert.equal(unitTotals([withReports(emsReport('Alpha Fridge, Inc', 'sn-1'))]).units, 1);
+  // ASER alone still identifies a unit; the manufacturer half is simply empty.
+  assert.equal(unitTotals([withReports(emsReport(null, 'sn-1'))]).units, 1);
+  assert.equal(unitTotals([withReports({ ASER: 'sn-1' })]).units, 1);
+  // …and a null/absent AMFR keys the same unit as one carrying a blank string.
+  assert.equal(unitTotals([withReports(emsReport(null, 'sn-1'), { ASER: 'sn-1' })]).units, 1);
+});
+
+/**
+ * A serial is unique PER MANUFACTURER, so the manufacturer is half the key. Two
+ * makers that both stamp a unit `sn-1` are two refrigerators, and a key on the
+ * serial alone would silently merge them into one.
+ */
+test('unitTotals counts the same ASER under two AMFR values as two units', () => {
+  const tw = withReports(emsReport('Alpha', 'sn-1'), emsReport('Beta', 'sn-1'));
+  assert.equal(unitTotals([tw]).units, 2);
+  const same = withReports(emsReport('Alpha', 'sn-1'), emsReport('Alpha', 'sn-1'));
+  assert.equal(unitTotals([same]).units, 1);
+});
+
+/**
+ * AMID wins when both arrive. `rtmd-report` permits both, and the two live in
+ * DIFFERENT NAMESPACES (a supplier-platform handle vs a manufacturer serial), so
+ * the rule has to be fixed rather than "whichever is present" — otherwise one
+ * appliance would key two ways across two reports from the same supplier.
+ */
+test('unitTotals prefers AMID when a report carries both identifiers', () => {
+  const both = { AMID: 'fridge-1', AMFR: 'Alpha', ASER: 'sn-1' };
+  assert.equal(unitTotals([withReports(both, rtmdReport('fridge-1'))]).units, 1);
+  // The ASER on that report never becomes a second unit of its own — but a
+  // SEPARATE report carrying only the serial does, and that is the disclosed
+  // limitation, not a bug: a passive receiver cannot reconcile the namespaces.
+  assert.equal(unitTotals([withReports(both, emsReport('Alpha', 'sn-1'))]).units, 2);
+});
+
+test('unitTotals treats blank, null, missing and non-string identifiers as unidentified', () => {
+  const totals = unitTotals([
+    withReports(
+      rtmdReport('   '), // whitespace-only
+      rtmdReport(''), // empty
+      { AMID: null, ASER: null }, // both null (the adv.null_identity shape)
+      { records: [] }, // neither sent
+      rtmdReport(42), // not a string
+      emsReport('Alpha', '  '), // blank serial, manufacturer present
+    ),
+  ]);
+  assert.deepEqual(totals, { units: 0, unidentifiedReports: 6 });
+});
+
+test('unitTotals trims an identifier but does not case-fold it', () => {
+  assert.equal(
+    unitTotals([withReports(rtmdReport(' fridge-1 '), rtmdReport('fridge-1'))]).units,
+    1,
+  );
+  assert.equal(unitTotals([withReports(rtmdReport('fridge-1'), rtmdReport('FRIDGE-1'))]).units, 2);
+});
+
+test('unitTotals dedupes within one transmission and across transmissions', () => {
+  const within = withReports(rtmdReport('a'), rtmdReport('a'), rtmdReport('b'));
+  assert.equal(unitTotals([within]).units, 2);
+  const across = [
+    withReports(rtmdReport('a')),
+    withReports(rtmdReport('a')),
+    withReports(rtmdReport('b')),
+  ];
+  assert.equal(unitTotals(across).units, 2);
+});
+
+test('unitTotals ignores a body that is not an object with an array data', () => {
+  const empty = { units: 0, unidentifiedReports: 0 };
+  assert.deepEqual(unitTotals([{ body: null }]), empty, 'unparsed body');
+  assert.deepEqual(unitTotals([{}]), empty, 'no body at all');
+  assert.deepEqual(unitTotals([{ body: 'not json' }]), empty);
+  assert.deepEqual(unitTotals([{ body: [] }]), empty, 'array body is not an object');
+  assert.deepEqual(unitTotals([{ body: { data: 'nope' } }]), empty);
+  assert.deepEqual(unitTotals([{ body: { meta: {} } }]), empty, 'no data[]');
+  assert.deepEqual(unitTotals([]), empty, 'empty scope');
+  // Entries of data[] that are not report OBJECTS are not reports: skipped, not
+  // counted as unidentified (the treatment null-identity.ts gives them).
+  assert.deepEqual(unitTotals([withReports(null, 'x', 7, [])]), empty);
+});
+
+/**
+ * The verdict is irrelevant by design. A schema-INVALID transmission still told
+ * the receiving country which refrigerator the readings came from, and the
+ * headline is "what was received" — not "what passed".
+ */
+test('unitTotals counts units regardless of verdict', () => {
+  const failing = { ...tx(0, true), ...withReports(rtmdReport('fridge-1')) };
+  assert.equal(txFailing(failing), true);
+  assert.equal(unitTotals([failing]).units, 1);
+});
+
+/**
+ * Scoping is the CALLER's job: the function is handed the already-narrowed set,
+ * which is exactly how the window/source filter reaches this number.
+ */
+test('unit totals move with the scope because the scoped set is what is counted', () => {
+  const all = [
+    { received_at: ago(0), source: 'org.kano', ...withReports(rtmdReport('fridge-1')) },
+    {
+      received_at: ago(60 * 60 * 1000),
+      source: 'org.kano',
+      ...withReports(rtmdReport('fridge-2')),
+    },
+    { received_at: ago(0), source: 'org.lagos', ...withReports(rtmdReport('fridge-3')) },
+  ];
+  assert.equal(unitTotals(scopeTransmissions(all, 'all', 'all', NOW)).units, 3);
+  // The 15m window drops the hour-old transmission…
+  assert.equal(unitTotals(scopeTransmissions(all, '15m', 'all', NOW)).units, 2);
+  // …and selecting one source drops the other's unit too.
+  assert.equal(unitTotals(scopeTransmissions(all, '15m', 'org.kano', NOW)).units, 1);
 });
 
 // ── window-aware source counts (not narrowed by the selected source) ────────

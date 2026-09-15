@@ -338,6 +338,15 @@ export interface ScopeTotals {
   withFailures: number;
   /** Distinct signature count over the scope. */
   distinctIssues: number;
+  /**
+   * Distinct CCE units reported on in the scope (p98) — AMID for RTMD reports,
+   * AMFR+ASER for EMS reports; see src/api/scope.ts `unitTotals` for the key
+   * rule and its schema citations. A count of what was RECEIVED, never fleet
+   * coverage (DESIGN §7).
+   */
+  units: number;
+  /** Reports in the scope that carried neither AMID nor ASER. */
+  unidentifiedReports: number;
 }
 
 /**
