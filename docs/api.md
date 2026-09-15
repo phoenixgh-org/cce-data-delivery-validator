@@ -264,11 +264,13 @@ combining keywords (`if`, `then`, `else`, `oneOf`, `anyOf`, `allOf`) are suppres
 both the primary and the shadow run, because they carry no location a supplier can act
 on — Ajv reports `if` at the document root — while the leaf errors beneath them name the
 actual defect. A failure consisting only of combining-keyword errors yields a single
-`tx.schema_invalid` finding, so a 422 always arrives with a §3.2 finding (§5.3.2 when
-the DS01.3 lineage is the primary) to explain it. On the shadow run, a null reading that
-lacks its explaining error code is collapsed further still: the `oneOf` and its leaf
-errors become a single `tx.null_unexplained` finding, so a shadow finding count can be
-lower than the leaf-error count.
+`tx.schema_invalid` finding, so a 422 always arrives with at least one finding from the
+schema stage, filed under the primary lineage's own clause — §3.2 for cce-interop;
+§5.3.2 for DS01.3, or §5.3.3 when the defect lies in the transmission metadata block
+(`/meta`) — to explain it. On the shadow run, a null reading that lacks its explaining
+error code is collapsed further still: the `oneOf` and its leaf errors become a single
+`tx.null_unexplained` finding, so a shadow finding count can be lower than the
+leaf-error count.
 
 `findingDetails` includes **passes**, not just problems: §1.4 within the cap, §1.2 an
 exact media type, §3.2 validated against the pinned schema, and so on. That is what
