@@ -36,6 +36,7 @@ import {
   setNonIsoDate,
   setSchemaVersion,
   setUnsupportedSchemaVersion,
+  shortApplianceMonitoringId,
   swapRecordTimestamps,
   unexplainedNullTemperature,
 } from '../transforms/payload.js';
@@ -534,5 +535,25 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [unexplainedNullTemperature()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.unexplained_null_temp', severity: 'info' }],
+  },
+
+  // An identifier that is present, non-blank, and too short to address a national
+  // fleet (krh). It takes the DEFAULT (rtm) baseline: AMID is an rtmd-report
+  // property, and the baseline's other identifiers are all long enough that this
+  // one value is the whole case. The value stays non-blank so adv.null_identity,
+  // which owns the blank AMID, stays silent.
+  {
+    id: 'adv.short_identifier-fail-three-character-appliance-id',
+    title: 'An appliance monitoring ID too short to address a national fleet',
+    requirements: [],
+    direction: 'fail',
+    fault: {
+      layer: 'payload',
+      note:
+        'AMID set to "A1" — legal because rtmd-report types it a required non-null string and ' +
+        'no identifier object in the registered schema versions carries a minLength',
+    },
+    posts: [{ transforms: [shortApplianceMonitoringId()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.short_identifier', severity: 'info' }],
   },
 ];

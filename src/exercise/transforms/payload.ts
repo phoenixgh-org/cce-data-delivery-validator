@@ -833,3 +833,32 @@ export function unexplainedNullTemperature(recordIndex = 0, reportIndex = 0): Pa
     },
   });
 }
+
+/**
+ * Shorten the appliance monitoring ID on one RTMD report to three characters —
+ * which is what `adv.short_identifier` observes (krh).
+ *
+ * Schema-VALID by design, and that is the point: `rtmd-report` types AMID a
+ * required non-null `string` and no identifier object on either branch carries a
+ * `minLength` in the registered `cce-interop` versions, so a one-character value
+ * satisfies the branch. ../cases.test.ts runs the materialized payload through
+ * the real validator, so this declaration is checked rather than asserted.
+ *
+ * THE VALUE STAYS NON-BLANK, deliberately. A blank AMID belongs to
+ * `adv.null_identity` (the trimmed length is zero, and short-identifier.ts never
+ * reads a blank), so blanking it would raise a different, unrelated finding and
+ * blur what the case proves. `"A1"` is two characters of content.
+ *
+ * It takes the DEFAULT (rtm) baseline, whose other identifiers — ASER, ESER and
+ * the lone `DLST.TVC` sensor's SID — are all comfortably longer than the
+ * threshold, so AMID is the only value the advisory speaks to.
+ */
+export function shortApplianceMonitoringId(value = 'A1', reportIndex = 0): PayloadTransform {
+  return payloadTransform({
+    name: `shortApplianceMonitoringId(${reportIndex}: AMID="${value}")`,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/AMID`, value);
+      return payload;
+    },
+  });
+}
