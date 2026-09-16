@@ -653,14 +653,21 @@ export function setCompressorAboveSupply(
  * and the check would simply grade the records that kept their `SVA` — which is
  * not the silence the case is about.
  *
- * `CMPR` AT 900 IS THE CASE, not scaffolding. The check compares a compressor
- * runtime against its own record's `SVA`, and 900 s is the schema's own maximum
- * for the object — longer than any supply window a 15-minute period can hold —
- * so on a mains record it would exceed whatever supply was reported. It draws
- * nothing here because a solar record has no `SVA` to compare it against: `DCSV`
- * is a VOLTAGE and nothing on the branch substitutes for the supply duration
- * (src/ingest/stages/semantic/compressor-supply.ts). Without the 900 the case
- * would prove only that a conformant payload is quiet.
+ * THE SKIP IS UNCONDITIONAL IN `CMPR` (vxt9). The check selects mains records by
+ * the PRESENCE of `SVA` and `continue`s past a solar one before it reads a runtime
+ * at all, so no compressor value would make this payload speak: `DCSV` is a
+ * VOLTAGE and nothing on the branch substitutes for the supply duration
+ * (src/ingest/stages/semantic/compressor-supply.ts, "SOLAR RECORDS ARE OUT OF
+ * SCOPE"). The silence is a statement about the branch, not about the number.
+ *
+ * `CMPR` AT 900 is therefore a property of the VALUE rather than a counterfactual
+ * about this payload: 900 s is the schema's own maximum for the object, the
+ * longest runtime a 15-minute period can hold. Do not read it as "it would have
+ * fired on a mains record" — the check fires only on a STRICT excess
+ * (`if (runtime <= supply) continue`), and `emsBaseline` reports `SVA: 900` on
+ * every record, so the mains form of this payload would be conformant too. What
+ * proves the check fires on the mains branch is the separate fire case built on
+ * {@link setCompressorAboveSupply} (CMPR 420 against SVA 200).
  *
  * Contrast {@link addSolarPowerToMainsRecord}, which ADDS the DC pair while
  * leaving `SVA` in place and is therefore a §3.2 violation: this one removes it,

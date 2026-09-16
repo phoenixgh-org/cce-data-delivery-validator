@@ -485,15 +485,25 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
 
   // THE SILENCE HALF of the same check (496w), and the first case in the table
   // to assert one advisory's silence on its own rather than the whole catalogue's.
-  // `adv.compressor_exceeds_supply` documents solar records as out of scope — DCSV is a voltage, and no object on the solar branch says for how
-  // long DC power was available, so there is nothing a compressor runtime could
-  // be read against (src/ingest/stages/semantic/compressor-supply.ts). That rule
-  // is what this case measures live.
+  // `adv.compressor_exceeds_supply` documents solar records as out of scope — DCSV
+  // is a voltage, and no object on the solar branch says for how long DC power was
+  // available, so there is nothing a compressor runtime could be read against
+  // (src/ingest/stages/semantic/compressor-supply.ts, "SOLAR RECORDS ARE OUT OF
+  // SCOPE"). That rule is what this case measures live: the check selects mains
+  // records by the PRESENCE of SVA and skips a solar one before reading any
+  // runtime, so no CMPR value would make this payload speak.
   //
-  // CMPR 900 is what makes it worth measuring: it is the schema's own maximum for
-  // the object, so on a mains record it would exceed any supply the check could
-  // read. The advisory stays quiet because the record is solar, not because the
-  // number is unremarkable.
+  // CMPR 900 IS A PROPERTY OF THE VALUE, NOT A COUNTERFACTUAL (vxt9). It is the
+  // schema's own maximum for the object — the longest runtime a 15-minute period
+  // can hold — and that is worth planting, but it does not make this a payload
+  // the check would have spoken on had the record been mains. The check fires only
+  // on a strict excess, and emsBaseline reports SVA 900 on every record, so the
+  // mains form of this payload is conformant arithmetic too.
+  //
+  // WHAT PROVES THE CHECK FIRES on the mains branch is the paired case above,
+  // adv.compressor_exceeds_supply-fail-runtime-past-supply (CMPR 420 against
+  // SVA 200). Read the two together: that one shows the arithmetic, this one shows
+  // the branch on which the check declines to do it.
   //
   // The shadow run has nothing to add: the Annex 4 draft carries the mains/solar
   // partition unchanged, so this payload validates under both lineages (measured

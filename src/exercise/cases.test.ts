@@ -39,7 +39,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX } from '../api/compliance-matrix.js';
-import { isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
+import { ADVISORY_IDS, isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
 import { CONTRACT_PROFILE, SchemaRegistry } from '../schema-registry.js';
 import { BASELINE_GENERATORS, DEFAULT_BASELINE, emsBaseline } from './baseline.js';
 import {
@@ -75,6 +75,14 @@ function materialize(kase: ExerciseCase) {
 }
 
 const MATRIX_IDS = new Set(COMPLIANCE_MATRIX.map((row) => row.requirement));
+
+/**
+ * The advisory ids the registry actually publishes, widened to `string` so a
+ * candidate id can be tested for MEMBERSHIP rather than for the `adv.` prefix
+ * (wnvp). `ADVISORY_IDS` is typed as the union of the registered ids, which is
+ * exactly what makes a plain `.includes()` on an arbitrary string not compile.
+ */
+const ADVISORY_ID_SET = new Set<string>(ADVISORY_IDS);
 
 /** The §6 status codes an ingest POST can come back with (DESIGN.md §6). */
 const KNOWN_STATUSES = new Set([200, 400, 401, 404, 405, 413, 422]);
@@ -375,35 +383,90 @@ test('the contract and shadow requirement vocabularies cannot be crossed', () =>
   }
 });
 
-test('an absent finding names the same vocabulary an expected finding does (496w)', () => {
-  // `absentFindings` is the COMPLEMENT of `expectedFindings` (../case.ts), so it
-  // inherits that field's two-vocabulary rule verbatim: a contract-profile entry
-  // names a COMPLIANCE_MATRIX row or an `adv.*` id, a shadow-profile one names a
-  // DS01.3 5.x.x clause. The failure this catches is sharper than on the
-  // expectation side, because a mistyped absence is SILENTLY SATISFIED — no
-  // finding will ever carry `adv.null_padded`, so the case goes green while
-  // asserting nothing at all. An expectation that names a non-existent id at
-  // least fails loudly.
+/**
+ * The absence-vocabulary rule, extracted so it can be run on a SYNTHETIC case as
+ * well as on the real table (wnvp). Returns one message per offending entry;
+ * an empty array means every absence this case names is an id something could
+ * have produced.
+ *
+ * MEMBERSHIP, NOT PREFIX, on the contract side. `isAdvisoryId` — which the
+ * expectation-side rule above uses — tests only that the id starts with `adv.`,
+ * and on an ABSENCE that is no rule at all: `adv.null_padded` passes it, passes
+ * the live run (nothing can ever carry an id the registry does not own), and
+ * asserts nothing, which is precisely the silent-satisfaction failure this
+ * invariant exists to catch. So a contract absence must name a COMPLIANCE_MATRIX
+ * row or an id the advisory registry actually publishes (`ADVISORY_IDS`).
+ * Prefix-only remains defensible on `expectedFindings`, where a typo fails
+ * loudly at runtime; here it is not.
+ *
+ * The shadow side stays a SHAPE check (a DS01.3 5.x.x clause) for the reason the
+ * expectation-side rule gives: there is no matrix for a lineage that is not in
+ * force, and inventing one for an unpublished draft would claim more precision
+ * than we have.
+ */
+function absenceVocabularyProblems(kase: ExerciseCase): string[] {
   const SHADOW_CLAUSE = /^5\.\d+\.\d+$/;
-  for (const kase of EXERCISE_CASES) {
-    for (const absent of kase.absentFindings ?? []) {
-      const profile = absent.profile ?? CONTRACT_PROFILE;
-      if (profile === CONTRACT_PROFILE) {
-        assert.ok(
-          MATRIX_IDS.has(absent.requirement) || isAdvisoryId(absent.requirement),
-          `${kase.id}: a contract absence must name a COMPLIANCE_MATRIX row or an adv.* id, ` +
-            `not ${absent.requirement}`,
-        );
-      } else {
-        assert.match(
-          absent.requirement,
-          SHADOW_CLAUSE,
-          `${kase.id}: a ${profile} absence must name a DS01.3 clause (5.x.x), not ` +
-            `${absent.requirement}`,
+  const problems: string[] = [];
+  for (const absent of kase.absentFindings ?? []) {
+    const profile = absent.profile ?? CONTRACT_PROFILE;
+    if (profile === CONTRACT_PROFILE) {
+      if (!MATRIX_IDS.has(absent.requirement) && !ADVISORY_ID_SET.has(absent.requirement)) {
+        problems.push(
+          `${kase.id}: a contract absence must name a COMPLIANCE_MATRIX row or a REGISTERED ` +
+            `adv.* id, not ${absent.requirement}`,
         );
       }
+    } else if (!SHADOW_CLAUSE.test(absent.requirement)) {
+      problems.push(
+        `${kase.id}: a ${profile} absence must name a DS01.3 clause (5.x.x), not ` +
+          `${absent.requirement}`,
+      );
     }
   }
+  return problems;
+}
+
+test('an absent finding names the same vocabulary an expected finding does (496w)', () => {
+  // `absentFindings` is the COMPLEMENT of `expectedFindings` (../case.ts), so it
+  // inherits that field's two-vocabulary rule — tightened on the contract side to
+  // REGISTRY MEMBERSHIP (see {@link absenceVocabularyProblems}). The failure this
+  // catches is sharper than on the expectation side, because a mistyped absence is
+  // SILENTLY SATISFIED — no finding will ever carry `adv.null_padded`, so the case
+  // goes green while asserting nothing at all. An expectation that names a
+  // non-existent id at least fails loudly.
+  for (const kase of EXERCISE_CASES) {
+    const problems = absenceVocabularyProblems(kase);
+    assert.deepEqual(problems, [], problems.join('; '));
+  }
+});
+
+test('the absence vocabulary rule rejects an unregistered adv.* id (wnvp)', () => {
+  // The NEGATIVE half, and the reason the predicate is a function: the rule can
+  // only be shown to bite on a case that breaks it, and such a case must not join
+  // EXERCISE_CASES — the runner would play it, and the whole table-wide suite
+  // above would go red. `adv.null_padded` is the id the comment above names: a
+  // plausible near-miss for `adv.null_padding`, and one no check produces.
+  const mistyped: ExerciseCase = {
+    id: 'synthetic-mistyped-absence',
+    title: 'A synthetic case naming an advisory id the registry does not carry',
+    requirements: [],
+    direction: 'pass',
+    posts: [{ expectedStatus: 200 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
+    absentFindings: [{ requirement: 'adv.null_padded' }],
+  };
+  assert.ok(
+    !ADVISORY_ID_SET.has('adv.null_padded'),
+    'the premise: adv.null_padded is not a registered advisory',
+  );
+  assert.ok(
+    isAdvisoryId('adv.null_padded'),
+    'and the prefix test alone would have accepted it — which is the bug wnvp records',
+  );
+  assert.deepEqual(absenceVocabularyProblems(mistyped), [
+    'synthetic-mistyped-absence: a contract absence must name a COMPLIANCE_MATRIX row or a ' +
+      'REGISTERED adv.* id, not adv.null_padded',
+  ]);
 });
 
 test('a case cannot both expect and forbid the same (requirement, profile)', () => {
