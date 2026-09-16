@@ -901,3 +901,118 @@ export function shortApplianceMonitoringId(value = 'A1B', reportIndex = 0): Payl
     },
   });
 }
+
+/**
+ * Replace a report's `records` with `count` clones of its first record, stamped
+ * at 15-minute intervals, with `HAMB` and `HOLD` set to `null` in every one of
+ * them — which is what `adv.null_padding` observes (pwd, agj.17).
+ *
+ * SYNTHESIZING RECORDS IS THE POINT, the same way it is for
+ * {@link setMinutesShapedCompressor}. A property qualifies as padded only once
+ * at least `MIN_RECORDS` (12, src/ingest/stages/semantic/null-padding.ts)
+ * records carried it AND it was null in all of them, and the EMS baseline is 3
+ * records — four times under the floor. Extending the series here is what keeps
+ * that floor where the check set it instead of weakening it to fit a fixture.
+ * The 15-minute stamping is DS01's own sampling period, so the series also keeps
+ * §3.4's cadence pass (CV 0) and `adv.sample_gap` stays silent.
+ *
+ * Schema-VALID by design, and that is the point: the shared `$defs` type both
+ * `HAMB` (ambient relative humidity) and `HOLD` (holdover autonomy time) as
+ * `["number","null"]`, so a column of nulls satisfies the ems branch. That
+ * holds under BOTH registered lineages — `cce-interop` 0.8.0/0.8.1 and the
+ * DS01.3 Annex 4 draft — measured against the vendored bytes, and
+ * ../cases.test.ts runs the materialized payload through the real validator, so
+ * the contract half of it is checked rather than asserted.
+ *
+ * WHY HAMB AND HOLD, and not some other pair. The choice is constrained from
+ * both sides:
+ *
+ *   - `ALRM`, `EERR` and `LERR` are already null in every baseline record, and
+ *     the check EXCLUDES all three: for those three the schema defines `null` as
+ *     the value meaning "no condition present", so a healthy device correctly
+ *     sends a column of them. Nulling nothing else leaves the advisory silent,
+ *     which is why the baseline itself never fires it.
+ *   - `TAMB` and `BLOG` are typed a bare `number` under the contract lineage —
+ *     a null in either is a §3.2 rejection, not a padded column, so neither can
+ *     carry this case. (The Annex 4 draft widens both to `["number","null"]`,
+ *     but the contract profile is what grades.)
+ *   - `BEMD`, `CMPR` and `DORV` are nullable under the contract, but the Annex 4
+ *     draft requires an explaining `EERR`/`LERR` beside a null in each of them
+ *     (memory `annex4-ems-record-null-explanations`), so the shadow run would
+ *     add a clause 5.3.2 fail. Legal, but it muddies a case about padding.
+ *
+ * `CMPR` AND `SVA` STAY AT THE BASELINE'S 320 AND 900, unmodified, so the two
+ * compressor advisories stay silent: 320 never approaches the 15 that
+ * `adv.cmpr_minutes` reads as a minutes-valued feed, and it sits far below the
+ * supply `adv.compressor_exceeds_supply` compares it against. Cloning one record
+ * leaves every other value at the baseline's too, so padding is the only thing
+ * this payload varies.
+ *
+ * EMS-only by construction: `HOLD` and `SVA` are `ems-record` properties, so a
+ * case using this declares `emsBaseline`.
+ */
+export function nullPaddedSeries(count = 12, reportIndex = 0): PayloadTransform {
+  const name = `nullPaddedSeries(${reportIndex}: ${count} records, HAMB=null, HOLD=null)`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const records = payload.data[reportIndex]?.records;
+      const first = Array.isArray(records) ? (records[0] as Record<string, unknown>) : undefined;
+      if (first === undefined) {
+        throw new Error(`${name}: /data/${reportIndex}/records/0 is missing`);
+      }
+      const start = parseAbst(first.ABST);
+      if (start === null) {
+        throw new Error(`${name}: /data/${reportIndex}/records/0/ABST is not a parseable ABST`);
+      }
+      const stamped = Array.from({ length: count }, (_, i) => ({
+        ...structuredClone(first),
+        ABST: formatAbst(start + i * 15 * 60_000),
+        HAMB: null,
+        HOLD: null,
+      }));
+      setAtPointer(payload, `/data/${reportIndex}/records`, stamped);
+      return payload;
+    },
+  });
+}
+
+/**
+ * Null the vaccine compartment temperature on one EMS record and put a logger
+ * error code beside it — the ABNORMAL branch of `ems-record`'s TVC/LERR `oneOf`,
+ * and the one place the table exercises a null TVC on the ems branch at all
+ * (ftx0).
+ *
+ * Schema-VALID by design, and the validity is the whole case. `ems-record`
+ * carries a record-level `allOf` whose second rule partitions a record two ways:
+ * NORMAL (`TVC` present and a number) xor ABNORMAL (`TVC` null, with a `LERR`
+ * string of `minLength` 1 naming the fault). Both registered `cce-interop`
+ * versions carry it, and the Annex 4 draft keeps it unchanged, so this payload
+ * validates under both lineages (measured). `EERR` does NOT satisfy the rule —
+ * `LERR` specifically does — which is why this transform writes that one.
+ *
+ * THE SIBLING IS THE OTHER HALF. `setInvalidValue('/data/0/records/0/TVC', null)`
+ * on the same baseline leaves `LERR` at the baseline's `null` and matches NEITHER
+ * branch, so Ajv rejects it and the transmission earns a §3.2 fail and a 422.
+ * Together the two make a header comment into a measured fact of the live
+ * instance: on EMS the schema itself demands the explanation, which is why
+ * `adv.unexplained_null_temp` is RTMD-only ({@link unexplainedNullTemperature}
+ * takes the rtm baseline for exactly this reason).
+ *
+ * `adv.null_padding` stays silent on the result: the EMS baseline is 3 records,
+ * a quarter of the 12 that check requires before it will call a column padded.
+ *
+ * EMS-only by construction: the `oneOf` this satisfies lives on `ems-record`, so
+ * a case using this declares `emsBaseline`.
+ */
+export function explainedNullTemperature(recordIndex = 0, reportIndex = 0): PayloadTransform {
+  return payloadTransform({
+    name: `explainedNullTemperature(${reportIndex}: records/${recordIndex} TVC=null, LERR="E12")`,
+    targets: ['3.2'],
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/TVC`, null);
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/LERR`, 'E12');
+      return payload;
+    },
+  });
+}

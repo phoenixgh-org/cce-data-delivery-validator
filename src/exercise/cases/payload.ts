@@ -27,8 +27,10 @@ import {
   declareCustomDataSchema,
   dropRequiredField,
   duplicateVersionStringsIntoRecords,
+  explainedNullTemperature,
   longSamplePeriod,
   nullApplianceSerial,
+  nullPaddedSeries,
   nullRuntimeDuringOutage,
   repeatRecord,
   setInvalidValue,
@@ -237,6 +239,61 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [duplicateVersionStringsIntoRecords()], expectedStatus: 422 }],
     expectedFindings: [{ requirement: '3.2', severity: 'fail' }],
+  },
+
+  // ── §3.2 the EMS record's TVC/LERR conditional (ftx0) ─────────────────────
+  //
+  // The THIRD rule the ems branch carries that the rtm branch does not, and the
+  // one the advisory layer's design rests on. `ems-record`'s record-level `allOf`
+  // partitions every record two ways, exclusively: NORMAL — `TVC` present and a
+  // number — xor ABNORMAL — `TVC` null, with a `LERR` string of `minLength` 1
+  // naming the sensor fault. `EERR` does not satisfy it; `LERR` specifically
+  // does. Both registered `cce-interop` versions carry the rule and the DS01.3
+  // Annex 4 draft keeps it unchanged.
+  //
+  // The pair below is the rule in both directions, and together they turn a
+  // header comment into a measured fact of the live instance: a null temperature
+  // with nothing to explain it is a §3.2 SCHEMA failure on EMS, not an advisory
+  // gap — which is precisely why `adv.unexplained_null_temp` is RTMD-only
+  // (src/ingest/stages/semantic/unexplained-null-temp.ts). Before these cases the
+  // two EMS §3.2 fail cases covered the power `oneOf` and the version-strings
+  // `oneOf` only, and nothing anywhere pinned this one.
+  {
+    id: '3.2-fail-ems-null-tvc-without-lerr',
+    title: 'An EMS record with a null TVC and no error code beside it is rejected 422',
+    requirements: ['3.2'],
+    direction: 'fail',
+    baseline: emsBaseline,
+    // The baseline record sends `LERR: null`, so nulling TVC alone leaves the
+    // record matching NEITHER branch — the same zero-match shape as the power
+    // case above, from the other conditional.
+    fault: {
+      layer: 'payload',
+      note:
+        'TVC set to null on the first record while LERR stays at the baseline’s null, so the ' +
+        'record satisfies neither the normal nor the abnormal branch of ems-record’s TVC/LERR ' +
+        'oneOf',
+    },
+    posts: [{ transforms: [setInvalidValue('/data/0/records/0/TVC', null)], expectedStatus: 422 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'fail' }],
+  },
+  {
+    id: '3.2-pass-ems-null-tvc-explained',
+    title: 'An EMS record with a null TVC explained by a logger error code is accepted 200',
+    requirements: ['3.2'],
+    direction: 'pass',
+    baseline: emsBaseline,
+    // The ABNORMAL branch, and the only place in the table a null TVC on the ems
+    // branch is exercised at all. It is a PASS case because the schema says so:
+    // a reading that did not arrive is conformant once the supplier says why.
+    // Measured under both lineages — the Annex 4 draft carries the same rule, so
+    // the shadow run has nothing to add on this record either.
+    //
+    // `adv.null_padding` stays silent: the EMS baseline is three records, a
+    // quarter of the twelve that check requires before it will call a column
+    // padded, so the lone null here is not read as padding.
+    posts: [{ transforms: [explainedNullTemperature()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
   },
 
   // ── §3.1 manufacturer-specific data objects ───────────────────────────────
@@ -589,6 +646,53 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     expectedFindings: [
       { requirement: 'adv.null_accumulator', severity: 'info' },
       { requirement: '5.3.2', severity: 'fail', profile: 'ds013' },
+    ],
+  },
+
+  // A column of nulls rather than an intermittent one (pwd) — the other side of
+  // the case above, and the last of the twelve registered advisories to get a
+  // fire case (eyok). It declares `baseline: emsBaseline` because HOLD and SVA
+  // are ems-record properties, and it synthesizes a TWELVE-record series because
+  // that is the check's floor: a property counts as padded only once at least
+  // MIN_RECORDS (12, src/ingest/stages/semantic/null-padding.ts) records carried
+  // it and it was null in every one. The EMS baseline is three records, so no
+  // clone of it can fire this advisory without a transform that grows the series.
+  //
+  // WHY HAMB AND HOLD. The baseline's own nulls — ALRM, EERR and LERR — are the
+  // three condition codes the check EXCLUDES, because for those three the schema
+  // defines null as the value meaning "no condition present"; a healthy device
+  // correctly sends a column of them. HAMB and HOLD are the pair that is nullable
+  // under BOTH registered lineages, so the payload stays valid on the contract
+  // and gives the shadow run nothing extra to say. TAMB and BLOG would have been
+  // a 422 under the contract, and BEMD/CMPR/DORV would have drawn a clause 5.3.2
+  // shadow fail for a null with no explanation beside it — legal, but it would
+  // muddy a case about padding.
+  //
+  // THE OTHER ADVISORIES STAY SILENT, and that is asserted by omission rather
+  // than by expectation (silence is 496w's job): CMPR stays at the baseline's 320
+  // against SVA 900, so neither compressor advisory speaks; the records step 15
+  // minutes apart, so the cadence and sample-gap checks are content; and each
+  // clone carries a distinct ABST, so the duplicate-record check sees no repeat.
+  // The §3.2 pass is asserted because it is the point of the pattern: this
+  // payload breaks nothing, and the advisory is the only thing the session shows
+  // for it.
+  {
+    id: 'adv.null_padding-fail-null-column-across-twelve-records',
+    title: 'Two optional readings sent as null in every one of twelve records',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        'the report is re-stamped as 12 records 15 minutes apart with HAMB and HOLD null in ' +
+        'every one — legal because the shared $defs type both ["number","null"], and past the ' +
+        'advisory’s 12-record floor',
+    },
+    posts: [{ transforms: [nullPaddedSeries()], expectedStatus: 200 }],
+    expectedFindings: [
+      { requirement: 'adv.null_padding', severity: 'info' },
+      { requirement: '3.2', severity: 'pass' },
     ],
   },
 ];
