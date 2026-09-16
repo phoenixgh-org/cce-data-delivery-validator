@@ -31,9 +31,11 @@ import { MIN_RECORDS } from '../../ingest/stages/semantic/null-padding.js';
 import { DEFAULT_BASELINE, emsBaseline } from '../baseline.js';
 import type { TransmissionPayload } from '../baseline.js';
 import {
+  blankAdminObject,
   explainedNullRuntimeDuringOutage,
   explainedNullTemperature,
   nullPaddedSeries,
+  nullRecordProperty,
   nullTemperatureWithErrorCode,
   padToWireCap,
   solarPoweredRecords,
@@ -195,4 +197,58 @@ test('explainedNullRuntimeDuringOutage keeps the outage and adds the code that e
   // intermittent one rather than a padded column.
   assert.equal(records[0]!.CMPR, 320);
   assert.equal(records[2]!.CMPR, 300);
+});
+
+// ── the DS01.3 readiness mutators (meyf) ────────────────────────────────────
+//
+// Both are schema-valid under the contract and schema-INVALID under the draft,
+// and ../cases/shadow.test.ts pins that pair of verdicts on the real bytes. What
+// it cannot see is the mutation itself: a transform that nulled the wrong field,
+// or helpfully cleared the explanation code beside it, would still produce a
+// draft rejection and satisfy the case while proving something else. These tests
+// pin what was touched and, just as importantly, what was not.
+
+test('nullRecordProperty nulls the named object and leaves the explanation codes alone', () => {
+  const records = recordsOf(nullRecordProperty('CMPR').apply(ems()));
+  assert.equal(records[0]!.CMPR, null);
+  // The codes are the whole case: the draft asks for a non-null LERR beside a
+  // null CMPR, so a mutator that touched either would make the null an EXPLAINED
+  // one and the readiness case would assert the opposite of what it says.
+  assert.equal(records[0]!.LERR, null);
+  assert.equal(records[0]!.EERR, null);
+  // Supply intact, so `adv.null_accumulator` stays silent — the absence the
+  // `readiness.ems_cmpr_unexplained` case declares.
+  assert.equal(records[0]!.SVA, 900);
+  // One record only; the rest keep their readings.
+  assert.equal(records[1]!.CMPR, 285);
+  assert.equal(records[2]!.CMPR, 300);
+});
+
+test('nullRecordProperty addresses the record and report it is given', () => {
+  const records = recordsOf(nullRecordProperty('DORV', 2).apply(ems()));
+  assert.equal(records[2]!.DORV, null);
+  assert.equal(records[0]!.DORV, 0);
+  assert.equal(records[1]!.DORV, 45);
+});
+
+test('nullRecordProperty refuses a key the record does not carry', () => {
+  // A stale key would ADD a null property rather than blank a reading, and the
+  // draft has no rule about an object that is not there — so the case would go
+  // green asserting a shadow failure that never happened. Fail loudly instead,
+  // exactly as dropRequiredField does.
+  assert.throws(() => nullRecordProperty('CMPR2').apply(ems()), /carries no CMPR2/);
+});
+
+test('blankAdminObject empties the named object and nothing else', () => {
+  const report = blankAdminObject('AMFR').apply(ems()).data[0]!;
+  assert.equal(report.AMFR, '');
+  // Its neighbours stay populated: the draft's minLength applies to eleven admin
+  // objects, and a case that blanked several could not say which one it is about.
+  assert.equal(report.AMOD, 'FRIDGE-100');
+  assert.equal(report.LMOD, 'Logger_Model');
+  assert.equal(report.ASER, 'A-SerialNum');
+});
+
+test('blankAdminObject refuses a key the report does not carry', () => {
+  assert.throws(() => blankAdminObject('AMID').apply(ems()), /carries no AMID/);
 });

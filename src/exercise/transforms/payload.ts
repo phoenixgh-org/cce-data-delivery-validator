@@ -1194,3 +1194,105 @@ export function explainedNullTemperature(recordIndex = 0, reportIndex = 0): Payl
     },
   });
 }
+
+// ── DS01.3 READINESS mutators (meyf) ────────────────────────────────────────
+//
+// These two exist for the shadow lineage rather than for any advisory: each
+// produces a payload the CONTRACT accepts and the unpublished Annex 4 draft
+// rejects, which is the whole shape a readiness case is made of (../cases/
+// shadow.ts). Both THROW when the field they are pointed at is not there, for
+// the reason `dropRequiredField` does: a stale key would otherwise turn the
+// mutation into a no-op and leave the case asserting a draft failure against a
+// payload the draft is perfectly happy with.
+
+/**
+ * Null one data object on one record, touching nothing else — notably NOT the
+ * `LERR`/`EERR` codes, which is what makes the resulting null an UNEXPLAINED one.
+ *
+ * Schema-VALID by design, and the asymmetry between the two lineages is the
+ * point. `ems-record` in cce-interop 0.8.x types BEMD, CMPR and DORV as
+ * `["number","null"]` and ties a null to an explanation for TVC ALONE, so a null
+ * in any of the three satisfies the contract with both codes left null.
+ * `rtmd-record` ties nothing to anything at all. The DS01.3 Annex 4 draft adds
+ * five explanation rules to `ems-record` — BEMD null requires a non-null EERR;
+ * CMPR, DORV, TAMB and BLOG null each require a non-null LERR — and gives
+ * `rtmd-record` the BEMD → EERR one (bd memory
+ * annex4-ems-record-null-explanations, measured 2026-09-15). So the shadow run
+ * records a clause 5.3.2 fail on what the contract graded a §3.2 pass, which is
+ * exactly the readiness signal the second run exists to produce.
+ *
+ * TAMB AND BLOG ARE NOT REACHABLE THIS WAY. The draft names them, but 0.8.1
+ * types neither as nullable on `ems-record`, so a null there is a §3.2 rejection
+ * under the contract — a 422, not a readiness case. Only BEMD, CMPR and DORV sit
+ * in the gap between the two lineages.
+ *
+ * NULLING AN EXPLANATION CODE IS THE SAME MUTATION, and a case that needs one
+ * says so with a second call: the rtm dual-pass fixture sends `EERR: "none"`,
+ * which the draft reads as an explanation, so a readiness case on that branch
+ * nulls BEMD and EERR both. ../cases.test.ts runs the materialized payload
+ * through the real contract validator and ../cases/shadow.test.ts runs it
+ * through the real draft one, so neither half of this declaration is asserted
+ * rather than checked.
+ */
+export function nullRecordProperty(
+  key: string,
+  recordIndex = 0,
+  reportIndex = 0,
+): PayloadTransform {
+  const name = `nullRecordProperty(${key}, ${reportIndex}: records/${recordIndex})`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const { records } = reportOf(payload, reportIndex, name);
+      const record = records[recordIndex];
+      if (record === undefined) {
+        throw new Error(`${name}: ${recordsPointer(reportIndex)}/${recordIndex} is missing`);
+      }
+      if (!(key in record)) {
+        throw new Error(
+          `${name}: the record carries no ${key}, so this would ADD a null property rather ` +
+            `than blank a reading the baseline sends — a stale key, not a mutation`,
+        );
+      }
+      record[key] = null;
+      return payload;
+    },
+  });
+}
+
+/**
+ * Deliver ONE report-level administrative object as an empty string.
+ *
+ * Schema-VALID by design: the shared `$defs` in cce-interop 0.8.x give the admin
+ * objects no `minLength`, so `""` satisfies every one of them that accepts a
+ * string at all. The DS01.3 Annex 4 draft adds `minLength: 1` to AMFR AMOD APQS
+ * LMFR LMOD LPQS LSER EMFR EMOD EPQS ESER and a `YYYY-MM-DD` pattern to ADOP
+ * LDOP EDOP (bd memory annex4-tightens-admin-objects, measured 2026-09-15), so
+ * the same payload is a clause 5.3.2 failure under the shadow lineage.
+ *
+ * It also fires `adv.blank_admin` on the contract run, which reads a required
+ * admin object arriving blank and says so as an `info` observation — a case built
+ * on this expects both, because both are true of the one payload.
+ *
+ * DISTINCT FROM {@link blankAdminObjects}, which blanks AMFR and LMOD together to
+ * cover both halves of that advisory's conformant surface (a null and an empty
+ * string) in one payload. A readiness case wants the opposite: one field, one
+ * blank state, so the case's docblock states one fact about the draft.
+ */
+export function blankAdminObject(key: string, reportIndex = 0): PayloadTransform {
+  const name = `blankAdminObject(${key}, ${reportIndex}: "")`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const { report } = reportOf(payload, reportIndex, name);
+      if (!(key in report)) {
+        throw new Error(
+          `${name}: /data/${reportIndex} carries no ${key}, so blanking it would ADD a ` +
+            `property rather than deliver a required object empty`,
+        );
+      }
+      report[key] = '';
+      return payload;
+    },
+  });
+}
