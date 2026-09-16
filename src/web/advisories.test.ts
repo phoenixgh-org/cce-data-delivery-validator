@@ -32,11 +32,18 @@
  * TransmissionsCard.test.ts this module pulls in no JSX-bearing sibling (it
  * imports types and one predicate from ./api), so it needs neither the global
  * React shim nor the dynamic import those files explain.
+ *
+ * It does import the banned-word bar from src/ingest (7qjf). That crosses no
+ * build boundary: tsconfig.web.json excludes the src/web test files and the root
+ * tsconfig excludes every test file and src/web, so this file is typechecked by
+ * neither and vite never bundles it. Only the Node test runner loads it, and
+ * there the whole tree is in reach.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { advisoryCopyBannedWordsWith } from '../ingest/stages/semantic/advisory-finding.js';
 import { CONTRACT_PROFILE, isAdvisory, type FindingView } from './api.js';
 import { ADVISORY_COPY, advisoryLabel, splitFindings } from './advisories.js';
 
@@ -129,8 +136,11 @@ test('the surface copy carries no defect vocabulary', () => {
   // the rest are the same failure mode by another word. An advisory is raised
   // against a payload that broke NO rule, so any of these would be a false
   // statement about the supplier, not merely a harsh tone.
-  const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i;
+  // The list is the shared server-side bar plus `should` (7qjf): the surface
+  // copy describes the category and recommends nothing, so a recommendation
+  // here would read as a verdict. Composing keeps the stricter bar without a
+  // second copy of the words — one added to the shared list lands here too.
+  const defectWords = advisoryCopyBannedWordsWith('should');
   for (const text of COPY) {
     assert.doesNotMatch(text, defectWords, `surface copy must not read as a defect: ${text}`);
   }

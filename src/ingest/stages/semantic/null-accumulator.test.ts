@@ -32,6 +32,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
+import { ADVISORY_COPY_BANNED_WORDS } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { nullAccumulatorCheck } from './null-accumulator.js';
 import { nullPaddingCheck } from './null-padding.js';
@@ -435,8 +436,9 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
   // should be an explicit 0" is a recommendation in the house sense, the same
   // way sample_gap's "loggers should rarely produce gaps" is, and neither says
   // the payload broke a rule.
-  const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  // The list itself is imported, not re-spelled here (7qjf): a second copy
+  // would drift the day a word is added to the shared bar.
+  const defectWords = ADVISORY_COPY_BANNED_WORDS;
   for (const copy of [summaryOf(OUTAGE), detailOf(OUTAGE)]) {
     assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation about/i, 'no renaming');

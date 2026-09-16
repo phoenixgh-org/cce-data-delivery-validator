@@ -29,6 +29,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
+import { ADVISORY_COPY_BANNED_WORDS } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { MIN_RECORDS, nullPaddingCheck } from './null-padding.js';
 
@@ -354,8 +355,9 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
   // prescriptive "should" left the banned list, because the detail now carries
   // an explicit, hedged recommendation — that is the advisory doing its job,
   // not defect vocabulary.
-  const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  // The list itself is imported, not re-spelled here (7qjf): a second copy
+  // would drift the day a word is added to the shared bar.
+  const defectWords = ADVISORY_COPY_BANNED_WORDS;
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
 
   for (const copy of [finding?.summary ?? '', finding?.detail ?? '']) {

@@ -36,6 +36,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
+import { advisoryCopyBannedWordsWith } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { nullIdentityCheck } from './null-identity.js';
 
@@ -477,8 +478,11 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 // ── wording is acceptance, not polish ────────────────────────────────────────
 
 test('the detail carries no defect vocabulary and no synonym for the category', () => {
-  const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i;
+  // The shared bar plus `should` (7qjf): nothing in this check's approved
+  // prose recommends anything, so a recommendation here would be the copy
+  // drifting toward a verdict. Composed from the shared list rather than
+  // spelled out, so a word added there reaches this stricter bar too.
+  const defectWords = advisoryCopyBannedWordsWith('should');
   for (const copy of [
     summaryOf(EMS_UNIDENTIFIED),
     detailOf(EMS_UNIDENTIFIED),

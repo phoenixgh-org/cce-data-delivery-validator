@@ -121,3 +121,26 @@ export const ADVISORY_COPY_BANNED_WORDS =
  * approved rationale may carry it while "failure" stays banned everywhere else.
  */
 export const ADVISORY_COPY_EXEMPT_PHRASES: readonly string[] = ['a delivery failure'];
+
+/**
+ * {@link ADVISORY_COPY_BANNED_WORDS} widened with extra words, for a reader that
+ * holds its own copy to a stricter bar than the shared one.
+ *
+ * Three copy tests ask for `should` on top of the shared list — the two identity
+ * checks and the dashboard surface — because none of their approved prose has a
+ * reason to recommend anything. `should` is deliberately NOT on the shared bar:
+ * other rationales use it legitimately (sample_gap's "loggers should rarely
+ * produce gaps", null_accumulator's "the period's total should be an explicit
+ * 0"), so widening the constant itself would fail copy that is doing its job.
+ *
+ * Composing here rather than in each test keeps one list of banned words: a
+ * word added to the shared bar reaches the stricter readers too (7qjf).
+ */
+/* At least one word, as a tuple type: composing with none would append an empty
+ * alternative and match every string. */
+export function advisoryCopyBannedWordsWith(...extraWords: [string, ...string[]]): RegExp {
+  return new RegExp(
+    `${ADVISORY_COPY_BANNED_WORDS.source}|\\b(?:${extraWords.join('|')})\\b`,
+    ADVISORY_COPY_BANNED_WORDS.flags,
+  );
+}

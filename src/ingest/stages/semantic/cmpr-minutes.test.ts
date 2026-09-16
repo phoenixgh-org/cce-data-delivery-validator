@@ -29,6 +29,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
+import { ADVISORY_COPY_BANNED_WORDS } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { cmprMinutesCheck, MINUTES_CEILING } from './cmpr-minutes.js';
 import { compressorSupplyCheck, SUPPLY_KEY } from './compressor-supply.js';
@@ -531,8 +532,9 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
   // Same bar the Advisories copy is held to (src/web/advisories.test.ts): the
   // payload broke no rule — it validates cleanly — so any of these would be a
   // false statement about the supplier rather than a harsh tone.
-  const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  // The list itself is imported, not re-spelled here (7qjf): a second copy
+  // would drift the day a word is added to the shared bar.
+  const defectWords = ADVISORY_COPY_BANNED_WORDS;
   const payload = emsPayload(minutesRecords());
 
   for (const copy of [summaryOf(payload), detailOf(payload)]) {
