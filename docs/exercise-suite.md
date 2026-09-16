@@ -210,17 +210,20 @@ runner plays the whole table against ONE session and §1.8 is session-scoped, so
 generator holding `transferId` constant — the obvious shape for one seeded from
 https://github.com/phoenixgh-org/ems-data-simulator/ output — would make every
 non-replay case record a §1.8 fail
-from table ordering alone. Both shipped generators stamp `<caseId>#<index>`; a case
-that _wants_ a duplicate pins the id itself with `setTransferId` on every POST rather
+from table ordering alone. All three shipped generators stamp `<caseId>#<index>`; a
+case that _wants_ a duplicate pins the id itself with `setTransferId` on every POST rather
 than trusting two baseline calls to return identical bytes.
 
 Cases must not lean on more than those three clauses.
 
 ### Both branches of the schema: the EMS cases
 
-Two generators ship. `fixtureBaseline` (the default) sends `rtm`; `emsBaseline` sends
-`ems`, and a case reaches it by declaring `baseline: emsBaseline`. Until it existed the
-table was rtm-only, so `$defs/ems-report`, `$defs/ems-record` and their `oneOf`s were
+Three generators ship. `fixtureBaseline` (the default) sends `rtm`. `dualPassBaseline`
+sends the other valid rtm fixture — the one carrying the five logger-identity
+properties, so it validates under BOTH registered lineages — which is what a readiness
+case needs when it wants a payload the shadow run has nothing to say about.
+`emsBaseline` sends `ems`. A case reaches a non-default generator by declaring it, for
+example `baseline: emsBaseline`. Until `emsBaseline` existed the table was rtm-only, so `$defs/ems-report`, `$defs/ems-record` and their `oneOf`s were
 validated **nowhere** in this repo, live or in CI — while EMS manufacturers are the
 primary E006 audience and RTMD is the interop schema's deviation.
 
@@ -452,10 +455,10 @@ The section reports **exercise, not correctness**. A fired advisory is known to 
 reachable; whether it stays silent on conformant traffic is the other half of the
 catalogue's contract, and the coverage join says nothing about it. That half is now
 expressible in the cases themselves: `absentFindings` lets a case declare which
-advisories its payload must NOT draw, and the two baseline pass cases declare the whole
-catalogue silent by reading `ADVISORY_IDS` off the registry. Read `fired 12` as "every
-advisory is reachable" and the silence cases as the other half — neither line alone says
-"the catalogue behaves".
+advisories its payload must NOT draw, and three cases — the two baseline pass cases and
+the EMS readiness pass case — declare the whole catalogue silent by reading
+`ADVISORY_IDS` off the registry. Read `fired 12` as "every advisory is reachable" and
+the silence cases as the other half — neither line alone says "the catalogue behaves".
 
 ### Shadow cases, and why coverage ignores them
 

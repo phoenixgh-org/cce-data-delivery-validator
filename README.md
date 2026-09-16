@@ -281,7 +281,7 @@ Deliberately **out of scope for v1** (see `DESIGN.md` §2 and §3):
 | [`docs/api.md`](docs/api.md)                       | The HTTP API reference: every route, request and response shape, and status code — what you need to integrate server-side without reading source.                         |
 | [`docs/deployment.md`](docs/deployment.md)         | Operating it behind a TLS edge: the proxy contract, the environment surface, and how each violation fails silently.                                                       |
 | [`docs/clause-mapping.md`](docs/clause-mapping.md) | How the 2025 requirement numbers used throughout this project map to the DS01.3 rewrite.                                                                                  |
-| [`docs/exercise-suite.md`](docs/exercise-suite.md) | Internals of the `npm run exercise` conformance suite: the case model, the transform vocabulary, the coverage join, and how to add a case.                                |
+| [`docs/exercise-suite.md`](docs/exercise-suite.md) | Internals of the `npm run exercise` conformance suite: the case model, the transform vocabulary, advisory and shadow cases, the coverage join, and how to add a case.     |
 | `src/schemas/` + `src/schema-registry.ts`          | The vendored transmission schemas and the registry that pins them by content hash. Schemas are never fetched at runtime — `schemaVersion` is a lookup key, not a locator. |
 
 ## Development
@@ -337,10 +337,14 @@ database gating broke rather than that a database was unavailable.
 ### Exercising a running instance — `npm run exercise`
 
 `npm test` checks the graders in isolation. `npm run exercise` checks the **whole
-service**: it drives a live instance through every gradeable requirement in the §7
-matrix, once with a transmission that should pass it and once with one that should
-fail it, then asserts the HTTP statuses and the findings that came back. Synthetic
-payloads only, built from the suite's own baseline.
+service** by driving a live instance the way a supplier would. It plays every
+gradeable requirement in the §7 matrix in both directions — once with a transmission
+that should pass it and once with one that should fail it — and asserts the HTTP
+statuses and the findings that came back. It also fires every registered advisory and
+asserts that conformant traffic draws none, grades every transmission a second time
+under the unpublished DS01.3 Annex 4 shadow lineage, and audits the advisory copy the
+instance actually served. Any of the four can fail the run. Synthetic payloads only,
+built from the suite's own baselines.
 
 It needs a server and a database, which is why it is deliberately outside `npm
 test`:
@@ -360,7 +364,8 @@ codes are `0` (every case passed), `1` (a case failed) and `2` (could not run �
 target was unreachable, or is not a validator).
 
 Each run **mints its own session** and prints a per-case verdict, run counts, the
-requirement-coverage report, and that session's dashboard URL. The console output is
+coverage report — requirement coverage, the advisory join and its per-advisory lines,
+and the advisory copy block — and that session's dashboard URL. The console output is
 a summary; **the dashboard is the detailed report**.
 
 Two caveats for the `run exercise` activity:

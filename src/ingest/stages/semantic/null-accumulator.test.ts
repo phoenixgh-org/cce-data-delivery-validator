@@ -512,12 +512,10 @@ test('it names what arrived, then why an explicit 0 is what the country can add 
 test('the plural form clears the same wording bars as the singular', () => {
   // The category's two rules are acceptance for every form of the sentence, not
   // only the one the other copy tests happen to drive.
+  // The bar is the shared constant here too (w1e5): a re-spelled copy three
+  // lines from the import would drift the day a word is added to it.
   for (const copy of [summaryOf(OUTAGE_BOTH), detailOf(OUTAGE_BOTH)]) {
-    assert.doesNotMatch(
-      copy,
-      /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i,
-      `copy reads as a defect: ${copy}`,
-    );
+    assert.doesNotMatch(copy, ADVISORY_COPY_BANNED_WORDS, `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${copy}`);
   }
 });
