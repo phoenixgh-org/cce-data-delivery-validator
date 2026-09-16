@@ -39,8 +39,8 @@
  *
  * ANNEX 1 IS AUTHORITATIVE ON UNITS (CLAUDE.md: where prose and schema disagree
  * the schema wins, EXCEPT on data-object bounds and units, where Annex 1
- * outranks it). So the remedy this advisory names is "re-check CMPR and CMPR2
- * against Annex 1", not "against the version you happen to be sending".
+ * outranks it). So the rationale sends the reader to Annex 1 for the unit, not
+ * to the schema version they happen to be sending against.
  *
  * ── WHY NOTHING ELSE CATCHES IT ─────────────────────────────────────────────
  * The correction WIDENED the range: 0–15 is a subset of 0–900. A minutes-
@@ -94,7 +94,8 @@
  *    back to signal 1 alone. DCSV is no substitute — it is "Average DC supply
  *    voltage", a VOLTAGE bounded 0..999.9, and no DC-availability-in-seconds
  *    object exists through 0.8.4. Signal 2 therefore never gates the advisory;
- *    it is counted and named when present, and its absence is said out loud.
+ *    it is counted and named when present, and the observation stops after the
+ *    ceiling when it is not.
  *
  * ── NOT A BACKSTOP FOR adv.compressor_exceeds_supply, AND VICE VERSA ────────
  * ./compressor-supply.ts (agj.3) grades CMPR > SVA and is STRUCTURALLY BLIND to
@@ -117,12 +118,24 @@
  * migrated appliance with an un-migrated one therefore stays silent — the
  * migrated readings lift the ceiling — which under-reports rather than over-.
  *
- * ── WORDING ─────────────────────────────────────────────────────────────────
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many values
+ * of which objects sat at or below the superseded ceiling, and how many of those
+ * carry the saturation signature. `detail` is the RATIONALE, static and carrying
+ * no numbers: the DS01.2 Annex 2 erratum, Annex 1's authority over units, the
+ * 0.8.0 correction, and why nothing else sees a minutes-valued feed.
+ *
+ * THE SATURATION CLAUSE IS CONDITIONAL. When no reading pairs an exact 15 with
+ * an SVA above 15 the observation stops after the ceiling, which mirrors what
+ * the code already knew: signal 2 never GATES the advisory and cannot arise on
+ * a solar record at all. Its absence is simply not stated any more — the
+ * ceiling, which is what raised the advisory, is.
+ *
  * Observe, never conclude, and never imply carelessness. We state the shape of
- * what arrived, the documented unit change that produces exactly that shape, and
- * the remedy — and we say what the readings would mean downstream IF they are
- * minutes, conditionally, because a fridge that genuinely barely runs looks
- * identical from here.
+ * what arrived and the documented unit change that produces exactly that shape.
+ * The rationale says the erratum was in the published artifact rather than in
+ * the supplier's work, which is what keeps it honest about a feed built against
+ * a schema that held it to 15 by its own validation.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -163,8 +176,6 @@ interface KeyTally {
   key: string;
   /** How many records carried a NUMERIC value for it (the floor counts these). */
   values: number;
-  /** The highest value seen, or null when nothing numeric arrived. */
-  highest: number | null;
   /** Whether any value was above 0 — an all-zero series says nothing. */
   anyAboveZero: boolean;
   /** Whether every numeric value sat at or below {@link MINUTES_CEILING}. */
@@ -181,7 +192,6 @@ function emptyTally(key: string): KeyTally {
   return {
     key,
     values: 0,
-    highest: null,
     anyAboveZero: false,
     everyAtOrBelowCeiling: true,
     firstPointer: null,
@@ -193,15 +203,6 @@ function emptyTally(key: string): KeyTally {
 /** Whether a tally shows signal 1 — the ceiling the data never crosses. */
 function trips(tally: KeyTally): boolean {
   return tally.values >= MIN_RECORDS && tally.everyAtOrBelowCeiling && tally.anyAboveZero;
-}
-
-/** `CMPR carries 24 values across this transmission, the highest 15`. */
-function describeCeiling(tally: KeyTally): string {
-  const noun = tally.values === 1 ? 'value' : 'values';
-  return (
-    `${tally.key} arrived as ${tally.values} numeric ${noun}, none above ` +
-    `${MINUTES_CEILING} and the highest ${tally.highest}`
-  );
 }
 
 /** The `adv.cmpr_minutes` check, registered in `ADVISORY_CHECKS`. */
@@ -235,7 +236,6 @@ export const cmprMinutesCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
         const tally = tallies.get(key)!;
         const pointer = `/data/${reportIndex}/records/${recordIndex}/${key}`;
         tally.values += 1;
-        tally.highest = tally.highest === null ? value : Math.max(tally.highest, value);
         if (value > 0) tally.anyAboveZero = true;
         if (value > MINUTES_CEILING) tally.everyAtOrBelowCeiling = false;
         tally.firstPointer ??= pointer;
@@ -252,44 +252,33 @@ export const cmprMinutesCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
   if (tripped.length === 0) return [];
 
   const named = joinPhrases(tripped.map((t) => t.key));
-  const ceilings = joinPhrases(tripped.map(describeCeiling));
+  const values = tripped.reduce((sum, t) => sum + t.values, 0);
   const saturated = tripped.reduce((sum, t) => sum + t.saturated, 0);
   const saturationPointer = tripped.find(
     (t) => t.firstSaturatedPointer !== null,
   )?.firstSaturatedPointer;
 
   // Signal 2 never GATES the advisory — it cannot arise on a solar record at all
-  // — so its absence is stated rather than left as a silence.
-  const saturationSentence =
+  // — so when it is absent the observation simply stops after the ceiling.
+  const saturationClause =
     saturated > 0
-      ? `${saturated} of ${saturated === 1 ? 'those readings sits' : 'those readings sit'} at ` +
-        `exactly ${MINUTES_CEILING} in a record whose ${SUPPLY_KEY} is above ` +
-        `${MINUTES_CEILING} (the first at ${saturationPointer}) — the saturation signature. ` +
-        `Read as minutes, ${MINUTES_CEILING} is a compressor that ran for the whole 15-minute ` +
-        `period; read as seconds it is ${MINUTES_CEILING} seconds out of the seconds ` +
-        `${SUPPLY_KEY} reports the supply was available.`
-      : `No reading here pairs a value of exactly ${MINUTES_CEILING} with an ${SUPPLY_KEY} ` +
-        `above ${MINUTES_CEILING}, so the saturation signature is absent and this rests on ` +
-        `the ceiling alone. ${SUPPLY_KEY} sits only on mains records — the schema keeps it off ` +
-        `the solar branch — so a solar-supplied appliance carries nothing that signature could ` +
-        `be read from.`;
+      ? `; ${saturated} ${saturated === 1 ? 'sits' : 'sit'} at exactly ${MINUTES_CEILING} with ` +
+        `${SUPPLY_KEY} above ${MINUTES_CEILING}.`
+      : '.';
 
   return [
     advisory({
       id: 'adv.cmpr_minutes',
       pointer: saturationPointer ?? tripped[0]!.firstPointer,
+      summary: `All ${values} ${named} values are ${MINUTES_CEILING} or below${saturationClause}`,
       detail:
-        `Across this transmission, ${ceilings}. ${saturationSentence} The unit of ` +
-        `${named} CHANGED between cce-interop 0.7.2 and 0.8.0: up to 0.7.2 — and in the ` +
-        `DS01.2 Annex 2 schema — it was minutes, and the schema itself capped it at ` +
-        `${MINUTES_CEILING} and gave 7 as its example; from 0.8.0 it is seconds, capped at ` +
-        `900, with 120 as its example. An implementation built against the earlier definition ` +
-        `was held to ${MINUTES_CEILING} by its own validator, and it keeps validating cleanly ` +
-        `on a 0.8.x envelope because 0–${MINUTES_CEILING} sits inside 0–900 — so the change is ` +
-        `visible to neither side's schema validation. If these readings are counts of minutes, ` +
-        `a receiving country stores them as seconds and records a sixtieth of the compressor ` +
-        `duty that happened. Annex 1 of E006/DS01 is authoritative on units: re-checking ` +
-        `${named} against it is what tells you whether this feed is on the current definition.`,
+        'In DS01.2 Annex 2, the unit for CMPR was incorrectly recorded as minutes (i.e., ' +
+        'within a 15 minute period). However, Annex 1 is authoritative on units and records ' +
+        'CMPR in seconds. When this discrepancy was detected, the cce-interop JSON schema was ' +
+        'corrected at 0.8.0, with the CMPR value capped at 900 (i.e., the total seconds in 15 ' +
+        'minutes); the published Annex 2 has not been corrected and still reads minutes. ' +
+        'Loggers recording minute values will validate against the schema because 0–15 sits ' +
+        'inside 0–900, but minute values do not match the unit Annex 1 prescribes.',
     }),
   ];
 };

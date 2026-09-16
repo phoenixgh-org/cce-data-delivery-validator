@@ -66,15 +66,30 @@
  * advisory id — title, and a count of the DISTINCT transmissions it appeared in,
  * with no detail — while the detail prose is read per transmission in the
  * transmission block), this emits ONE finding carrying the three things
- * agj.3 asks for: HOW MANY readings exceed their record's supply, the WORST
- * excess in seconds, and a pointer to the FIRST one in document order.
+ * agj.3 asks for: HOW MANY records exceed their own supply, the WORST excess in
+ * seconds, and a pointer to the FIRST one in document order.
  *
- * ── WORDING ─────────────────────────────────────────────────────────────────
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many records
+ * report a compressor runtime larger than their own SVA, which compressor
+ * objects those were, and the largest excess. `detail` is the RATIONALE, static
+ * and carrying no numbers: what the two objects share, and why one running past
+ * the other is unexpected.
+ *
+ * The excess is stated in SECONDS, not the minutes the duration rule gives
+ * elapsed-time phrases (decided 2026-09-15): it is the difference between two
+ * schema objects whose own declared unit is seconds, so seconds is what it
+ * quotes.
+ *
+ * THE SOLAR SENTENCE IS NOT IN THE RATIONALE (decided 2026-09-15). The check
+ * already skips solar records, so the supplier reading this finding is holding a
+ * mains record; the reason nothing on the solar branch substitutes for SVA lives
+ * in this header, where the next contributor is the one who needs it.
+ *
  * Observe, never conclude. From the receiving side a record with `CMPR: 420,
  * SVA: 200` is equally consistent with a mis-scaled CMPR, a mis-scaled SVA, an
- * accumulator that was not reset, and a genuine metering fault. We state the two
- * numbers as sent, what each object counts, and what a receiving country does
- * with them — and name no cause.
+ * accumulator that was not reset, and a genuine metering fault. We state what
+ * arrived and what the two objects share — and name no cause.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -123,11 +138,7 @@ interface Excess {
   pointer: string;
   /** Which compressor object it was — CMPR or CMPR2. */
   key: string;
-  /** The compressor runtime, in seconds, as sent. */
-  runtime: number;
-  /** The same record's SVA, in seconds, as sent. */
-  supply: number;
-  /** How far the runtime runs past the supply, in seconds. */
+  /** How far the runtime runs past the record's own supply, in seconds. */
   excess: number;
 }
 
@@ -164,8 +175,6 @@ export const compressorSupplyCheck: SemanticCheck = (ctx: PipelineContext): Find
         found.push({
           pointer: `/data/${reportIndex}/records/${recordIndex}/${key}`,
           key,
-          runtime,
-          supply,
           excess: runtime - supply,
         });
       }
@@ -176,36 +185,27 @@ export const compressorSupplyCheck: SemanticCheck = (ctx: PipelineContext): Find
 
   const first = found[0]!;
   const worst = found.reduce((max, one) => Math.max(max, one.excess), 0);
-  const readingNoun = found.length === 1 ? 'reading' : 'readings';
-  // One record can put both compressors past SVA, so the list that follows may
-  // name one object or two. The verbs agree with the number of objects NAMED,
-  // which is independent of found.length (two readings can name one key).
-  const namedKeys = [...new Set(found.map((one) => one.key))];
-  const named = joinPhrases(namedKeys);
-  const namedIs = namedKeys.length === 1 ? 'is' : 'are';
-  const namedCounts = namedKeys.length === 1 ? 'counts' : 'count';
-  // With one reading, the first IS the worst — naming it twice reads as two
-  // separate observations.
-  const worstSentence =
-    found.length === 1 ? '' : `The largest excess across the transmission is ${worst} s. `;
+  // ONE RECORD CAN HOLD TWO EXCESSES — CMPR and CMPR2 both past the same SVA —
+  // so the observation counts RECORDS rather than the readings collected above,
+  // which is what makes "N records report ..." a true sentence in that case.
+  const records = new Set(found.map((one) => one.pointer.slice(0, one.pointer.lastIndexOf('/'))));
+  const recordNoun = records.size === 1 ? 'record' : 'records';
+  const reports = records.size === 1 ? 'reports' : 'report';
+  // The list names each compressor object once, however many readings it put
+  // past SVA.
+  const named = joinPhrases([...new Set(found.map((one) => one.key))]);
 
   return [
     advisory({
       id: 'adv.compressor_exceeds_supply',
       pointer: first.pointer,
+      summary:
+        `${records.size} ${recordNoun} ${reports} ${named} larger than ${SUPPLY_KEY}; the ` +
+        `largest excess is ${worst} s.`,
       detail:
-        `This transmission carries ${found.length} ${readingNoun} where ${named} ${namedIs} ` +
-        `larger than ${SUPPLY_KEY} in the same record. The first is at ${first.pointer}, ` +
-        `where ${first.key} ` +
-        `is ${first.runtime} s and ${SUPPLY_KEY} is ${first.supply} s — ${first.excess} s of ` +
-        `compressor runtime beyond the supply that record accounts for. ${worstSentence}` +
-        `On a mains appliance the two are accumulators over the same 15-minute period: ` +
-        `${SUPPLY_KEY} counts the seconds the AC supply sat within the bounds the appliance ` +
-        `operates in, and ${named} ${namedCounts} the seconds the compressor ran, so a receiving ` +
-        `country reads compressor runtime as a duration inside the window ${SUPPLY_KEY} ` +
-        `describes. Records that carry DCSV and DCCD instead of ${SUPPLY_KEY} are ` +
-        `solar-supplied and are not read here: DS01 defines no DC supply availability in ` +
-        `seconds, so such a record carries nothing to read a compressor runtime against.`,
+        'On a mains appliance SVA and CMPR are both represented as seconds within the same ' +
+        '15-minute period. It is unexpected for the compressor to run for longer than power ' +
+        'was available within the period.',
     }),
   ];
 };

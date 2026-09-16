@@ -218,6 +218,12 @@ function detailOf(payload: { meta: { transferType?: unknown } }): string {
   return finding.detail ?? '';
 }
 
+function summaryOf(payload: { meta: { transferType?: unknown } }): string {
+  const [finding] = advisories(checkOnly(payload));
+  assert.ok(finding, 'expected the advisory to be raised');
+  return finding.summary ?? '';
+}
+
 function countsOf(
   findings: readonly Finding[],
 ): Record<string, { pass: number; fail: number; info: number }> {
@@ -276,17 +282,37 @@ test('RTMD: it fires through the real §6 body stages on a 200 with zero fail fi
 
 // ── one identifier per branch (2km, 38p) ─────────────────────────────────────
 
-test('EMS: the detail names ASER and what nothing else on the branch can stand in for', () => {
+test('EMS: the observation names the count and how ASER arrived; the rationale is the why', () => {
+  // The approved agj.17 copy, split: summary is the one-line observation shown
+  // on the advisory row, detail the rationale behind its expander.
+  assert.equal(
+    summaryOf(EMS_UNIDENTIFIED),
+    '1 of 1 report carries no appliance serial number — ASER is null.',
+  );
   assert.equal(
     detailOf(EMS_UNIDENTIFIED),
-    '1 of 1 report in this transmission carries no appliance serial number — ASER is null. ' +
-      "ASER is the serial number the appliance's manufacturer assigned, and nothing else on an " +
-      'ems-report stands in for it: an ems-report has no AMID property, AID is an asset ' +
-      'identifier a programme assigns, and ESER and LSER name the monitoring device and the ' +
-      'logger rather than the appliance they watch. The 3 records under it arrive complete and ' +
-      'fully conformant, and the country receiving them cannot tie those readings to the ' +
-      "appliance by its manufacturer's serial number.",
+    'ASER is the appliance serial number, as assigned by the manufacturer. No other ID is an ' +
+      'adequate substitute. Without this attribute, the receiving country cannot tie the ' +
+      'records to the appliance.',
   );
+});
+
+test('EMS: the observation pluralises reports and the verb independently', () => {
+  // The noun agrees with the TOTAL, the verb with how many of them are unnamed,
+  // so a mixed transmission reads correctly either way round.
+  const payload = emsPayload({ ASER: null }) as { data: Record<string, unknown>[] };
+  payload.data.push({ ...payload.data[0]!, ASER: 'A-SerialNum' }, { ...payload.data[0]! });
+  assert.equal(
+    summaryOf(payload as never),
+    '2 of 3 reports carry no appliance serial number — in the first, ASER is null.',
+  );
+});
+
+test('EMS: with one report unnamed the observation makes no claim about the others', () => {
+  // "in the first, …" appears only in the plural: with several unnamed reports
+  // the states can differ, and a bare "ASER is null" would be a claim about all
+  // of them that the check has not made.
+  assert.doesNotMatch(summaryOf(EMS_UNIDENTIFIED), /in the first/);
 });
 
 test('EMS: a populated AID does NOT silence it — AID is not the manufacturer serial', () => {
@@ -336,34 +362,39 @@ test('EMS: AMID is never reported as missing on a branch that never defined it',
   // src/schemas/cce-interop-0.8.1.json), so a supplier who does not send one has
   // said nothing. The prose may explain that the property does not exist here;
   // it may never state that the supplier left it blank.
-  const detail = detailOf(EMS_UNIDENTIFIED);
-  assert.doesNotMatch(detail, /AMID is null|AMID is empty|AMID was not sent/);
+  const copy = `${summaryOf(EMS_UNIDENTIFIED)} ${detailOf(EMS_UNIDENTIFIED)}`;
+  assert.doesNotMatch(copy, /AMID is null|AMID is empty|AMID was not sent/);
 });
 
-test('RTMD: the detail names AMID and the narrow surface the schema leaves it', () => {
+test('RTMD: the observation names AMID, and the rationale is the branch’s own', () => {
   // NOT "no appliance identifier" (67tf). This advisory reads AMID alone, and
   // fires while ASER and AID may be populated — see the RTMD case below — so the
   // claim is scoped to the supplier's own platform handle and nothing wider.
   assert.equal(
+    summaryOf(RTM_UNIDENTIFIED),
+    '1 of 1 report carries no supplier-platform appliance identifier — AMID is empty.',
+  );
+  assert.equal(
     detailOf(RTM_UNIDENTIFIED),
-    '1 of 1 report in this transmission carries no supplier-platform appliance identifier — ' +
-      "AMID is empty. AMID is the handle the supplier's own platform holds the appliance " +
-      'under, and an rtmd-report carries it as a required, non-null string, so a blank value ' +
-      'is the only form of this the schema itself lets through. ASER and AID are frequently ' +
-      'never captured where the monitoring device was added to an appliance already in ' +
-      'service, so neither is read as standing in for AMID. The 3 records under it arrive ' +
-      'complete and fully conformant, and the country receiving them cannot tie those ' +
-      "readings to an appliance in the supplier's platform.",
+    "AMID is the identifier under which the supplier's platform holds the appliance. The " +
+      'schema requires it as a non-null string, so a blank is the only form that passes, and ' +
+      'neither ASER nor AID stands in for it on a retrofitted logger. Without this attribute, ' +
+      "the receiving country cannot tie the records to an appliance in the supplier's platform.",
   );
 });
 
-test('RTMD: a single record reads "The 1 record under it arrives", not "arrive"', () => {
-  // THE COMMON PATH, not an edge case (iphh): `records` has minItems 1 and the
-  // repo's own rtm baseline sends exactly one, so the singular noun built for
-  // `under` is rendered as often as the plural and its verb has to agree.
-  const detail = detailOf(RTM_ONE_RECORD);
-  assert.match(detail, /The 1 record under it arrives complete and fully conformant/);
-  assert.doesNotMatch(detail, /record under it arrive complete/);
+test('RTMD: the rationale is third person — no "your platform" (decided 2026-09-15)', () => {
+  // The blurb addresses the supplier directly; the per-advisory rationales do
+  // not. Benson settled this one explicitly when approving the copy.
+  assert.doesNotMatch(detailOf(RTM_UNIDENTIFIED), /\byour\b/i);
+});
+
+test('RTMD: how many records sat under the report is no longer part of the copy', () => {
+  // The approved observation stops at the identifier (agj.17); a one-record
+  // report and a three-record one therefore read identically, and the records
+  // themselves are reached through the finding's pointer.
+  assert.equal(summaryOf(RTM_ONE_RECORD), summaryOf(RTM_UNIDENTIFIED));
+  assert.doesNotMatch(summaryOf(RTM_ONE_RECORD), /record/);
 });
 
 test('RTMD: the one-record report the singular is rendered for really is conformant', () => {
@@ -448,26 +479,38 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 test('the detail carries no defect vocabulary and no synonym for the category', () => {
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i;
-  for (const detail of [detailOf(EMS_UNIDENTIFIED), detailOf(RTM_UNIDENTIFIED)]) {
-    assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-    assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  for (const copy of [
+    summaryOf(EMS_UNIDENTIFIED),
+    detailOf(EMS_UNIDENTIFIED),
+    summaryOf(RTM_UNIDENTIFIED),
+    detailOf(RTM_UNIDENTIFIED),
+  ]) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
   }
 });
 
-test('the detail concludes nothing about the supplier’s equipment or their records', () => {
+test('the rationale concludes nothing about the supplier’s equipment or their records', () => {
   for (const detail of [detailOf(EMS_UNIDENTIFIED), detailOf(RTM_UNIDENTIFIED)]) {
-    assert.doesNotMatch(detail, /sensor|fitted|hardware|equipment is/i, `concludes: ${detail}`);
+    // Word-bounded: the approved rtm rationale names a "retrofitted logger",
+    // which is a fact about how RTMDs are installed, not a conclusion about this
+    // supplier's hardware.
+    assert.doesNotMatch(
+      detail,
+      /\b(sensor|fitted|hardware)\b|equipment is/i,
+      `concludes: ${detail}`,
+    );
     // It says what the RECEIVING side cannot do, which is the only thing we can
     // speak to — never that the supplier lost track of the appliance.
-    assert.match(detail, /the country receiving them cannot tie those readings to/);
-    assert.match(detail, /arrive complete and fully conformant/, 'the payload is not faulted');
+    assert.match(detail, /the receiving country cannot tie the records to/);
   }
 });
 
-test('the detail stands alone per transmission', () => {
-  // Recurring advisories fold in the dashboard to the most recent detail only.
-  for (const detail of [detailOf(EMS_UNIDENTIFIED), detailOf(RTM_UNIDENTIFIED)]) {
-    assert.match(detail, /in this transmission/);
-    assert.doesNotMatch(detail, /this session|every transmission/i);
+test('the observation stands alone per transmission', () => {
+  // Recurring advisories fold in the dashboard to the most recent occurrence, so
+  // the observation carries this transmission's own numbers and no wider claim.
+  for (const summary of [summaryOf(EMS_UNIDENTIFIED), summaryOf(RTM_UNIDENTIFIED)]) {
+    assert.match(summary, /^1 of 1 report carries/);
+    assert.doesNotMatch(summary, /this session|every transmission/i);
   }
 });

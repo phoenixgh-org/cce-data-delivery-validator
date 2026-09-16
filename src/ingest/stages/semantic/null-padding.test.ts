@@ -215,17 +215,49 @@ test('it names every padded property and pins the full prose', () => {
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
   assert.ok(finding);
 
-  // The exact user-facing sentences, record count up front (52r).
+  // The approved agj.17 copy, split: summary is the one-line observation shown
+  // on the advisory row, detail the rationale behind its expander.
+  assert.equal(
+    finding.summary,
+    'HAMB, TCON and TFRZ are null in every one of the 16 records that carry them.',
+  );
   assert.equal(
     finding.detail,
-    'Across the 16 records in this transmission, HAMB, TCON and TFRZ arrived as null in ' +
-      'every record that carried them. A consistent null is acceptable for a property the ' +
-      'device will sometimes populate with a real value or measurement. But a property that ' +
-      'never carries a value should generally be omitted — unless the record schema requires ' +
-      'it. Sending null says "this device sometimes produces a value for this property (just ' +
-      'not right now)", while omission says "this device never produces a value for this ' +
-      'property".',
+    'A property the device never populates is better omitted than sent as null, unless the ' +
+      'record schema requires it. A null value indicates that the device sometimes has a ' +
+      'value for it; omission says it never does.',
   );
+});
+
+test('one padded property takes the singular verb and pronoun', () => {
+  const [finding] = advisories(checkOnly(emsPayload(16, ['TCON'])));
+  assert.ok(finding);
+  assert.equal(finding.summary, 'TCON is null in every one of the 16 records that carry it.');
+});
+
+test('beyond three properties the observation names two and counts the rest', () => {
+  // Decided 2026-09-15: one line stays one line however many properties a
+  // padding supplier sends. The pointer opens the payload at the first of them.
+  const six = ['TVC', 'TAMB', 'DORV', 'DORF', 'TCON', 'TFRZ'];
+  const [finding] = advisories(checkOnly(emsPayload(16, six)));
+  assert.ok(finding);
+  assert.match(
+    finding.summary ?? '',
+    / and 4 more are null in every one of the 16 records that carry them\.$/,
+  );
+  // Exactly two names before the count, not three.
+  assert.equal((finding.summary ?? '').split(' and 4 more')[0]?.split(', ').length, 2);
+});
+
+test('the record count is the records that carry a padded property, not every record', () => {
+  // A transmission can mix reports: only the records that actually carried one
+  // of the padded properties are counted, so the sentence stays true.
+  const padded = emsPayload(16, PADDED) as { data: Record<string, unknown>[] };
+  const clean = emsPayload(4, []) as { data: Record<string, unknown>[] };
+  padded.data.push(clean.data[0]!);
+  const [finding] = advisories(checkOnly(padded));
+  assert.ok(finding);
+  assert.match(finding.summary ?? '', /every one of the 16 records that carry them\.$/);
 });
 
 // ── the floor on N ───────────────────────────────────────────────────────────
@@ -250,7 +282,7 @@ test('ALRM, EERR and LERR are never named, however constant they are', () => {
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
   assert.ok(finding);
   for (const code of ['ALRM', 'EERR', 'LERR']) {
-    assert.ok(!finding.detail?.includes(code), `${code} must not be named`);
+    assert.ok(!finding.summary?.includes(code), `${code} must not be named`);
   }
 });
 
@@ -262,8 +294,8 @@ test('a property that is null in only some records is not padding', () => {
   payload.data[0]!.records[7]!.HAMB = 58.1;
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding);
-  assert.ok(!finding.detail?.includes('HAMB'), 'HAMB carried a reading, so it is not padded');
-  assert.ok(finding.detail?.includes('TCON'), 'the genuinely padded ones still speak');
+  assert.ok(!finding.summary?.includes('HAMB'), 'HAMB carried a reading, so it is not padded');
+  assert.ok(finding.summary?.includes('TCON'), 'the genuinely padded ones still speak');
 });
 
 test('a payload with nothing padded raises nothing at all', () => {
@@ -289,7 +321,7 @@ test('a required-nullable property (BEMD) still fires, and the remedy stays lega
 
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding, 'required properties are not exempt — the distinction still holds');
-  assert.match(finding.detail ?? '', /BEMD arrived as null in every record that carried it/);
+  assert.match(finding.summary ?? '', /^BEMD is null in every one of the 12 records/);
   assert.match(finding.detail ?? '', /unless the record schema requires it/);
 });
 
@@ -325,10 +357,11 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
-  const detail = finding?.detail ?? '';
 
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  for (const copy of [finding?.summary ?? '', finding?.detail ?? '']) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
+  }
 });
 
 test('the detail concludes nothing about the supplier’s equipment', () => {
@@ -346,24 +379,26 @@ test('the detail concludes nothing about the supplier’s equipment', () => {
   );
   // The claim it DOES make is symmetric: it spells out what each encoding
   // says rather than asserting which one is true of this device.
-  assert.match(detail, /sometimes produces a value for this property/);
-  assert.match(detail, /never produces a value for this property/);
+  assert.match(detail, /the device sometimes has a value for it/);
+  assert.match(detail, /omission says it never does/);
 });
 
-test('the detail states the observation and the record count', () => {
-  const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
-  const detail = finding?.detail ?? '';
-
-  assert.match(detail, /arrived as null in every record that carried them/, 'states what arrived');
-  assert.match(detail, /Across the 16 records in this transmission/, 'record count up front (52r)');
-  assert.match(detail, /unless the record schema requires it/, 'the remedy carries its hedge');
-});
-
-test('the detail stands alone per transmission', () => {
-  // The dashboard folds recurring advisories and shows only the most recent
-  // occurrence's detail, so each one has to be readable without its siblings:
-  // it names this transmission's own numbers and never says "and every other".
+test('the rationale carries the hedge and no numbers of its own', () => {
+  // The rationale is static per check (agj.17): every number the supplier reads
+  // is in the observation, so the same paragraph is correct for any payload.
   const detail = advisories(checkOnly(emsPayload(16, PADDED)))[0]?.detail ?? '';
-  assert.match(detail, /this transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
+  const other = advisories(checkOnly(emsPayload(20, ['TCON'])))[0]?.detail ?? '';
+
+  assert.match(detail, /unless the record schema requires it/, 'the remedy carries its hedge');
+  assert.equal(detail, other, 'the same rationale whatever arrived');
+  assert.doesNotMatch(detail, /[0-9]/, 'no numbers in the rationale');
+});
+
+test('the observation stands alone per transmission', () => {
+  // The dashboard folds recurring advisories and shows only the most recent
+  // occurrence, so the observation names this transmission's own numbers and
+  // never says "and every other".
+  const summary = advisories(checkOnly(emsPayload(16, PADDED)))[0]?.summary ?? '';
+  assert.match(summary, /the 16 records that carry them/);
+  assert.doesNotMatch(summary, /this session|every transmission/i);
 });

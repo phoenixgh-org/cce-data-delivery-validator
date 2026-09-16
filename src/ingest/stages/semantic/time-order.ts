@@ -67,13 +67,25 @@
  * milliseconds when ABST's sub-second precision puts it under one), and a
  * pointer to the FIRST such record in document order.
  *
- * ── WORDING ──────────────────────────────────────────────────────────────────
- * Observe, never conclude. We state what arrived — which position, how far back,
- * how many others — and what a receiving system can and cannot do with a series
- * in that order. We do NOT say which record is the misplaced one: from the
- * receiving side, a pair `[10:15, 10:00]` is equally consistent with a record
- * out of position, a mis-stamped timestamp, and a genuinely re-clocked logger,
- * and picking one would be the concluding language this category forbids.
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many records
+ * carry an ABST no later than the one before, and the widest step back among
+ * them. `detail` is the RATIONALE, static and carrying no numbers: what E006
+ * reads a records array as, what a receiving country does with the order, and
+ * the remedy.
+ *
+ * ELAPSED TIME IS STATED IN MINUTES (decided 2026-09-15), including large values
+ * — `165 min`, never `2 h 45 min`. Seconds are reserved for values that quote a
+ * schema object whose own unit is seconds, which a step between two ABSTs is
+ * not. {@link minutesPhrase} keeps a positive step from rounding to `0 min`,
+ * because zero is exactly how a REPEATED timestamp reads there.
+ *
+ * Observe, never conclude. We state what arrived — how many records, how far
+ * back — and what a receiving system can and cannot do with a series in that
+ * order. We do NOT say which record is the misplaced one: from the receiving
+ * side, a pair `[10:15, 10:00]` is equally consistent with a record out of
+ * position, a mis-stamped timestamp, and a genuinely re-clocked logger, and
+ * picking one would be the concluding language this category forbids.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -96,7 +108,8 @@ interface NotForward {
    * exactly zero, means the timestamp REPEATS rather than reverses: ABST's
    * pattern admits a fractional part, so a step back of a few hundred
    * milliseconds is two DIFFERENT timestamps in the payload as sent, and
-   * rounding it to a whole second would let us describe it as a tie it is not.
+   * rounding it away would let the observation describe it as a tie it is not —
+   * see {@link minutesPhrase}, which is what protects that.
    */
   backwardMs: number;
 }
@@ -128,24 +141,20 @@ function scanReport(report: unknown, reportIndex: number): NotForward[] {
 }
 
 /**
- * `900 s (15 min)` — seconds always, with the minutes reading when it is exact.
- * A step finer than a second is read in milliseconds (`300 ms`) rather than as a
- * fraction of a second nobody wrote, and a step that is neither whole seconds
- * nor sub-second keeps its fraction (`1.5 s`). Callers pass a strictly positive
- * step: zero is a repeat and gets its own wording.
+ * A step back rendered in MINUTES — `45 min`, `0.5 min`, `0 min` for a repeat.
+ * Minutes is the unit every advisory observation states elapsed time in, however
+ * large the value (decided 2026-09-15).
+ *
+ * A POSITIVE STEP NEVER RENDERS AS `0 min`. ABST's pattern admits a fractional
+ * part, so a reversal of a few hundred milliseconds is two DIFFERENT timestamps
+ * in the payload as sent (1dda); rounding it away would read as the tie it is
+ * not, and zero is reserved for an exactly repeated timestamp. Steps under a
+ * thousandth of a minute therefore keep one significant figure instead.
  */
-function describeStep(ms: number): string {
-  if (ms < 1000) return `${ms} ms`;
-  const seconds = ms / 1000;
-  const exactMinutes = ms % 60_000 === 0;
-  return exactMinutes ? `${seconds} s (${seconds / 60} min)` : `${seconds} s`;
-}
-
-/** What the FIRST such position did, in the supplier's terms. */
-function describeFirst(first: NotForward): string {
-  return first.backwardMs === 0
-    ? `carries the same ABST as the record before it`
-    : `carries an ABST ${describeStep(first.backwardMs)} earlier than the record before it`;
+function minutesPhrase(ms: number): string {
+  const minutes = ms / 60_000;
+  const shown = minutes >= 0.001 ? Number(minutes.toFixed(3)) : Number(minutes.toPrecision(1));
+  return `${shown} min`;
 }
 
 /** The `adv.time_not_increasing` check, registered in `ADVISORY_CHECKS`. */
@@ -163,36 +172,21 @@ export const timeOrderCheck: SemanticCheck = (ctx: PipelineContext): Finding[] =
 
   const first = found[0]!;
   const worstMs = found.reduce((max, one) => Math.max(max, one.backwardMs), 0);
-  const positionNoun = found.length === 1 ? 'record' : 'records';
-
-  // With one record there is nothing for a worst step to be worst OF: the first
-  // IS it, and describeFirst has already said what it did, so the plural sentence
-  // would restate the same measurement as if it were a second observation (sl4y,
-  // mirroring compressor-supply.ts). A zero worst step means every one of them
-  // repeats a timestamp rather than reversing — there is no step back to name, so
-  // naming one would be naming a zero. It takes an EXACTLY equal epoch value to
-  // get here: a sub-second reversal is a positive number of milliseconds and is
-  // named as one.
-  const worstPhrase =
-    found.length === 1
-      ? ''
-      : worstMs === 0
-        ? `No timestamp steps back — each of these repeats the one before it. `
-        : `The furthest any of them steps back is ${describeStep(worstMs)}. `;
+  const recordNoun = found.length === 1 ? 'record' : 'records';
+  const carry = found.length === 1 ? 'carries' : 'carry';
 
   return [
     advisory({
       id: 'adv.time_not_increasing',
       pointer: first.pointer,
+      summary:
+        `${found.length} ${recordNoun} ${carry} an ABST no later than the one before; the ` +
+        `widest step back is ${minutesPhrase(worstMs)}.`,
       detail:
-        `This transmission carries ${found.length} ${positionNoun} whose ABST is not later ` +
-        `than the ABST of the record before it in the same report. The first is at ` +
-        `${first.pointer}, which ${describeFirst(first)}. ${worstPhrase}A report's records ` +
-        `are a time series: E006 reads ABST as strictly increasing down the array, and a ` +
-        `receiving country stores the records in the order they were sent, so a series that ` +
-        `steps back or repeats reads as a different history than the logger recorded. ` +
-        `Sorting the records oldest-first before assembling the array is what keeps the ` +
-        `order on the wire the order the readings happened in.`,
+        "E006 reads a report's records as a time series with ABST strictly increasing down " +
+        'the array, and the receiving country stores them in the order sent. Sorting records ' +
+        'oldest-first before assembling the array ensures that the order in the payload ' +
+        'reflects the order of the physical readings.',
     }),
   ];
 };

@@ -289,23 +289,23 @@ test('CMPR2 is read against SVA the same way', () => {
   );
   assert.ok(finding, 'CMPR2 past SVA raised nothing');
   assert.equal(finding.pointer, '/data/0/records/0/CMPR2');
-  assert.match(finding.detail ?? '', /CMPR2 is 640 s and SVA is 600 s — 40 s/);
+  assert.match(finding.summary ?? '', /^1 record reports CMPR2 larger than SVA/);
 });
 
-test('both compressors in one record are two readings, and both are named', () => {
+test('both compressors past one record’s SVA are ONE record, and both are named', () => {
+  // The observation counts RECORDS, so two excesses inside a single record stay
+  // one record — while the list still names both objects (ezgh).
   const [finding] = advisories(
     checkOnly(emsPayload([mainsRecord(0, { CMPR: 700, CMPR2: 800, SVA: 600 })])),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 2 readings/);
-  // Two objects named, so the verbs that follow the list are plural (ezgh).
-  assert.match(finding.detail ?? '', /CMPR and CMPR2 are larger than SVA/);
-  assert.match(finding.detail ?? '', /CMPR and CMPR2 count the seconds the compressor ran/);
+  assert.equal(
+    finding.summary,
+    '1 record reports CMPR and CMPR2 larger than SVA; the largest excess is 200 s.',
+  );
 });
 
-test('one object named takes the singular verb, however many readings there are', () => {
-  // Two readings, but both are CMPR — the verb agrees with the list, not the
-  // count (ezgh).
+test('one object across two records takes the plural record noun', () => {
   const [finding] = advisories(
     checkOnly(
       emsPayload([
@@ -315,9 +315,10 @@ test('one object named takes the singular verb, however many readings there are'
     ),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 2 readings/);
-  assert.match(finding.detail ?? '', /CMPR is larger than SVA/);
-  assert.match(finding.detail ?? '', /CMPR counts the seconds the compressor ran/);
+  assert.equal(
+    finding.summary,
+    '2 records report CMPR larger than SVA; the largest excess is 200 s.',
+  );
 });
 
 test('the count and the worst excess are the transmission’s, over every report', () => {
@@ -329,8 +330,10 @@ test('the count and the worst excess are the transmission’s, over every report
   ]);
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 3 readings/);
-  assert.match(finding.detail ?? '', /The largest excess across the transmission is 450 s/);
+  assert.equal(
+    finding.summary,
+    '3 records report CMPR larger than SVA; the largest excess is 450 s.',
+  );
   assert.equal(finding.pointer, '/data/0/records/0/CMPR', 'the first in document order');
 });
 
@@ -399,7 +402,7 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 
 // ── wording is acceptance, not polish ───────────────────────────────────────
 
-test('it names the count, both values as sent, the excess and the worst', () => {
+test('it names the record count, the objects and the worst excess, then the why', () => {
   const [finding] = advisories(
     checkOnly(
       emsPayload([
@@ -408,30 +411,41 @@ test('it names the count, both values as sent, the excess and the worst', () => 
       ]),
     ),
   );
-  const detail = finding?.detail ?? '';
 
-  assert.match(detail, /carries 2 readings/, 'the count');
-  assert.match(detail, /\/data\/0\/records\/0\/CMPR/, 'a pointer to the first');
-  assert.match(detail, /CMPR is 420 s and SVA is 200 s/, 'both values as sent');
-  assert.match(detail, /220 s of compressor runtime beyond the supply/, 'the excess');
-  assert.match(detail, /largest excess across the transmission is 300 s/, 'the worst');
-  assert.match(detail, /15-minute period/, 'what the two objects share');
+  assert.equal(
+    finding?.summary,
+    '2 records report CMPR larger than SVA; the largest excess is 300 s.',
+  );
+  assert.equal(finding?.pointer, '/data/0/records/0/CMPR', 'a pointer to the first');
+  assert.equal(
+    finding?.detail,
+    'On a mains appliance SVA and CMPR are both represented as seconds within the same ' +
+      '15-minute period. It is unexpected for the compressor to run for longer than power ' +
+      'was available within the period.',
+  );
 });
 
-test('a single reading does not report its own excess twice', () => {
-  const detail = advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])))[0]
-    ?.detail;
-  assert.match(detail ?? '', /carries 1 reading where/);
-  assert.doesNotMatch(detail ?? '', /largest excess/, 'the first one IS the worst');
+test('the excess stays in SECONDS — the unit the two objects are declared in', () => {
+  // The duration rule puts elapsed-time phrases in minutes, but this value is
+  // the difference between two schema objects whose own unit is seconds.
+  const summary = advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])))[0]
+    ?.summary;
+  assert.match(summary ?? '', /the largest excess is 220 s\.$/);
 });
 
-test('the detail says why a solar record is not read here', () => {
-  // So nobody later "extends" the check by substituting DCSV — a voltage — for
-  // SVA. The reason lives in the module header AND in what the supplier sees.
+test('a single record takes the singular noun and verb', () => {
+  const summary = advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])))[0]
+    ?.summary;
+  assert.match(summary ?? '', /^1 record reports CMPR larger than SVA/);
+});
+
+test('the rationale carries no solar sentence (decided 2026-09-15)', () => {
+  // The check already skips solar records, so the supplier reading this is
+  // holding a mains record. The reason nothing on the solar branch substitutes
+  // for SVA lives in the module header, where the next contributor needs it.
   const detail = advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])))[0]
     ?.detail;
-  assert.match(detail ?? '', /DCSV and DCCD/);
-  assert.match(detail ?? '', /no DC supply availability in seconds/);
+  assert.doesNotMatch(detail ?? '', /DCSV|DCCD|solar/i);
 });
 
 test('the detail carries no defect vocabulary and no synonym for the category', () => {
@@ -440,11 +454,12 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
   // would be a false statement about the supplier rather than a harsh tone.
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
-  const detail =
-    advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])))[0]?.detail ?? '';
+  const [finding] = advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])));
 
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  for (const copy of [finding?.summary ?? '', finding?.detail ?? '']) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
+  }
 });
 
 test('the detail names no cause', () => {
@@ -452,16 +467,16 @@ test('the detail names no cause', () => {
   // a mis-scaled CMPR, a mis-scaled SVA, an accumulator that was not reset and a
   // metering fault. Picking one would be the concluding language this category
   // forbids.
-  const detail =
-    advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])))[0]?.detail ?? '';
-  assert.doesNotMatch(detail, /because|caused by|due to|means that|indicates|suggests/i);
+  const [finding] = advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])));
+  const copy = `${finding?.summary ?? ''} ${finding?.detail ?? ''}`;
+  assert.doesNotMatch(copy, /because|caused by|due to|means that|indicates|suggests/i);
 });
 
-test('the detail stands alone per transmission', () => {
+test('the observation stands alone per transmission', () => {
   // The dashboard folds recurring advisories and shows only the most recent
-  // occurrence's detail, so each one has to be readable without its siblings.
-  const detail =
-    advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])))[0]?.detail ?? '';
-  assert.match(detail, /This transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
+  // occurrence, so the observation has to be readable without its siblings.
+  const summary =
+    advisories(checkOnly(emsPayload([mainsRecord(0, { CMPR: 420, SVA: 200 })])))[0]?.summary ?? '';
+  assert.match(summary, /^1 record reports CMPR larger than SVA/);
+  assert.doesNotMatch(summary, /this session|every transmission/i);
 });

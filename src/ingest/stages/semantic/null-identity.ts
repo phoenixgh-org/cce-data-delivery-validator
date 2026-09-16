@@ -80,7 +80,14 @@
  * payloads declaring 0.8.0/0.8.1/0.8.3. It does not become redundant — the
  * registry deliberately keeps older cohorts.
  *
- * ── WORDING ──────────────────────────────────────────────────────────────────
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — one line naming
+ * how many reports of how many arrived without the branch's identifier, and how
+ * that identifier arrived in the first of them. `detail` is the RATIONALE — what
+ * the identifier is and what the receiving country cannot do without it; it is
+ * static per branch, so the two branches carry the two approved paragraphs and
+ * nothing is templated into either.
+ *
  * Observe, never conclude. We say what arrived and what the receiving side can
  * therefore not do with it. We do NOT say the supplier lost track of the
  * equipment, and we do not grade the practice. In particular the prose must not
@@ -89,6 +96,11 @@
  * populated, so both claims would be false. What is true, and all we say, is
  * that the branch's own appliance identifier did not arrive and nothing else on
  * the branch stands in for it.
+ *
+ * The observation names the FIRST report's state ("in the first, ASER is null")
+ * whenever more than one report is unnamed: the states can differ across them,
+ * and a bare "ASER is null" would be a claim about all of them that we have not
+ * checked.
  *
  * ── THE DS01.3 SHADOW AND THIS CHECK NEED NO GATE ────────────────────────────
  * The DS01.3 Annex 4 draft requires a non-null ASER on `ems-report` and a
@@ -158,7 +170,6 @@ export const nullIdentityCheck: SemanticCheck = (ctx: PipelineContext): Finding[
   let firstIndex = -1;
   let firstBlank = '';
   let unnamed = 0;
-  let recordsUnderThem = 0;
 
   for (const [index, report] of data.entries()) {
     if (!isPlainObject(report)) continue;
@@ -168,7 +179,6 @@ export const nullIdentityCheck: SemanticCheck = (ctx: PipelineContext): Finding[
     if (state === 'present') continue;
 
     unnamed += 1;
-    recordsUnderThem += Array.isArray(report.records) ? report.records.length : 0;
     if (firstIndex === -1) {
       firstIndex = index;
       firstBlank = `${key} ${BLANK_PHRASE[state]}`;
@@ -179,44 +189,29 @@ export const nullIdentityCheck: SemanticCheck = (ctx: PipelineContext): Finding[
 
   const reportNoun = total === 1 ? 'report' : 'reports';
   const verb = unnamed === 1 ? 'carries' : 'carry';
-  const pronoun = unnamed === 1 ? 'it' : 'them';
   // With more than one, the state listed is the FIRST one's — say so rather
   // than letting it read as a claim about all of them.
   const lead = unnamed === 1 ? '' : 'in the first, ';
-  // `records` is required with minItems 1, so a schema-valid report always has
-  // some; the countless phrasing is defensive, not expected.
-  const under =
-    recordsUnderThem > 0
-      ? `The ${recordsUnderThem} ${recordsUnderThem === 1 ? 'record' : 'records'} under ${pronoun}`
-      : `The records under ${pronoun}`;
-  // The verb has to agree with the noun `under` just built. A single record is
-  // the ordinary case, not an edge one — `records` has minItems 1 and the rtm
-  // baseline sends exactly one — so the singular is rendered as often as not.
-  const arrive = recordsUnderThem === 1 ? 'arrives' : 'arrive';
+  const missing = ems ? 'no appliance serial number' : 'no supplier-platform appliance identifier';
 
-  // Each branch says what is true of ITS identifier, and why the other two are
-  // not read as substitutes for it. Neither claims the report names nothing at
-  // all — AID (and on rtm, ASER) may well be populated.
-  const body = ems
-    ? `no appliance serial number — ${lead}${firstBlank}. ASER is the serial number the ` +
-      `appliance's manufacturer assigned, and nothing else on an ems-report stands in for it: ` +
-      `an ems-report has no AMID property, AID is an asset identifier a programme assigns, and ` +
-      `ESER and LSER name the monitoring device and the logger rather than the appliance they ` +
-      `watch. ${under} ${arrive} complete and fully conformant, and the country receiving them ` +
-      `cannot tie those readings to the appliance by its manufacturer's serial number.`
-    : `no supplier-platform appliance identifier — ${lead}${firstBlank}. AMID is the handle the ` +
-      `supplier's own platform holds the appliance under, and an rtmd-report carries it as a ` +
-      `required, non-null string, so a blank value is the only form of this the schema itself ` +
-      `lets through. ASER and AID are frequently never captured where the monitoring device was ` +
-      `added to an appliance already in service, so neither is read as standing in for AMID. ` +
-      `${under} ${arrive} complete and fully conformant, and the country receiving them cannot ` +
-      `tie those readings to an appliance in the supplier's platform.`;
+  // The rationale is the approved copy for the branch (agj.17, 2026-09-15) and
+  // carries no numbers: each says what its identifier is, why nothing else on
+  // the branch stands in for it, and what the receiving country cannot do.
+  const rationale = ems
+    ? 'ASER is the appliance serial number, as assigned by the manufacturer. No other ID is ' +
+      'an adequate substitute. Without this attribute, the receiving country cannot tie the ' +
+      'records to the appliance.'
+    : "AMID is the identifier under which the supplier's platform holds the appliance. The " +
+      'schema requires it as a non-null string, so a blank is the only form that passes, and ' +
+      'neither ASER nor AID stands in for it on a retrofitted logger. Without this attribute, ' +
+      "the receiving country cannot tie the records to an appliance in the supplier's platform.";
 
   return [
     advisory({
       id: 'adv.null_identity',
       pointer: `/data/${firstIndex}`,
-      detail: `${unnamed} of ${total} ${reportNoun} in this transmission ${verb} ${body}`,
+      summary: `${unnamed} of ${total} ${reportNoun} ${verb} ${missing} — ${lead}${firstBlank}.`,
+      detail: rationale,
     }),
   ];
 };

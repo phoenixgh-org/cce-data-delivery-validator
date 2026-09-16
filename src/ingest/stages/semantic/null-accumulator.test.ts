@@ -405,7 +405,7 @@ test('a column of nulls belongs to adv.null_padding, and this check stays silent
 
   const padding = paddingOnly(payload);
   assert.equal(padding.length, 1, 'null_padding is the surface that speaks');
-  assert.match(padding[0]?.detail ?? '', /CMPR/);
+  assert.match(padding[0]?.summary ?? '', /CMPR/);
 });
 
 test('an intermittent null belongs here, and adv.null_padding stays silent', () => {

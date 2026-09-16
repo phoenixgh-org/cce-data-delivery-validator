@@ -257,8 +257,8 @@ test('an advisory raised by ONE report of two says "1 of 2 reports" and points a
 
   const raised = one(result.findings, 'adv.null_identity');
   assert.match(
-    raised.detail ?? '',
-    /^1 of 2 reports in this transmission carries /,
+    raised.summary ?? '',
+    /^1 of 2 reports carries /,
     'the denominator is the batch, and the verb agrees with the one affected',
   );
   assert.equal(raised.pointer, '/data/1', 'the pointer names the report that tripped it');

@@ -24,9 +24,9 @@
  * advisory id — title, and a count of the DISTINCT transmissions it appeared in,
  * with no detail — while the detail prose is read per transmission, in the
  * transmission block. A finding-per-property would therefore add no row, only
- * stack near-identical lines in that block, one per property. The detail names EVERY
- * padded property (52r retired the old six-name cap): the list is the
- * actionable part, and it is bounded by the schema's property count.
+ * stack near-identical lines in that block, one per property. The observation
+ * names the padded properties up to a three-name cap and counts the rest — see
+ * the wording section below.
  *
  * ── THE FLOOR ON N — 12 RECORDS ──────────────────────────────────────────────
  * A property null in both records of a 2-record transmission proves nothing, so
@@ -53,22 +53,30 @@
  * but they occur once per device rather than once per reading, and the
  * report-level identity case has its own advisory (`adv.null_identity`).
  *
- * ── WORDING ──────────────────────────────────────────────────────────────────
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — the padded
+ * properties and the number of records that carried any of them. `detail` is the
+ * RATIONALE, static and carrying no numbers: what a null says, what omission
+ * says, and the hedge that keeps the advice legal.
+ *
  * Observe, then teach the two encodings — never conclude. A 100 %-null rate is
  * strong evidence, never proof: a genuinely broken sensor looks identical from
- * here, so the detail states what arrived and what each encoding says, and
+ * here, so the prose states what arrived and what each encoding says, and
  * leaves what the nulls MEAN to the only party that knows.
  *
- * The remedy is hedged ON PURPOSE: "should generally be omitted — unless the
- * record schema requires it" (52r). Several DS01 objects (BEMD, CMPR, DORV on
- * the EMS branch) are required AND nullable, so an unconditional "leave it out"
- * would coach a supplier into failing `required` and losing §3.2 — the bug 52r
- * fixed. The hedge keeps the advice legal for every property WITHOUT this
- * check learning per-branch, per-version required sets: `schemaVersion` stays
- * an opaque registry key project-wide, and the supplier — who knows which
- * record branch they send — resolves the hedge. For a required-nullable
- * property the closing sentence still earns its place: a steady null is
- * exactly how such a property says "no reading".
+ * The remedy is hedged ON PURPOSE: "better omitted than sent as null, unless the
+ * record schema requires it" (52r, re-approved in the agj.17 copy). Several DS01
+ * objects (BEMD, CMPR, DORV on the EMS branch) are required AND nullable, so an
+ * unconditional "leave it out" would coach a supplier into failing `required`
+ * and losing §3.2 — the bug 52r fixed. The hedge keeps the advice legal for
+ * every property WITHOUT this check learning per-branch, per-version required
+ * sets: `schemaVersion` stays an opaque registry key project-wide, and the
+ * supplier — who knows which record branch they send — resolves the hedge.
+ *
+ * THE PROPERTY LIST IS CAPPED AT THREE NAMES (decided 2026-09-15). Up to three
+ * are named in full; beyond that the observation reads "TAMB, DORV and 4 more",
+ * so one line stays one line however many properties a padding supplier sends.
+ * Nothing is lost: the pointer opens the raw payload at the first padded value.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -102,6 +110,15 @@ function joinPhrases(parts: readonly string[]): string {
   return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
 }
 
+/** Longest property list named in full before the observation counts the rest. */
+const MAX_NAMED = 3;
+
+/** `TAMB`, `TAMB and DORV`, `HAMB, TCON and TFRZ`, then `TAMB, DORV and 4 more`. */
+function namePadded(keys: readonly string[]): string {
+  if (keys.length <= MAX_NAMED) return joinPhrases(keys);
+  return `${keys.slice(0, MAX_NAMED - 1).join(', ')} and ${keys.length - (MAX_NAMED - 1)} more`;
+}
+
 interface KeyStats {
   /** Records that carried the key at all. */
   carried: number;
@@ -117,7 +134,6 @@ export const nullPaddingCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
   if (!Array.isArray(data) || data.length === 0) return [];
 
   const stats = new Map<string, KeyStats>();
-  let totalRecords = 0;
 
   for (const [reportIndex, report] of data.entries()) {
     if (!isPlainObject(report)) continue;
@@ -126,7 +142,6 @@ export const nullPaddingCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
 
     for (const [recordIndex, record] of records.entries()) {
       if (!isPlainObject(record)) continue;
-      totalRecords += 1;
 
       for (const key of Object.keys(record)) {
         if (CONDITION_CODES.has(key)) continue;
@@ -153,21 +168,36 @@ export const nullPaddingCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
 
   if (padded.length === 0) return [];
 
-  const list = joinPhrases(padded.map(([key]) => key));
-  const carried = padded.length === 1 ? 'it' : 'them';
+  const paddedKeys = new Set(padded.map(([key]) => key));
+  // "the N records that carry them" is the records that carried ANY of the
+  // padded properties — not every record in the transmission (a record may carry
+  // none of them) and not any one property's `carried` (they can differ).
+  let carrying = 0;
+  for (const report of data) {
+    if (!isPlainObject(report)) continue;
+    const records = report.records;
+    if (!Array.isArray(records)) continue;
+    for (const record of records) {
+      if (!isPlainObject(record)) continue;
+      if (Object.keys(record).some((key) => paddedKeys.has(key))) carrying += 1;
+    }
+  }
+
+  const list = namePadded(padded.map(([key]) => key));
+  const areIs = padded.length === 1 ? 'is' : 'are';
+  const pronoun = padded.length === 1 ? 'it' : 'them';
 
   return [
     advisory({
       id: 'adv.null_padding',
       pointer: padded[0]![1].firstPointer,
+      summary:
+        `${list} ${areIs} null in every one of the ${group(carrying)} records that carry ` +
+        `${pronoun}.`,
       detail:
-        `Across the ${group(totalRecords)} records in this transmission, ${list} arrived as ` +
-        `null in every record that carried ${carried}. A consistent null is acceptable for a ` +
-        `property the device will sometimes populate with a real value or measurement. But a ` +
-        `property that never carries a value should generally be omitted — unless the record ` +
-        `schema requires it. Sending null says "this device sometimes produces a value for ` +
-        `this property (just not right now)", while omission says "this device never produces ` +
-        `a value for this property".`,
+        'A property the device never populates is better omitted than sent as null, unless ' +
+        'the record schema requires it. A null value indicates that the device sometimes has ' +
+        'a value for it; omission says it never does.',
     }),
   ];
 };

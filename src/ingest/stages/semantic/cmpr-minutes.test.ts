@@ -216,6 +216,10 @@ function detailOf(payload: unknown): string {
   return advisories(checkOnly(payload))[0]?.detail ?? '';
 }
 
+function summaryOf(payload: unknown): string {
+  return advisories(checkOnly(payload))[0]?.summary ?? '';
+}
+
 /** Tally findings into the `countsByRequirement` shape the §7 join consumes. */
 function countsOf(
   findings: readonly Finding[],
@@ -326,22 +330,26 @@ test('values pool across every report in the transmission', () => {
 
 // ── signal 2: saturation ────────────────────────────────────────────────────
 
-test('records at exactly 15 against an SVA above 15 are counted and named', () => {
+test('records at exactly 15 against an SVA above 15 are counted', () => {
   // MINUTES_WALK carries six 15s in twelve records, all against SVA 900.
-  const detail = detailOf(emsPayload(minutesRecords()));
-  assert.match(detail, /6 of those readings sit at exactly 15 in a record whose SVA is above 15/);
-  assert.match(detail, /the first at \/data\/0\/records\/0\/CMPR/);
-  assert.match(detail, /the saturation signature/);
+  const [finding] = advisories(checkOnly(emsPayload(minutesRecords())));
+  assert.ok(finding);
+  assert.equal(
+    finding.summary,
+    'All 12 CMPR values are 15 or below; 6 sit at exactly 15 with SVA above 15.',
+  );
+  assert.equal(finding.pointer, '/data/0/records/0/CMPR', 'the first saturated reading');
 });
 
 test('saturation does not gate the advisory — the ceiling alone raises it', () => {
-  // A series that never reaches 15 exactly still shows the ceiling.
+  // A series that never reaches 15 exactly still shows the ceiling, and the
+  // observation simply stops after it (agj.17).
   const under = Array.from({ length: MIN_RECORDS }, (_, i) =>
     mainsRecord(i, { CMPR: 3 + (i % 5) }),
   );
   const [finding] = advisories(checkOnly(emsPayload(under)));
   assert.ok(finding, 'the ceiling alone raises it');
-  assert.match(finding.detail ?? '', /the saturation signature is absent/);
+  assert.equal(finding.summary, 'All 12 CMPR values are 15 or below.');
   assert.equal(finding.pointer, '/data/0/records/0/CMPR');
 });
 
@@ -351,22 +359,30 @@ test('a 15 beside an SVA at or below 15 is not saturation', () => {
   const records = Array.from({ length: MIN_RECORDS }, (_, i) =>
     mainsRecord(i, { CMPR: MINUTES_CEILING, SVA: 15 }),
   );
-  const detail = detailOf(emsPayload(records));
-  assert.match(detail, /the saturation signature is absent/);
+  assert.equal(summaryOf(emsPayload(records)), 'All 12 CMPR values are 15 or below.');
 });
 
-test('SOLAR: signal 2 cannot arise, and the detail says so', () => {
+test('SOLAR: signal 2 cannot arise, and the observation rests on the ceiling', () => {
   // ems-record.allOf[0] forbids SVA on the solar branch, so a solar appliance
-  // falls back to the ceiling alone. DCSV is a VOLTAGE and is no substitute.
+  // falls back to the ceiling alone. DCSV is a VOLTAGE and is no substitute —
+  // the reason lives in the module header, not in the emitted copy.
   const records = Array.from({ length: MIN_RECORDS }, (_, i) =>
     solarRecord(i, { CMPR: MINUTES_WALK[i % MINUTES_WALK.length] }),
   );
   const entry = registry.get('0.8.1');
   assert.ok(entry?.validate(emsPayload(records)), 'the solar fixture is schema-valid');
 
-  const detail = detailOf(emsPayload(records));
-  assert.match(detail, /the saturation signature is absent/);
-  assert.match(detail, /the schema keeps it off the solar branch/);
+  assert.equal(summaryOf(emsPayload(records)), 'All 12 CMPR values are 15 or below.');
+});
+
+test('a single saturated reading takes the singular verb', () => {
+  const records = Array.from({ length: MIN_RECORDS }, (_, i) =>
+    mainsRecord(i, { CMPR: i === 0 ? MINUTES_CEILING : 4 }),
+  );
+  assert.equal(
+    summaryOf(emsPayload(records)),
+    'All 12 CMPR values are 15 or below; 1 sits at exactly 15 with SVA above 15.',
+  );
 });
 
 // ── CMPR and CMPR2 are graded independently ─────────────────────────────────
@@ -375,10 +391,9 @@ test('CMPR2 alone trips it, and the detail names CMPR2 rather than CMPR', () => 
   // CMPR stays a healthy 320 s throughout — a supplier may have migrated one
   // compressor's reading and not the other.
   const records = minutesRecords(MIN_RECORDS, 'CMPR2');
-  const detail = detailOf(emsPayload(records));
-  assert.match(detail, /CMPR2 arrived as 12 numeric values/);
-  assert.doesNotMatch(detail, /CMPR arrived as/, 'CMPR is seconds-shaped and is not named');
-  assert.match(detail, /The unit of CMPR2 CHANGED/);
+  const summary = summaryOf(emsPayload(records));
+  assert.match(summary, /^All 12 CMPR2 values are 15 or below/);
+  assert.doesNotMatch(summary, /\bCMPR values\b/, 'CMPR is seconds-shaped and is not named');
 });
 
 test('both objects trip it in ONE finding that names both', () => {
@@ -390,9 +405,8 @@ test('both objects trip it in ONE finding that names both', () => {
   );
   const raised = advisories(checkOnly(emsPayload(records)));
   assert.equal(raised.length, 1, 'one finding per transmission, however many objects');
-  assert.match(raised[0]?.detail ?? '', /CMPR arrived as/);
-  assert.match(raised[0]?.detail ?? '', /CMPR2 arrived as/);
-  assert.match(raised[0]?.detail ?? '', /The unit of CMPR and CMPR2 CHANGED/);
+  // Both objects named, and their value counts pooled into the one observation.
+  assert.match(raised[0]?.summary ?? '', /^All 24 CMPR and CMPR2 values are 15 or below/);
 });
 
 // ── what it deliberately does not read ──────────────────────────────────────
@@ -416,8 +430,8 @@ test('nulls and non-numbers are skipped rather than read as zero', () => {
   const withNulls = minutesRecords(MIN_RECORDS + 2);
   withNulls[MIN_RECORDS]!.CMPR = null;
   withNulls[MIN_RECORDS + 1]!.CMPR = null;
-  const detail = detailOf(emsPayload(withNulls));
-  assert.match(detail, /CMPR arrived as 12 numeric values/, 'the two nulls are not counted');
+  const summary = summaryOf(emsPayload(withNulls));
+  assert.match(summary, /^All 12 CMPR values are 15 or below/, 'the two nulls are not counted');
 });
 
 test('a malformed body raises nothing at all', () => {
@@ -465,33 +479,42 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 
 // ── prose is acceptance, not polish ────────────────────────────────────────
 
-test('the detail attributes the cause to the 0.7.2 → 0.8.0 unit correction', () => {
+test('the rationale is the approved copy, verbatim and static', () => {
   const detail = detailOf(emsPayload(minutesRecords()));
-  assert.match(detail, /between cce-interop 0\.7\.2 and 0\.8\.0/, 'the boundary');
-  assert.match(detail, /DS01\.2 Annex 2/, 'the other artifact that carried minutes');
-  assert.match(detail, /it was minutes.*capped it at 15.*gave 7 as its example/s, 'the old shape');
-  assert.match(detail, /from 0\.8\.0 it is seconds, capped at 900, with 120 as its example/);
+  assert.equal(
+    detail,
+    'In DS01.2 Annex 2, the unit for CMPR was incorrectly recorded as minutes (i.e., within ' +
+      'a 15 minute period). However, Annex 1 is authoritative on units and records CMPR in ' +
+      'seconds. When this discrepancy was detected, the cce-interop JSON schema was corrected ' +
+      'at 0.8.0, with the CMPR value capped at 900 (i.e., the total seconds in 15 minutes); ' +
+      'the published Annex 2 has not been corrected and still reads minutes. Loggers ' +
+      'recording minute values will validate against the schema because 0–15 sits inside ' +
+      '0–900, but minute values do not match the unit Annex 1 prescribes.',
+  );
+  // Static per check (agj.17): the numbers live in the observation, so the same
+  // paragraph is correct for a CMPR2-only transmission too.
+  assert.equal(detailOf(emsPayload(minutesRecords(MIN_RECORDS, 'CMPR2'))), detail);
 });
 
-test('the detail names the remedy, and Annex 1 as authoritative on units', () => {
+test('the rationale attributes the cause to the DS01.2 Annex 2 erratum', () => {
   const detail = detailOf(emsPayload(minutesRecords()));
-  assert.match(detail, /Annex 1 of E006\/DS01 is authoritative on units/);
-  assert.match(detail, /re-checking CMPR against it/);
+  assert.match(detail, /DS01\.2 Annex 2/, 'the artifact that carried minutes');
+  assert.match(detail, /corrected at 0\.8\.0/, 'and where it was put right');
+  assert.match(detail, /Annex 1 is authoritative on units/);
 });
 
-test('the detail explains why nothing else sees it', () => {
+test('the rationale explains why nothing else sees it', () => {
   const detail = detailOf(emsPayload(minutesRecords()));
   assert.match(detail, /0–15 sits inside 0–900/);
-  assert.match(detail, /visible to neither side’s schema validation|neither side's schema/);
 });
 
-test('the detail states the downstream consequence CONDITIONALLY', () => {
+test('the rationale states the downstream consequence CONDITIONALLY', () => {
   // "a sixtieth of the compressor duty" is what happens IF these are minutes. A
   // fridge that genuinely barely runs looks identical from the receiving side,
   // so stating it flatly would be the concluding language this category forbids.
   const detail = detailOf(emsPayload(minutesRecords()));
-  assert.match(detail, /If these readings are counts of minutes/);
-  assert.match(detail, /a sixtieth of the compressor duty/);
+  assert.match(detail, /Loggers recording minute values will validate against the schema/);
+  assert.doesNotMatch(detail, /this feed is|these readings are minutes/i, 'never asserted');
 });
 
 test('the detail never implies a careless supplier', () => {
@@ -499,7 +522,8 @@ test('the detail never implies a careless supplier', () => {
   // implementation built against 0.7.2 was held to minutes by its own validator.
   // The prose says that, and carries no word that reads as blame.
   const detail = detailOf(emsPayload(minutesRecords()));
-  assert.match(detail, /was held to 15 by its own validator/);
+  // The erratum is placed in the published artifact, not in the supplier's work.
+  assert.match(detail, /In DS01\.2 Annex 2, the unit for CMPR was incorrectly recorded/);
   assert.doesNotMatch(detail, /\b(careless|sloppy|neglect|oversight|should have|forgot)\b/i);
 });
 
@@ -509,16 +533,18 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
   // false statement about the supplier rather than a harsh tone.
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
-  const detail = detailOf(emsPayload(minutesRecords()));
+  const payload = emsPayload(minutesRecords());
 
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  for (const copy of [summaryOf(payload), detailOf(payload)]) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
+  }
 });
 
-test('the detail stands alone per transmission', () => {
+test('the observation stands alone per transmission', () => {
   // The dashboard folds recurring advisories and shows only the most recent
-  // occurrence's detail, so each one has to be readable without its siblings.
-  const detail = detailOf(emsPayload(minutesRecords()));
-  assert.match(detail, /Across this transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
+  // occurrence, so the observation has to be readable without its siblings.
+  const summary = summaryOf(emsPayload(minutesRecords()));
+  assert.match(summary, /^All 12 CMPR values are 15 or below/);
+  assert.doesNotMatch(summary, /this session|every transmission/i);
 });

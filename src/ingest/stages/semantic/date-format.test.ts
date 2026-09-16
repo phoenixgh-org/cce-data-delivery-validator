@@ -331,7 +331,7 @@ for (const field of REPORT_DATE_FIELDS) {
     const [finding] = advisories(checkOnly(emsPayload({ [field]: '2026-7-4' })));
     assert.ok(finding, `${field} raised nothing`);
     assert.equal(finding.pointer, `/data/0/${field}`);
-    assert.match(finding.detail ?? '', new RegExp(`${field} at /data/0/${field} arrived as`));
+    assert.match(finding.summary ?? '', new RegExp(`${field} at /data/0/${field} arrived as`));
   });
 }
 
@@ -339,38 +339,45 @@ test('record-level EDOP is observed on the EMS branch', () => {
   const [finding] = advisories(checkOnly(emsPayload({}, [{}, { EDOP: '2026-7-4' }])));
   assert.ok(finding);
   assert.equal(finding.pointer, '/data/0/records/1/EDOP');
-  assert.match(finding.detail ?? '', /EDOP at \/data\/0\/records\/1\/EDOP arrived as "2026-7-4"/);
+  assert.match(finding.summary ?? '', /EDOP at \/data\/0\/records\/1\/EDOP arrived as "2026-7-4"/);
 });
 
 test('record-level EDOP is observed on the RTMD branch', () => {
   const [finding] = advisories(checkOnly(rtmdPayload({}, { EDOP: '1/6/21' }), 'rtm'));
   assert.ok(finding);
   assert.equal(finding.pointer, '/data/0/records/0/EDOP');
-  assert.match(finding.detail ?? '', /EDOP at \/data\/0\/records\/0\/EDOP arrived as "1\/6\/21"/);
+  assert.match(finding.summary ?? '', /EDOP at \/data\/0\/records\/0\/EDOP arrived as "1\/6\/21"/);
 });
 
-test('one finding names every offending field, each with a pointer', () => {
+test('the observation counts every offending field and names the FIRST one', () => {
+  // Only the first field is named (agj.17): the observation is one line, and the
+  // rest are reached through the raw-payload drill-down the pointer opens.
   const [finding] = advisories(
     checkOnly(emsPayload({ ADOP: '2026-7-4', CDAT2: '07/04/2026' }, [{ EDOP: '1/6/21' }, {}])),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /3 date fields/);
-  assert.match(finding.detail ?? '', /ADOP at \/data\/0\/ADOP arrived as "2026-7-4"/);
-  assert.match(finding.detail ?? '', /CDAT2 at \/data\/0\/CDAT2 arrived as "07\/04\/2026"/);
-  assert.match(finding.detail ?? '', /EDOP at \/data\/0\/records\/0\/EDOP arrived as "1\/6\/21"/);
+  assert.equal(
+    finding.summary,
+    '3 date fields are not YYYY-MM-DD — ADOP at /data/0/ADOP arrived as "2026-7-4".',
+  );
+  assert.equal(finding.pointer, '/data/0/ADOP', 'and the pointer is that first one');
+  for (const later of ['CDAT2', '07/04/2026', '1/6/21']) {
+    assert.ok(!finding.summary?.includes(later), `${later} is counted, not named`);
+  }
 });
 
-test('repeats of the same field fold into one entry with a count', () => {
-  // A transmission can carry hundreds of records; listing every occurrence would
-  // be an unreadable finding, so the prose groups by field and counts the rest.
+test('repeats of the same field fold into one entry', () => {
+  // A transmission can carry hundreds of records, and a record-level EDOP
+  // mis-shaped in every one of them is ONE field in another form, not hundreds.
   const [finding] = advisories(
     checkOnly(emsPayload({}, [{ EDOP: '2026-7-4' }, { EDOP: '2026-7-5' }, { EDOP: '2026-7-6' }])),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /1 date field/, 'one FIELD, however many values');
-  assert.match(finding.detail ?? '', /\/data\/0\/records\/0\/EDOP arrived as "2026-7-4"/);
-  assert.match(finding.detail ?? '', /and in 2 other places/);
-  assert.doesNotMatch(finding.detail ?? '', /2026-7-6/, 'later values are counted, not listed');
+  assert.equal(
+    finding.summary,
+    '1 date field is not YYYY-MM-DD — EDOP at /data/0/records/0/EDOP arrived as "2026-7-4".',
+  );
+  assert.doesNotMatch(finding.summary ?? '', /2026-7-6/, 'later values are counted, not listed');
 });
 
 // ── what it deliberately does not say ───────────────────────────────────────
@@ -428,19 +435,28 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 
 // ── wording is acceptance, not polish ───────────────────────────────────────
 
-test('it names the field, the value as sent, and the ISO-8601 form expected', () => {
+test('it names the field, the value as sent, and the ISO form expected', () => {
   const [finding] = advisories(checkOnly(emsPayload({ ADOP: '2026-7-4' })));
-  const detail = finding?.detail ?? '';
 
-  assert.match(detail, /ADOP/, 'the field');
-  assert.match(detail, /"2026-7-4"/, 'the value received, verbatim');
-  assert.match(detail, /YYYY-MM-DD/, 'the form expected');
-  assert.match(detail, /ISO-8601 calendar date, as in 2026-07-04/, 'and an example of it');
-  assert.match(
-    detail,
-    /cannot order or compare dates whose field widths vary/,
-    'and what the receiving side cannot do',
+  assert.equal(
+    finding?.summary,
+    '1 date field is not YYYY-MM-DD — ADOP at /data/0/ADOP arrived as "2026-7-4".',
   );
+  assert.equal(
+    finding?.detail,
+    'The DS01 date objects (ADOP, LDOP, EDOP, CDAT, CDAT2) are plain strings, so a date ' +
+      'arrives in whatever form it was written. YYYY-MM-DD, the ISO 8601 calendar date ' +
+      'format, is prescribed by DS01 Annex 1, ensuring that every date representation has ' +
+      'the same field widths, which is what lets a receiving system order and compare them.',
+  );
+});
+
+test('the rationale cites DS01 Annex 1 as what prescribes the form', () => {
+  // Decided 2026-09-15, verified against the Annex 1 spreadsheet: the schema
+  // declares these as bare strings, so Annex 1 is where the form comes from.
+  const detail = advisories(checkOnly(emsPayload({ ADOP: '2026-7-4' })))[0]?.detail ?? '';
+  assert.match(detail, /prescribed by DS01 Annex 1/);
+  assert.match(detail, /order and compare them/, 'and what uniform field widths buy');
 });
 
 test('the detail carries no defect vocabulary and no synonym for the category', () => {
@@ -449,25 +465,29 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
   // would be a false statement about the supplier rather than a harsh tone.
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
-  const detail = advisories(checkOnly(emsPayload({ ADOP: '2026-7-4' })))[0]?.detail ?? '';
+  const [finding] = advisories(checkOnly(emsPayload({ ADOP: '2026-7-4' })));
 
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  for (const copy of [finding?.summary ?? '', finding?.detail ?? '']) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
+  }
 });
 
-test('the detail never re-writes the supplier’s value into what we think it meant', () => {
+test('the copy never re-writes the supplier’s value into what we think it meant', () => {
   // '2026-7-4' looks obvious and '07/04/2026' is genuinely ambiguous — naming a
   // corrected value for either would be concluding, which this category forbids.
-  // The only ISO date in the prose is the generic example.
-  const detail = advisories(checkOnly(emsPayload({ CDAT: '07/04/2026' })))[0]?.detail ?? '';
-  const isoDatesNamed = [...detail.matchAll(/\b[0-9]{4}-[0-9]{2}-[0-9]{2}\b/g)].map((m) => m[0]);
-  assert.deepEqual(isoDatesNamed, ['2026-07-04'], `detail translates a value: ${detail}`);
+  // The approved rationale carries no worked example, so no ISO date appears at
+  // all: any that did would be a value we had invented.
+  const [finding] = advisories(checkOnly(emsPayload({ CDAT: '07/04/2026' })));
+  const copy = `${finding?.summary ?? ''} ${finding?.detail ?? ''}`;
+  const isoDatesNamed = [...copy.matchAll(/\b[0-9]{4}-[0-9]{2}-[0-9]{2}\b/g)].map((m) => m[0]);
+  assert.deepEqual(isoDatesNamed, [], `copy translates a value: ${copy}`);
 });
 
-test('the detail stands alone per transmission', () => {
+test('the observation stands alone per transmission', () => {
   // The dashboard folds recurring advisories and shows only the most recent
-  // occurrence's detail, so each one has to be readable without its siblings.
-  const detail = advisories(checkOnly(emsPayload({ ADOP: '2026-7-4' })))[0]?.detail ?? '';
-  assert.match(detail, /This transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
+  // occurrence, so the observation has to be readable without its siblings.
+  const summary = advisories(checkOnly(emsPayload({ ADOP: '2026-7-4' })))[0]?.summary ?? '';
+  assert.match(summary, /^1 date field is not YYYY-MM-DD — ADOP at \/data\/0\/ADOP/);
+  assert.doesNotMatch(summary, /this session|every transmission/i);
 });

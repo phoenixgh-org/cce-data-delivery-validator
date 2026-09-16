@@ -45,23 +45,31 @@
  * belongs is a §3.2 schema matter Ajv already grades, and this check only ever
  * speaks about text it can compare against the ISO form.
  *
- * ── ONE FINDING PER TRANSMISSION, GROUPED BY FIELD ───────────────────────────
+ * ── ONE FINDING PER TRANSMISSION, COUNTED BY FIELD ───────────────────────────
  * Like every advisory, this emits ONE finding per transmission: the compliance
  * column carries a single signature row per advisory id — title, and a count of
- * the DISTINCT transmissions it appeared in, with no detail — while the detail
- * prose is read per transmission, in the transmission block. A finding per
- * offending value would therefore add no row, only stack near-identical lines in
- * that block.
+ * the DISTINCT transmissions it appeared in, with no detail — while the prose is
+ * read per transmission, in the transmission block. A finding per offending
+ * value would therefore add no row, only stack near-identical lines in that
+ * block.
  *
- * Within that one finding the prose is grouped BY FIELD, not per occurrence,
- * naming each offending field once with the pointer and value of its first
- * occurrence and a count of the rest. A transmission may carry hundreds of
- * records, so listing every occurrence of a mis-shaped record-level EDOP would
- * be an unreadable finding; grouping bounds the prose at six entries (the five
- * report-level codes plus record-level EDOP) while still naming every field that
- * arrived in another form, with a pointer to somewhere it really happened.
+ * Offending values are still folded BY FIELD rather than per occurrence, because
+ * the count the observation states is a count of FIELDS: a transmission may
+ * carry hundreds of records, and a record-level EDOP mis-shaped in every one of
+ * them is one field in another form, not hundreds.
  *
- * ── WORDING ──────────────────────────────────────────────────────────────────
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many date
+ * fields arrived in another form, then the FIRST of them with its pointer and
+ * its value as sent. `detail` is the RATIONALE, static and carrying no numbers:
+ * what the DS01 date objects are, that Annex 1 prescribes YYYY-MM-DD, and what
+ * uniform field widths buy a receiving system.
+ *
+ * ONLY THE FIRST FIELD IS NAMED (agj.17). The approved observation is one line,
+ * so the remaining fields are reached through the raw-payload drill-down the
+ * finding's pointer opens rather than listed in the prose; the count tells the
+ * reader how many there are to find.
+ *
  * Observe, never conclude. We state the field, the value AS SENT, the ISO-8601
  * form, and what a receiving system cannot do with dates whose field widths
  * vary. We never re-write a supplier's value into what we think it meant:
@@ -106,20 +114,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** `a`, `a and b`, `a, b and c` — the house list style. */
-function joinPhrases(parts: readonly string[]): string {
-  if (parts.length <= 1) return parts[0] ?? '';
-  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
-}
-
 /** One offending field, folded across every place it arrived in another form. */
 interface FieldStats {
   /** Pointer to the FIRST value seen in another form. */
   firstPointer: string;
   /** That first value, as sent. */
   firstValue: string;
-  /** How many values of this field arrived in another form. */
-  count: number;
 }
 
 /**
@@ -136,13 +136,6 @@ function quote(value: string): string {
   return `"${shown}"`;
 }
 
-/** `ADOP at /data/0/ADOP arrived as "2026-7-4"`, plus the count of any others. */
-function describe(field: string, stats: FieldStats): string {
-  const others = stats.count - 1;
-  const more = others > 0 ? ` and in ${others} other ${others === 1 ? 'place' : 'places'}` : '';
-  return `${field} at ${stats.firstPointer} arrived as ${quote(stats.firstValue)}${more}`;
-}
-
 /** The `adv.date_format` check, registered in `ADVISORY_CHECKS`. */
 export const dateFormatCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
   const data = (ctx.parsedBody as { data?: unknown } | null | undefined)?.data;
@@ -152,13 +145,13 @@ export const dateFormatCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
   // offending value in the payload — which is what the finding points at.
   const offenders = new Map<string, FieldStats>();
 
+  // Folded BY FIELD: only the FIRST occurrence of each field is kept, which is
+  // the one the observation names. Later occurrences need no state — the count
+  // the observation states counts fields, and the pointer opens the raw payload
+  // where the rest of them can be read.
   const note = (field: string, pointer: string, value: string): void => {
-    const existing = offenders.get(field);
-    if (existing === undefined) {
-      offenders.set(field, { firstPointer: pointer, firstValue: value, count: 1 });
-      return;
-    }
-    existing.count += 1;
+    if (offenders.has(field)) return;
+    offenders.set(field, { firstPointer: pointer, firstValue: value });
   };
 
   for (const [reportIndex, report] of data.entries()) {
@@ -187,20 +180,22 @@ export const dateFormatCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
   if (offenders.size === 0) return [];
 
   const entries = [...offenders.entries()];
-  const list = joinPhrases(entries.map(([field, stats]) => describe(field, stats)));
+  const [firstField, firstStats] = entries[0]!;
   const fieldNoun = entries.length === 1 ? 'date field' : 'date fields';
+  const areIs = entries.length === 1 ? 'is' : 'are';
 
   return [
     advisory({
       id: 'adv.date_format',
-      pointer: entries[0]![1].firstPointer,
+      pointer: firstStats.firstPointer,
+      summary:
+        `${entries.length} ${fieldNoun} ${areIs} not YYYY-MM-DD — ${firstField} at ` +
+        `${firstStats.firstPointer} arrived as ${quote(firstStats.firstValue)}.`,
       detail:
-        `This transmission carries ${entries.length} ${fieldNoun} in a form other than ` +
-        `YYYY-MM-DD: ${list}. The DS01 date objects (ADOP, LDOP, EDOP, CDAT and CDAT2) are ` +
-        `declared as plain strings, so a date arrives at the receiving country in whatever ` +
-        `form it was written. YYYY-MM-DD — the ISO-8601 calendar date, as in 2026-07-04 — ` +
-        `gives every date the same field widths, and a receiving system cannot order or ` +
-        `compare dates whose field widths vary.`,
+        'The DS01 date objects (ADOP, LDOP, EDOP, CDAT, CDAT2) are plain strings, so a date ' +
+        'arrives in whatever form it was written. YYYY-MM-DD, the ISO 8601 calendar date ' +
+        'format, is prescribed by DS01 Annex 1, ensuring that every date representation has ' +
+        'the same field widths, which is what lets a receiving system order and compare them.',
     }),
   ];
 };

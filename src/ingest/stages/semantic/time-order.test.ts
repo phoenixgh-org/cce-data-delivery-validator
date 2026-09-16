@@ -271,16 +271,17 @@ test('a forward-ordered payload stays silent, on both branches', () => {
 });
 
 test('a repeated timestamp is observed — strictly increasing means no ties', () => {
-  // Two repeats, not one: the worst-step sentence is suppressed for a single
-  // not-forward record (sl4y), so the zero-worst wording needs a plural to say
-  // it about.
   const [finding] = advisories(
     checkOnly(emsPayload([abstAt(0), abstAt(0), abstAt(0), abstAt(15)])),
   );
   assert.ok(finding, 'a repeat raised nothing');
   assert.equal(finding.pointer, '/data/0/records/1/ABST');
-  assert.match(finding.detail ?? '', /carries the same ABST as the record before it/);
-  assert.match(finding.detail ?? '', /No timestamp steps back/, 'nothing reversed, so say so');
+  // Nothing reversed, so the widest step back is zero — which is exactly how a
+  // set of exact repeats reads, and what distinguishes them from a reversal.
+  assert.equal(
+    finding.summary,
+    '2 records carry an ABST no later than the one before; the widest step back is 0 min.',
+  );
 });
 
 test('a backward step is observed on the RTMD branch too', () => {
@@ -307,31 +308,30 @@ test('it carries the count, the worst backward step in seconds, and the first po
     ),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 3 records/, 'the count');
-  assert.match(finding.detail ?? '', /2700 s \(45 min\)/, 'the worst backward step, in seconds');
-  assert.match(finding.detail ?? '', /first is at \/data\/0\/records\/1\/ABST/, 'the pointer');
-  assert.equal(finding.pointer, '/data/0/records/1/ABST', 'and on the finding itself');
+  // Minutes, however large the value (decided 2026-09-15): 45 min, never 2700 s
+  // and never 45 min expressed as hours.
+  assert.equal(
+    finding.summary,
+    '3 records carry an ABST no later than the one before; the widest step back is 45 min.',
+  );
+  assert.equal(finding.pointer, '/data/0/records/1/ABST', 'the first, in document order');
 });
 
-test('a single step does not report itself twice', () => {
-  // One not-forward record: describeFirst already names the step, so appending
-  // 'The furthest any of them steps back is …' would state the same measurement
-  // a second time, in the plural, about a set of one (sl4y).
+test('a single not-forward record takes the singular noun and verb', () => {
   const [finding] = advisories(checkOnly(emsPayload([abstAt(15), abstAt(0), abstAt(30)])));
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 1 record whose ABST/);
-  assert.match(finding.detail ?? '', /900 s \(15 min\) earlier than the record before it/);
-  assert.doesNotMatch(finding.detail ?? '', /any of them/, 'no plural for a set of one');
-  assert.doesNotMatch(finding.detail ?? '', /furthest/, 'the first IS the furthest');
+  assert.equal(
+    finding.summary,
+    '1 record carries an ABST no later than the one before; the widest step back is 15 min.',
+  );
 });
 
-test('the seconds reading stands alone when the step is not a whole minute', () => {
+test('a step that is not a whole minute keeps its fraction', () => {
   const [finding] = advisories(
     checkOnly(emsPayload(['20240115T033030Z', '20240115T033000Z', '20240115T034500Z'])),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /30 s earlier/);
-  assert.doesNotMatch(finding.detail ?? '', /min\)/, 'no fractional minutes invented');
+  assert.match(finding.summary ?? '', /the widest step back is 0.5 min\.$/);
 });
 
 test('a sub-second reversal is a step BACK, not a repeat (1dda)', () => {
@@ -349,21 +349,21 @@ test('a sub-second reversal is a step BACK, not a repeat (1dda)', () => {
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding, 'a reversal under one second still raised nothing');
   assert.equal(finding.pointer, '/data/0/records/1/ABST');
-  assert.match(finding.detail ?? '', /300 ms earlier than the record before it/);
-  assert.doesNotMatch(finding.detail ?? '', /same ABST/, 'the two values differ');
-  assert.doesNotMatch(finding.detail ?? '', /No timestamp steps back/, 'one did step back');
+  // The step is named rather than rounded away: 0 min is reserved for an exact
+  // repeat, so a sub-second reversal keeps a positive reading however small.
+  assert.match(finding.summary ?? '', /the widest step back is 0.005 min\.$/);
 });
 
 test('only an exactly equal epoch value reads as a repeat', () => {
   // The same instant written two ways is a tie; anything else is a step.
   const [tie] = advisories(checkOnly(emsPayload(['20240115T033000.000Z', '20240115T033000Z'])));
   assert.ok(tie);
-  assert.match(tie.detail ?? '', /carries the same ABST as the record before it/);
+  assert.match(tie.summary ?? '', /the widest step back is 0 min\.$/);
 
   // And a step of one millisecond is named rather than rounded away.
   const [step] = advisories(checkOnly(emsPayload(['20240115T033000.001Z', '20240115T033000Z'])));
   assert.ok(step);
-  assert.match(step.detail ?? '', /1 ms earlier than the record before it/);
+  assert.match(step.summary ?? '', /the widest step back is 0.00002 min\.$/);
 });
 
 // ── reports are independent series ──────────────────────────────────────────
@@ -396,7 +396,7 @@ test('counts are summed across reports and the first pointer is in document orde
     ),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 2 records/);
+  assert.match(finding.summary ?? '', /^2 records carry an ABST no later than the one before/);
   assert.equal(finding.pointer, '/data/1/records/1/ABST');
 });
 
@@ -463,18 +463,20 @@ test('PIN: §3.4 grades the swapped payload exactly as it grades the forward one
 // ── wording is acceptance, not polish ───────────────────────────────────────
 
 test('it names what arrived and what the order costs the receiving side', () => {
-  const detail = advisories(checkOnly(emsPayload(SWAPPED)))[0]?.detail ?? '';
+  const [finding] = advisories(checkOnly(emsPayload(SWAPPED)));
 
-  assert.match(detail, /ABST/, 'the object');
-  assert.match(detail, /\/data\/0\/records\/1\/ABST/, 'where');
-  assert.match(detail, /900 s \(15 min\)/, 'how far back');
-  assert.match(detail, /strictly increasing/, 'the rule being observed against');
-  assert.match(
-    detail,
-    /stores the records in the order they were sent/,
-    'and what the receiving side does with the order',
+  assert.equal(
+    finding?.summary,
+    '1 record carries an ABST no later than the one before; the widest step back is 15 min.',
   );
-  assert.match(detail, /Sorting the records oldest-first/, 'and the remedy');
+  assert.equal(finding?.pointer, '/data/0/records/1/ABST', 'where');
+  assert.equal(
+    finding?.detail,
+    "E006 reads a report's records as a time series with ABST strictly increasing down the " +
+      'array, and the receiving country stores them in the order sent. Sorting records ' +
+      'oldest-first before assembling the array ensures that the order in the payload ' +
+      'reflects the order of the physical readings.',
+  );
 });
 
 test('the detail carries no defect vocabulary and no synonym for the category', () => {
@@ -483,24 +485,27 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
   // would be a false statement about the supplier rather than a harsh tone.
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
-  const detail = advisories(checkOnly(emsPayload(SWAPPED)))[0]?.detail ?? '';
+  const [finding] = advisories(checkOnly(emsPayload(SWAPPED)));
 
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  for (const copy of [finding?.summary ?? '', finding?.detail ?? '']) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
+  }
 });
 
 test('the detail never says which record is the misplaced one', () => {
   // From the receiving side a backward step is equally consistent with a record
   // out of position, a mis-stamped timestamp, and a re-clocked logger. Naming a
   // cause would be concluding, which this category forbids.
-  const detail = advisories(checkOnly(emsPayload(SWAPPED)))[0]?.detail ?? '';
-  assert.doesNotMatch(detail, /misplaced|out of place|should have been|belongs at|duplicate/i);
+  const [finding] = advisories(checkOnly(emsPayload(SWAPPED)));
+  const copy = `${finding?.summary ?? ''} ${finding?.detail ?? ''}`;
+  assert.doesNotMatch(copy, /misplaced|out of place|should have been|belongs at|duplicate/i);
 });
 
-test('the detail stands alone per transmission', () => {
+test('the observation stands alone per transmission', () => {
   // The dashboard folds recurring advisories and shows only the most recent
-  // occurrence's detail, so each one has to be readable without its siblings.
-  const detail = advisories(checkOnly(emsPayload(SWAPPED)))[0]?.detail ?? '';
-  assert.match(detail, /This transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
+  // occurrence, so the observation has to be readable without its siblings.
+  const summary = advisories(checkOnly(emsPayload(SWAPPED)))[0]?.summary ?? '';
+  assert.match(summary, /^1 record carries an ABST no later than the one before/);
+  assert.doesNotMatch(summary, /this session|every transmission/i);
 });
