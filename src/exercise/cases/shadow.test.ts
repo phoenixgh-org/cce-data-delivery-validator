@@ -32,11 +32,21 @@
  * properties (LDOP/LMFR/LMOD/LPQS/LSER) whatever the case mutates. For those
  * the loop proves "the draft rejects this payload", not "the draft rejects it
  * for the planted reason", so a revision dropping the rule under test would not
- * flip the expectation here. The case this widening actually protects is the
- * two-report EMS `adv.blank_admin` one: the EMS baseline passes the draft, so
- * the blank AMFR's `minLength` is the draft's only objection to it, and a
- * revision dropping that rule turns its expectation false — which nothing in CI
- * would have said before olpa.
+ * flip the expectation here. Of the four advisory cases olpa newly covered, TWO
+ * are over-determined that way (`adv.null_identity-fail-blank-rtm-monitoring-id`
+ * and `adv.blank_admin-fail-blank-rtm-admin`, both rtm-baseline) and TWO are
+ * single-determined, which is what the widening actually protects:
+ *
+ *   - `adv.blank_admin-fail-second-of-two-ems-reports` — the EMS baseline passes
+ *     the draft, so the blank `/data/1/AMFR`'s `minLength` is the draft's ONLY
+ *     objection to the payload;
+ *   - `adv.null_accumulator-fail-null-runtime-during-outage` — every objection
+ *     the draft raises (`/data/0/records/1/CMPR` type, `/data/0/records/1/LERR`
+ *     type, and the `records/1` oneOf they break) is a consequence of the planted
+ *     nulls, nothing inherited from the baseline.
+ *
+ * A revision dropping either rule turns that case's expectation false — which
+ * nothing in CI would have said before olpa.
  *
  * WHAT THIS DOES NOT CHECK. The shadow FINDING — its requirement id, its detail,
  * the fact that it moves no status — is the grader's business and belongs to the

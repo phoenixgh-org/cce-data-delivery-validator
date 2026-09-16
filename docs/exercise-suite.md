@@ -1,12 +1,24 @@
 # The conformance exercise suite
 
-**Status:** contributor documentation. **Last updated:** 2026-08-05.
+**Status:** contributor documentation. **Last updated:** 2026-09-16.
 
-`npm run exercise` drives a **running** validator through every requirement the §7
-matrix says we grade, once in the passing direction and once in the failing one,
-then checks what came back. This document is its internals: the case model, the
-transform vocabulary, how coverage is computed, and how to add a case. The
-how-to-run lives in the [README](../README.md#exercising-a-running-instance--npm-run-exercise).
+A service that grades other people's conformance should be held to the same bar,
+and the only honest way to check the receiving side is to drive a deployed
+instance the way a supplier would. `npm run exercise` does that: it plays a table
+of 65 synthetic cases against a **running** validator and checks four things.
+
+- **Requirements, both directions.** Every requirement the §7 matrix says we grade
+  is exercised once in the passing direction and once in the failing one.
+- **Advisories, both halves.** Every registered advisory is fired by a case built
+  to provoke it, and conformant traffic is asserted to draw none.
+- **The DS01.3 shadow run.** Cases declare what the unpublished Annex 4 draft
+  would make of a payload the contract in force accepts.
+- **The advisory copy.** The prose a supplier would actually read is audited
+  run-wide for shape and vocabulary.
+
+This document is its internals: the case model, the transform vocabulary, how
+coverage is computed, and how to add a case. The how-to-run lives in the
+[README](../README.md#exercising-a-running-instance--npm-run-exercise).
 
 > ### ⚠ Synthetic test data only
 >
@@ -17,18 +29,19 @@ how-to-run lives in the [README](../README.md#exercising-a-running-instance--npm
 
 The code is `src/exercise/`:
 
-| Path                                    | Role                                                                                      |
-| --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `case.ts`                               | The case model — what a case may declare, and how a POST is materialized.                 |
-| `baseline.ts`                           | The pluggable baseline generators (one canonical, schema-valid payload — `rtm` or `ems`). |
-| `transforms/payload.ts`                 | Payload mutators: what is in the body.                                                    |
-| `transforms/transport.ts`               | Transport wrappers: how it goes on the wire.                                              |
-| `cases/{transport,payload,sequence}.ts` | The case table, one module per requirement domain.                                        |
-| `cases.ts`                              | The index that concatenates them into `EXERCISE_CASES`.                                   |
-| `runner/client.ts`                      | The only module that opens a socket.                                                      |
-| `runner/assertions.ts`                  | Pure grading of a case from statuses + findings.                                          |
-| `runner/coverage.ts`                    | The join onto `COMPLIANCE_MATRIX`.                                                        |
-| `runner/run.ts`                         | The CLI: resolve target, play, print, exit code, and --help.                              |
+| Path                                           | Role                                                                                                 |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `case.ts`                                      | The case model — what a case may declare, and how a POST is materialized.                            |
+| `baseline.ts`                                  | The pluggable baseline generators (one canonical, schema-valid payload — `rtm` or `ems`).            |
+| `transforms/payload.ts`                        | Payload mutators: what is in the body.                                                               |
+| `transforms/transport.ts`                      | Transport wrappers: how it goes on the wire.                                                         |
+| `cases/{transport,payload,sequence,shadow}.ts` | The case table, one module per requirement domain.                                                   |
+| `cases/shadow.test.ts`                         | The CI stand-in for a shadow expectation: every `ds013`-graded case put through the draft validator. |
+| `cases.ts`                                     | The index that concatenates them into `EXERCISE_CASES`.                                              |
+| `runner/client.ts`                             | The only module that opens a socket.                                                                 |
+| `runner/assertions.ts`                         | Pure grading of a case from statuses + findings.                                                     |
+| `runner/coverage.ts`                           | The join onto `COMPLIANCE_MATRIX`.                                                                   |
+| `runner/run.ts`                                | The CLI: resolve target, play, print, exit code, and --help.                                         |
 
 ## The case model: data, not code
 
@@ -211,24 +224,89 @@ table was rtm-only, so `$defs/ems-report`, `$defs/ems-record` and their `oneOf`s
 validated **nowhere** in this repo, live or in CI — while EMS manufacturers are the
 primary E006 audience and RTMD is the interop schema's deviation.
 
-Three §3.2 cases use it, filed in `cases/payload.ts` with the other schema-conformance
-cases — grouping is by requirement domain, never by payload type:
+Twenty-three cases declare it today — the advisory and readiness tables reach for the
+EMS branch too — and **five** of them target §3.2. Those five are filed in
+`cases/payload.ts` with the other schema-conformance cases; grouping is by requirement
+domain, never by payload type:
 
 | Case                                          | What it proves                                                                                                                                                                                                                                    |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `3.2-pass-ems-baseline`                       | A conformant EMS transmission validates and is accepted 200. Its three 15-minute-spaced records also earn the incidental §3.4 and §3.1 passes the single-record rtm fixture cannot.                                                               |
 | `3.2-fail-ems-mains-and-solar-power`          | `ems-record`'s power `oneOf` is mains (`SVA`) XOR solar (`DCSV`+`DCCD`); each branch carries an explicit `not` against the other's fields, so a record claiming both matches **neither** — and zero matches violates a `oneOf` exactly as two do. |
 | `3.2-fail-ems-version-strings-in-both-places` | `ems-report` lets `LSV`/`EMSV` sit on the report **or** on every record; putting them in both places matches **both** branches, which a `oneOf` also rejects.                                                                                     |
+| `3.2-fail-ems-null-tvc-without-lerr`          | A null `TVC` with no `LERR` beside it matches no branch of the record's null-explanation `oneOf` — the same zero-match shape as the power case, on a different rule.                                                                              |
+| `3.2-pass-ems-null-tvc-explained`             | The other side of that conditional: a null `TVC` accompanied by an `LERR` validates, so the rule is exercised in both directions rather than only where it bites.                                                                                 |
 
-The two fails are deliberately the opposite ways a `oneOf` can break, and between them
-they produce the multi-branch Ajv error set no rtm case can: a failed `oneOf` reports
-every branch's complaints at once, unlike the single `required`/`maximum` errors the
-rtm cases trigger. Their mutators **throw** when handed a payload without the mains /
-report-level shape their invalidity depends on, so an EMS case that forgets the
-declaration cannot materialize at all.
+Between them the three fails cover both ways a `oneOf` can break — zero matches twice
+(the power partition and the TVC/LERR conditional) and two matches once (the version
+strings) — and they produce the multi-branch Ajv error set no rtm case can: a failed
+`oneOf` reports every branch's complaints at once, unlike the single
+`required`/`maximum` errors the rtm cases trigger.
+
+The TVC/LERR conditional is worth naming on its own. It is the schema rule that lets a
+null temperature stand when an error code explains it, and it is why
+`adv.unexplained_null_temp` is designed for RTMD payloads only: on the EMS branch the
+schema already rejects the unexplained case, so an advisory there would restate a §3.2
+fail rather than add anything.
+
+The two ORIGINAL mutators — `addSolarPowerToMainsRecord` and
+`duplicateVersionStringsIntoRecords` — **throw** when handed a payload without the mains
+or report-level shape their invalidity depends on, so an EMS case that forgets the
+`baseline` declaration cannot materialize at all. `setInvalidValue('/data/0/records/0/TVC', null)`,
+which the null-TVC fail uses, throws on nothing: it simply writes the value, and the
+invalidity it claims is held by `cases.test.ts`'s real-Ajv check on the declared
+`schemaOutcome` instead.
 
 **Not here: a mixed-type payload** (rtm and ems reports in one transmission). Dropped
 2026-08-05; the design question is bd `dal`, and it is not answered by implementing one.
+
+## Advisory cases
+
+An advisory is an observation the service offers a supplier, not a requirement it
+grades — so the case model treats it as a first-class target while the coverage join
+refuses to count it as a requirement. Sixteen cases exercise the twelve registered
+advisories today.
+
+**Where they live.** In `cases/payload.ts`, beside the requirement cases. The grouping
+rule is unchanged: an advisory reads the body, so it belongs with the payload domain.
+There is no advisory module and no advisory directory.
+
+**`requirements` is empty.** Every `adv.*` case declares `requirements: []` (by1c.42),
+because an advisory is not a `COMPLIANCE_MATRIX` row: naming one in `requirements`
+would be reported as an unknown requirement, and naming a §7 id the case does not
+actually target would inflate requirement coverage. What the case claims is its
+`expectedFindings`.
+
+**The id is the claim.** An advisory case is named `adv.<id>-fail-<slug>`, and
+`cases.test.ts` reads the id up to the first hyphen and requires the case to expect
+that same id as an `info` finding under the contract profile. Both halves of that
+matter: `info` is the only severity `advisory()` can build, and a shadow-profile
+expectation would grade the unpublished draft rather than the catalogue in force. A
+mistyped expectation therefore fails CI instead of quietly crediting the exercise to
+the wrong advisory.
+
+**A fire case** sends traffic built to provoke exactly one advisory, in direction
+`fail`, and expects `{ requirement: 'adv.<id>', severity: 'info' }`. It may expect
+other findings too — a payload that draws an advisory is usually still accepted 200
+and still earns the incidental §3.2 pass — and it may carry a `ds013` expectation,
+since planting a defect is a statement about the draft as well as about the advisory.
+
+**A silence case** is the other half of the catalogue's contract, and it is an ordinary
+pass-direction case carrying `absentFindings`: the payload is conformant traffic the
+advisory must NOT speak about. Twelve cases declare an absence today. Most name a
+single advisory — the population its own header says it is silent on, such as solar
+records or an explained null — while the two baseline pass cases,
+`3.2-pass-baseline` and `3.2-pass-ems-baseline` — and the EMS readiness pass case
+`readiness.ems_dual_pass` — declare the **whole** catalogue silent by mapping
+`ADVISORY_IDS` off the registry, so an advisory that starts firing on a clean payload
+fails a case rather than passing unnoticed. Reading the list off the registry keeps the
+table data: an advisory added later is covered by those cases without anyone editing
+them.
+
+Coverage of the catalogue is a mechanical join like requirement coverage, and it is
+what pins "every registered advisory has a fire case" as a CI fact — see
+[The advisory join](#the-advisory-join) below for how it reads `expectedFindings` and
+why it deliberately says nothing about silence.
 
 ## What CI checks, and what only a live run can
 
@@ -236,13 +314,14 @@ The suite itself never runs in CI: it needs a server, so it has its own npm scri
 sits outside `npm test`'s glob. But the case table and transforms are pure, so the
 colocated tests — which **do** run in CI — check the half that needs no server:
 
-| Checked in CI (`npm test`)                                                                                                                                                                                                                                                                                                                                | Only checkable live (`npm run exercise`)                |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Every materialized payload really behaves as its case DECLARED: `invalid` rejected by the vendored Ajv, `unsupported-version` unresolvable in the registry, `valid` clean (`cases.test.ts`). Direction is not the test — most fail-direction cases carry a schema-valid payload whose defect lives above Ajv: transport, sequence, or §3.1/§3.4 semantics | The HTTP status each POST actually returns              |
-| A case expecting the §3.2 outdated grade names a registered version that really is older than current                                                                                                                                                                                                                                                     | That the finding the grader records is the one expected |
-| Transport wrappers really produce the method/headers/bytes they claim                                                                                                                                                                                                                                                                                     | The §2.1 overlap (a timing fact — see below)            |
-| Table invariants: unique ids, distinct transferIds outside deliberate replays, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload                                                                                                              | The end-to-end pipeline, database and dashboard API     |
-| The coverage join, that every gradeable requirement is claimed in both directions, and that no claimed row is printed without the payload types it was exercised with                                                                                                                                                                                     |                                                         |
+| Checked in CI (`npm test`)                                                                                                                                                                                                                                                                                                                                | Only checkable live (`npm run exercise`)                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Every materialized payload really behaves as its case DECLARED: `invalid` rejected by the vendored Ajv, `unsupported-version` unresolvable in the registry, `valid` clean (`cases.test.ts`). Direction is not the test — most fail-direction cases carry a schema-valid payload whose defect lives above Ajv: transport, sequence, or §3.1/§3.4 semantics | The HTTP status each POST actually returns                                          |
+| A case expecting the §3.2 outdated grade names a registered version that really is older than current                                                                                                                                                                                                                                                     | That the finding the grader records is the one expected                             |
+| Transport wrappers really produce the method/headers/bytes they claim                                                                                                                                                                                                                                                                                     | The §2.1 overlap (a timing fact — see below)                                        |
+| Table invariants: unique ids, distinct transferIds outside deliberate replays, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload                                                                                                              | The end-to-end pipeline, database and dashboard API                                 |
+| The coverage join, that every gradeable requirement is claimed in both directions, that every registered advisory has a fire case, and that no claimed row is printed without the payload types it was exercised with                                                                                                                                     | The advisory copy a live instance actually served (`auditAdvisoryCopy` — see below) |
+| The draft verdict behind every shadow expectation: `cases/shadow.test.ts` puts each case carrying a `ds013` expectation — thirteen today, from the readiness module and the advisory table alike — through the Annex 4 draft validator and asserts the `pass`/`fail` the case declared                                                                    |                                                                                     |
 
 The live script and the CI-tested core import the **same** case definitions, so they
 cannot drift apart.
@@ -444,7 +523,9 @@ skipping the older version.
    case on the schema's EMS branch is one that DECLARES `baseline: emsBaseline` and
    still lives with its domain — the EMS §3.2 cases sit in `cases/payload.ts` beside the
    rtm ones. Do not open a module or a directory for a payload type; which branch a case
-   exercises is a field to read off the case, not a file location.
+   exercises is a field to read off the case, not a file location. An advisory case has
+   no requirement domain; it goes in `cases/payload.ts` — see
+   [Advisory cases](#advisory-cases).
 2. Give it a stable, unique id of the form `<requirement>-<direction>-<slug>`.
 3. Read the expected status and findings **off the pipeline** (`src/ingest/route.ts` and
    the stage that owns them), not off the requirement prose. Both files' headers record
@@ -458,3 +539,7 @@ skipping the older version.
    matrix does not carry.
 6. Then run it for real against a live instance — the status and finding halves are only
    provable there.
+
+If the case changes what this document says, edit the prose and bump the **Last
+updated** header in the same commit, so the header never lags the text. That mirrors
+the rule `DESIGN.md` carries for the same reason.

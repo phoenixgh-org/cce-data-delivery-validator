@@ -21,8 +21,10 @@
  *     PRESENCE-based, pooled across the case's POSTs; see `expectedFindings`.
  *
  * A multi-POST case is how the sequence-dependent heuristics (§1.8 duplicates,
- * §2.1 serial delivery, §3.4 cadence across transmissions) get exercised without
- * a second mechanism — a single-POST case is just a list of one.
+ * §2.1 serial delivery) get exercised without a second mechanism — a single-POST
+ * case is just a list of one. §3.4 is NOT one of them: cadence is graded per
+ * report WITHIN one transmission (../ingest/stages/semantic/interval.ts), so both
+ * §3.4 cases are single-POST despite living with the sequence table.
  */
 
 import type { Severity } from '../db/repository.js';
