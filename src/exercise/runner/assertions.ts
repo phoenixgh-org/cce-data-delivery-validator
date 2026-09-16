@@ -33,6 +33,11 @@
  */
 
 import type { Severity } from '../../db/repository.js';
+import {
+  ADVISORY_COPY_BANNED_WORDS,
+  ADVISORY_COPY_EXEMPT_PHRASES,
+  isAdvisoryId,
+} from '../../ingest/stages/semantic/advisory-finding.js';
 import { CONTRACT_PROFILE, type Profile } from '../../schema-registry.js';
 import {
   isAcceptedStatus,
@@ -63,6 +68,19 @@ export interface ObservedFinding {
    * lineages" and the default has to be read off the registry.
    */
   readonly outdated: boolean;
+  /**
+   * The one-line observation an advisory carries (agj.17), as the instance served
+   * it. Optional, and left `undefined` when the wire carried no string — see
+   * {@link auditAdvisoryCopy} for why the absent case is not collapsed to `''`.
+   *
+   * NOT part of {@link findingKey} and deliberately absent from
+   * `ExpectedFinding`: the copy is prose a grader may reword, so a case matching
+   * on it would fail on an edit that changed no behaviour. It is audited
+   * run-wide instead.
+   */
+  readonly summary?: string;
+  /** The rationale behind the advisory row's expander. Optional like {@link summary}. */
+  readonly detail?: string;
 }
 
 /**
@@ -310,5 +328,147 @@ export function tally(verdicts: readonly CaseVerdict[]): RunTotals {
     posts,
     accepted,
     rejected: posts - accepted,
+  };
+}
+
+// ── the advisory-copy audit (y0w4) ──────────────────────────────────────────
+
+/**
+ * Roughly the length an advisory `summary` is written to (advisory-finding.ts).
+ * A longer one is reported, never failed: the counts a summary carries grow with
+ * the payload, so a run against a bigger body can push a well-written line past
+ * the mark without anything being wrong with it.
+ */
+const SUMMARY_LENGTH_HINT = 90;
+
+/** One advisory id and the summary an instance served with it, for printing. */
+export interface AdvisoryCopyLine {
+  readonly requirement: string;
+  /** The summary as served, or `undefined` when none came back. */
+  readonly summary?: string;
+}
+
+/**
+ * What {@link auditAdvisoryCopy} found: the copy worth printing, plus what is
+ * wrong with it, split by how much it should cost the run.
+ */
+export interface CopyAudit {
+  /** How many advisory findings the session carried — occurrences, not ids. */
+  readonly observed: number;
+  /** One entry per distinct `(id, summary)` pair, in first-seen order. */
+  readonly lines: readonly AdvisoryCopyLine[];
+  /** Copy defects. A non-empty list fails the run. */
+  readonly violations: readonly string[];
+  /** Copy worth a second look that fails nothing — today, over-long summaries. */
+  readonly warnings: readonly string[];
+  /** Facts about the target instance rather than about its copy. */
+  readonly notes: readonly string[];
+}
+
+/** Remove the exempt phrases, then ask whether the banned vocabulary remains. */
+function readsAsDefect(copy: string): boolean {
+  let bare = copy;
+  for (const phrase of ADVISORY_COPY_EXEMPT_PHRASES) bare = bare.split(phrase).join(' ');
+  return ADVISORY_COPY_BANNED_WORDS.test(bare);
+}
+
+/** Collapse repeats without reordering: the same defect fires once per transmission. */
+function distinct(lines: readonly string[]): string[] {
+  return [...new Set(lines)];
+}
+
+/**
+ * Audit the ADVISORY COPY a live instance actually served — a run-wide
+ * invariant, not a per-case expectation (y0w4).
+ *
+ * Every advisory finding in the session is held to three things: `summary` is a
+ * non-blank string, `detail` is a non-blank string, and neither reads as a
+ * defect ({@link ADVISORY_COPY_BANNED_WORDS}, with the clause-1.8 exemption
+ * applied first). That is the same bar the per-check copy tests hold each
+ * check's own prose to; what this adds is the rest of the path — repository
+ * INSERT, SELECT, `toFindingView`, the dashboard API — which no pure test can
+ * reach without a running instance.
+ *
+ * TOLERANCE, and why it is asymmetric. The runner points at whatever instance
+ * the operator names, which may predate the `summary` column. If NO observed
+ * advisory carries a summary, that is a fact about the instance: it is reported
+ * as a note and fails nothing. If SOME carry one and some do not, the column is
+ * there and a row went out without copy — which is a violation, and exactly the
+ * regression the audit exists to catch. `detail` has no such tolerance: it has
+ * been served for as long as findings have.
+ *
+ * Pure, like everything else in this module: it reads the same finding map the
+ * case grading reads, so the rule itself is exercised in CI against synthetic
+ * findings.
+ */
+export function auditAdvisoryCopy(findingsByTransmission: FindingsByTransmission): CopyAudit {
+  const advisories: ObservedFinding[] = [];
+  for (const findings of findingsByTransmission.values()) {
+    for (const finding of findings) {
+      if (isAdvisoryId(finding.requirement)) advisories.push(finding);
+    }
+  }
+
+  const lines: AdvisoryCopyLine[] = [];
+  const seenLines = new Set<string>();
+  for (const found of advisories) {
+    const key = `${found.requirement} ${found.summary ?? ''}`;
+    if (seenLines.has(key)) continue;
+    seenLines.add(key);
+    lines.push(
+      found.summary === undefined
+        ? { requirement: found.requirement }
+        : { requirement: found.requirement, summary: found.summary },
+    );
+  }
+
+  const violations: string[] = [];
+  const warnings: string[] = [];
+  const notes: string[] = [];
+
+  // The instance-fact branch: no summary anywhere. Say so once, grade nothing on
+  // a field this target does not have, and still hold `detail` to the bar below.
+  const servesSummary = advisories.some((found) => found.summary !== undefined);
+  if (advisories.length > 0 && !servesSummary) {
+    notes.push(
+      `summary not served by this instance — ${advisories.length} advisory finding(s), ` +
+        `none carrying the field`,
+    );
+  }
+
+  for (const found of advisories) {
+    const id = found.requirement;
+
+    if (servesSummary) {
+      if (found.summary === undefined) {
+        violations.push(`${id}: no summary served, while other advisories carry one`);
+      } else if (found.summary.trim().length === 0) {
+        violations.push(`${id}: summary is blank`);
+      } else {
+        if (readsAsDefect(found.summary)) {
+          violations.push(`${id}: summary reads as a defect: ${found.summary}`);
+        }
+        if (found.summary.length > SUMMARY_LENGTH_HINT) {
+          warnings.push(
+            `${id}: summary is ${found.summary.length} characters ` +
+              `(over ${SUMMARY_LENGTH_HINT}): ${found.summary}`,
+          );
+        }
+      }
+    }
+
+    if (found.detail === undefined || found.detail.trim().length === 0) {
+      violations.push(`${id}: detail is blank`);
+    } else if (readsAsDefect(found.detail)) {
+      violations.push(`${id}: detail reads as a defect: ${found.detail}`);
+    }
+  }
+
+  return {
+    observed: advisories.length,
+    lines,
+    violations: distinct(violations),
+    warnings: distinct(warnings),
+    notes,
   };
 }

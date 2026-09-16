@@ -19,6 +19,7 @@ import assert from 'node:assert/strict';
 
 import type { ExerciseCase } from '../case.js';
 import {
+  auditAdvisoryCopy,
   judgeCase,
   missingFindings,
   poolCaseFindings,
@@ -425,4 +426,152 @@ test('tally counts cases, POSTs and accepted vs rejected by actual status', () =
     accepted: 1,
     rejected: 2,
   });
+});
+
+// ── the advisory-copy audit (y0w4) ──────────────────────────────────────────
+
+/**
+ * One observed advisory, wired into a one-transmission finding map. The copy is
+ * the subject here, so everything else is a default.
+ */
+function advisoryFindings(
+  entries: readonly Partial<ObservedFinding>[],
+): ReturnType<typeof findings> {
+  return findings({
+    'tx-1': entries.map((entry) => ({
+      requirement: 'adv.null_padding',
+      severity: 'info' as const,
+      outdated: false,
+      summary: 'A summary that observes and concludes nothing.',
+      detail: 'Why a receiving country cares, in a sentence.',
+      ...entry,
+    })),
+  });
+}
+
+test('a blank summary is a violation, and a served one that observes is clean', () => {
+  const clean = auditAdvisoryCopy(advisoryFindings([{}]));
+  assert.deepEqual(clean.violations, []);
+  assert.deepEqual(clean.warnings, []);
+  assert.deepEqual(clean.notes, []);
+  assert.equal(clean.observed, 1);
+
+  const blank = auditAdvisoryCopy(advisoryFindings([{ summary: '   ' }]));
+  assert.equal(blank.violations.length, 1);
+  assert.match(blank.violations[0]!, /adv\.null_padding: summary is blank/);
+
+  const noDetail = auditAdvisoryCopy(advisoryFindings([{ detail: '' }]));
+  assert.deepEqual(noDetail.violations, ['adv.null_padding: detail is blank']);
+});
+
+test('the §7 findings a session also carries are not audited', () => {
+  // The bar is the ADVISORY wording rule. A §3.2 fail is a verdict and is
+  // supposed to read like one, so auditing it would fail every run on the
+  // vocabulary its own copy is written in.
+  const audit = auditAdvisoryCopy(
+    findings({
+      'tx-1': [{ requirement: '3.2', severity: 'fail', outdated: false, detail: 'invalid body' }],
+    }),
+  );
+  assert.equal(audit.observed, 0);
+  assert.deepEqual(audit.violations, []);
+});
+
+test('defect vocabulary in either piece of copy is a violation', () => {
+  const inSummary = auditAdvisoryCopy(
+    advisoryFindings([{ summary: '3 of 12 reports have an invalid serial number.' }]),
+  );
+  assert.equal(inSummary.violations.length, 1);
+  assert.match(inSummary.violations[0]!, /summary reads as a defect/);
+
+  const inDetail = auditAdvisoryCopy(
+    advisoryFindings([{ detail: 'The supplier must correct this error.' }]),
+  );
+  assert.equal(inDetail.violations.length, 1);
+  assert.match(inDetail.violations[0]!, /detail reads as a defect/);
+});
+
+test('the clause-1.8 phrase is exempt, so the approved rationale passes', () => {
+  // "a delivery failure" names the circumstance requirements clause 1.8 allows a
+  // retransmission after — a statement about the clause, not a verdict on the
+  // payload. The exemption is removed before the bar is applied, so the same
+  // sentence without the phrase still trips on "failure".
+  const approved = auditAdvisoryCopy(
+    advisoryFindings([
+      {
+        detail:
+          'Countries should anticipate occasional duplicate transmissions, which ' +
+          'requirements clause 1.8 allows after a delivery failure or on request.',
+      },
+    ]),
+  );
+  assert.deepEqual(approved.violations, []);
+
+  const unexempt = auditAdvisoryCopy(
+    advisoryFindings([{ detail: 'The report arrived after a transmission failure.' }]),
+  );
+  assert.equal(unexempt.violations.length, 1);
+});
+
+test('no summary anywhere is an instance fact, not a run failure', () => {
+  // The runner points at whatever instance the operator names, and one older
+  // than the `summary` column serves findings without it. Reported, never failed
+  // — and the detail bar still applies.
+  const audit = auditAdvisoryCopy(
+    advisoryFindings([{ summary: undefined }, { summary: undefined }]),
+  );
+  assert.deepEqual(audit.violations, []);
+  assert.equal(audit.notes.length, 1);
+  assert.match(audit.notes[0]!, /summary not served by this instance — 2 advisory finding\(s\)/);
+});
+
+test('some summaries served and some absent IS a violation', () => {
+  // The column exists on this instance, so a row without copy is a row that lost
+  // its copy — the regression the audit is for.
+  const audit = auditAdvisoryCopy(
+    advisoryFindings([{}, { requirement: 'adv.blank_admin', summary: undefined }]),
+  );
+  assert.deepEqual(audit.notes, []);
+  assert.equal(audit.violations.length, 1);
+  assert.match(audit.violations[0]!, /adv\.blank_admin: no summary served/);
+});
+
+test('an over-long summary is a warning and nothing more', () => {
+  // Counts grow with the payload, so a well-written line can outgrow the mark
+  // the copy is written to without anything being wrong with it.
+  const long = `${'a'.repeat(95)}.`;
+  const audit = auditAdvisoryCopy(advisoryFindings([{ summary: long }]));
+  assert.deepEqual(audit.violations, []);
+  assert.equal(audit.warnings.length, 1);
+  assert.match(audit.warnings[0]!, /summary is 96 characters \(over 90\)/);
+});
+
+test('repeated occurrences collapse into one printable line and one violation', () => {
+  // An advisory fires on every transmission that provokes it, with identical
+  // wording. The report should show the sentence once, not fourteen times.
+  const audit = auditAdvisoryCopy(
+    findings({
+      'tx-1': [
+        {
+          requirement: 'adv.null_padding',
+          severity: 'info',
+          outdated: false,
+          summary: 'An invalid line.',
+          detail: 'A rationale.',
+        },
+      ],
+      'tx-2': [
+        {
+          requirement: 'adv.null_padding',
+          severity: 'info',
+          outdated: false,
+          summary: 'An invalid line.',
+          detail: 'A rationale.',
+        },
+      ],
+    }),
+  );
+  assert.equal(audit.observed, 2);
+  assert.deepEqual(audit.lines, [{ requirement: 'adv.null_padding', summary: 'An invalid line.' }]);
+  assert.equal(audit.violations.length, 1);
 });

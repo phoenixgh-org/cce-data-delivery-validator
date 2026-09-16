@@ -90,3 +90,34 @@ export function advisory(input: AdvisoryInput): Finding {
     code: input.id,
   };
 }
+
+/**
+ * THE WORDING BAR, as a regular expression — the vocabulary advisory copy may
+ * never use (Benson, 2026-08-04). An advisory is raised against a payload that
+ * broke no rule, so "warning", "issue", "error", "must" and their relatives
+ * would be false statements about the supplier rather than merely a harsh tone.
+ *
+ * It lives here, beside {@link advisory}, because two different readers enforce
+ * it and a second copy would let them drift: the per-check copy tests hold each
+ * check's own `summary`/`detail` to it, and the exercise runner audits the copy a
+ * LIVE instance actually served (`src/exercise/runner/assertions.ts`). Nothing at
+ * ingest time reads it — the bar is an assertion about prose a human wrote, not a
+ * filter applied to it.
+ *
+ * No `g` flag on purpose: a global regular expression carries `lastIndex` between
+ * calls, and a shared one would then answer differently depending on who tested
+ * a string last.
+ */
+export const ADVISORY_COPY_BANNED_WORDS =
+  /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+
+/**
+ * Phrases removed from a piece of copy BEFORE {@link ADVISORY_COPY_BANNED_WORDS}
+ * is applied to it, rather than words struck off the bar.
+ *
+ * One entry today: "a delivery failure" (agj.17, 2026-09-15) names the
+ * circumstance requirements clause 1.8 allows a retransmission after. It is a
+ * statement about that clause, not a verdict on the payload in hand, so the
+ * approved rationale may carry it while "failure" stays banned everywhere else.
+ */
+export const ADVISORY_COPY_EXEMPT_PHRASES: readonly string[] = ['a delivery failure'];

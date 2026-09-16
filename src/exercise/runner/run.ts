@@ -13,10 +13,11 @@
  *   npm run exercise -- https://host       # explicit target
  *   EXERCISE_BASE_URL=https://host npm run exercise
  *
- * WHAT IT PRINTS is a verdict list, run counts, the coverage gaps, and the
- * DASHBOARD URL of the session it just filled. The dashboard is the detailed
- * human-readable report (epic 8qa: "the main human-readable report is the
- * validator UI itself"); this output is a summary, not a second report.
+ * WHAT IT PRINTS is a verdict list, run counts, the advisory copy the instance
+ * served, the coverage gaps, and the DASHBOARD URL of the session it just
+ * filled. The dashboard is the detailed human-readable report (epic 8qa: "the
+ * main human-readable report is the validator UI itself"); this output is a
+ * summary, not a second report.
  *
  * SYNTHETIC DATA ONLY (DESIGN.md): every byte sent comes from the exercise
  * baseline + transform vocabulary. Nothing here reads real CCE data.
@@ -65,9 +66,11 @@ import {
 import { EXERCISE_CASES } from '../cases.js';
 import type { TransportContext, WireRequest } from '../transforms/transport.js';
 import {
+  auditAdvisoryCopy,
   judgeCase,
   tally,
   type CaseVerdict,
+  type CopyAudit,
   type FindingsByTransmission,
   type PostOutcome,
 } from './assertions.js';
@@ -94,7 +97,8 @@ report). Sends synthetic data only.
 
   <base-url>   target origin (default ${DEFAULT_BASE_URL}, or $EXERCISE_BASE_URL)
 
-Exit codes: 0 all cases passed · 1 a case failed · 2 could not run.`;
+Exit codes: 0 all cases passed and the advisory copy is clean · 1 a case failed,
+or the advisory-copy audit found a violation · 2 could not run.`;
 
 /** Resolve the target origin: CLI argument, then env, then localhost. */
 export function resolveBaseUrl(argv: readonly string[], env: Record<string, string | undefined>) {
@@ -181,6 +185,13 @@ export function planPlayOrder(cases: readonly ExerciseCase[]): PlayOrder {
 export interface RunResult {
   readonly session: SessionHandle;
   readonly verdicts: readonly CaseVerdict[];
+  /**
+   * The run-wide advisory-copy audit (y0w4) — a session-level fact, not a case
+   * one. The copy is prose graders may reword, so no case expects a particular
+   * summary; what is checked is that every advisory the instance served carries
+   * one, carries a rationale, and says neither in defect vocabulary.
+   */
+  readonly advisoryCopy: CopyAudit;
 }
 
 /**
@@ -225,7 +236,45 @@ export async function runExercise(
   const verdicts = cases.map((kase) =>
     judgeCase(kase, outcomesByCase.get(kase.id) ?? [], findings),
   );
-  return { session, verdicts };
+  // Audited over the SESSION's findings rather than over the verdicts: the copy
+  // bar belongs to every advisory the instance served, including ones no case
+  // named, and pooling per case would judge a shared advisory twice.
+  return { session, verdicts, advisoryCopy: auditAdvisoryCopy(findings) };
+}
+
+/**
+ * The advisory block: the copy a supplier would actually read, then whatever the
+ * audit has to say about it (y0w4).
+ *
+ * The summary lines are the point. The dashboard is the detailed report, but a
+ * run that never shows the prose leaves the operator no way to notice that a
+ * well-graded advisory says something wrong — so one line per distinct
+ * `(id, summary)` is printed. Distinct, not per occurrence: the same advisory
+ * fires on many transmissions of a run with identical wording, and fourteen
+ * copies of one sentence would bury the rest of the output.
+ *
+ * Violations and warnings are separated because they cost different things: a
+ * violation fails the run ({@link main}), a warning is a long summary and counts
+ * grow with the payload. A note is a fact about the target instance.
+ */
+function formatAdvisoryCopy(audit: CopyAudit): string[] {
+  if (audit.observed === 0) return [];
+
+  const lines: string[] = [];
+  lines.push(`advisories — ${audit.observed} finding(s), ${audit.lines.length} distinct`);
+  const width = Math.max(...audit.lines.map((line) => line.requirement.length));
+  for (const line of audit.lines) {
+    lines.push(`  ${line.requirement.padEnd(width)}  ${line.summary ?? '(no summary served)'}`);
+  }
+
+  if (audit.violations.length + audit.warnings.length + audit.notes.length > 0) {
+    lines.push('');
+    lines.push('advisory copy');
+    for (const violation of audit.violations) lines.push(`  FAIL  ${violation}`);
+    for (const warning of audit.warnings) lines.push(`  warn  ${warning}`);
+    for (const note of audit.notes) lines.push(`  note  ${note}`);
+  }
+  return lines;
 }
 
 /** Render the run as printable lines. Pure, so the shape is easy to eyeball. */
@@ -249,6 +298,11 @@ export function formatRun(
   lines.push(
     `${totals.posts} POST(s) · ${totals.accepted} accepted (2xx) · ${totals.rejected} rejected`,
   );
+  const advisoryLines = formatAdvisoryCopy(result.advisoryCopy);
+  if (advisoryLines.length > 0) {
+    lines.push('');
+    lines.push(...advisoryLines);
+  }
   lines.push('');
   lines.push(...formatCoverage(computeCoverage(cases, COMPLIANCE_MATRIX)));
   lines.push('');
@@ -291,7 +345,13 @@ export async function main(
   }
 
   for (const line of formatRun(baseUrl, result, EXERCISE_CASES)) console.log(line);
-  return result.verdicts.every((verdict) => verdict.ok) ? 0 : 1;
+  // An advisory-copy violation fails the run on its own, even with every case
+  // green (y0w4). The copy is part of what the service delivers, and a run that
+  // exited 0 while printing an advisory with no summary would be reporting the
+  // gap to nobody.
+  const ok =
+    result.verdicts.every((verdict) => verdict.ok) && result.advisoryCopy.violations.length === 0;
+  return ok ? 0 : 1;
 }
 
 // Run only when executed directly (not when imported by tests).

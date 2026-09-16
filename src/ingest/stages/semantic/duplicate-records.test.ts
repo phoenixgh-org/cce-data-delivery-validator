@@ -36,6 +36,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
+import { ADVISORY_COPY_BANNED_WORDS, ADVISORY_COPY_EXEMPT_PHRASES } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { duplicateRecordsCheck } from './duplicate-records.js';
 import { duplicateCheck } from './duplicate.js';
@@ -574,8 +575,11 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
   // retransmission after. It is a statement about that clause, not a verdict on
   // this payload, so it is removed before the bar is applied rather than the bar
   // being loosened.
-  const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  //
+  // The bar itself is imported rather than written here (y0w4): the exercise
+  // runner holds a LIVE instance's advisory copy to the same words, and two
+  // copies of the list would drift the day one of them grew a word.
+  const defectWords = ADVISORY_COPY_BANNED_WORDS;
   const finding = only(emsPayload(RE_APPENDED));
 
   assert.match(
@@ -583,10 +587,9 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
     /clause 1\.8 allows after a delivery failure/,
     'the exemption',
   );
-  for (const copy of [
-    finding.summary ?? '',
-    (finding.detail ?? '').replace('a delivery failure', ''),
-  ]) {
+  const stripExempt = (copy: string) =>
+    ADVISORY_COPY_EXEMPT_PHRASES.reduce((text, phrase) => text.split(phrase).join(' '), copy);
+  for (const copy of [finding.summary ?? '', stripExempt(finding.detail ?? '')]) {
     assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
   }

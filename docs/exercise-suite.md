@@ -256,6 +256,24 @@ That is precisely why it is a live assertion and never a CI one. If it ever fail
 right response is to **say so** — dropping it would leave §2.1 with no fail-direction
 exercise at all.
 
+**The advisory copy is audited run-wide, not case by case.** Every advisory carries a
+one-line `summary` beside its `detail`, and that prose reaches the supplier through the
+repository, the dashboard API and the browser — a path no pure test can walk. So the
+runner holds the copy a live instance actually served to one session-level invariant
+(`auditAdvisoryCopy` in `runner/assertions.ts`): each advisory finding has a non-blank
+summary and a non-blank detail, and neither uses the defect vocabulary the category is
+closed to. The word list is imported from `ADVISORY_COPY_BANNED_WORDS` beside
+`advisory()`, so the per-check copy tests and the runner cannot drift apart, and the
+clause-1.8 phrase "a delivery failure" is removed before the bar is applied rather than
+struck off it. It is deliberately not an `ExpectedFinding` field: the copy is prose a
+grader may reword, and a case matching on it would fail on an edit that changed no
+behaviour. The runner prints one line per distinct `(advisory, summary)` pair, and a
+violation fails the run on its own — exit 1 even with every case green. Two things are
+softer than that: a summary over 90 characters is a warning, because the counts a
+summary carries grow with the payload, and a target that serves no summary on **any**
+advisory is reported as an instance fact rather than a failure. A target that serves
+some and not others is a violation, which is the regression the audit exists to catch.
+
 ## Coverage is a mechanical join
 
 Which requirements the suite exercises is computed, never annotated. `computeCoverage`

@@ -17,8 +17,9 @@ import assert from 'node:assert/strict';
 import { emsBaseline } from '../baseline.js';
 import type { ExerciseCase } from '../case.js';
 import { EXERCISE_CASES } from '../cases.js';
+import { auditAdvisoryCopy, judgeCase, type FindingsByTransmission } from './assertions.js';
 import type { SessionHandle } from './client.js';
-import { planPlayOrder, playCase, type PostPlayer } from './run.js';
+import { formatRun, planPlayOrder, playCase, type PostPlayer } from './run.js';
 
 function stub(id: string, setup?: ExerciseCase['setup']): ExerciseCase {
   return {
@@ -166,4 +167,55 @@ test('the runner sends the baseline a case DECLARES, not the default one', async
   await playCase('http://stub', SESSION, stub('declares-nothing'), {}, play);
   const fallback = JSON.parse(bodies[0]!) as { meta: { transferType: string } };
   assert.equal(fallback.meta.transferType, 'rtm', 'an undeclared case is unchanged');
+});
+
+test('the printed run shows the advisory copy the instance served', () => {
+  // The dashboard is the detailed report, but the terminal is where an operator
+  // reads the prose a supplier would see (y0w4). One line per distinct summary,
+  // then whatever the audit has to say about it.
+  const kase = stub('advisory-case');
+  const observed: FindingsByTransmission = new Map([
+    [
+      'tx-1',
+      [
+        {
+          requirement: '3.2',
+          severity: 'pass' as const,
+          outdated: false,
+        },
+        {
+          requirement: 'adv.null_padding',
+          severity: 'info' as const,
+          outdated: false,
+          summary: '3 of 12 reports close with null-padded records.',
+          detail: 'Why a receiving country cares.',
+        },
+        {
+          requirement: 'adv.blank_admin',
+          severity: 'info' as const,
+          outdated: false,
+          summary: '   ',
+          detail: 'Why a receiving country cares.',
+        },
+      ],
+    ],
+  ]);
+  const outcomes = [{ label: '#0', expectedStatus: 200, status: 200, transmissionId: 'tx-1' }];
+
+  const lines = formatRun(
+    'http://stub',
+    {
+      session: SESSION,
+      verdicts: [judgeCase(kase, outcomes, observed)],
+      advisoryCopy: auditAdvisoryCopy(observed),
+    },
+    [kase],
+  );
+  const printed = lines.join('\n');
+
+  assert.match(printed, /advisories — 2 finding\(s\), 2 distinct/);
+  assert.match(printed, /adv\.null_padding {2}3 of 12 reports close with null-padded records\./);
+  assert.match(printed, /advisory copy\n {2}FAIL {2}adv\.blank_admin: summary is blank/);
+  // The §3.2 pass is not advisory copy and never appears in the block.
+  assert.doesNotMatch(printed, /advisories[^]*\n {2}3\.2/);
 });

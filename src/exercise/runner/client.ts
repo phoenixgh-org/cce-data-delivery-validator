@@ -254,6 +254,8 @@ export async function fetchFindingsByTransmission(
               severity: string;
               profile?: unknown;
               outdated?: unknown;
+              summary?: unknown;
+              detail?: unknown;
             }) => ({
               requirement: f.requirement,
               severity: f.severity as Severity,
@@ -281,6 +283,20 @@ export async function fetchFindingsByTransmission(
               // finding that is not flagged, which is exactly `false`. So the
               // grading side never sees a third state.
               outdated: f.outdated === true,
+              // The two pieces of ADVISORY PROSE (y0w4): `summary` is the
+              // one-line observation shown on the row, `detail` the rationale
+              // behind its expander. Carried so the run-wide audit in
+              // ./assertions.ts can hold a live instance's copy to the wording
+              // bar — the only place that path is checked end to end.
+              //
+              // TOLERANT OF ABSENCE like `profile`, and NOT normalized: a
+              // non-string (absent, or `null` for a row written before the
+              // column existed) becomes `undefined`, and the audit reads a
+              // whole run of undefined summaries as "this instance does not
+              // serve the field" rather than as copy that is missing. Coercing
+              // to `''` here would erase that distinction at the boundary.
+              summary: typeof f.summary === 'string' ? f.summary : undefined,
+              detail: typeof f.detail === 'string' ? f.detail : undefined,
             }),
           ),
       );
