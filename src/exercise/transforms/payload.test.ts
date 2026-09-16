@@ -31,6 +31,7 @@ import { MIN_RECORDS } from '../../ingest/stages/semantic/null-padding.js';
 import { DEFAULT_BASELINE, emsBaseline } from '../baseline.js';
 import type { TransmissionPayload } from '../baseline.js';
 import {
+  appendSecondReport,
   blankAdminObject,
   explainedNullRuntimeDuringOutage,
   explainedNullTemperature,
@@ -251,4 +252,76 @@ test('blankAdminObject empties the named object and nothing else', () => {
 
 test('blankAdminObject refuses a key the report does not carry', () => {
   assert.throws(() => blankAdminObject('AMID').apply(ems()), /carries no AMID/);
+});
+
+// ── the multi-report mutator (c833) ─────────────────────────────────────────
+//
+// `appendSecondReport` is the one transform whose contract is entirely invisible
+// to Ajv: `data` has no `maxItems` on either branch, so a clone that reused the
+// source report's identifiers, or left its window on top of the first's, would
+// validate exactly as well and still destroy the case built on it. A batch of
+// the same CCE twice is a different payload from a batch of two CCEs, and
+// overlapping windows would hand the record-series checks an interleaved series
+// they are not scoped to read. These tests pin both.
+
+test('appendSecondReport produces a second report with its own identity', () => {
+  const payload = appendSecondReport().apply(ems());
+  assert.equal(payload.data.length, 2, 'the batch carries two reports');
+  const [first, second] = payload.data as Record<string, unknown>[];
+
+  // Each identifier the ems branch carries is suffixed, so nothing in the batch
+  // names the same equipment twice.
+  assert.equal(first!.ASER, 'A-SerialNum');
+  assert.equal(second!.ASER, 'A-SerialNum-2');
+  assert.equal(second!.ESER, 'EMD-SerialNum-2');
+  assert.equal(second!.LSER, 'log4567890asdf-2');
+
+  // Every suffixed value stays well past adv.short_identifier's four-character
+  // floor, so appending a report raises nothing by itself.
+  for (const key of ['ASER', 'ESER', 'LSER']) {
+    assert.ok((second![key] as string).length >= 4, `${key} is not short`);
+  }
+
+  // The administrative body is a clone, not a fresh report: what the case varies
+  // afterwards is one object on one of them.
+  assert.equal(second!.AMFR, first!.AMFR);
+  assert.equal(second!.CID, first!.CID);
+});
+
+test('appendSecondReport moves the clone’s window 24 hours earlier, cadence intact', () => {
+  const payload = appendSecondReport().apply(ems());
+  const first = payload.data[0]!.records as Record<string, unknown>[];
+  const second = payload.data[1]!.records as Record<string, unknown>[];
+  assert.equal(second.length, first.length);
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  for (const [index, record] of second.entries()) {
+    const before = parseAbst(first[index]!.ABST);
+    const after = parseAbst(record.ABST);
+    assert.ok(before !== null && after !== null, 'both stamps parse');
+    assert.equal(after, before - DAY_MS, `records/${index} is a day earlier`);
+  }
+
+  // Shifting rather than re-stamping is what leaves each report's INTERNAL
+  // cadence exactly as the baseline set it — 15 minutes, which §3.4 grades and
+  // adv.sample_gap measures against DS01's period.
+  assert.equal(parseAbst(second[1]!.ABST)! - parseAbst(second[0]!.ABST)!, 15 * 60_000);
+
+  // The source report is untouched: the mutation is an APPEND.
+  assert.equal(first[0]!.ABST, '20240115T033000Z');
+});
+
+test('appendSecondReport suffixes the rtm sensor ids too', () => {
+  // DLST lives on the rtmd branch only, and SID is read by adv.short_identifier
+  // under every sensor, so a clone that shared them would put the same sensor in
+  // two places. The ems branch declares no DLST and is simply skipped.
+  const payload = appendSecondReport().apply(DEFAULT_BASELINE({ caseId: 'rtm', index: 0 }));
+  const sensors = payload.data[1]!.DLST as Record<string, Record<string, unknown>>;
+  assert.equal(sensors.TVC!.SID, 'sensor-1-2');
+  assert.equal(payload.data[1]!.AMID, 'appliance-1-2');
+  // And the source keeps its own.
+  assert.equal(
+    (payload.data[0]!.DLST as Record<string, Record<string, unknown>>).TVC!.SID,
+    'sensor-1',
+  );
 });

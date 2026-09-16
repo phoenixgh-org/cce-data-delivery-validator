@@ -24,13 +24,17 @@ import type { ExerciseCase } from '../case.js';
 import {
   addCustomDataObject,
   addSolarPowerToMainsRecord,
+  appendSecondReport,
+  blankAdminObject,
   blankAdminObjects,
+  blankApplianceMonitoringId,
   declareCustomDataSchema,
   dropRequiredField,
   duplicateVersionStringsIntoRecords,
   explainedNullRuntimeDuringOutage,
   explainedNullTemperature,
   longSamplePeriod,
+  nullAdminObject,
   nullApplianceSerial,
   nullPaddedSeries,
   nullRuntimeDuringOutage,
@@ -43,6 +47,7 @@ import {
   setSchemaVersion,
   setUnsupportedSchemaVersion,
   shortApplianceMonitoringId,
+  shortApplianceSerial,
   solarPoweredRecords,
   swapRecordTimestamps,
   unexplainedNullTemperature,
@@ -643,6 +648,51 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     expectedFindings: [{ requirement: 'adv.null_identity', severity: 'info' }],
   },
 
+  // THE RTM HALF of the same advisory (c833). `adv.null_identity` reads ONE
+  // identifier per branch — ASER on ems, AMID on rtm — with a different
+  // observation and a different rationale on each, and until this case only the
+  // ems half had ever been rendered live. It takes the DEFAULT (rtm) baseline,
+  // whose AMID is the property the check reads there.
+  //
+  // THE BLANK IS THE ONLY CONFORMANT FORM on this branch, which is what makes the
+  // case worth having: rtmd-report REQUIRES AMID and types it a bare "string", so
+  // a null and an absent key are §3.2 rejections that never reach stage 8. An
+  // empty string is the one shape the schema cannot object to — no minLength and
+  // no pattern on any identifier in either registered cce-interop version — and it
+  // is exactly the shape the advisory exists for
+  // (src/ingest/stages/semantic/null-identity.ts).
+  //
+  // adv.short_identifier STAYS SILENT and is declared absent (measured): it hands
+  // a trimmed length of zero back rather than calling a blank three characters
+  // short, so the two checks partition the AMID surface between them and one blank
+  // value raises exactly one line.
+  //
+  // THE SHADOW RUN AGREES, and the fail is OVER-DETERMINED rather than isolated.
+  // The Annex 4 draft adds minLength 1 to AMID, so the blank draws
+  // `/data/0/AMID minLength` — but the rtm baseline is the readiness demo, which
+  // already fails the draft on LDOP/LMFR/LMOD/LPQS/LSER whatever AMID says
+  // (measured against the vendored bytes). One clause 5.3.2 entry names both,
+  // since the expectation is presence-based.
+  {
+    id: 'adv.null_identity-fail-blank-rtm-monitoring-id',
+    title: 'An rtm report whose supplier-platform appliance identifier arrives empty',
+    requirements: [],
+    shadowClauses: ['5.3.2'],
+    direction: 'fail',
+    fault: {
+      layer: 'payload',
+      note:
+        'AMID set to "" — legal because rtmd-report requires it as a non-null string and ' +
+        'carries no minLength, so the empty string is the advisory’s only surface here',
+    },
+    posts: [{ transforms: [blankApplianceMonitoringId()], expectedStatus: 200 }],
+    expectedFindings: [
+      { requirement: 'adv.null_identity', severity: 'info' },
+      { requirement: '5.3.2', severity: 'fail', profile: 'ds013' },
+    ],
+    absentFindings: [{ requirement: 'adv.short_identifier' }],
+  },
+
   // The administrative objects the ems branch requires, delivered blank (agj.5).
   // emsBaseline again, because the fields are ems-report's. The two blanks are
   // the two halves of the advisory's conformant surface: AMFR is nullable, so a
@@ -665,6 +715,113 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [blankAdminObjects()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.blank_admin', severity: 'info' }],
+  },
+
+  // THE RTM HALF of the same advisory (c833). The field list is branch-specific —
+  // CID EDOP EMFR EMOD EPQS ESER on rtmd-report, six objects against the ems
+  // branch's fifteen — and the rationale names the branch schema whose `required`
+  // list was read, so the rtm sentence had never been rendered live. DEFAULT (rtm)
+  // baseline, which carries all six.
+  //
+  // THE PAIR IS CHOSEN FOR THE SHADOW RUN, not just for the advisory. Both blanks
+  // fire adv.blank_admin on the contract lineage, and they differ in what the
+  // DS01.3 Annex 4 draft says about them:
+  //
+  //   - EMFR "" fails the draft, which adds minLength 1 to it (measured:
+  //     /data/0/EMFR minLength).
+  //   - CID null does NOT. CID is the one admin object the draft leaves
+  //     ["string","null"] on BOTH branches, gaining only ^[A-Z]{2}$ (bd memory
+  //     annex4-tightens-admin-objects), so a null CID validates under the draft
+  //     and the advisory is the only thing that speaks for it.
+  //
+  // So the case carries the advisory's two conformant blank shapes — a null and an
+  // empty string, as the ems case above does — while pinning that the draft closes
+  // one of them and not the other.
+  //
+  // The clause 5.3.2 fail is OVER-DETERMINED, as it is on every case built on this
+  // baseline: the readiness demo already fails the draft on the five
+  // logger-identity properties. AMID stays populated, so adv.null_identity — which
+  // owns that field and is never read here — stays silent.
+  {
+    id: 'adv.blank_admin-fail-blank-rtm-admin',
+    title: 'An rtm report delivering required administrative objects blank',
+    requirements: [],
+    shadowClauses: ['5.3.2'],
+    direction: 'fail',
+    fault: {
+      layer: 'payload',
+      note:
+        'EMFR set to "" and CID set to null — legal because rtmd-report requires both keys, ' +
+        'the shared $defs type CID ["string","null"], and nothing on the branch carries a ' +
+        'minLength',
+    },
+    posts: [
+      {
+        transforms: [blankAdminObject('EMFR'), nullAdminObject('CID')],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [
+      { requirement: 'adv.blank_admin', severity: 'info' },
+      { requirement: '5.3.2', severity: 'fail', profile: 'ds013' },
+    ],
+  },
+
+  // THE ONLY MULTI-REPORT CASE IN THE TABLE (c833), and the reason it exists is
+  // the SENTENCE. Three advisories phrase their observation as "N of M reports …",
+  // and every other case sends a single report, so the denominator had only ever
+  // been 1 and the "in the first, …" lead was reachable from a unit test alone.
+  // This payload carries two EMS reports for two distinct appliances with the
+  // fault in the SECOND, so the count, the pointer and the report noun all have to
+  // be right for the case to pass.
+  //
+  // MEASURED (2026-09-16, the real ADVISORY_CHECKS registry over the materialized
+  // payload), the observation reads exactly:
+  //
+  //     1 of 2 reports delivers required admin objects blank — AMFR is empty.
+  //
+  // and the finding points at /data/1. Two things in that sentence are only
+  // observable on a batch: the denominator is the whole transmission, and the
+  // report noun pluralizes on the DENOMINATOR while the verb agrees with the
+  // numerator, so "1 of 2 reports delivers" is correct rather than a slip. The
+  // "in the first, …" lead stays absent here because only one report is affected.
+  //
+  // WHY blank_admin CARRIES IT. It is the advisory whose per-report counting is
+  // least coupled to anything else in the payload: appendSecondReport gives the
+  // clone its own identity, so adv.null_identity and adv.short_identifier see
+  // nothing, and the clone's window is a day earlier, so the record-series checks
+  // (§3.4, adv.time_not_increasing, adv.sample_gap, adv.duplicate_records) read
+  // each report on its own and stay quiet (measured: the untouched two-report
+  // payload fires nothing).
+  //
+  // THE SHADOW RUN IS ISOLATED here, unlike on the rtm cases above: the EMS
+  // baseline passes the Annex 4 draft, and the two-report clone of it still does,
+  // so the blank AMFR's minLength failure in report 1 is the ONLY thing the draft
+  // objects to (measured).
+  {
+    id: 'adv.blank_admin-fail-second-of-two-ems-reports',
+    title: 'A two-report EMS batch whose SECOND report delivers an admin object blank',
+    requirements: [],
+    shadowClauses: ['5.3.2'],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        'a second EMS report is appended — the first deep-cloned, its identifiers suffixed and ' +
+        'its window moved 24 h earlier — and AMFR is set to "" on that second report only',
+    },
+    posts: [
+      {
+        transforms: [appendSecondReport(), blankAdminObject('AMFR', 1)],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [
+      { requirement: 'adv.blank_admin', severity: 'info' },
+      { requirement: '3.2', severity: 'pass' },
+      { requirement: '5.3.2', severity: 'fail', profile: 'ds013' },
+    ],
   },
 
   // A null reading with nothing beside it to account for it (agj.2). This one
@@ -729,6 +886,44 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     },
     posts: [{ transforms: [shortApplianceMonitoringId()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: 'adv.short_identifier', severity: 'info' }],
+  },
+
+  // THE EMS HALF of the same advisory (c833). The read list differs by branch —
+  // ASER LSER ESER AID LID EID on ems, the same plus AMID and every DLST.<prop>
+  // SID on rtm — so the ems branch was carrying six unexercised fields. It
+  // declares emsBaseline and shortens ASER, the appliance serial the manufacturer
+  // assigns, which is the identifier an EMS is expected to know.
+  //
+  // ONE VALUE IS THE WHOLE CASE: the baseline's LSER and ESER are both well past
+  // the four-character floor and it carries no AID, LID or EID, so ASER is the
+  // only thing the check has to say anything about (measured).
+  //
+  // adv.null_identity STAYS SILENT and is declared absent. It owns ASER on this
+  // branch too, but only in its BLANK form — "A1B" is a populated value, and the
+  // two checks partition the field between them rather than both speaking.
+  //
+  // NOTHING FOR THE SHADOW RUN. The Annex 4 draft excludes the null case from
+  // ems-report's ASER and adds no length floor to it, so a three-character serial
+  // satisfies the draft exactly as it satisfies the contract lineage (measured
+  // against the vendored bytes) and the case names no ds013 finding. That is the
+  // advisory's own argument for existing: a width problem is not a schema problem
+  // on either lineage.
+  {
+    id: 'adv.short_identifier-fail-three-character-appliance-serial',
+    title: 'An appliance serial number too short to address a national fleet',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        'ASER set to "A1B" — legal because ems-report requires the key, the shared $defs type ' +
+        'it ["string","null"], and no identifier object in the registered schema versions ' +
+        'carries a minLength',
+    },
+    posts: [{ transforms: [shortApplianceSerial()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.short_identifier', severity: 'info' }],
+    absentFindings: [{ requirement: 'adv.null_identity' }],
   },
 
   // A compressor runtime sent as null in a period the same record says carried

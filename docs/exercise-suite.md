@@ -343,7 +343,7 @@ Fired advisories are annotated with payload types exactly as requirements are:
 ```
 advisories — 12 registered: fired 12
   [types] after an advisory are the payload branches its fire case(s) send — [ems] means ems ONLY
-  fired                      adv.null_identity[ems] adv.null_padding[ems] adv.date_format[ems,rtm] …
+  fired                      adv.null_identity[ems,rtm] adv.null_padding[ems] adv.date_format[ems,rtm] …
   NOT EXERCISED              —
 ```
 

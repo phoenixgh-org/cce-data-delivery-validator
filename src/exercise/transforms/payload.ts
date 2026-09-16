@@ -1303,3 +1303,198 @@ export function blankAdminObject(key: string, reportIndex = 0): PayloadTransform
     },
   });
 }
+
+/**
+ * Deliver an rtmd-report's `AMID` as the EMPTY STRING — the only form of a
+ * missing appliance identifier that a CONFORMANT rtm payload can carry, and what
+ * `adv.null_identity` observes on the rtm branch (c833).
+ *
+ * WHY `''` AND NOT `null`. `rtmd-report` requires `AMID` and types it a bare
+ * `"string"`, so `null` and an absent key are §3.2 REJECTIONS (422) and never
+ * reach the semantic stage at all. The advisory's only surface on an accepted rtm
+ * transmission is therefore a blank — empty or whitespace-only — which is
+ * precisely the case the schema cannot express: no `minLength` and no `pattern`
+ * anywhere in either registered `cce-interop` version
+ * (src/ingest/stages/semantic/null-identity.ts). Contrast
+ * {@link nullApplianceSerial}, which CAN send a null because `ems-report` types
+ * `ASER` `["string","null"]`.
+ *
+ * Schema-VALID by design on the contract lineage, and ../cases.test.ts runs the
+ * materialized payload through the real validator, so that is checked rather than
+ * asserted. The DS01.3 Annex 4 draft adds `minLength: 1` to `AMID`, so the same
+ * payload is a clause 5.3.2 failure under the shadow lineage (bd memory
+ * annex4-proposal-measured-2026-09-12).
+ *
+ * RTM-ONLY by construction: `AMID` is not a property of `ems-report`, so it
+ * refuses a report that does not carry one rather than ADDING a key the branch
+ * has no rule about.
+ */
+export function blankApplianceMonitoringId(value = '', reportIndex = 0): PayloadTransform {
+  const name = `blankApplianceMonitoringId(${reportIndex}: AMID="${value}")`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const { report } = reportOf(payload, reportIndex, name);
+      if (!('AMID' in report)) {
+        throw new Error(
+          `${name}: /data/${reportIndex} carries no AMID, so this would ADD a property to a ` +
+            `branch that has no rule about it — this mutator wants an rtm baseline`,
+        );
+      }
+      report.AMID = value;
+      return payload;
+    },
+  });
+}
+
+/**
+ * Deliver ONE report-level administrative object as `null` — the other half of
+ * `adv.blank_admin`'s conformant surface, beside {@link blankAdminObject}'s empty
+ * string.
+ *
+ * Schema-VALID by design on the contract lineage: the shared `$defs` type the
+ * nullable admin objects `["string","null"]`, so a null satisfies them. WHICH KEY
+ * IS PASSED DECIDES THE SHADOW VERDICT, and the caller owns that choice: the
+ * DS01.3 Annex 4 draft excludes the null case from 14 of the 15 EMS admin objects
+ * and 5 of the 6 RTMD ones, so a null in any of those is a clause 5.3.2 failure.
+ * `CID` IS THE EXCEPTION ON BOTH BRANCHES — it stays `["string","null"]` under the
+ * draft and gains only `^[A-Z]{2}$` — so a null `CID` validates under both
+ * lineages (bd memory annex4-tightens-admin-objects, measured 2026-09-15).
+ *
+ * Refuses a key the report does not carry, for {@link blankAdminObject}'s reason:
+ * adding an absent property would be a stale key rather than a required object
+ * delivered blank.
+ */
+export function nullAdminObject(key: string, reportIndex = 0): PayloadTransform {
+  const name = `nullAdminObject(${key}, ${reportIndex}: null)`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const { report } = reportOf(payload, reportIndex, name);
+      if (!(key in report)) {
+        throw new Error(
+          `${name}: /data/${reportIndex} carries no ${key}, so nulling it would ADD a ` +
+            `property rather than deliver a required object blank`,
+        );
+      }
+      report[key] = null;
+      return payload;
+    },
+  });
+}
+
+/**
+ * Deliver an `ems-report`'s `ASER` as a value too SHORT to address a national
+ * fleet — the EMS twin of {@link shortApplianceMonitoringId} (c833).
+ *
+ * Schema-VALID by design, and that is the gap the advisory covers: no identifier
+ * object carries a `minLength` or a `pattern` in either registered `cce-interop`
+ * version, so a three-character serial validates exactly like a fifteen-character
+ * one. The DS01.3 Annex 4 draft does not close it either — it excludes the NULL
+ * case from `ems-report`'s `ASER` and adds no length floor — so the payload stays
+ * dual-valid and the advisory is the only thing that speaks.
+ *
+ * THE VALUE STAYS NON-BLANK. A blank `ASER` is `adv.null_identity`'s subject on
+ * this branch (src/ingest/stages/semantic/null-identity.ts), so a case built on
+ * this one carries a single observation rather than two.
+ *
+ * EMS-only by construction: `adv.short_identifier` reads `AMID` on the rtm branch
+ * and `ASER` on both, but `ems-report` is where `ASER` is REQUIRED, and this
+ * refuses a report that does not already carry one.
+ */
+export function shortApplianceSerial(value = 'A1B', reportIndex = 0): PayloadTransform {
+  const name = `shortApplianceSerial(${reportIndex}: ASER="${value}")`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const { report } = reportOf(payload, reportIndex, name);
+      if (!('ASER' in report)) {
+        throw new Error(
+          `${name}: /data/${reportIndex} carries no ASER, so this would ADD a property rather ` +
+            `than shorten an identifier the baseline sends`,
+        );
+      }
+      report.ASER = value;
+      return payload;
+    },
+  });
+}
+
+/**
+ * Append a SECOND report to the transmission — a deep clone of `reportIndex`
+ * given its own identity and its own reading window — so the batch carries two
+ * distinct pieces of equipment (c833).
+ *
+ * WHY THE SUITE NEEDS ONE. Every other case in the table sends a single report,
+ * so the per-report counting the report-level advisories do has never run live:
+ * `adv.null_identity`, `adv.blank_admin` and `adv.short_identifier` each phrase
+ * their observation as "N of M reports ... in the first, ..." and the plural
+ * branch of that sentence was reachable only from a unit test.
+ *
+ * THE SHAPE MIRRORS src/ingest/stages/semantic/multi-report.test.ts, which is
+ * where the constraints are documented:
+ *
+ *   - DISTINCT IDENTITY on the clone (`AMID`, `ESER` and every `DLST.<prop>.SID`
+ *     on rtm; `ASER`, `ESER` and `LSER` on ems), each suffixed `-2`. Two reports
+ *     naming the same equipment would be a batch of one CCE sent twice, which is
+ *     a different payload with different meaning.
+ *   - THE WINDOW MOVES 24 HOURS EARLIER on every record. The record-series checks
+ *     — §3.4's cadence, `adv.time_not_increasing`, `adv.sample_gap`,
+ *     `adv.duplicate_records` — are scoped per report, and a day's separation
+ *     keeps the two windows from reading as one interleaved series should that
+ *     scoping ever be loosened. Shifting rather than re-stamping also leaves each
+ *     report's INTERNAL cadence exactly as it was.
+ *
+ * The suffixes keep every identifier well past `adv.short_identifier`'s
+ * four-character floor, so appending a report raises nothing by itself.
+ *
+ * Schema-VALID by design and BRANCH-AGNOSTIC: `data` is an array of reports on
+ * both branches with no `maxItems`, and the clone is the baseline report with a
+ * handful of string values changed. ../cases.test.ts runs the materialized
+ * payload through the real validator, so that is checked rather than asserted.
+ */
+export function appendSecondReport(reportIndex = 0): PayloadTransform {
+  const name = `appendSecondReport(from ${reportIndex}: identity suffixed -2, window 24h earlier)`;
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const { report, records } = reportOf(payload, reportIndex, name);
+      const clone = structuredClone(report) as Record<string, unknown>;
+
+      // Identity: whichever of the branch's identifiers the source report carries.
+      // Both branches are covered by one list because a key the report does not
+      // have is simply skipped — an `ems-report` has no AMID, an `rtmd-report` no
+      // LSER, and neither needs a special case here.
+      for (const key of ['AMID', 'ASER', 'ESER', 'LSER']) {
+        const value = clone[key];
+        if (typeof value === 'string' && value.trim() !== '') clone[key] = `${value}-2`;
+      }
+      const sensors = clone.DLST;
+      if (typeof sensors === 'object' && sensors !== null && !Array.isArray(sensors)) {
+        for (const sensor of Object.values(sensors as Record<string, unknown>)) {
+          if (typeof sensor !== 'object' || sensor === null || Array.isArray(sensor)) continue;
+          const entry = sensor as Record<string, unknown>;
+          const sid = entry.SID;
+          if (typeof sid === 'string' && sid.trim() !== '') entry.SID = `${sid}-2`;
+        }
+      }
+
+      // The window: every record a day earlier, the internal cadence untouched.
+      const cloned = structuredClone(records) as Record<string, unknown>[];
+      for (const [index, record] of cloned.entries()) {
+        const at = parseAbst(record.ABST);
+        if (at === null) {
+          throw new Error(
+            `${name}: ${recordsPointer(reportIndex)}/${index}/ABST is not a parseable ABST`,
+          );
+        }
+        record.ABST = formatAbst(at - DAY_MS);
+      }
+      clone.records = cloned;
+
+      payload.data.push(clone);
+      return payload;
+    },
+  });
+}
