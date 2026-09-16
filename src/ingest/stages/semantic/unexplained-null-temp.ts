@@ -97,18 +97,25 @@
  * stops catching blank-explanation EMS payloads and this advisory would need an
  * EMS arm again. 0.8.4 is NOT registered; nothing here acts on it.
  *
- * ── WORDING ──────────────────────────────────────────────────────────────────
- * Observe, never conclude. We say what arrived — a null reading with no error
- * code beside it — and what the receiving country therefore cannot distinguish:
- * a reading the device simply did not take from one it could not obtain. We do
- * NOT say the sensor broke, and we do not say the supplier suppressed anything.
- * The PQS sentence quoted at the top of this header is the MOTIVATION for the
- * check, not something the wire prose asserts about a particular supplier.
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many of the
+ * transmission's records carry TVC as null with neither error code beside it.
+ * `detail` is the RATIONALE, static and carrying no numbers: that the schema
+ * permits exactly this, and why a null TVC is nonetheless worth following up.
  *
- * The RTMD caveat agj.2 demoted the issue for belongs in the prose too. An RTMD
- * is a simpler device than an EMS, with a thinner error vocabulary, so a quiet
- * null may be ordinary there rather than a symptom. The finding is an
- * observation offered to the supplier, and it says so.
+ * THE RATIONALE WAS REPLACED ON 2026-09-15. The earlier draft argued from what
+ * the receiving country cannot distinguish and closed on "a quiet null may be
+ * ordinary on an RTMD", which reads as a reason to leave it alone. Benson's
+ * decision the same day keeps the check exactly as it stands and states the
+ * opposite emphasis instead: TVC is the most essential measurement for
+ * protecting vaccine health, so a null one is worth investigating. The
+ * approved paragraph is what this module emits.
+ *
+ * Observe, never conclude. We say what arrived — a null reading with no error
+ * code beside it — and we do NOT say the sensor broke, or that the supplier
+ * suppressed anything. The PQS sentence quoted at the top of this header is the
+ * MOTIVATION for the check, not something the wire prose asserts about a
+ * particular supplier.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -169,7 +176,6 @@ export const unexplainedNullTempCheck: SemanticCheck = (ctx: PipelineContext): F
 
   let totalRecords = 0;
   let affected = 0;
-  let reportsAffected = 0;
   let pointer: string | null = null;
 
   for (const [reportIndex, report] of data.entries()) {
@@ -177,40 +183,33 @@ export const unexplainedNullTempCheck: SemanticCheck = (ctx: PipelineContext): F
     const records = report.records;
     if (!Array.isArray(records)) continue;
 
-    let hereAffected = 0;
     for (const [recordIndex, record] of records.entries()) {
       if (!isPlainObject(record)) continue;
       totalRecords += 1;
       if (!isUnexplained(record)) continue;
 
-      hereAffected += 1;
+      affected += 1;
       pointer ??= `/data/${reportIndex}/records/${recordIndex}`;
     }
-    if (hereAffected > 0) reportsAffected += 1;
-    affected += hereAffected;
   }
 
   if (affected === 0) return [];
 
   const recordNoun = totalRecords === 1 ? 'record' : 'records';
   const verb = affected === 1 ? 'carries' : 'carry';
-  // With more than one report holding them, say so — "3 of 96 records" alone
-  // would leave a supplier guessing whether one appliance or several are meant.
-  const spread = reportsAffected === 1 ? ' ' : `, across ${reportsAffected} reports, `;
 
   return [
     advisory({
       id: 'adv.unexplained_null_temp',
       pointer,
+      summary:
+        `${affected} of ${totalRecords} ${recordNoun} ${verb} ${TEMPERATURE} as null with ` +
+        `${ERROR_CODES.join(' and ')} both blank.`,
       detail:
-        `${affected} of ${totalRecords} ${recordNoun} in this transmission${spread}${verb} ` +
-        `TVC as null with no error code beside it — LERR and EERR are both absent, null, or ` +
-        `blank. rtmd-record types TVC ["number","null"] and, unlike ems-record, ties a null ` +
-        `reading to nothing that would account for it, so these records arrive complete and ` +
-        `fully conformant. The country receiving them cannot distinguish a reading the device ` +
-        `simply did not take from one it could not obtain. An RTMD is a simpler device than an ` +
-        `EMS and a quiet null may be ordinary on it, so this is an observation offered to the ` +
-        `supplier rather than a verdict on the payload.`,
+        'rtmd-record allows a null TVC without tying it to anything that accounts for it, so ' +
+        'these records are fully conformant. However, TVC is the most essential measurement ' +
+        'for protecting vaccine health, so null TVC values should be investigated to ensure ' +
+        'proper device operation.',
     }),
   ];
 };

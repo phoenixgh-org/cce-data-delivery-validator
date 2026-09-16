@@ -310,7 +310,7 @@ test('a repeat is observed on the RTMD branch too', () => {
 
 // ── what the finding has to carry ───────────────────────────────────────────
 
-test('it carries BOTH counts and points at the first repeat and its twin', () => {
+test('it carries BOTH counts and points at the first repeat', () => {
   // Six records: /2 repeats /0's ABST with a different reading (same-ABST only),
   // /4 is /1 all over again (both signals), /5 repeats /0's ABST as well.
   const finding = only(
@@ -323,52 +323,42 @@ test('it carries BOTH counts and points at the first repeat and its twin', () =>
       emsRecord(abstAt(0), 5.4),
     ]),
   );
-  assert.match(finding.detail ?? '', /carries 3 records that repeat/, 'the total');
-  assert.match(
-    finding.detail ?? '',
-    /3 carry the same ABST as an earlier record/,
-    'the weak count',
-  );
-  assert.match(
-    finding.detail ?? '',
-    /1 is identical to an earlier record in full/,
-    'and the strong one, separately',
-  );
-  assert.match(
-    finding.detail ?? '',
-    /first is at \/data\/0\/records\/2, which carries the same ABST as the record at \/data\/0\/records\/0/,
+  // The two counts do NOT sum: the record that is identical in full is also one
+  // of the three that repeat an ABST.
+  assert.equal(
+    finding.summary,
+    '3 records repeat an earlier record in the same report — 3 by ABST, 1 identical in full.',
   );
   assert.equal(finding.pointer, '/data/0/records/2', 'and the pointer is the first repeat');
 });
 
 test('same ABST with different content is counted, and named as the weaker signal', () => {
   const finding = only(emsPayload([emsRecord(abstAt(0), 4.7), emsRecord(abstAt(0), 5.5)]));
-  assert.match(finding.detail ?? '', /carries 1 record that repeats/, 'singular');
-  assert.match(finding.detail ?? '', /1 carries the same ABST as an earlier record/);
-  assert.match(
-    finding.detail ?? '',
-    /none is identical to an earlier record in full/,
-    'the strong signal is absent and the prose says so rather than staying quiet',
+  // An absent signal is written as 0 rather than as "none", so the line keeps
+  // one shape whichever comparison fired.
+  assert.equal(
+    finding.summary,
+    '1 record repeats an earlier record in the same report — 1 by ABST, 0 identical in full.',
   );
 });
 
 test('an identical record is named as identical in full', () => {
   const finding = only(emsPayload(RE_APPENDED));
-  assert.match(finding.detail ?? '', /1 carries the same ABST as an earlier record/);
-  assert.match(finding.detail ?? '', /1 is identical to an earlier record in full/);
-  assert.match(
-    finding.detail ?? '',
-    /first is at \/data\/0\/records\/20, which is identical in full to the record at \/data\/0\/records\/10/,
+  assert.equal(
+    finding.summary,
+    '1 record repeats an earlier record in the same report — 1 by ABST, 1 identical in full.',
   );
+  assert.equal(finding.pointer, '/data/0/records/20');
 });
 
-test('a record sent three times yields two repeats, both pointing at the first copy', () => {
+test('a record sent three times yields two repeats, both measured against the first copy', () => {
   const finding = only(
     emsPayload([emsRecord(abstAt(0)), emsRecord(abstAt(0)), emsRecord(abstAt(0))]),
   );
-  assert.match(finding.detail ?? '', /carries 2 records that repeat/);
-  assert.match(finding.detail ?? '', /2 carry the same ABST/);
-  assert.match(finding.detail ?? '', /2 are identical to an earlier record in full/);
+  assert.equal(
+    finding.summary,
+    '2 records repeat an earlier record in the same report — 2 by ABST, 2 identical in full.',
+  );
   assert.equal(finding.pointer, '/data/0/records/1');
 });
 
@@ -381,7 +371,7 @@ test('identical-in-full ignores property ORDER, which JSON does not give meaning
   const forward = emsRecord(abstAt(0));
   const reversed = Object.fromEntries(Object.entries(forward).reverse());
   const finding = only(emsPayload([forward, reversed]));
-  assert.match(finding.detail ?? '', /1 is identical to an earlier record in full/);
+  assert.match(finding.summary ?? '', /1 identical in full\.$/);
 });
 
 test('identical-in-full reads nested values, and a differing one is not a match', () => {
@@ -390,12 +380,12 @@ test('identical-in-full reads nested values, and a differing one is not a match'
     DLST: { TVC: { SID: sid, SMFR: 'SensMfr', SMOD: 'SensMod' } },
   });
   const twin = only(rtmdPayload([nested('sensor-1'), nested('sensor-1')]), 'rtm');
-  assert.match(twin.detail ?? '', /1 is identical to an earlier record in full/);
+  assert.match(twin.summary ?? '', /1 identical in full\.$/);
 
   const differing = only(rtmdPayload([nested('sensor-1'), nested('sensor-2')]), 'rtm');
   assert.match(
-    differing.detail ?? '',
-    /none is identical to an earlier record in full/,
+    differing.summary ?? '',
+    /0 identical in full\.$/,
     'one nested value apart is not the same record',
   );
 });
@@ -410,11 +400,10 @@ test('an ABST that is not a string joins no ABST match, and still joins an ident
     'two null-stamped records with different readings share nothing',
   );
   const finding = only(emsPayload([emsRecord(null, 4.7), emsRecord(null, 4.7)]));
-  assert.match(finding.detail ?? '', /carries 1 record that repeats/);
-  assert.match(
-    finding.detail ?? '',
-    /^This transmission carries 1 record that repeats an earlier record in the same report: 1 is identical/,
-    'the same-ABST clause is dropped rather than reported as zero',
+  assert.equal(
+    finding.summary,
+    '1 record repeats an earlier record in the same report — 0 by ABST, 1 identical in full.',
+    'a null ABST joins no ABST match, so that count is 0 while the identity count is 1',
   );
 });
 
@@ -455,7 +444,7 @@ test('repeats are pooled across reports and the first in document order wins the
       [emsRecord(abstAt(0)), emsRecord(abstAt(0))],
     ]),
   );
-  assert.match(finding.detail ?? '', /carries 2 records that repeat/);
+  assert.match(finding.summary ?? '', /^2 records repeat an earlier record/);
   assert.equal(finding.pointer, '/data/0/records/2');
 });
 
@@ -555,44 +544,68 @@ test('PIN: §3.4 is untouched — a repeat contributes no cadence spread to grad
 
 // ── wording is acceptance, not polish ───────────────────────────────────────
 
-test('it names what arrived, where, and what the repeat costs the receiving side', () => {
-  const detail = only(emsPayload(RE_APPENDED)).detail ?? '';
+test('it names what arrived, then why a repeat inside one transmission is different', () => {
+  const finding = only(emsPayload(RE_APPENDED));
 
-  assert.match(detail, /1 carries the same ABST as an earlier record/, 'the weaker signal');
-  assert.match(detail, /1 is identical to an earlier record in full/, 'and the stronger one');
-  assert.match(detail, /\/data\/0\/records\/20/, 'where');
-  assert.match(detail, /\/data\/0\/records\/10/, 'and what it repeats');
-  assert.match(detail, /average, total and alarm tally/, 'what it costs downstream');
-  assert.match(detail, /one reading one row/, 'and the remedy');
+  assert.equal(
+    finding.summary,
+    '1 record repeats an earlier record in the same report — 1 by ABST, 1 identical in full.',
+  );
+  assert.equal(finding.pointer, '/data/0/records/20', 'where');
+  assert.equal(
+    finding.detail,
+    'Two records that share the same timestamp force the country to perform the ' +
+      'de-duplication or to risk duplicate records landing twice in every average, total ' +
+      'and alarm tally. Countries should anticipate occasional duplicate transmissions, ' +
+      'which requirements clause 1.8 allows after a delivery failure or on request, but ' +
+      'duplicate records within a single transmission cannot be explained by ' +
+      "retransmission and are worth checking in the supplier's assembly step.",
+  );
 });
 
-test('the detail carries no defect vocabulary and no synonym for the category', () => {
+test('the copy carries no defect vocabulary and no synonym for the category', () => {
   // Same bar the Advisories copy is held to (src/web/advisories.test.ts): the
   // payload broke no rule — §1.8 grades the envelope and the schema grades each
   // record alone — so any of these would be a false statement about the supplier
   // rather than a harsh tone.
+  //
+  // ONE PHRASE IS EXEMPT: "a delivery failure" in the approved rationale
+  // (agj.17, 2026-09-15) names the circumstance requirements clause 1.8 allows a
+  // retransmission after. It is a statement about that clause, not a verdict on
+  // this payload, so it is removed before the bar is applied rather than the bar
+  // being loosened.
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
-  const detail = only(emsPayload(RE_APPENDED)).detail ?? '';
+  const finding = only(emsPayload(RE_APPENDED));
 
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  assert.match(
+    finding.detail ?? '',
+    /clause 1\.8 allows after a delivery failure/,
+    'the exemption',
+  );
+  for (const copy of [
+    finding.summary ?? '',
+    (finding.detail ?? '').replace('a delivery failure', ''),
+  ]) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
+  }
 });
 
-test('the detail never concludes how the record came to arrive twice', () => {
+test('the copy never concludes how the record came to arrive twice', () => {
   // A re-appended chunk, a record re-sent without being re-stamped and a logger
   // that genuinely reported twice are indistinguishable from the receiving side,
-  // so the prose names them as possibilities and never picks one. It also never
-  // names one copy as the spurious one — the two are interchangeable from here.
-  const detail = only(emsPayload(RE_APPENDED)).detail ?? '';
-  assert.doesNotMatch(detail, /clearly|evidently|should have been|remove the second/i);
-  assert.match(detail, /rather than why/, 'and says so out loud');
+  // so the rationale says where to look and never picks one. It also never names
+  // one copy as the spurious one — the two are interchangeable from here.
+  const finding = only(emsPayload(RE_APPENDED));
+  const copy = `${finding.summary ?? ''} ${finding.detail ?? ''}`;
+  assert.doesNotMatch(copy, /clearly|evidently|should have been|remove the second/i);
 });
 
-test('the detail stands alone per transmission', () => {
+test('the observation stands alone per transmission', () => {
   // The dashboard folds recurring advisories and shows only the most recent
-  // occurrence's detail, so each one has to be readable without its siblings.
-  const detail = only(emsPayload(RE_APPENDED)).detail ?? '';
-  assert.match(detail, /This transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
+  // occurrence, so the observation has to be readable without its siblings.
+  const summary = only(emsPayload(RE_APPENDED)).summary ?? '';
+  assert.match(summary, /^1 record repeats an earlier record in the same report/);
+  assert.doesNotMatch(summary, /this session|every transmission/i);
 });

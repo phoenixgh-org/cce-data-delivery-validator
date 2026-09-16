@@ -103,14 +103,26 @@
  * detail names every offending key of that first report with its length, plus the
  * count of reports affected, the way ./blank-admin.ts does.
  *
- * ── WORDING: OBSERVE, NEVER CONCLUDE (krh's governing constraint) ────────────
- * We CANNOT prove a short identifier is non-unique, and the validator sees one
- * supplier's sandbox data, so it usually cannot observe an actual collision
- * either. The prose therefore observes that the value is too short to carry
- * enough distinct values for a national fleet, and says so as arithmetic about
- * the value space. It does NOT say that identifiers are colliding, that two
- * appliances share one identifier, or that the supplier's data is wrong — none of
- * which this check has grounds for.
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many of the
+ * transmission's reports carry an identifier under four characters, and which
+ * values those were on the first of them, each with its own width. `detail` is
+ * the RATIONALE, static and carrying no numbers of this transmission's: the
+ * arithmetic of the value space, and what to review.
+ *
+ * The rationale does NOT vary with the branch. Which identifier objects are read
+ * does (the table above), and the observation's list is what carries that — an
+ * rtmd-report's line can name AMID and a DLST sensor's SID where an ems-report's
+ * cannot.
+ *
+ * OBSERVE, NEVER CONCLUDE (krh's governing constraint). We CANNOT prove a short
+ * identifier is non-unique, and the validator sees one supplier's sandbox data,
+ * so it usually cannot observe an actual collision either. The prose therefore
+ * observes that the value is too short to carry enough distinct values for a
+ * national fleet, and says so as arithmetic about the value space. It does NOT
+ * say that identifiers are colliding, that two appliances share one identifier,
+ * or that the supplier's data is wrong — none of which this check has grounds
+ * for.
  *
  * THE STRONGER SIGNAL, DEFERRED: an ACTUAL collision between two distinct CCE
  * units inside one session is provable and worth far more than a length
@@ -154,7 +166,7 @@ const SENSOR_IDENTIFIER = 'SID';
 
 /** One value this check found too short, with everything the prose needs. */
 interface ShortValue {
-  /** How it reads in the detail: `ASER is 3 characters`. */
+  /** How it reads in the observation: `ASER is 3 characters`. */
   readonly phrase: string;
   /** JSON Pointer to the value itself. */
   readonly pointer: string;
@@ -274,29 +286,19 @@ export const shortIdentifierCheck: SemanticCheck = (ctx: PipelineContext): Findi
   const lead = affected === 1 ? '' : 'in the first, ';
   const list = joinPhrases(firstPhrases);
 
-  // Each branch names the things ITS identifiers pick out. Neither says anything
-  // about whether these particular values are distinct — that is the claim this
-  // advisory deliberately does not make.
-  const named = ems
-    ? `These values name the appliance, the logger and the monitoring device`
-    : `These values name the appliance, the appliance as the supplier's platform holds it, ` +
-      `the logger, the monitoring device and each sensor listed under DLST`;
-
   return [
     advisory({
       id: 'adv.short_identifier',
       pointer: firstPointer,
+      summary:
+        `${affected} of ${total} ${reportNoun} ${verb} an identifier under four characters — ` +
+        `${lead}${list}.`,
       detail:
-        `${affected} of ${total} ${reportNoun} in this transmission ${verb} an identifier of ` +
-        `fewer than four characters — ${lead}${list}. ${named}, and no identifier object in ` +
-        `this schema version carries a minimum length, so a one-character value satisfies it. ` +
-        `A national cold chain holds on the order of 10,000 to 100,000 appliances, and the ` +
-        `identifiers delivered into one country are allocated across several suppliers, so the ` +
-        `value space in use is on the order of a million. Three characters of a 36-symbol ` +
-        `alphanumeric alphabet span 46,656 values and four span 1,679,616, so a value of this ` +
-        `length is too short to distinguish the equipment in a national fleet under any ` +
-        `alphabet. The country receiving these readings holds them under an identifier of that ` +
-        `width, whether or not the values sent so far happen to be distinct.`,
+        'A national cold chain in a large country might hold over 50,000 appliances across ' +
+        'several suppliers, but three alphanumeric characters span only 46,656 values. An ' +
+        'identifier of this width is not likely to distinguish the members of a national ' +
+        'fleet, much less a global population of equipment. Review the structure of these ' +
+        'values to ensure they are suitable for the intended scale of deployment.',
     }),
   ];
 };

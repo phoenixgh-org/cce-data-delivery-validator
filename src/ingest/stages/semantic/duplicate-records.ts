@@ -113,18 +113,29 @@
  * the DISTINCT transmissions it appeared in, with no detail — while the detail
  * prose is read per transmission in the transmission block, so a finding per
  * repeat would add no row, only stack near-identical lines in that block). It
- * carries what agj.8 asks for: the COUNTS under both comparisons,
- * and a pointer to the FIRST repeat in document order along with the earlier
- * record it repeats.
+ * carries what agj.8 asks for: the COUNTS under both comparisons, and a pointer
+ * to the FIRST repeat in document order.
  *
- * ── WORDING ──────────────────────────────────────────────────────────────────
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many records
+ * repeat an earlier record in the same report, and the two comparisons' counts
+ * side by side. `detail` is the RATIONALE, static and carrying no numbers: what
+ * a shared timestamp costs the receiving country, and why requirements clause
+ * 1.8's allowance for a repeated TRANSMISSION does not explain a repeat inside
+ * one.
+ *
+ * The two counts are stated as bare numbers, `3 by ABST, 1 identical in full`,
+ * and they do NOT sum: a deep-equal record carrying a string ABST is counted
+ * under both comparisons by construction. Either count may be zero, and zero is
+ * written as a number rather than as "none", so the line keeps one shape.
+ *
  * Observe, never conclude. A repeated reading has everyday causes a receiving
  * country cannot tell apart — a chunk of one file re-appended to the next, a
  * record re-sent without being re-stamped, an assembly that reads its store
- * twice, a logger that genuinely reported twice — so the detail states what
- * arrived and what it costs downstream, and leaves the cause to the only party
- * that knows. We also never name one copy as the spurious one: from the receiving
- * side the two are interchangeable.
+ * twice, a logger that genuinely reported twice — so the observation states what
+ * arrived and leaves the cause to the only party that knows. We also never name
+ * one copy as the spurious one: from the receiving side the two are
+ * interchangeable.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -161,9 +172,7 @@ function recordIdentity(record: Record<string, unknown>): string {
 interface Repeat {
   /** JSON Pointer to the repeating record. */
   pointer: string;
-  /** JSON Pointer to the earlier record it repeats. */
-  twinPointer: string;
-  /** It carries the same `ABST` string as that earlier record. */
+  /** It carries the same `ABST` string as an earlier record. */
   sameAbst: boolean;
   /** It is deep-equal to an earlier record — the stronger signal. */
   identical: boolean;
@@ -172,8 +181,8 @@ interface Repeat {
 /**
  * Walk one report's records in document order and collect every one that repeats
  * an earlier record, under either comparison. The first record carrying a given
- * ABST (or a given identity) is the one later repeats are attributed to, so a
- * value sent three times yields two repeats, both pointing at the first copy.
+ * ABST (or a given identity) is the one later repeats are measured against, so a
+ * value sent three times yields two repeats.
  */
 function scanReport(report: unknown, reportIndex: number): Repeat[] {
   const records = isPlainObject(report) ? report.records : undefined;
@@ -196,16 +205,12 @@ function scanReport(report: unknown, reportIndex: number): Repeat[] {
     const identityTwin = firstByIdentity.get(identity);
 
     if (abstTwin !== undefined || identityTwin !== undefined) {
+      // The two comparisons are counted SEPARATELY, and a record can be both:
+      // with records [T/3.2, T/9.9, T/9.9] the third matches record 0 by ABST
+      // and record 1 in full, and the observation states each count in its own
+      // right rather than partitioning the repeats between them.
       repeats.push({
         pointer,
-        // The identical twin when there is one: it is the more specific, more
-        // informative pointer. The two are NOT interchangeable — with records
-        // [T/3.2, T/9.9, T/9.9] the third record's abstTwin is record 0 while
-        // its identityTwin is record 1 — so this order is load-bearing, not a
-        // free choice: the prose keys off `first.identical` (see firstPhrase
-        // below), so it says "is identical in full to" for exactly the twin
-        // preferred here.
-        twinPointer: identityTwin ?? abstTwin!,
         sameAbst: abstTwin !== undefined,
         identical: identityTwin !== undefined,
       });
@@ -215,21 +220,6 @@ function scanReport(report: unknown, reportIndex: number): Repeat[] {
     if (!firstByIdentity.has(identity)) firstByIdentity.set(identity, pointer);
   }
   return repeats;
-}
-
-/**
- * The two counts, side by side rather than as a partition — a deep-equal record
- * carrying a string ABST is counted under both, and saying so as "N … and M …"
- * states each comparison's result without implying they sum.
- */
-function describeCounts(sameAbst: number, identical: number): string {
-  const fullClause =
-    identical === 0
-      ? `none is identical to an earlier record in full`
-      : `${identical} ${identical === 1 ? 'is' : 'are'} identical to an earlier record in full`;
-  if (sameAbst === 0) return fullClause;
-  const abstClause = `${sameAbst} ${sameAbst === 1 ? 'carries' : 'carry'} the same ABST as an earlier record`;
-  return `${abstClause}, and ${fullClause}`;
 }
 
 /** The `adv.duplicate_records` check, registered in `ADVISORY_CHECKS`. */
@@ -250,25 +240,21 @@ export const duplicateRecordsCheck: SemanticCheck = (ctx: PipelineContext): Find
   const identical = repeats.filter((r) => r.identical).length;
   const noun = repeats.length === 1 ? 'record' : 'records';
   const verb = repeats.length === 1 ? 'repeats' : 'repeat';
-  const firstPhrase = first.identical ? `is identical in full to` : `carries the same ABST as`;
 
   return [
     advisory({
       id: 'adv.duplicate_records',
       pointer: first.pointer,
+      summary:
+        `${repeats.length} ${noun} ${verb} an earlier record in the same report — ` +
+        `${sameAbst} by ABST, ${identical} identical in full.`,
       detail:
-        `This transmission carries ${repeats.length} ${noun} that ${verb} an earlier record in ` +
-        `the same report: ${describeCounts(sameAbst, identical)}. The first is at ` +
-        `${first.pointer}, which ${firstPhrase} the record at ${first.twinPointer}. Two records ` +
-        `stamped at one instant leave a receiving country holding two readings for that moment ` +
-        `with nothing in the payload to choose between them; two that match in full carry ` +
-        `nothing the earlier copy did not already carry. Either way the reading lands twice in ` +
-        `every average, total and alarm tally taken over the series. Repeats like these have ` +
-        `everyday causes — a chunk of one file re-appended to the next, a record re-sent ` +
-        `without being re-stamped, a logger that reported twice — and a receiving country ` +
-        `cannot tell those apart, so this states what arrived rather than why. Assembling each ` +
-        `report's records so that one reading appears once, in time order, is what keeps one ` +
-        `reading one row downstream.`,
+        'Two records that share the same timestamp force the country to perform the ' +
+        'de-duplication or to risk duplicate records landing twice in every average, total ' +
+        'and alarm tally. Countries should anticipate occasional duplicate transmissions, ' +
+        'which requirements clause 1.8 allows after a delivery failure or on request, but ' +
+        'duplicate records within a single transmission cannot be explained by ' +
+        "retransmission and are worth checking in the supplier's assembly step.",
     }),
   ];
 };

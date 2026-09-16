@@ -55,15 +55,18 @@ export function isAdvisoryId(id: string | null | undefined): boolean {
  *
  * Both OBSERVE, never conclude — see the wording note in advisory.ts's header.
  *
- * `summary` is optional for now because the checks are being converted one at a
- * time; a check that supplies none renders exactly as it did before, with the
- * rationale on the row and no expander.
+ * BOTH ARE REQUIRED. `summary` was optional while the twelve checks were being
+ * converted one at a time (agj.17 slices A–C); every registered check now
+ * supplies one, so a new check must too, and the compiler is what says so. The
+ * RENDERING fallback stays regardless: `finding.summary` is nullable in the
+ * database, and a row stored before the column existed still falls back to its
+ * `detail` for the rest of the retention window.
  */
 export interface AdvisoryInput {
   /** The `adv.*` id of the advisory being raised. */
   id: AdvisoryId;
   /** The one-line observation, with its numbers. Shown on the advisory row. */
-  summary?: string;
+  summary: string;
   /** The rationale: why the observation matters to the receiving country. */
   detail: string;
   /** JSON Pointer to where it was observed, for the raw-payload drill-down. */
@@ -81,7 +84,7 @@ export function advisory(input: AdvisoryInput): Finding {
   return {
     requirement: input.id,
     severity: 'info',
-    summary: input.summary ?? null,
+    summary: input.summary,
     detail: input.detail,
     pointer: input.pointer ?? null,
     code: input.id,

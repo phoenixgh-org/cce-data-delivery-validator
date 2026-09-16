@@ -130,8 +130,8 @@ const OUTAGE = emsPayload([
 ]);
 
 /**
- * The same outage with BOTH accumulators null, so the detail has to name two of
- * them. The plural form of every phrase in the sentence turns on this fixture.
+ * The same outage with BOTH accumulators null, so the copy has to name two of
+ * them. The plural form of every phrase turns on this fixture.
  */
 const OUTAGE_BOTH = emsPayload([
   emsRecord('0330', { CMPR2: 300 }),
@@ -227,6 +227,13 @@ function detailOf(payload: Record<string, unknown>): string {
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding, 'expected the advisory to be raised');
   return finding.detail ?? '';
+}
+
+/** The one-line observation — where the counts live. */
+function summaryOf(payload: Record<string, unknown>): string {
+  const [finding] = advisories(checkOnly(payload));
+  assert.ok(finding, 'expected the advisory to be raised');
+  return finding.summary ?? '';
 }
 
 function countsOf(
@@ -374,9 +381,9 @@ test('CMPR2 is read the same way, and named in its own right', () => {
   const raised = advisories(checkOnly(payload));
   assert.equal(raised.length, 1);
   assert.equal(raised[0]?.pointer, '/data/0/records/1');
-  assert.match(raised[0]?.detail ?? '', /CMPR2/);
+  assert.match(raised[0]?.summary ?? '', /CMPR2/);
   assert.doesNotMatch(
-    raised[0]?.detail ?? '',
+    raised[0]?.summary ?? '',
     /\bCMPR\b/,
     'CMPR itself arrived as 0, so it is not named',
   );
@@ -390,8 +397,13 @@ test('records are counted across reports, and the pointer names the first', () =
   const raised = advisories(checkOnly(payload));
   assert.equal(raised.length, 1, 'still one finding per transmission');
   assert.equal(raised[0]?.pointer, '/data/0/records/1');
-  assert.match(raised[0]?.detail ?? '', /2 of 5 records/);
-  assert.match(raised[0]?.detail ?? '', /across 2 reports/);
+  // The counts are the TRANSMISSION's, pooled across reports. How many reports
+  // they came from left the copy with the approved observation (agj.17); the
+  // pointer is what places them.
+  assert.equal(
+    raised[0]?.summary,
+    '2 of 5 records carry CMPR as null in a period whose SVA is 0, with LERR and EERR blank.',
+  );
 });
 
 // ── exclusivity with adv.null_padding (agj.9 acceptance) ─────────────────────
@@ -418,84 +430,99 @@ test('an intermittent null belongs here, and adv.null_padding stays silent', () 
 
 // ── wording is acceptance, not polish ────────────────────────────────────────
 
-test('the detail carries no defect vocabulary and no synonym for the category', () => {
+test('the copy carries no defect vocabulary and no synonym for the category', () => {
+  // "should" is NOT on this list: the approved rationale's "the period's total
+  // should be an explicit 0" is a recommendation in the house sense, the same
+  // way sample_gap's "loggers should rarely produce gaps" is, and neither says
+  // the payload broke a rule.
   const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i;
-  const detail = detailOf(OUTAGE);
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation about/i, 'no renaming');
+    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  for (const copy of [summaryOf(OUTAGE), detailOf(OUTAGE)]) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation about/i, 'no renaming');
+  }
 });
 
-test('the detail observes rather than concludes, and states the remedy as a fact', () => {
-  const detail = detailOf(OUTAGE);
-  assert.doesNotMatch(detail, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${detail}`);
-  // 52r's framing: a period in which nothing happened is a total of 0, stated as
-  // what the encoding carries rather than as an instruction.
-  assert.match(detail, /known 0/);
-  assert.match(detail, /could not have run/);
+test('the copy observes rather than concludes, and offers the mechanism as a suggestion', () => {
+  const copy = `${summaryOf(OUTAGE)} ${detailOf(OUTAGE)}`;
+  assert.doesNotMatch(copy, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${copy}`);
+  // 52r's framing: a period in which nothing happened is a total of 0.
+  assert.match(copy, /could not have run/);
+  assert.match(copy, /should be an explicit 0/);
   // What the RECEIVING side cannot do is the only thing we can speak to.
-  assert.match(detail, /unable to tell a period in which nothing ran/);
-  assert.match(detail, /complete and fully conformant/, 'the payload is not faulted');
+  assert.match(copy, /unable to distinguish a period in which the compressor did not run/);
+  // The compressor controller is named as what the numeric records SUGGEST, not
+  // as a cause established from the payload.
+  assert.match(copy, /which suggests the null appears when the compressor controller goes/);
 });
 
 test('the sentence reads as English with one accumulator named and with two (c4c4)', () => {
-  // Pinned VERBATIM in both forms. The sentence is assembled from per-number
-  // fragments, so a fragment that is right in one form can be broken in the
-  // other and the suite would not notice: "with nothing beside it is to account
-  // for the null" and "both are accumulators" beside three named objects both
-  // shipped and were read by suppliers. A supplier reads this string as sent.
-  const one = detailOf(OUTAGE);
-  const two = detailOf(OUTAGE_BOTH);
-
-  assert.ok(
-    one.includes(
-      'carries CMPR as null in a period whose own SVA is 0, and nothing beside it explains ' +
-        'the null — LERR and EERR are both absent, null, or blank.',
-    ),
-    `singular opening reads wrong: ${one}`,
+  // Pinned VERBATIM in both forms, observation and rationale. Both are assembled
+  // from per-number fragments, so a fragment that is right in one form can be
+  // broken in the other and the suite would not notice: "with nothing beside it
+  // is to account for the null" and "both are accumulators" beside three named
+  // objects both shipped and were read by suppliers.
+  assert.equal(
+    summaryOf(OUTAGE),
+    '1 of 3 records carries CMPR as null in a period whose SVA is 0, with LERR and EERR blank.',
   );
-  assert.ok(
-    two.includes(
-      'carries CMPR and CMPR2 as null in a period whose own SVA is 0, and nothing beside them ' +
-        'explains the nulls — LERR and EERR are both absent, null, or blank.',
-    ),
-    `plural opening reads wrong: ${two}`,
+  assert.equal(
+    summaryOf(OUTAGE_BOTH),
+    '1 of 3 records carries CMPR and CMPR2 as null in a period whose SVA is 0, with LERR and ' +
+      'EERR blank.',
   );
 
-  // The clause that used to say "both" while naming SVA and two accumulators.
-  const shared =
-    'On a mains appliance these are all accumulators over the same 15-minute period: SVA ' +
-    'counts the seconds the AC supply sat within the bounds the appliance operates in, and ';
-  assert.ok(one.includes(`${shared}CMPR counts the seconds the compressor ran.`), one);
-  assert.ok(two.includes(`${shared}CMPR and CMPR2 count the seconds the compressor ran.`), two);
+  // The rationale carries no counts, but its third sentence names the
+  // accumulators this finding was raised on, and the verb agrees with the list.
+  assert.match(
+    detailOf(OUTAGE),
+    /CMPR arrives as a number in the other records of this report/,
+    detailOf(OUTAGE),
+  );
+  assert.match(
+    detailOf(OUTAGE_BOTH),
+    /CMPR and CMPR2 arrive as numbers in the other records of this report/,
+    detailOf(OUTAGE_BOTH),
+  );
 
-  // The closing clause agrees in number too.
-  assert.ok(one.includes('The same accumulator arrives as a number in other records'), one);
-  assert.ok(two.includes('The same accumulators arrive as numbers in other records'), two);
-
-  // No pronoun+copula survives anywhere in either form.
-  for (const detail of [one, two]) {
-    assert.doesNotMatch(detail, /beside (it is|they are)\b/, `pronoun+copula splice: ${detail}`);
-    assert.doesNotMatch(detail, /\bboth are accumulators\b/, detail);
+  // No pronoun+copula splice survives in either form.
+  for (const copy of [detailOf(OUTAGE), detailOf(OUTAGE_BOTH)]) {
+    assert.doesNotMatch(copy, /beside (it is|they are)\b/, `pronoun+copula splice: ${copy}`);
+    assert.doesNotMatch(copy, /\bboth are accumulators\b/, copy);
   }
+});
+
+test('it names what arrived, then why an explicit 0 is what the country can add up', () => {
+  assert.equal(
+    detailOf(OUTAGE),
+    'With no supplied electricity the compressor could not have run, so the ' +
+      "period's total should be an explicit 0 that the receiving country can add up. A " +
+      'null value here leaves the country unable to distinguish a period in which the ' +
+      'compressor did not run from a period in which the compressor runtime could not be ' +
+      'measured. ' +
+      'CMPR arrives as a number in the other records of this report, which suggests the null ' +
+      'appears when the compressor controller goes offline during a power outage, and a ' +
+      'logger that already knows no power was supplied can report a runtime of 0 rather ' +
+      'than null.',
+  );
 });
 
 test('the plural form clears the same wording bars as the singular', () => {
   // The category's two rules are acceptance for every form of the sentence, not
   // only the one the other copy tests happen to drive.
-  const detail = detailOf(OUTAGE_BOTH);
-  assert.doesNotMatch(
-    detail,
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i,
-    `detail reads as a defect: ${detail}`,
-  );
-  assert.doesNotMatch(detail, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${detail}`);
+  for (const copy of [summaryOf(OUTAGE_BOTH), detailOf(OUTAGE_BOTH)]) {
+    assert.doesNotMatch(
+      copy,
+      /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i,
+      `copy reads as a defect: ${copy}`,
+    );
+    assert.doesNotMatch(copy, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${copy}`);
+  }
 });
 
-test('the detail stands alone per transmission and names its first record', () => {
-  // Recurring advisories fold in the dashboard to the most recent detail only.
-  const detail = detailOf(OUTAGE);
-  assert.match(detail, /in this transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
-  assert.match(detail, /\/data\/0\/records\/1/);
+test('the observation stands alone per transmission, and the pointer names its first record', () => {
+  // Recurring advisories fold in the dashboard to the most recent occurrence.
+  assert.match(summaryOf(OUTAGE), /^1 of 3 records carries CMPR as null/);
+  assert.doesNotMatch(summaryOf(OUTAGE), /this session|every transmission/i);
+  assert.equal(advisories(checkOnly(OUTAGE))[0]?.pointer, '/data/0/records/1');
 });

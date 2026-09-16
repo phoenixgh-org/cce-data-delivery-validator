@@ -329,10 +329,11 @@ Several properties follow from that decision:
   line, with its numbers ("3 of 12 reports carry no appliance serial number"), shown on
   the advisory row. `detail` is the rationale for it, kept one click away behind that
   row's expander. A supplier scanning a list of advisories is reading for what was
-  seen; the reason it matters is what they open next. A graded §7 finding carries no
-  `summary` and keeps its explanation in `detail` alone, and a row whose `summary` is
-  absent — stored before the column existed, or emitted by a check whose copy has not
-  been split — falls back to rendering `detail` as the line, with no expander.
+  seen; the reason it matters is what they open next. Every advisory check supplies
+  both, and `AdvisoryInput` requires them. A graded §7 finding carries no `summary`
+  and keeps its explanation in `detail` alone, and a row whose `summary` is absent —
+  stored before the column existed — falls back to rendering `detail` as the line,
+  with no expander.
 - Advisories use named codes rather than numbers, because an advisory catalogue has
   no external document to number against.
 - The §7 matrix is immune by construction: the join iterates the 27 static rows and

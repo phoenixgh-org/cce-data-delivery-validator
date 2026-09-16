@@ -215,6 +215,13 @@ function detailOf(payload: { meta: { transferType?: unknown } }): string {
   return finding.detail ?? '';
 }
 
+/** The one-line observation — where the counts and every named value live. */
+function summaryOf(payload: { meta: { transferType?: unknown } }): string {
+  const [finding] = advisories(checkOnly(payload));
+  assert.ok(finding, 'expected the advisory to be raised');
+  return finding.summary ?? '';
+}
+
 function countsOf(
   findings: readonly Finding[],
 ): Record<string, { pass: number; fail: number; info: number }> {
@@ -301,27 +308,27 @@ test('one, two and three characters fire; exactly four does not', () => {
 test('the value is trimmed before it is measured', () => {
   // Surrounding whitespace is not identification, and counting it would let
   // padding silence the check.
-  assert.match(detailOf(emsPayload({ ASER: '  A1  ' })), /ASER is 2 characters/);
+  assert.match(summaryOf(emsPayload({ ASER: '  A1  ' })), /ASER is 2 characters/);
   assert.equal(advisories(checkOnly(emsPayload({ ASER: '   A123   ' }))).length, 0);
 });
 
 test('a one-character value reads "1 character", not "1 characters"', () => {
-  assert.match(detailOf(emsPayload({ ASER: 'A' })), /ASER is 1 character\b/);
+  assert.match(summaryOf(emsPayload({ ASER: 'A' })), /ASER is 1 character\b/);
 });
 
 // ── which fields are read ────────────────────────────────────────────────────
 
 test('EMS: every identifier the branch declares is read', () => {
   for (const key of ['ASER', 'LSER', 'ESER', 'AID', 'LID', 'EID']) {
-    const detail = detailOf(emsPayload({ [key]: 'AB' }));
-    assert.match(detail, new RegExp(`${key} is 2 characters`), `${key} is not read`);
+    const summary = summaryOf(emsPayload({ [key]: 'AB' }));
+    assert.match(summary, new RegExp(`${key} is 2 characters`), `${key} is not read`);
   }
 });
 
 test('RTMD: every identifier the branch declares is read, AMID included', () => {
   for (const key of ['ASER', 'LSER', 'ESER', 'AMID', 'AID', 'LID', 'EID']) {
-    const detail = detailOf(rtmPayload({ [key]: 'AB' }));
-    assert.match(detail, new RegExp(`${key} is 2 characters`), `${key} is not read`);
+    const summary = summaryOf(rtmPayload({ [key]: 'AB' }));
+    assert.match(summary, new RegExp(`${key} is 2 characters`), `${key} is not read`);
   }
 });
 
@@ -335,9 +342,9 @@ test('RTMD: SID is read under every sensor in DLST, and the pointer reaches it',
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding, 'expected the advisory to be raised');
   assert.equal(finding.pointer, '/data/0/DLST/TVC/SID');
-  assert.match(finding.detail ?? '', /DLST\.TVC SID is 2 characters/);
+  assert.match(finding.summary ?? '', /DLST\.TVC SID is 2 characters/);
   // The populated second sensor is not named.
-  assert.doesNotMatch(finding.detail ?? '', /DLST\.TAMB/);
+  assert.doesNotMatch(finding.summary ?? '', /DLST\.TAMB/);
 
   // Every sensor is walked, not just the required TVC.
   const onTamb = rtmPayload({
@@ -423,18 +430,21 @@ test('multiple reports: the count is of reports and the pointer is the first off
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding, 'expected the advisory to be raised');
   assert.equal(finding.pointer, '/data/1/ASER', 'the first short value in the transmission');
-  assert.match(finding.detail ?? '', /^2 of 3 reports in this transmission carry /);
-  // The listed values are the FIRST offender's, and the prose says so rather
-  // than letting the list read as a claim about all of them.
-  assert.match(finding.detail ?? '', /in the first, ASER is 3 characters/);
-  assert.doesNotMatch(finding.detail ?? '', /LID/);
+  assert.equal(
+    finding.summary,
+    '2 of 3 reports carry an identifier under four characters — in the first, ASER is 3 ' +
+      'characters.',
+    "the listed values are the FIRST offender's, and the line says so rather than letting " +
+      'the list read as a claim about all of them',
+  );
 });
 
 test('every short identifier on the first offending report is named', () => {
-  const detail = detailOf(rtmPayload({ AMID: 'A1', ESER: 'E12', LID: 'L' }));
-  for (const named of ['ESER is 3 characters', 'AMID is 2 characters', 'LID is 1 character']) {
-    assert.match(detail, new RegExp(named), `expected the detail to name ${named}`);
-  }
+  assert.equal(
+    summaryOf(rtmPayload({ AMID: 'A1', ESER: 'E12', LID: 'L' })),
+    '1 of 1 report carries an identifier under four characters — ESER is 3 characters, ' +
+      'AMID is 2 characters and LID is 1 character.',
+  );
 });
 
 test('non-object entries in `data` are skipped, not counted', () => {
@@ -446,7 +456,7 @@ test('non-object entries in `data` are skipped, not counted', () => {
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding, 'expected the advisory to be raised');
   assert.equal(finding.pointer, '/data/3/ASER', 'the index is the position in `data`');
-  assert.match(finding.detail ?? '', /^1 of 1 report in this transmission carries /);
+  assert.match(finding.summary ?? '', /^1 of 1 report carries an identifier under four/);
 });
 
 test('an empty or missing `data` array gives it nothing to observe', () => {
@@ -476,65 +486,67 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 
 // ── wording is acceptance, not polish ────────────────────────────────────────
 
-test('the detail carries no defect vocabulary and no synonym for the category', () => {
+test('the copy carries no defect vocabulary and no synonym for the category', () => {
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i;
-  for (const detail of [detailOf(EMS_SHORT_ID), detailOf(RTM_SHORT_ID)]) {
-    assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-    assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  for (const payload of [EMS_SHORT_ID, RTM_SHORT_ID]) {
+    for (const copy of [summaryOf(payload), detailOf(payload)]) {
+      assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+      assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
+    }
   }
 });
 
-test('PIN: the detail never claims a collision — krh’s governing constraint', () => {
+test('PIN: the copy never claims a collision — krh’s governing constraint', () => {
   // We cannot prove a short identifier is non-unique, and the validator sees one
   // supplier's sandbox data, so it usually cannot observe an actual collision
   // either. The stronger signal is deferred to cce-data-delivery-validator-0rfk.
-  for (const detail of [detailOf(EMS_SHORT_ID), detailOf(RTM_SHORT_ID)]) {
-    assert.doesNotMatch(detail, /collid|collision|clash|duplicate|reused|re-used|not unique/i);
-    assert.doesNotMatch(detail, /same appliance|two appliances share/i);
-    // What it DOES say is arithmetic about the value space, and that it takes no
-    // position on the values actually sent.
-    assert.match(detail, /too short to distinguish the equipment in a national fleet/);
-    assert.match(detail, /whether or not the values sent so far happen to be distinct/);
+  for (const payload of [EMS_SHORT_ID, RTM_SHORT_ID]) {
+    const copy = `${summaryOf(payload)} ${detailOf(payload)}`;
+    assert.doesNotMatch(copy, /collid|collision|clash|duplicate|reused|re-used|not unique/i);
+    assert.doesNotMatch(copy, /same appliance|two appliances share/i);
+    // What it DOES say is arithmetic about the value space, hedged to what it
+    // can support: "not likely to distinguish", never "does not".
+    assert.match(copy, /not likely to distinguish the members of a national fleet/);
   }
 });
 
-test('the detail states the threshold and the fleet-size reasoning behind it', () => {
-  // The threshold is a judgment call, so the wire prose carries its argument
+test('the rationale states the fleet-size reasoning behind the four-character floor', () => {
+  // The threshold is a judgment call, so the rationale carries its argument
   // rather than leaving the supplier to guess at the number.
   const detail = detailOf(RTM_SHORT_ID);
-  assert.match(detail, /fewer than four characters/);
-  assert.match(detail, /10,000 to 100,000 appliances/);
-  assert.match(detail, /46,656 values and four span 1,679,616/);
+  assert.match(detail, /over 50,000 appliances across several suppliers/);
+  assert.match(detail, /three alphanumeric characters span only 46,656 values/);
+  assert.match(detail, /Review the structure of these values/, 'and what to do about it');
 });
 
-test('EMS: the detail reads as one whole observation', () => {
+test('the rationale is the same on both branches — only the named values move', () => {
+  // Which identifier objects are READ varies by branch, and the observation's
+  // list is what carries that. The approved rationale (agj.17, 2026-09-15) does
+  // not branch at all.
+  assert.equal(
+    summaryOf(EMS_SHORT_ID),
+    '1 of 1 report carries an identifier under four characters — ASER is 3 characters.',
+  );
+  assert.equal(
+    summaryOf(RTM_SHORT_ID),
+    '1 of 1 report carries an identifier under four characters — AMID is 3 characters.',
+  );
   assert.equal(
     detailOf(EMS_SHORT_ID),
-    '1 of 1 report in this transmission carries an identifier of fewer than four characters ' +
-      '— ASER is 3 characters. These values name the appliance, the logger and the monitoring ' +
-      'device, and no identifier object in this schema version carries a minimum length, so a ' +
-      'one-character value satisfies it. A national cold chain holds on the order of 10,000 ' +
-      'to 100,000 appliances, and the identifiers delivered into one country are allocated ' +
-      'across several suppliers, so the value space in use is on the order of a million. ' +
-      'Three characters of a 36-symbol alphanumeric alphabet span 46,656 values and four span ' +
-      '1,679,616, so a value of this length is too short to distinguish the equipment in a ' +
-      'national fleet under any alphabet. The country receiving these readings holds them ' +
-      'under an identifier of that width, whether or not the values sent so far happen to be ' +
-      'distinct.',
+    'A national cold chain in a large country might hold over 50,000 appliances across ' +
+      'several suppliers, but three alphanumeric characters span only 46,656 values. An ' +
+      'identifier of this width is not likely to distinguish the members of a national ' +
+      'fleet, much less a global population of equipment. Review the structure of these ' +
+      'values to ensure they are suitable for the intended scale of deployment.',
   );
+  assert.equal(detailOf(RTM_SHORT_ID), detailOf(EMS_SHORT_ID));
 });
 
-test('RTMD: the detail names the sensor list its branch carries', () => {
-  const detail = detailOf(RTM_SHORT_ID);
-  assert.match(detail, /^1 of 1 report in this transmission carries an identifier of fewer/);
-  assert.match(detail, /AMID is 3 characters/);
-  assert.match(detail, /each sensor listed under DLST/);
-});
-
-test('the detail stands alone per transmission', () => {
-  // Recurring advisories fold in the dashboard to the most recent detail only.
-  for (const detail of [detailOf(EMS_SHORT_ID), detailOf(RTM_SHORT_ID)]) {
-    assert.match(detail, /in this transmission/);
+test('the observation stands alone per transmission', () => {
+  // Recurring advisories fold in the dashboard to the most recent occurrence.
+  for (const payload of [EMS_SHORT_ID, RTM_SHORT_ID]) {
+    assert.match(summaryOf(payload), /^1 of 1 report carries an identifier under four characters/);
+    assert.doesNotMatch(summaryOf(payload), /this session|every transmission/i);
   }
 });

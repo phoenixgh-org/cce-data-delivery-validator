@@ -62,6 +62,7 @@ function makeDeps(concurrentAtEntry = 1): SemanticDeps {
 const testAdvisoryCheck: SemanticCheck = (): Finding[] => [
   advisory({
     id: 'adv.test_only',
+    summary: 'a test-only observation',
     detail: 'a test-only advisory proving the emission path',
     pointer: '/data/0/records/0/TCON',
   }),
@@ -70,20 +71,26 @@ const testAdvisoryCheck: SemanticCheck = (): Finding[] => [
 // ── the emission helper ──────────────────────────────────────────────────────
 
 test('advisory() emits severity info under the adv.* id in requirement AND code', () => {
-  const f = advisory({ id: 'adv.null_padding', detail: 'observed', pointer: '/data/0' });
+  const f = advisory({
+    id: 'adv.null_padding',
+    summary: 'observed',
+    detail: 'why it matters',
+    pointer: '/data/0',
+  });
 
   assert.equal(f.severity, 'info', 'always info — 2kx locked no fourth severity');
   assert.equal(f.requirement, 'adv.null_padding', 'requirement carries the adv.* id');
   assert.equal(f.code, 'adv.null_padding', 'code carries the same id, so it de-duplicates');
   assert.equal(f.pointer, '/data/0', 'pointer drives the raw-payload drill-down');
-  assert.equal(f.detail, 'observed');
+  assert.equal(f.summary, 'observed', 'the observation, shown on the advisory row');
+  assert.equal(f.detail, 'why it matters', 'the rationale, behind the expander');
 });
 
 test('advisory() never sets `outdated` — an advisory is not a defect', () => {
   // `isIssue` (src/api/signatures.ts) folds a finding into the "distinct issues
   // to fix" list when it is a fail OR an info carrying `outdated`. Leaving the
   // flag alone is what keeps advisories out of that defect count.
-  const f = advisory({ id: 'adv.null_identity', detail: 'observed' });
+  const f = advisory({ id: 'adv.null_identity', summary: 'observed', detail: 'why' });
   assert.ok(!f.outdated, 'outdated must stay falsy');
   assert.equal(f.pointer, null, 'pointer defaults to null, not undefined');
 });
@@ -91,7 +98,7 @@ test('advisory() never sets `outdated` — an advisory is not a defect', () => {
 test('advisory() carries no schema-signature fields', () => {
   // keyword/instancePath/param belong to Ajv errors; a set `keyword` would make
   // sigKey treat the advisory as a schema defect.
-  const f = advisory({ id: 'adv.null_padding', detail: 'observed' });
+  const f = advisory({ id: 'adv.null_padding', summary: 'observed', detail: 'why' });
   assert.equal(f.keyword, undefined);
   assert.equal(f.instancePath, undefined);
   assert.equal(f.param, undefined);
@@ -111,7 +118,9 @@ test('isAdvisoryId separates the adv.* namespace from §7 requirement ids', () =
 // ── composition into stage 8 ─────────────────────────────────────────────────
 
 test('runAdvisories collects every registered check, in order', async () => {
-  const second: SemanticCheck = (): Finding[] => [advisory({ id: 'adv.second', detail: 'second' })];
+  const second: SemanticCheck = (): Finding[] => [
+    advisory({ id: 'adv.second', summary: 'second', detail: 'second why' }),
+  ];
   const findings = await runAdvisories(makeCtx(), makeDeps(), [testAdvisoryCheck, second]);
 
   assert.deepEqual(

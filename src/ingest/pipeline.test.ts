@@ -132,7 +132,11 @@ test('buildResponseBody: advisories are carried in their own field, out of the t
     200,
     [
       { requirement: '1.2', severity: 'pass' },
-      advisory({ id: 'adv.null_padding', detail: 'TCON was null in all 480 records' }),
+      advisory({
+        id: 'adv.null_padding',
+        summary: 'TCON is null in all 480 records',
+        detail: 'why a receiving country cares',
+      }),
     ],
     'tx-adv',
   );
@@ -147,7 +151,10 @@ test('buildResponseBody: advisories are carried in their own field, out of the t
       requirement: 'adv.null_padding',
       severity: 'info',
       profile: '2025',
-      detail: 'TCON was null in all 480 records',
+      // Both pieces of an advisory's prose travel: the observation on `summary`
+      // and the rationale on `detail` (agj.17).
+      summary: 'TCON is null in all 480 records',
+      detail: 'why a receiving country cares',
     },
   ]);
   // The tally is what a lone graded pass would have produced, plus a separate
@@ -159,7 +166,7 @@ test('buildResponseBody: advisories are carried in their own field, out of the t
 test('buildResponseBody: advisories alone leave a zero tally and no info count (7rv)', () => {
   const body = buildResponseBody(
     200,
-    [advisory({ id: 'adv.date_format', detail: 'd' })],
+    [advisory({ id: 'adv.date_format', summary: 'o', detail: 'd' })],
     'tx-adv2',
   );
 
@@ -269,7 +276,7 @@ test('buildResponseBody: every echoed finding names the lineage that graded it (
       { requirement: '1.4', severity: 'pass' },
       { requirement: '3.2', severity: 'pass', profile: '2025' },
       { requirement: '5.3.2', severity: 'fail', profile: 'ds013', detail: "must have 'LSER'" },
-      advisory({ id: 'adv.date_format', detail: 'd' }),
+      advisory({ id: 'adv.date_format', summary: 'o', detail: 'd' }),
     ],
     'tx-profile',
     lineages('ds013'),
@@ -293,7 +300,10 @@ test('an unstamped finding resolves to the contract lineage through CONTRACT_PRO
   // so (bd by1c.31).
   const body = buildResponseBody(
     200,
-    [{ requirement: '1.4', severity: 'pass' }, advisory({ id: 'adv.date_format', detail: 'd' })],
+    [
+      { requirement: '1.4', severity: 'pass' },
+      advisory({ id: 'adv.date_format', summary: 'o', detail: 'd' }),
+    ],
     'tx-unstamped',
     lineages('ds013'),
   );
@@ -409,7 +419,7 @@ test('message: the shadow sentence comes last, after the advisory sentence', () 
     [
       { requirement: '3.2', severity: 'pass', profile: '2025' },
       { requirement: '5.3.2', severity: 'fail', profile: 'ds013' },
-      advisory({ id: 'adv.date_format', detail: 'd' }),
+      advisory({ id: 'adv.date_format', summary: 'o', detail: 'd' }),
     ],
     'tx-both',
     lineages('ds013'),

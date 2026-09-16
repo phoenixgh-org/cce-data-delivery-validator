@@ -211,6 +211,13 @@ function detailOf(payload: { meta: { transferType?: unknown } }): string {
   return finding.detail ?? '';
 }
 
+/** The one-line observation — where every number lives. */
+function summaryOf(payload: { meta: { transferType?: unknown } }): string {
+  const [finding] = advisories(checkOnly(payload));
+  assert.ok(finding, 'expected the advisory to be raised');
+  return finding.summary ?? '';
+}
+
 function countsOf(
   findings: readonly Finding[],
 ): Record<string, { pass: number; fail: number; info: number }> {
@@ -371,10 +378,10 @@ test('RTMD: the count is of RECORDS, and the pointer is the FIRST offending one'
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding);
   assert.equal(finding.pointer, '/data/0/records/1');
-  assert.match(finding.detail ?? '', /^2 of 4 records in this transmission carry TVC as null/);
+  assert.equal(finding.summary, '2 of 4 records carry TVC as null with LERR and EERR both blank.');
 });
 
-test('RTMD: offending records in two reports are counted together and the spread is named', () => {
+test('RTMD: offending records in two reports are counted together', () => {
   const payload = rtmPayload([rtmRecord('0330'), rtmRecord('0345', { TVC: null, EERR: null })]);
   const data = payload.data as Record<string, unknown>[];
   data.push({
@@ -386,10 +393,10 @@ test('RTMD: offending records in two reports are counted together and the spread
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding);
   assert.equal(finding.pointer, '/data/0/records/1', 'the first offender, not the first report');
-  assert.match(
-    finding.detail ?? '',
-    /^2 of 3 records in this transmission, across 2 reports, carry TVC as null/,
-  );
+  // The counts are the TRANSMISSION's, pooled across reports. How many reports
+  // they came from left the copy with the approved observation (agj.17); the
+  // drill-down from the pointer is what places them.
+  assert.equal(finding.summary, '2 of 3 records carry TVC as null with LERR and EERR both blank.');
 });
 
 test('RTMD: non-object reports and non-object records are skipped rather than counted', () => {
@@ -405,7 +412,7 @@ test('RTMD: non-object reports and non-object records are skipped rather than co
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding);
   assert.equal(finding.pointer, '/data/0/records/2', 'index counts the array, not the objects');
-  assert.match(finding.detail ?? '', /^1 of 1 record in this transmission carries/);
+  assert.equal(finding.summary, '1 of 1 record carries TVC as null with LERR and EERR both blank.');
 });
 
 test('an empty data array gives it nothing to observe', () => {
@@ -436,35 +443,49 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 
 // ── wording is acceptance, not polish ────────────────────────────────────────
 
-test('the detail carries no defect vocabulary and no synonym for the category', () => {
+test('it names what arrived, then why a null TVC is worth following up', () => {
+  assert.equal(
+    summaryOf(RTM_UNEXPLAINED),
+    '1 of 1 record carries TVC as null with LERR and EERR both blank.',
+  );
+  assert.equal(
+    detailOf(RTM_UNEXPLAINED),
+    'rtmd-record allows a null TVC without tying it to anything that accounts for it, so ' +
+      'these records are fully conformant. However, TVC is the most essential measurement ' +
+      'for protecting vaccine health, so null TVC values should be investigated to ensure ' +
+      'proper device operation.',
+  );
+});
+
+test('the copy carries no defect vocabulary and no synonym for the category', () => {
   // `error` is deliberately absent from this list where the other advisories
   // carry it: LERR and EERR are titled "Logger Error Codes" and "EMD Error
   // Codes" in the schema itself, so naming the field is naming the payload
-  // rather than grading it. Everything else that reads as a verdict is barred.
+  // rather than grading it. "should" is absent too — the approved rationale's
+  // "should be investigated" is a recommendation in the house sense, not a
+  // statement that the payload broke a rule. Everything else that reads as a
+  // verdict is barred.
   const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i;
-  const detail = detailOf(RTM_UNEXPLAINED);
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation about/i, 'no renaming');
+    /\b(warn|warning|issue|issues|defect|defects|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  for (const copy of [summaryOf(RTM_UNEXPLAINED), detailOf(RTM_UNEXPLAINED)]) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation about/i, 'no renaming');
+  }
 });
 
-test('the detail concludes nothing about the device and keeps the RTMD humility', () => {
-  const detail = detailOf(RTM_UNEXPLAINED);
-  assert.doesNotMatch(detail, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${detail}`);
-  // What it DOES say: what arrived, and what the receiving side cannot tell apart.
-  assert.match(detail, /TVC as null with no error code beside it/);
-  assert.match(
-    detail,
-    /the country receiving them cannot distinguish a reading the device simply did not take/i,
-  );
-  assert.match(detail, /arrive complete and fully conformant/, 'the payload is not faulted');
-  // The caveat agj.2 demoted the issue for, carried in the prose itself.
-  assert.match(detail, /a quiet null may be ordinary on it/);
+test('the copy concludes nothing about the device', () => {
+  // The rationale Benson settled on 2026-09-15 replaced the earlier draft's
+  // "a quiet null may be ordinary on an RTMD", which read as a reason to leave
+  // it alone. It still names no cause: a reading the device did not take and one
+  // it could not obtain are indistinguishable from the receiving side.
+  const copy = `${summaryOf(RTM_UNEXPLAINED)} ${detailOf(RTM_UNEXPLAINED)}`;
+  assert.doesNotMatch(copy, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${copy}`);
+  assert.match(detailOf(RTM_UNEXPLAINED), /fully conformant/, 'the payload is not faulted');
 });
 
-test('the detail stands alone per transmission', () => {
-  // Recurring advisories fold in the dashboard to the most recent detail only.
-  const detail = detailOf(RTM_UNEXPLAINED);
-  assert.match(detail, /in this transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
+test('the observation stands alone per transmission', () => {
+  // Recurring advisories fold in the dashboard to the most recent occurrence.
+  const summary = summaryOf(RTM_UNEXPLAINED);
+  assert.match(summary, /^1 of 1 record carries TVC as null/);
+  assert.doesNotMatch(summary, /this session|every transmission/i);
 });

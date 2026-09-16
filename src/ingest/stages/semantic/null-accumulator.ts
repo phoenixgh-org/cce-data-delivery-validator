@@ -114,13 +114,25 @@
  * null CMPR needs no explanation — is accepted, and the advisory is the only
  * surface that speaks to it there.
  *
- * ── WORDING ─────────────────────────────────────────────────────────────────
- * Observe, never conclude. We say what arrived (a period with no AC supply whose
- * compressor runtime is null, beside periods where it is a number) and what the
- * receiving country therefore cannot tell apart. We do not say the device broke
- * and we do not say the supplier dropped anything. The remedy follows 52r's
- * settled framing — a period in which nothing happened is a total of 0 — stated
- * as what the two encodings carry rather than as an instruction.
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many of the
+ * transmission's records carry a compressor accumulator as null in a period
+ * whose SVA is 0, with neither error code beside it. `detail` is the RATIONALE:
+ * what the period's total should have been, what a null costs the receiving
+ * country, and the mechanism the numeric records elsewhere in the report point
+ * at.
+ *
+ * The rationale carries no counts, but it does name the ACCUMULATORS — the third
+ * sentence is about the objects this finding is raised on, so `CMPR` in the
+ * approved copy is substituted with whatever {@link ACCUMULATOR_KEYS} the scan
+ * actually found, and the verb agrees with the list.
+ *
+ * Observe, never conclude. We say what arrived and what the receiving country
+ * therefore cannot tell apart. We do not say the device broke and we do not say
+ * the supplier dropped anything. The remedy follows 52r's settled framing — a
+ * period in which nothing happened is a total of 0 — and the compressor
+ * controller going offline during an outage is named as what the numeric records
+ * SUGGEST, not as a cause established from the payload.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -215,7 +227,6 @@ export const nullAccumulatorCheck: SemanticCheck = (ctx: PipelineContext): Findi
 
   let totalRecords = 0;
   let affected = 0;
-  let reportsAffected = 0;
   let pointer: string | null = null;
   const named = new Set<string>();
 
@@ -228,7 +239,6 @@ export const nullAccumulatorCheck: SemanticCheck = (ctx: PipelineContext): Findi
     // accumulator numeric on a different appliance says nothing about this one.
     const numericElsewhere = numericAccumulatorsIn(records);
 
-    let hereAffected = 0;
     for (const [recordIndex, record] of records.entries()) {
       if (!isPlainObject(record)) continue;
       totalRecords += 1;
@@ -236,48 +246,36 @@ export const nullAccumulatorCheck: SemanticCheck = (ctx: PipelineContext): Findi
       const keys = offendingKeysIn(record, numericElsewhere);
       if (keys.length === 0) continue;
 
-      hereAffected += 1;
+      affected += 1;
       for (const key of keys) named.add(key);
       pointer ??= `/data/${reportIndex}/records/${recordIndex}`;
     }
-    if (hereAffected > 0) reportsAffected += 1;
-    affected += hereAffected;
   }
 
   if (affected === 0) return [];
 
   const recordNoun = totalRecords === 1 ? 'record' : 'records';
   const verb = affected === 1 ? 'carries' : 'carry';
-  // With more than one report holding them, say so — "2 of 96 records" alone
-  // would leave a supplier guessing whether one appliance or several are meant.
-  const spread = reportsAffected === 1 ? ' ' : `, across ${reportsAffected} reports, `;
   const list = joinPhrases([...named].sort());
-  // A bare pronoun and a bare noun, not a pronoun+copula: these are spliced into
-  // "nothing beside ___ explains ___", which takes its own verb from "nothing"
-  // (the sibling ./unexplained-null-temp.ts says "nothing beside it explains why").
-  const listThem = named.size === 1 ? 'it' : 'them';
-  const nullNoun = named.size === 1 ? 'the null' : 'the nulls';
-  const listCounts = named.size === 1 ? 'counts' : 'count';
-  const listArrives =
-    named.size === 1 ? 'accumulator arrives as a number' : 'accumulators arrive as numbers';
+  const listArrives = named.size === 1 ? 'arrives as a number' : 'arrive as numbers';
 
   return [
     advisory({
       id: 'adv.null_accumulator',
       pointer,
+      summary:
+        `${affected} of ${totalRecords} ${recordNoun} ${verb} ${list} as null in a period ` +
+        `whose ${SUPPLY_KEY} is 0, with ${ERROR_CODES.join(' and ')} blank.`,
       detail:
-        `${affected} of ${totalRecords} ${recordNoun} in this transmission${spread}${verb} ` +
-        `${list} as null in a period whose own ${SUPPLY_KEY} is 0, and nothing beside ` +
-        `${listThem} explains ${nullNoun} — LERR and EERR are both absent, null, or blank. ` +
-        `The first is at ${pointer}. On a mains appliance these are all accumulators over the ` +
-        `same 15-minute period: ${SUPPLY_KEY} counts the seconds the AC supply sat within the ` +
-        `bounds the appliance operates in, and ${list} ${listCounts} the seconds the compressor ` +
-        `ran. A period with no supply at all is a period in which the compressor could not ` +
-        `have run, so its total is a known 0 — a number the receiving country can add up, ` +
-        `where a null leaves it unable to tell a period in which nothing ran from a reading the ` +
-        `device could not take. The same ${listArrives} in other records of ` +
-        `the same report, so the records are complete and fully conformant as sent, and this ` +
-        `is an observation offered to the supplier rather than a verdict on the payload.`,
+        'With no supplied electricity the compressor could not have run, so the ' +
+        "period's total should be an explicit 0 that the receiving country can add up. A " +
+        'null value here leaves the country unable to distinguish a period in which the ' +
+        'compressor did not run from a period in which the compressor runtime could not be ' +
+        'measured. ' +
+        `${list} ${listArrives} in the other records of this report, which suggests the null ` +
+        'appears when the compressor controller goes offline during a power outage, and a ' +
+        'logger that already knows no power was supplied can report a runtime of 0 rather ' +
+        'than null.',
     }),
   ];
 };

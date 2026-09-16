@@ -909,10 +909,10 @@ test(
         stamped(
           advisory({
             id: 'adv.null_padding',
+            summary: 'TCON is null in every one of the 480 records that carry it.',
             detail:
-              'TCON was null in all 480 records of this transmission — if the equipment has ' +
-              'no condenser sensor, omitting the property communicates that more clearly ' +
-              'than sending null, and costs you bytes against the 1 MB limit',
+              'A property the device never populates is better omitted than sent as null, ' +
+              'unless the record schema requires it.',
             pointer: '/data/0/records/0/TCON',
           }),
         ),
@@ -934,7 +934,12 @@ test(
       await insertFinding(
         txOther,
         stamped(
-          advisory({ id: 'adv.sample_gap', detail: 'readings 3600 s apart', pointer: '/data/0' }),
+          advisory({
+            id: 'adv.sample_gap',
+            summary: '1 gap between consecutive readings exceeds the 900 s period.',
+            detail: 'Recording gaps have everyday causes, such as an extended power outage.',
+            pointer: '/data/0',
+          }),
         ),
       );
 
@@ -1080,27 +1085,23 @@ test(
       // emission helper — the shape under test is the one production emits.
       const advisories = [
         advisory({
-          id: 'adv.null_identity',
-          // Verbatim current output of the ems branch of nullIdentityCheck (1o64):
+          // The ems branch of nullIdentityCheck as it reads today (1o64, agj.17):
           // the advisory reads ASER alone there, and never claims the report names
           // no appliance at all.
+          id: 'adv.null_identity',
+          summary: '1 of 1 report carries no appliance serial number — ASER is null.',
           detail:
-            '1 of 1 report in this transmission carries no appliance serial number — ASER is ' +
-            "null. ASER is the serial number the appliance's manufacturer assigned, and " +
-            'nothing else on an ems-report stands in for it: an ems-report has no AMID ' +
-            'property, AID is an asset identifier a programme assigns, and ESER and LSER name ' +
-            'the monitoring device and the logger rather than the appliance they watch. The ' +
-            '480 records under it arrive complete and fully conformant, and the country ' +
-            "receiving them cannot tie those readings to the appliance by its manufacturer's " +
-            'serial number.',
+            'ASER is the appliance serial number, as assigned by the manufacturer. No other ' +
+            'ID is an adequate substitute. Without this attribute, the receiving country ' +
+            'cannot tie the records to the appliance.',
           pointer: '/data/0',
         }),
         advisory({
           id: 'adv.null_padding',
+          summary: 'TCON is null in every one of the 480 records that carry it.',
           detail:
-            'TCON was null in all 480 records of this transmission — if the equipment has ' +
-            'no condenser sensor, omitting the property communicates that more clearly ' +
-            'than sending null, and costs you bytes against the 1 MB limit',
+            'A property the device never populates is better omitted than sent as null, ' +
+            'unless the record schema requires it.',
           pointer: '/data/0/records/0/TCON',
         }),
       ];
@@ -1384,7 +1385,10 @@ test(
         stamped(
           advisory({
             id: 'adv.null_padding',
-            detail: 'TCON was null in all records of this transmission',
+            summary: 'TCON is null in every record that carries it.',
+            detail:
+              'A property the device never populates is better omitted than sent as null, ' +
+              'unless the record schema requires it.',
             pointer: '/data/0/records/0/TCON',
           }),
         ),

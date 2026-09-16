@@ -98,13 +98,29 @@
  * broken by the earliest, so the drill-down lands on the most informative place
  * rather than an arbitrary one.
  *
- * ── WORDING ─────────────────────────────────────────────────────────────────
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many gaps
+ * between consecutive readings run longer than the sampling period, and the
+ * widest of them. `detail` is the RATIONALE, static and carrying no numbers:
+ * that gaps have everyday causes, that a well-behaved logger nonetheless rarely
+ * produces one, and where it is worth checking.
+ *
+ * THE GAP IS STATED IN MINUTES, the period in SECONDS (decided 2026-09-15).
+ * Elapsed time in an observation is always minutes, however large the value —
+ * `165 min`, never `2 h 45 min`. The `900 s period` it is measured against is
+ * not elapsed time: it quotes the schema's own bound on the per-period
+ * accumulators, whose declared unit is seconds.
+ *
+ * THE ACCUMULATOR ARGUMENT IS NOT IN THE RATIONALE (decided 2026-09-15), and
+ * neither is "battery-backed", which is accurate but adds little. The reasoning
+ * about what a wide gap costs the per-period totals lives in this header, where
+ * the next contributor is the one who needs it.
+ *
  * Observe, never conclude. Legitimate gaps are ordinary — a power outage, an
  * appliance switched off between campaigns, a logger that transmits in windows —
  * and from the receiving side every one of those looks identical to a logger
- * configured for the wrong period. So the detail states what arrived, states
- * what a receiving country cannot reconstruct from it, and leaves the cause to
- * the only party that knows.
+ * configured for the wrong period. So the observation states what arrived and
+ * leaves the cause to the only party that knows.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
@@ -173,14 +189,16 @@ function scanReport(report: unknown, reportIndex: number): Gap[] {
 }
 
 /**
- * `3600 s (60 min)` — seconds always, with the minutes reading when the span is
- * an exact number of minutes. A gap is always wider than 960 s to get here, so
- * there is no sub-second case to word; a span that is not whole minutes keeps
- * its fraction (`1005.5 s`).
+ * A gap rendered in MINUTES — `120 min`, and `16.75 min` for a span that is not
+ * whole minutes. Minutes is the unit every advisory observation states elapsed
+ * time in, however large the value (decided 2026-09-15).
+ *
+ * A gap is always wider than 960 s to get here, so unlike ./time-order.ts's
+ * step back there is no sub-minute case to protect: the smallest value this can
+ * ever render is `16.001 min`.
  */
-function describeSpan(ms: number): string {
-  const seconds = ms / 1000;
-  return ms % 60_000 === 0 ? `${seconds} s (${seconds / 60} min)` : `${seconds} s`;
+function minutesPhrase(ms: number): string {
+  return `${Number((ms / 60_000).toFixed(3))} min`;
 }
 
 /** The `adv.sample_gap` check, registered in `ADVISORY_CHECKS`. */
@@ -197,25 +215,21 @@ export const sampleGapCheck: SemanticCheck = (ctx: PipelineContext): Finding[] =
   // Widest, ties broken by the earliest — the scan already runs each report in
   // time order and the reports in document order, so `>` alone keeps the first.
   const widest = gaps.reduce((worst, one) => (one.spanMs > worst.spanMs ? one : worst));
-  const gapNoun = gaps.length === 1 ? 'stretch' : 'stretches';
+  const gapNoun = gaps.length === 1 ? 'gap' : 'gaps';
+  const verb = gaps.length === 1 ? 'exceeds' : 'exceed';
 
   return [
     advisory({
       id: 'adv.sample_gap',
       pointer: widest.pointer,
+      summary:
+        `${gaps.length} ${gapNoun} between consecutive readings ${verb} the ` +
+        `${SAMPLE_PERIOD_MS / 1000} s period; the widest is ${minutesPhrase(widest.spanMs)}.`,
       detail:
-        `This transmission carries ${gaps.length} ${gapNoun} between consecutive readings ` +
-        `longer than the 900 s (15 min) sampling period, allowing 60 s of leeway for ` +
-        `timestamps stamped to the whole minute. The widest runs ` +
-        `${describeSpan(widest.spanMs)}, ending at the reading at ${widest.pointer}. Stretches ` +
-        `like these have everyday causes — a power outage, an appliance switched off, a ` +
-        `logger that transmits in windows — and a receiving country cannot tell those apart ` +
-        `from a logger set to a longer period, so this observes what arrived rather than why. ` +
-        `What it costs downstream is the accounting: DS01 sizes its per-period accumulators ` +
-        `(CMPR, CMPR2, SVA, DORV, DORF) as seconds within one 15-minute period, and the ` +
-        `schema bounds each of them at 900 for that reason, so a stretch wider than the ` +
-        `period leaves those totals with no period the readings on either side can attribute ` +
-        `them to. A reading at least every 900 s is what keeps each period accountable.`,
+        'Recording gaps have everyday causes, such as an extended power outage. However, in ' +
+        'normal operation, loggers should rarely produce gaps longer than the standard ' +
+        '15-minute sampling interval. A gap wider than the sampling interval is worth ' +
+        'checking on the logger side.',
     }),
   ];
 };

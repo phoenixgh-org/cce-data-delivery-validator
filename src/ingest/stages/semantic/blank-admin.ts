@@ -72,12 +72,22 @@
  * ── ONE FINDING PER TRANSMISSION ─────────────────────────────────────────────
  * Like every advisory in this category: the compliance column carries a single
  * signature row per advisory id, so a finding per field would add no row and
- * only stack lines in the transmission block. The detail names EVERY blank field
- * of the first offending report (52r retired the old six-name cap — the list is
- * the actionable part, and it is bounded at fifteen by the branch) and counts the
- * reports affected, "N of M reports", as null-identity does.
+ * only stack lines in the transmission block. The observation names EVERY blank
+ * field of the first offending report (52r retired the old six-name cap — the
+ * list is the actionable part, and it is bounded at fifteen by the branch) and
+ * counts the reports affected, "N of M reports", as null-identity does.
  *
- * ── WORDING ──────────────────────────────────────────────────────────────────
+ * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
+ * Two pieces of prose, not one. `summary` is the OBSERVATION — how many of the
+ * transmission's reports deliver a required administrative object blank, and
+ * which objects those were on the first of them. `detail` is the RATIONALE,
+ * carrying no numbers: what these objects describe, why the branch's schema
+ * admits a blank, and what a receiving country cannot do about it.
+ *
+ * The rationale varies with the BRANCH only, and only to name the branch whose
+ * `required` list was read — `ems-report` or `rtmd-report`. Everything else in
+ * it is the approved copy, identical on both.
+ *
  * Observe, never conclude. We say which required objects arrived blank and what
  * the receiving country is therefore holding. We do NOT say the supplier forgot,
  * that the device was never commissioned, or that the practice is wrong — the
@@ -192,7 +202,6 @@ export const blankAdminCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
   let affected = 0;
   let firstIndex = -1;
   let firstBlanks: string[] = [];
-  let recordsUnderThem = 0;
 
   for (const [index, report] of data.entries()) {
     if (!isPlainObject(report)) continue;
@@ -207,7 +216,6 @@ export const blankAdminCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
     if (blanks.length === 0) continue;
 
     affected += 1;
-    recordsUnderThem += Array.isArray(report.records) ? report.records.length : 0;
     if (firstIndex === -1) {
       firstIndex = index;
       firstBlanks = blanks;
@@ -217,45 +225,28 @@ export const blankAdminCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
   if (affected === 0) return [];
 
   const reportNoun = total === 1 ? 'report' : 'reports';
-  const verb = affected === 1 ? 'carries' : 'carry';
-  const pronoun = affected === 1 ? 'it' : 'them';
+  const verb = affected === 1 ? 'delivers' : 'deliver';
   // With more than one, the fields listed are the FIRST one's — say so rather
   // than letting it read as a claim about all of them.
   const lead = affected === 1 ? '' : 'in the first, ';
   const list = joinPhrases(firstBlanks);
-  // `records` is required with minItems 1, so a schema-valid report always has
-  // some; the countless phrasing is defensive, not expected.
-  const under =
-    recordsUnderThem > 0
-      ? `The ${recordsUnderThem} ${recordsUnderThem === 1 ? 'record' : 'records'} under ${pronoun}`
-      : `The records under ${pronoun}`;
-  const arrive = recordsUnderThem === 1 ? 'arrives' : 'arrive';
-
-  // Each branch names the equipment ITS administrative objects describe, and
-  // states how many of them the schema lets through blank. Neither claims the
-  // report identifies nothing: ASER and AMID belong to adv.null_identity, are
-  // never read here, and may well be populated.
-  const body = ems
-    ? `administrative objects that ems-report requires, delivered blank — ${lead}${list}. ` +
-      `These objects describe the country, the appliance, the logger and the monitoring ` +
-      `device rather than the readings taken from them, and they arrive once per report ` +
-      `rather than once per reading. ems-report requires all fifteen of the keys read here; ` +
-      `ten of them also accept null, none of them carries a minimum length, and so a null ` +
-      `or an empty string satisfies the schema.`
-    : `administrative objects that rtmd-report requires, delivered blank — ${lead}${list}. ` +
-      `These objects describe the country and the monitoring device rather than the readings ` +
-      `taken from it, and they arrive once per report rather than once per reading. ` +
-      `rtmd-report requires all six of the keys read here; all six also accept null, none of ` +
-      `them carries a minimum length, and so a null or an empty string satisfies the schema.`;
+  // The rationale is the approved copy (agj.17, 2026-09-15), and the only thing
+  // that moves with the branch is the name of the report schema whose `required`
+  // list was read. Neither variant claims the report identifies nothing: ASER
+  // and AMID belong to adv.null_identity, are never read here, and may well be
+  // populated.
+  const branch = ems ? 'ems-report' : 'rtmd-report';
 
   return [
     advisory({
       id: 'adv.blank_admin',
       pointer: `/data/${firstIndex}`,
+      summary: `${affected} of ${total} ${reportNoun} ${verb} required admin objects blank — ${lead}${list}.`,
       detail:
-        `${affected} of ${total} ${reportNoun} in this transmission ${verb} ${body} ` +
-        `${under} ${arrive} complete and fully conformant, and the country receiving them ` +
-        `holds readings whose description of the equipment is blank in those places.`,
+        'These objects describe the country, appliance, logger and monitoring device once ' +
+        `per report. The ${branch} requires them but accepts null and sets no minimum ` +
+        'length, so a blank satisfies the schema. These objects are important and should not ' +
+        'be blank; a receiving country cannot infer the correct values.',
     }),
   ];
 };

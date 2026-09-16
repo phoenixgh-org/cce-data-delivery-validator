@@ -300,7 +300,11 @@ test('the bar is exactly period + epsilon, and the constants are what set it', (
   );
   const [finding] = advisories(checkOnly(emsPayload([abstAt(0), abstAt(barSeconds + 1)])));
   assert.ok(finding, 'one second past the bar is');
-  assert.match(finding.detail ?? '', /961 s/, 'and the span is reported as sent');
+  assert.match(
+    finding.summary ?? '',
+    /the widest is 16\.017 min\.$/,
+    'and the span is reported, in minutes',
+  );
 });
 
 test('whole-minute stamping of a 15-minute cadence stays silent — the reason for 60 s', () => {
@@ -315,7 +319,7 @@ test('whole-minute stamping of a 15-minute cadence stays silent — the reason f
   // never mask the thing this check exists to notice.
   const [missed] = advisories(checkOnly(emsPayload([abstAt(0), abstAt(1800), abstAt(2700)])));
   assert.ok(missed, 'a skipped period is still observed');
-  assert.match(missed.detail ?? '', /1800 s \(30 min\)/);
+  assert.match(missed.summary ?? '', /the widest is 30 min\.$/);
 });
 
 // ── what the finding has to carry ───────────────────────────────────────────
@@ -336,24 +340,29 @@ test('it carries the count of gaps and the widest one, and points at its closing
     ),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 3 stretches/, 'the count');
-  assert.match(finding.detail ?? '', /widest runs 7200 s \(120 min\)/, 'the widest span');
-  assert.match(finding.detail ?? '', /\/data\/0\/records\/3\/ABST/, 'and where it ends');
-  assert.equal(finding.pointer, '/data/0/records/3/ABST', 'and on the finding itself');
+  assert.equal(
+    finding.summary,
+    '3 gaps between consecutive readings exceed the 900 s period; the widest is 120 min.',
+  );
+  assert.equal(finding.pointer, '/data/0/records/3/ABST', 'and it points at the widest');
 });
 
-test('a single gap is named in the singular', () => {
+test('a single gap takes the singular noun and verb', () => {
   const [finding] = advisories(checkOnly(emsPayload(HOURLY.slice(0, 2))));
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 1 stretch between/);
+  assert.equal(
+    finding.summary,
+    '1 gap between consecutive readings exceeds the 900 s period; the widest is 60 min.',
+  );
 });
 
 test('a span that is not whole minutes keeps its fraction', () => {
   const [finding] = advisories(checkOnly(emsPayload(['20240115T033000Z', '20240115T034601.500Z'])));
   assert.ok(finding);
-  // The minutes reading is dropped rather than turned into a fraction nobody
-  // wrote — the only `min` left in the detail is the fixed 900 s (15 min).
-  assert.match(finding.detail ?? '', /widest runs 961\.5 s, ending/);
+  // 961.5 s is 16.025 min. Minutes is the unit whatever the value (decided
+  // 2026-09-15), and a gap is always wider than 960 s, so there is no
+  // sub-minute case to protect the way time-order.ts has to.
+  assert.match(finding.summary ?? '', /the widest is 16\.025 min\.$/);
 });
 
 // ── order is time-order.ts's business, not this check's ─────────────────────
@@ -407,8 +416,10 @@ test('gaps are pooled across reports and the widest wins the pointer', () => {
     ),
   );
   assert.ok(finding);
-  assert.match(finding.detail ?? '', /carries 2 stretches/);
-  assert.match(finding.detail ?? '', /widest runs 4500 s \(75 min\)/);
+  assert.equal(
+    finding.summary,
+    '2 gaps between consecutive readings exceed the 900 s period; the widest is 75 min.',
+  );
   assert.equal(finding.pointer, '/data/1/records/2/ABST');
 });
 
@@ -474,43 +485,61 @@ test('PIN: §3.4 grades the hourly series exactly as it grades the quarter-hourl
 
 // ── wording is acceptance, not polish ───────────────────────────────────────
 
-test('it names what arrived and what the stretch costs the receiving side', () => {
-  const detail = advisories(checkOnly(emsPayload(HOURLY)))[0]?.detail ?? '';
+test('it names what arrived, then why a gap is worth checking', () => {
+  const [finding] = advisories(checkOnly(emsPayload(HOURLY)));
 
-  assert.match(detail, /900 s \(15 min\)/, 'the period being observed against');
-  assert.match(detail, /60 s of leeway/, 'and the tolerance, so a silence is explainable');
-  assert.match(detail, /3600 s \(60 min\)/, 'how wide');
-  assert.match(detail, /\/data\/0\/records\/1\/ABST/, 'where');
-  assert.match(detail, /CMPR, CMPR2, SVA, DORV, DORF/, 'why 900 is the number');
-  assert.match(detail, /at least every 900 s/, 'and the remedy');
+  assert.equal(
+    finding?.summary,
+    '3 gaps between consecutive readings exceed the 900 s period; the widest is 60 min.',
+  );
+  assert.equal(finding?.pointer, '/data/0/records/1/ABST', 'where');
+  assert.equal(
+    finding?.detail,
+    'Recording gaps have everyday causes, such as an extended power outage. However, in ' +
+      'normal operation, loggers should rarely produce gaps longer than the standard ' +
+      '15-minute sampling interval. A gap wider than the sampling interval is worth ' +
+      'checking on the logger side.',
+  );
 });
 
-test('the detail carries no defect vocabulary and no synonym for the category', () => {
+test('the gap is in minutes and the period it is measured against stays in seconds', () => {
+  // The duration decision (2026-09-15): elapsed time is minutes however large,
+  // but the 900 s period quotes the schema's own bound on the per-period
+  // accumulators, whose declared unit is seconds.
+  const summary = advisories(checkOnly(emsPayload(HOURLY)))[0]?.summary ?? '';
+  assert.match(summary, /exceed the 900 s period/);
+  assert.match(summary, /the widest is 60 min\.$/);
+  assert.doesNotMatch(summary, /\dh|hour/i, 'never "1 h", however wide the gap');
+});
+
+test('the copy carries no defect vocabulary and no synonym for the category', () => {
   // Same bar the Advisories copy is held to (src/web/advisories.test.ts): the
   // payload broke no rule — a longer sampling period violates nothing the schema
   // or §7 expresses — so any of these would be a false statement about the
   // supplier rather than a harsh tone.
   const defectWords =
     /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
-  const detail = advisories(checkOnly(emsPayload(HOURLY)))[0]?.detail ?? '';
+  const [finding] = advisories(checkOnly(emsPayload(HOURLY)));
 
-  assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-  assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+  for (const copy of [finding?.summary ?? '', finding?.detail ?? '']) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
+  }
 });
 
-test('the detail never concludes why the readings are far apart', () => {
+test('the copy never concludes why the readings are far apart', () => {
   // A power outage, an appliance switched off and a logger set to a longer
-  // period are indistinguishable from the receiving side, so the prose names
-  // them as possibilities and never picks one.
-  const detail = advisories(checkOnly(emsPayload(HOURLY)))[0]?.detail ?? '';
-  assert.doesNotMatch(detail, /misconfigured|because|clearly|evidently|should have been/i);
-  assert.match(detail, /rather than why/, 'and says so out loud');
+  // period are indistinguishable from the receiving side, so the rationale
+  // offers a cause as an example and never asserts one for this payload.
+  const [finding] = advisories(checkOnly(emsPayload(HOURLY)));
+  const copy = `${finding?.summary ?? ''} ${finding?.detail ?? ''}`;
+  assert.doesNotMatch(copy, /misconfigured|because|clearly|evidently|should have been/i);
 });
 
-test('the detail stands alone per transmission', () => {
+test('the observation stands alone per transmission', () => {
   // The dashboard folds recurring advisories and shows only the most recent
-  // occurrence's detail, so each one has to be readable without its siblings.
-  const detail = advisories(checkOnly(emsPayload(HOURLY)))[0]?.detail ?? '';
-  assert.match(detail, /This transmission/);
-  assert.doesNotMatch(detail, /this session|every transmission/i);
+  // occurrence, so the observation has to be readable without its siblings.
+  const summary = advisories(checkOnly(emsPayload(HOURLY)))[0]?.summary ?? '';
+  assert.match(summary, /^3 gaps between consecutive readings exceed/);
+  assert.doesNotMatch(summary, /this session|every transmission/i);
 });

@@ -59,10 +59,11 @@ function finding(over: Partial<FindingView> = {}): FindingView {
 }
 
 /**
- * An advisory as slice A's `advisory({id, detail, pointer})` helper emits one:
- * severity `info`, the `adv.*` id in BOTH `requirement` and `code`, `outdated`
- * left false. Constructed here rather than by running a real check — the surface
- * must not depend on which checks are registered.
+ * An advisory as `advisory({id, summary, detail, pointer})` emits one: severity
+ * `info`, the `adv.*` id in BOTH `requirement` and `code`, `outdated` left
+ * false. Constructed here rather than by running a real check — the surface must
+ * not depend on which checks are registered, and a row whose `summary` is absent
+ * (stored before the column existed) is a case this view still has to render.
  */
 function advisory(id: string, over: Partial<FindingView> = {}): FindingView {
   return finding({ requirement: id, code: id, severity: 'info', ...over });

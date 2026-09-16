@@ -60,10 +60,23 @@
  * "issue", which read as defects.
  *
  * ── wording ──────────────────────────────────────────────────────────────────
- * Advisory prose must OBSERVE, never CONCLUDE. We cannot prove a null means "no
- * sensor fitted" — a broken sensor looks identical, and a 100%-null rate is
- * strong evidence, not proof. Lead with the payload-size argument (actionable
- * self-interest) rather than a judgement about the supplier's hardware.
+ * Advisory prose is TWO PIECES, not one (agj.17). `summary` is the OBSERVATION —
+ * one line, roughly 90 characters at ordinary values, carrying this
+ * transmission's numbers; it is what the advisory row shows. `detail` is the
+ * RATIONALE — a few sentences, static per check and per branch variant, held
+ * behind that row's expander. Both are required of every check; see
+ * ./advisory-finding.ts for the shape and DESIGN §7.1 for why the row is split
+ * that way.
+ *
+ * Both must OBSERVE, never CONCLUDE. We cannot prove a null means "no sensor
+ * fitted" — a broken sensor looks identical, and a 100%-null rate is strong
+ * evidence, not proof. So the observation states what arrived and the rationale
+ * says why a receiving country cares, and neither names a cause.
+ *
+ * ELAPSED TIME IS STATED IN MINUTES (decided 2026-09-15), however large the
+ * value — `165 min`, never `2 h 45 min`. Seconds are for values that quote a
+ * schema object whose own declared unit is seconds (`900 s period`, `200 s`
+ * excess), not for durations the check measured itself.
  */
 
 import type { Finding, PipelineContext } from '../../pipeline.js';

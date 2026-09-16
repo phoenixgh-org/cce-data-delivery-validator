@@ -211,6 +211,13 @@ function detailOf(payload: { meta: { transferType?: unknown } }): string {
   return finding.detail ?? '';
 }
 
+/** The one-line observation — where every number and every field name lives. */
+function summaryOf(payload: { meta: { transferType?: unknown } }): string {
+  const [finding] = advisories(checkOnly(payload));
+  assert.ok(finding, 'expected the advisory to be raised');
+  return finding.summary ?? '';
+}
+
 function countsOf(
   findings: readonly Finding[],
 ): Record<string, { pass: number; fail: number; info: number }> {
@@ -276,8 +283,7 @@ test('EMS: a fully populated report is silence', () => {
 test('EMS: one nullable administrative object sent as null fires, and is named', () => {
   // The ordinary fully-conformant firing path: ten of the fifteen are
   // ["string","null"], so the null is legal and only this check speaks to it.
-  const detail = detailOf(emsPayload({ AMFR: null }));
-  assert.match(detail, /AMFR is null/);
+  assert.match(summaryOf(emsPayload({ AMFR: null })), /AMFR is null\.$/);
   assert.equal(advisories(checkOnly(emsPayload({ AMFR: null }))).length, 1);
 });
 
@@ -301,7 +307,7 @@ test('EMS: a blank string on a NON-NULLABLE object fires — the schema sets no 
 test('EMS: every blank object is named, with no cap', () => {
   // 52r retired the six-name cap the category once carried: the list IS the
   // actionable part, and the branch bounds it at fifteen.
-  const detail = detailOf(
+  const summary = summaryOf(
     emsPayload({ CID: null, ADOP: null, AMFR: null, AMOD: null, APQS: null, LMOD: '', LSER: '  ' }),
   );
   for (const named of [
@@ -313,7 +319,7 @@ test('EMS: every blank object is named, with no cap', () => {
     'LMOD is empty',
     'LSER is empty',
   ]) {
-    assert.match(detail, new RegExp(named), `expected the detail to name ${named}`);
+    assert.match(summary, new RegExp(named), `expected the observation to name ${named}`);
   }
 });
 
@@ -324,7 +330,7 @@ test('EMS: an absent object reads "was not sent" rather than null', () => {
   const report = emsReport();
   delete report.AMFR;
   const payload = { ...emsPayload(), data: [report] } as { meta: { transferType?: unknown } };
-  assert.match(detailOf(payload), /AMFR was not sent/);
+  assert.match(summaryOf(payload), /AMFR was not sent/);
 });
 
 test('EMS: a value that is not a string and not null is treated as content', () => {
@@ -364,7 +370,7 @@ test('RTMD: DLST is never read — an object is not an administrative string', (
   // owes is a separate question (agj.5 scopes it out), so an empty `{}` is
   // silence here rather than a blank.
   assert.deepEqual(advisories(checkOnly(rtmPayload({ DLST: {} }))), []);
-  assert.doesNotMatch(detailOf(RTM_BLANK_ADMIN), /DLST/);
+  assert.doesNotMatch(summaryOf(RTM_BLANK_ADMIN), /DLST/);
 });
 
 // ── the identity trio belongs to adv.null_identity ───────────────────────────
@@ -374,8 +380,8 @@ test('the identity trio is never named, on either branch', () => {
     emsPayload({ ASER: null, AID: null, AMFR: null }),
     rtmPayload({ AMID: '', ASER: null, AID: null, EMFR: null }),
   ]) {
-    const detail = detailOf(payload);
-    assert.doesNotMatch(detail, /\bASER\b|\bAID\b|\bAMID\b/, `named the identity trio: ${detail}`);
+    const copy = `${summaryOf(payload)} ${detailOf(payload)}`;
+    assert.doesNotMatch(copy, /\bASER\b|\bAID\b|\bAMID\b/, `named the identity trio: ${copy}`);
   }
 });
 
@@ -407,10 +413,12 @@ test('multiple reports: the count is of reports and the pointer is the first off
   const [finding] = advisories(checkOnly(payload));
   assert.ok(finding, 'expected the advisory to be raised');
   assert.equal(finding.pointer, '/data/1', 'the first report that arrived blank');
-  assert.match(finding.detail ?? '', /^2 of 3 reports in this transmission carry /);
-  // The listed fields are the FIRST offender's, and the prose says so rather
-  // than letting the list read as a claim about all of them.
-  assert.match(finding.detail ?? '', /in the first, AMFR is null/);
+  assert.equal(
+    finding.summary,
+    '2 of 3 reports deliver required admin objects blank — in the first, AMFR is null.',
+    "the listed fields are the FIRST offender's, and the line says so rather than letting " +
+      'the list read as a claim about all of them',
+  );
 });
 
 test('non-object entries in `data` are skipped, not counted', () => {
@@ -426,7 +434,7 @@ test('non-object entries in `data` are skipped, not counted', () => {
     '/data/3',
     'the index is the position in `data`, not in the filter',
   );
-  assert.match(finding.detail ?? '', /^1 of 1 report in this transmission carries /);
+  assert.match(finding.summary ?? '', /^1 of 1 report delivers required admin objects blank/);
 });
 
 test('an empty or missing `data` array gives it nothing to observe', () => {
@@ -456,68 +464,66 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 
 // ── wording is acceptance, not polish ────────────────────────────────────────
 
-test('EMS: the detail reads as one whole observation', () => {
+test('EMS: the observation names the count and every blank field, and the rationale the branch', () => {
+  assert.equal(
+    summaryOf(EMS_BLANK_ADMIN),
+    '1 of 1 report delivers required admin objects blank — AMFR is null and LMOD is empty.',
+  );
   assert.equal(
     detailOf(EMS_BLANK_ADMIN),
-    '1 of 1 report in this transmission carries administrative objects that ems-report ' +
-      'requires, delivered blank — AMFR is null and LMOD is empty. These objects describe the ' +
-      'country, the appliance, the logger and the monitoring device rather than the readings ' +
-      'taken from them, and they arrive once per report rather than once per reading. ' +
-      'ems-report requires all fifteen of the keys read here; ten of them also accept null, ' +
-      'none of them carries a minimum length, and so a null or an empty string satisfies the ' +
-      'schema. The 3 records under it arrive complete and fully conformant, and the country ' +
-      'receiving them holds readings whose description of the equipment is blank in those ' +
-      'places.',
+    'These objects describe the country, appliance, logger and monitoring device once per ' +
+      'report. The ems-report requires them but accepts null and sets no minimum length, so ' +
+      'a blank satisfies the schema. These objects are important and should not be blank; a ' +
+      'receiving country cannot infer the correct values.',
   );
 });
 
-test('RTMD: the detail speaks for its own branch', () => {
+test('RTMD: the rationale names its own branch, and nothing else moves', () => {
+  // The approved copy (agj.17, 2026-09-15) is one paragraph for both branches;
+  // the only thing that varies is the name of the report schema whose `required`
+  // list was read.
+  assert.equal(
+    summaryOf(RTM_BLANK_ADMIN),
+    '1 of 1 report delivers required admin objects blank — EMFR is null.',
+  );
   assert.equal(
     detailOf(RTM_BLANK_ADMIN),
-    '1 of 1 report in this transmission carries administrative objects that rtmd-report ' +
-      'requires, delivered blank — EMFR is null. These objects describe the country and the ' +
-      'monitoring device rather than the readings taken from it, and they arrive once per ' +
-      'report rather than once per reading. rtmd-report requires all six of the keys read ' +
-      'here; all six also accept null, none of them carries a minimum length, and so a null or ' +
-      'an empty string satisfies the schema. The 3 records under it arrive complete and fully ' +
-      'conformant, and the country receiving them holds readings whose description of the ' +
-      'equipment is blank in those places.',
+    detailOf(EMS_BLANK_ADMIN).replace('The ems-report requires', 'The rtmd-report requires'),
   );
 });
 
-test('a single record reads "The 1 record under it arrives", not "arrive"', () => {
-  // `records` has minItems 1 and the repo's own rtm baseline sends exactly one,
-  // so the singular is the ordinary shape rather than an edge case.
-  const payload = rtmPayload({ EMFR: null });
-  const [report] = payload.data as Record<string, unknown>[];
-  report!.records = records('rtm').slice(0, 1);
-  const detail = detailOf(payload as { meta: { transferType?: unknown } });
-  assert.match(detail, /The 1 record under it arrives complete and fully conformant/);
-});
-
-test('the detail carries no defect vocabulary and no synonym for the category', () => {
+test('the copy carries no defect vocabulary and no synonym for the category', () => {
+  // The sibling checks' bar (src/web/advisories.test.ts). "should" is NOT on it:
+  // the approved rationale's "should not be blank" is a recommendation in the
+  // house sense, the same way sample_gap's "loggers should rarely produce gaps"
+  // is, and neither states that the payload broke a rule.
   const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must|should)\b/i;
-  for (const detail of [detailOf(EMS_BLANK_ADMIN), detailOf(RTM_BLANK_ADMIN)]) {
-    assert.doesNotMatch(detail, defectWords, `detail reads as a defect: ${detail}`);
-    assert.doesNotMatch(detail, /data quality|practice note|observation/i, 'no renaming');
+    /\b(warn|warning|issue|issues|defect|defects|error|errors|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  for (const copy of [
+    summaryOf(EMS_BLANK_ADMIN),
+    detailOf(EMS_BLANK_ADMIN),
+    summaryOf(RTM_BLANK_ADMIN),
+    detailOf(RTM_BLANK_ADMIN),
+  ]) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
   }
 });
 
-test('the detail concludes nothing about the supplier or their commissioning process', () => {
+test('the copy concludes nothing about the supplier or their commissioning process', () => {
   // The PQS framing that motivates the check ("easy to ignore, figuring the data
   // will be there when the monitor is put into a real fridge") belongs in the
-  // module header. The wire prose says what arrived, and stops.
-  for (const detail of [detailOf(EMS_BLANK_ADMIN), detailOf(RTM_BLANK_ADMIN)]) {
-    assert.doesNotMatch(detail, /forgot|never configured|commission|bench|real fridge/i);
-    assert.match(detail, /arrive[s]? complete and fully conformant/, 'the payload is not faulted');
+  // module header. The wire prose says what arrived and why it matters, and stops.
+  for (const payload of [EMS_BLANK_ADMIN, RTM_BLANK_ADMIN]) {
+    const copy = `${summaryOf(payload)} ${detailOf(payload)}`;
+    assert.doesNotMatch(copy, /forgot|never configured|commission|bench|real fridge/i);
   }
 });
 
-test('the detail stands alone per transmission', () => {
-  // Recurring advisories fold in the dashboard to the most recent detail only.
-  for (const detail of [detailOf(EMS_BLANK_ADMIN), detailOf(RTM_BLANK_ADMIN)]) {
-    assert.match(detail, /in this transmission/);
-    assert.doesNotMatch(detail, /this session|every transmission/i);
+test('the observation stands alone per transmission', () => {
+  // Recurring advisories fold in the dashboard to the most recent occurrence.
+  for (const payload of [EMS_BLANK_ADMIN, RTM_BLANK_ADMIN]) {
+    assert.match(summaryOf(payload), /^1 of 1 report delivers required admin objects blank/);
+    assert.doesNotMatch(summaryOf(payload), /this session|every transmission/i);
   }
 });
