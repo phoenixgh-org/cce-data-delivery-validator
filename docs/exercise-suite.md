@@ -303,6 +303,47 @@ row has is a fact the report must state rather than hide. The payload type of a 
 mutators wrote: `3.2-fail-invalid-transfer-type` sets `meta.transferType` to
 `thermometer` to prove the enum bites, and that is no branch of anything.
 
+### The advisory join
+
+The requirement join above is blind to advisories by construction. An advisory is
+deliberately not a requirement, so every `adv.*` case declares `requirements: []` — which
+means a registered advisory with no case at all looked exactly like one with ten. That is
+how `adv.null_padding` came to be the one advisory the live run never exercised, without
+a single test objecting.
+
+So the report carries a second join, onto `ADVISORY_IDS` — the list the advisory registry
+itself exports, built from each check module's own id constant, so it grows with the
+catalogue rather than beside it. An advisory counts as **fired** when at least one case
+expects `{ requirement: <id>, severity: 'info' }` under the contract profile. Both halves
+of that matter: `info` is the only severity `advisory()` can build, and a shadow-profile
+expectation grades an unpublished draft, so counting one would report the contract
+catalogue as exercised by a run that never touched it.
+
+This join reads `expectedFindings`, which is the mirror image of the requirement rule and
+holds for the same reason. There, counting findings would inflate coverage, because every
+accepted POST earns an incidental §3.2 pass. Here `requirements` is empty on every
+advisory case by design, so the expectation _is_ the claim — a case cannot expect an
+advisory it did not set out to provoke.
+
+Fired advisories are annotated with payload types exactly as requirements are:
+
+```
+advisories — 12 registered: fired 12
+  [types] after an advisory are the payload branches its fire case(s) send — [ems] means ems ONLY
+  fired                      adv.null_identity[ems] adv.null_padding[ems] adv.date_format[ems,rtm] …
+  NOT EXERCISED              —
+```
+
+`runner/coverage.test.ts` pins the live fact: every registered advisory has a fire case.
+A new check added to `ADVISORY_CHECKS` therefore lands in CI as a failure naming its own
+id, rather than as a quiet line in the runner's report.
+
+The section reports **exercise, not correctness**. A fired advisory is known to be
+reachable; whether it stays silent on conformant traffic is the other half of the
+catalogue's contract, and the case model cannot yet express it — a case asserts findings
+it expects, never findings it expects to be absent. Until negative expectations exist, do
+not read `fired 12` as "the catalogue behaves".
+
 ### Shadow cases, and why coverage ignores them
 
 A transmission whose declared `schemaVersion` resolves to a registered lineage is graded

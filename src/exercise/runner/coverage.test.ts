@@ -11,12 +11,17 @@
  * the real-table test below asserts the epic's target outright — no gradeable row
  * left partial or uncovered. The synthetic-matrix tests still check the join's
  * MECHANICS, which is why both halves are here.
+ *
+ * The ADVISORY join (axdd) is tested the same way, against a synthetic catalogue
+ * for the rules and against ADVISORY_IDS + EXERCISE_CASES for the live fact:
+ * every registered advisory has a case that fires it.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX, type MatrixRow } from '../../api/compliance-matrix.js';
+import { ADVISORY_IDS, type AdvisoryId } from '../../ingest/stages/semantic/advisory.js';
 import { emsBaseline } from '../baseline.js';
 import type { ExerciseCase } from '../case.js';
 import { EXERCISE_CASES } from '../cases.js';
@@ -203,6 +208,149 @@ test('rows no case claims are printed without a type annotation', () => {
   assert.match(text, /UNCOVERED\s+1\.1 1\.8 3\.2$/m);
 });
 
+// ── the advisory join (axdd) ────────────────────────────────────────────────
+
+/**
+ * A synthetic catalogue, so these tests pin the RULES rather than today's twelve
+ * registered advisories — the same reason `MATRIX` above is not COMPLIANCE_MATRIX.
+ */
+const ADVISORIES: readonly AdvisoryId[] = ['adv.alpha', 'adv.beta', 'adv.gamma'];
+
+/** An advisory case in the table's own idiom: fail direction, no requirement claimed. */
+function advKase(overrides: Partial<ExerciseCase> & Pick<ExerciseCase, 'id'>): ExerciseCase {
+  return kase({
+    requirements: [],
+    direction: 'fail',
+    fault: { layer: 'payload', note: 'synthetic' },
+    ...overrides,
+  });
+}
+
+test('an advisory a case expects is fired, with the case that fires it', () => {
+  const report = computeCoverage(
+    [
+      advKase({
+        id: 'adv.alpha-fail-thing',
+        expectedFindings: [{ requirement: 'adv.alpha', severity: 'info' }],
+      }),
+    ],
+    MATRIX,
+    ADVISORIES,
+  );
+  assert.deepEqual(
+    report.advisories.rows.map((row) => row.advisory),
+    ['adv.alpha', 'adv.beta', 'adv.gamma'],
+  );
+  const row = report.advisories.rows.find((r) => r.advisory === 'adv.alpha')!;
+  assert.equal(row.fired, true);
+  assert.deepEqual(row.fireCases, ['adv.alpha-fail-thing']);
+  assert.deepEqual(row.fireTypes, ['rtm']);
+});
+
+test('a registered advisory no case expects is NOT EXERCISED', () => {
+  const report = computeCoverage(
+    [
+      advKase({
+        id: 'adv.alpha-fail-thing',
+        expectedFindings: [{ requirement: 'adv.alpha', severity: 'info' }],
+      }),
+    ],
+    MATRIX,
+    ADVISORIES,
+  );
+  assert.deepEqual(
+    report.advisories.notExercised.map((row) => row.advisory),
+    ['adv.beta', 'adv.gamma'],
+  );
+  assert.match(formatCoverage(report).join('\n'), /NOT EXERCISED\s+adv\.beta adv\.gamma$/m);
+});
+
+test('a fired advisory carries the payload branches its cases send', () => {
+  // The same anti-silent-cap rule as for requirements, one level over: an
+  // advisory exercised only on EMS traffic says nothing about the rtm branch.
+  const report = computeCoverage(
+    [
+      advKase({
+        id: 'adv.alpha-fail-rtm',
+        expectedFindings: [{ requirement: 'adv.alpha', severity: 'info' }],
+      }),
+      advKase({
+        id: 'adv.alpha-fail-ems',
+        baseline: emsBaseline,
+        expectedFindings: [{ requirement: 'adv.alpha', severity: 'info' }],
+      }),
+      advKase({
+        id: 'adv.beta-fail-ems',
+        baseline: emsBaseline,
+        expectedFindings: [{ requirement: 'adv.beta', severity: 'info' }],
+      }),
+    ],
+    MATRIX,
+    ADVISORIES,
+  );
+  const alpha = report.advisories.rows.find((r) => r.advisory === 'adv.alpha')!;
+  assert.deepEqual(alpha.fireCases, ['adv.alpha-fail-rtm', 'adv.alpha-fail-ems']);
+  assert.deepEqual(alpha.fireTypes, ['ems', 'rtm']);
+  const text = formatCoverage(report).join('\n');
+  assert.match(text, /adv\.alpha\[ems,rtm\]/);
+  assert.match(text, /adv\.beta\[ems\]/);
+});
+
+test('a shadow-profile expectation does not fire a contract advisory', () => {
+  // One transmission carries findings of both lineages (by1c.6). An `info` graded
+  // against the unpublished DS01.3 draft is a statement about that draft, and the
+  // advisory catalogue it would be credited to belongs to the contract — so the
+  // expectation must not count, exactly as it does not count for a §7 row.
+  const report = computeCoverage(
+    [
+      advKase({
+        id: 'adv.alpha-fail-shadow-only',
+        expectedFindings: [{ requirement: 'adv.alpha', severity: 'info', profile: 'ds013' }],
+      }),
+    ],
+    MATRIX,
+    ADVISORIES,
+  );
+  assert.equal(report.advisories.rows.find((r) => r.advisory === 'adv.alpha')!.fired, false);
+  assert.deepEqual(report.advisories.fired, []);
+});
+
+test('only an info expectation fires an advisory', () => {
+  // `advisory()` builds `severity: 'info'` and can build nothing else, so an
+  // expectation naming another severity is not an advisory expectation at all.
+  const report = computeCoverage(
+    [
+      advKase({
+        id: 'adv.alpha-fail-wrong-severity',
+        expectedFindings: [{ requirement: 'adv.alpha', severity: 'fail' }],
+      }),
+    ],
+    MATRIX,
+    ADVISORIES,
+  );
+  assert.deepEqual(report.advisories.fired, []);
+});
+
+test('an advisory expectation is not coverage of a requirement', () => {
+  // The two joins stay independent: an `adv.*` case claims no matrix row, and the
+  // §3.2 pass it incidentally observes is scaffolding, not an exercise of §3.2.
+  const report = computeCoverage(
+    [
+      advKase({
+        id: 'adv.alpha-fail-thing',
+        expectedFindings: [
+          { requirement: 'adv.alpha', severity: 'info' },
+          { requirement: '3.2', severity: 'pass' },
+        ],
+      }),
+    ],
+    MATRIX,
+    ADVISORIES,
+  );
+  assert.equal(report.rows.find((r) => r.requirement === '3.2')!.status, 'uncovered');
+  assert.deepEqual(report.unknownClaims, []);
+});
+
 // ── the real table ──────────────────────────────────────────────────────────
 
 test('every row of the real matrix is classified exactly once', () => {
@@ -283,5 +431,37 @@ test('formatCoverage names every gap it found', () => {
   assert.match(text, /UNCOVERED/);
   for (const row of computeCoverage(EXERCISE_CASES).uncovered) {
     assert.ok(text.includes(`§${row.requirement}`), `gap §${row.requirement} is printed`);
+  }
+});
+
+test('every registered advisory has a fire case (axdd)', () => {
+  // The advisory half of the epic's acceptance criterion, and the reason this
+  // join exists: `adv.null_padding` was registered, documented and shipped with
+  // no exercise case at all, and nothing said so because coverage only ever
+  // looked at `requirements` — which every advisory case leaves empty by design.
+  //
+  // A NEW advisory added to ADVISORY_CHECKS lands here as a failure naming its
+  // own id, which is the point: registering a check without exercising it is now
+  // a CI fact rather than a quiet line in the runner's report.
+  //
+  // This says EXERCISED, not correct. Whether an advisory stays silent on
+  // conformant traffic needs a negative expectation the case model cannot yet
+  // express; see docs/exercise-suite.md.
+  const report = computeCoverage(EXERCISE_CASES);
+  assert.equal(report.advisories.rows.length, ADVISORY_IDS.length);
+  assert.deepEqual(
+    report.advisories.notExercised.map((row) => row.advisory),
+    [],
+    'registered advisories with no fire case — add one in src/exercise/cases/payload.ts',
+  );
+  // …and the printed report names the branches, so a fired advisory can never
+  // read as exercised on both branches when only one case exists.
+  const text = formatCoverage(report).join('\n');
+  for (const row of report.advisories.fired) {
+    assert.ok(row.fireTypes.length > 0, `${row.advisory} fires but names no payload type`);
+    assert.ok(
+      text.includes(`${row.advisory}[${row.fireTypes.join(',')}]`),
+      `${row.advisory} is printed without its payload types`,
+    );
   }
 });

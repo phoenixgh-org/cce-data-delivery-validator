@@ -142,6 +142,14 @@ import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
 import { advisory } from './advisory-finding.js';
 
+/**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const DUPLICATE_RECORDS_ID = 'adv.duplicate_records' as const;
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -243,7 +251,7 @@ export const duplicateRecordsCheck: SemanticCheck = (ctx: PipelineContext): Find
 
   return [
     advisory({
-      id: 'adv.duplicate_records',
+      id: DUPLICATE_RECORDS_ID,
       pointer: first.pointer,
       summary:
         `${repeats.length} ${noun} ${verb} an earlier record in the same report — ` +

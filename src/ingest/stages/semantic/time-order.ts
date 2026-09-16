@@ -93,6 +93,14 @@ import type { SemanticCheck } from '../semantic.js';
 import { advisory } from './advisory-finding.js';
 import { parseAbst } from './interval.js';
 
+/**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const TIME_NOT_INCREASING_ID = 'adv.time_not_increasing' as const;
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -177,7 +185,7 @@ export const timeOrderCheck: SemanticCheck = (ctx: PipelineContext): Finding[] =
 
   return [
     advisory({
-      id: 'adv.time_not_increasing',
+      id: TIME_NOT_INCREASING_ID,
       pointer: first.pointer,
       summary:
         `${found.length} ${recordNoun} ${carry} an ABST no later than the one before; the ` +

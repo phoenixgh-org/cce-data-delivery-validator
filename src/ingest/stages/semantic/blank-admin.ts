@@ -123,6 +123,14 @@ import type { SemanticCheck } from '../semantic.js';
 import { advisory } from './advisory-finding.js';
 
 /**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const BLANK_ADMIN_ID = 'adv.blank_admin' as const;
+
+/**
  * The administrative objects `ems-report` requires, in the branch's own
  * `required` order, less `records` and less ASER (adv.null_identity's field).
  */
@@ -239,7 +247,7 @@ export const blankAdminCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
 
   return [
     advisory({
-      id: 'adv.blank_admin',
+      id: BLANK_ADMIN_ID,
       pointer: `/data/${firstIndex}`,
       summary: `${affected} of ${total} ${reportNoun} ${verb} required admin objects blank — ${lead}${list}.`,
       detail:

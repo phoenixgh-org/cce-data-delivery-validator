@@ -84,6 +84,14 @@ import type { SemanticCheck } from '../semantic.js';
 import { advisory } from './advisory-finding.js';
 
 /**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const NULL_PADDING_ID = 'adv.null_padding' as const;
+
+/**
  * Minimum number of records that must carry a property before its being null in
  * all of them says anything. See the header for why 12.
  */
@@ -189,7 +197,7 @@ export const nullPaddingCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
 
   return [
     advisory({
-      id: 'adv.null_padding',
+      id: NULL_PADDING_ID,
       pointer: padded[0]![1].firstPointer,
       summary:
         `${list} ${areIs} null in every one of the ${group(carrying)} records that carry ` +

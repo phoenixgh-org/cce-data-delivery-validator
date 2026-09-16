@@ -145,6 +145,14 @@ import { COMPRESSOR_KEYS, SUPPLY_KEY } from './compressor-supply.js';
 import { MIN_RECORDS } from './null-padding.js';
 
 /**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const CMPR_MINUTES_ID = 'adv.cmpr_minutes' as const;
+
+/**
  * The superseded `maximum` on CMPR/CMPR2, in minutes — the ceiling a feed built
  * against 0.7.2 or the DS01.2 Annex 2 schema was held to by its own validator.
  */
@@ -268,7 +276,7 @@ export const cmprMinutesCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
 
   return [
     advisory({
-      id: 'adv.cmpr_minutes',
+      id: CMPR_MINUTES_ID,
       pointer: saturationPointer ?? tripped[0]!.firstPointer,
       summary: `All ${values} ${named} values are ${MINUTES_CEILING} or below${saturationClause}`,
       detail:

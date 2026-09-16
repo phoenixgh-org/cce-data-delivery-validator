@@ -42,6 +42,23 @@
  * rtm-only is not automatically a GAP (a §1.1 405 halts before the schema stage
  * runs at all, so an EMS twin of it would exercise nothing new), it is a fact the
  * report must state instead of hide.
+ *
+ * ADVISORIES, the second join (axdd). The §7 join above is blind to the advisory
+ * catalogue by construction: every `adv.*` case declares `requirements: []` — an
+ * advisory is deliberately not a requirement — so an advisory with no case at all
+ * looks exactly like one with ten. That is how `adv.null_padding` came to be the
+ * one registered advisory the live run never exercised, without a single test
+ * objecting. So the report carries a second section, joining the case table onto
+ * {@link ADVISORY_IDS} — the registry's own list, which grows with the catalogue.
+ *
+ * FIRED is the only direction this join reports: at least one case expects
+ * `{ requirement: <id>, severity: 'info' }` under the CONTRACT profile. An
+ * advisory that stays silent on conformant traffic is the other half of the
+ * catalogue's contract and is NOT expressible yet — a case can only assert
+ * findings it expects, never findings it expects to be absent — so this section
+ * says "exercised", never "correct". Payload types annotate a fired advisory the
+ * same way they annotate a requirement, and for the same reason: `adv.blank_admin`
+ * exercised only on EMS traffic is a fact the report must state rather than hide.
  */
 
 import {
@@ -49,6 +66,8 @@ import {
   type ComplianceClass,
   type MatrixRow,
 } from '../../api/compliance-matrix.js';
+import { ADVISORY_IDS, type AdvisoryId } from '../../ingest/stages/semantic/advisory.js';
+import { CONTRACT_PROFILE } from '../../schema-registry.js';
 import { payloadTypeOf, type ExerciseCase } from '../case.js';
 
 /** Primary classes the receiving side actually grades (DESIGN.md §7). */
@@ -92,6 +111,34 @@ export interface CoverageRow {
   readonly coveredTypes: readonly string[];
 }
 
+/**
+ * One registered advisory joined with the cases that expect it to fire.
+ *
+ * There is no `passCases`/`failCases` split here, and deliberately: every `adv.*`
+ * case is direction `fail` (it sends traffic the validator accepts while having
+ * something to say about it), so splitting on direction would print one empty
+ * column for the whole catalogue. What matters is whether the advisory is
+ * exercised at all, and on which payload branches.
+ */
+export interface AdvisoryCoverageRow {
+  /** The registered advisory id, e.g. `adv.null_padding`. */
+  readonly advisory: AdvisoryId;
+  /** True when at least one case expects this advisory under the contract. */
+  readonly fired: boolean;
+  /** Ids of the cases expecting it, in table order. */
+  readonly fireCases: readonly string[];
+  /** Payload types those cases send, sorted and deduplicated. */
+  readonly fireTypes: readonly string[];
+}
+
+/** The advisory half of the report: every registered id, in registry order. */
+export interface AdvisoryCoverage {
+  readonly rows: readonly AdvisoryCoverageRow[];
+  readonly fired: readonly AdvisoryCoverageRow[];
+  /** Registered advisories no case fires — the gap this section exists to show. */
+  readonly notExercised: readonly AdvisoryCoverageRow[];
+}
+
 /** The whole join. `rows` is every matrix row, in matrix order. */
 export interface CoverageReport {
   readonly rows: readonly CoverageRow[];
@@ -112,6 +159,8 @@ export interface CoverageReport {
    * joins to is indistinguishable from no claim at all).
    */
   readonly unknownClaims: readonly string[];
+  /** The advisory join (axdd) — see {@link AdvisoryCoverage}. */
+  readonly advisories: AdvisoryCoverage;
 }
 
 function statusFor(gradeable: boolean, passCases: string[], failCases: string[]): CoverageStatus {
@@ -126,10 +175,78 @@ function sortedTypes(types: Iterable<string>): string[] {
   return [...new Set(types)].sort();
 }
 
-/** Join the case table onto the §7 matrix. PURE — no I/O, no mutation of inputs. */
+/**
+ * Join the case table onto the registered advisory catalogue (axdd).
+ *
+ * FIRED means one specific expectation: a case expecting `severity: 'info'` on
+ * this id under the CONTRACT profile. Each half of that matters. `info` is the
+ * only severity an advisory can carry (advisory-finding.ts builds it), so an
+ * expectation naming any other severity is about something else. And a shadow-
+ * profile expectation grades an unpublished draft in a different vocabulary, so
+ * counting one would report the contract catalogue as exercised by a run that
+ * never touched it.
+ *
+ * The join runs over `expectedFindings`, not over `requirements`, which is the
+ * mirror image of the §7 rule above — and for the same reason. There, counting
+ * findings would inflate coverage because every accepted POST earns an incidental
+ * §3.2 pass. Here, `requirements` is empty on every advisory case by design, so
+ * the expectation IS the claim: a case cannot expect an advisory it does not mean
+ * to provoke.
+ */
+function computeAdvisories(
+  cases: readonly ExerciseCase[],
+  ids: readonly AdvisoryId[],
+): AdvisoryCoverage {
+  const fireCases = new Map<string, string[]>();
+  const fireTypes = new Map<string, string[]>();
+  for (const kase of cases) {
+    const expectations = kase.expectedFindings.filter(
+      (finding) =>
+        finding.severity === 'info' && (finding.profile ?? CONTRACT_PROFILE) === CONTRACT_PROFILE,
+    );
+    if (expectations.length === 0) continue;
+    // Asked once per case, and only for a case that expects something: the type
+    // is a property of the case, and asking costs a baseline generation.
+    const type = payloadTypeOf(kase);
+    for (const finding of expectations) {
+      const caseIds = fireCases.get(finding.requirement);
+      if (caseIds) caseIds.push(kase.id);
+      else fireCases.set(finding.requirement, [kase.id]);
+      const types = fireTypes.get(finding.requirement);
+      if (types) types.push(type);
+      else fireTypes.set(finding.requirement, [type]);
+    }
+  }
+
+  const rows = ids.map((advisory): AdvisoryCoverageRow => {
+    const caseIds = fireCases.get(advisory) ?? [];
+    return {
+      advisory,
+      fired: caseIds.length > 0,
+      fireCases: caseIds,
+      fireTypes: sortedTypes(fireTypes.get(advisory) ?? []),
+    };
+  });
+
+  return {
+    rows,
+    fired: rows.filter((row) => row.fired),
+    notExercised: rows.filter((row) => !row.fired),
+  };
+}
+
+/**
+ * Join the case table onto the §7 matrix and the advisory catalogue. PURE — no
+ * I/O, no mutation of inputs.
+ *
+ * `matrix` and `advisoryIds` default to the real tables and are injectable ONLY
+ * so the unit tests can pin the join's RULES against a small synthetic one; the
+ * runner passes the real matrix explicitly and the real id list by omission.
+ */
 export function computeCoverage(
   cases: readonly ExerciseCase[],
   matrix: readonly MatrixRow[] = COMPLIANCE_MATRIX,
+  advisoryIds: readonly AdvisoryId[] = ADVISORY_IDS,
 ): CoverageReport {
   const passClaims = new Map<string, string[]>();
   const failClaims = new Map<string, string[]>();
@@ -190,6 +307,7 @@ export function computeCoverage(
     byDesign: rows.filter((row) => row.status === 'uncovered-by-design'),
     payloadTypes: sortedTypes(allTypes),
     unknownClaims,
+    advisories: computeAdvisories(cases, advisoryIds),
   };
 }
 
@@ -216,6 +334,21 @@ function types(row: CoverageRow): string {
 
 function ids(rows: readonly CoverageRow[]): string {
   return rows.length === 0 ? '—' : rows.map((row) => `${row.requirement}${types(row)}`).join(' ');
+}
+
+/**
+ * The advisory equivalent of {@link ids}. The bracket is simpler here because an
+ * advisory row has one direction to report rather than two: `[ems]` means every
+ * case firing it sends EMS traffic, and nothing about the rtm branch is claimed.
+ * An advisory nothing fires gets no bracket — there is nothing to qualify.
+ */
+function advisoryIds(rows: readonly AdvisoryCoverageRow[]): string {
+  if (rows.length === 0) return '—';
+  return rows
+    .map(
+      (row) => `${row.advisory}${row.fireTypes.length === 0 ? '' : `[${row.fireTypes.join(',')}]`}`,
+    )
+    .join(' ');
 }
 
 /**
@@ -250,5 +383,18 @@ export function formatCoverage(report: CoverageReport): string[] {
   if (report.unknownClaims.length > 0) {
     lines.push(`  CLAIMED BUT NOT IN THE MATRIX  ${report.unknownClaims.join(' ')}`);
   }
+
+  // The advisory section (axdd). It reports EXERCISE, not correctness: an
+  // advisory nothing fires is a gap in the suite, while an advisory that fires is
+  // only known to be reachable — whether it stays quiet on conformant traffic is
+  // a separate question this table cannot yet ask.
+  const { advisories } = report;
+  lines.push(`advisories — ${advisories.rows.length} registered: fired ${advisories.fired.length}`);
+  lines.push(
+    '  [types] after an advisory are the payload branches its fire case(s) send — ' +
+      '[ems] means ems ONLY',
+  );
+  lines.push(`  fired                      ${advisoryIds(advisories.fired)}`);
+  lines.push(`  NOT EXERCISED              ${advisoryIds(advisories.notExercised)}`);
   return lines;
 }

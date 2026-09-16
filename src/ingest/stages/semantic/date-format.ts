@@ -98,6 +98,14 @@ import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
 import { advisory } from './advisory-finding.js';
 
+/**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const DATE_FORMAT_ID = 'adv.date_format' as const;
+
 /** The strict ISO-8601 calendar date: four-digit year, two-digit month and day. */
 export const ISO_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 
@@ -186,7 +194,7 @@ export const dateFormatCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
 
   return [
     advisory({
-      id: 'adv.date_format',
+      id: DATE_FORMAT_ID,
       pointer: firstStats.firstPointer,
       summary:
         `${entries.length} ${fieldNoun} ${areIs} not YYYY-MM-DD — ${firstField} at ` +

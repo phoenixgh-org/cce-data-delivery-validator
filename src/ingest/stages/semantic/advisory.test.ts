@@ -22,6 +22,7 @@ import type { Finding, PipelineContext } from '../../pipeline.js';
 import { semanticStage, type SemanticCheck, type SemanticDeps } from '../semantic.js';
 import {
   ADVISORY_CHECKS,
+  ADVISORY_IDS,
   ADVISORY_PREFIX,
   advisoriesCheck,
   advisory,
@@ -153,6 +154,40 @@ test('the registry holds the catalogue, and says nothing about an empty payload'
   // A payload with no reports gives every check nothing to observe, so the
   // category stays silent rather than inventing a finding.
   assert.deepEqual(await advisoriesCheck(makeCtx(), makeDeps()), []);
+});
+
+test('ADVISORY_IDS names the catalogue, one id per registered check (axdd)', () => {
+  // The id list is what a reader OUTSIDE this module joins against — the exercise
+  // suite's coverage report asks it which advisories exist, so an id missing from
+  // it is an advisory nothing can notice is unexercised. The list is built from
+  // the checks' own exported constants, so it cannot disagree with what a check
+  // EMITS; what it can still miss is a newly registered check whose constant was
+  // never added here, and the length pin is what says so.
+  assert.equal(
+    ADVISORY_IDS.length,
+    ADVISORY_CHECKS.length,
+    'every registered check contributes exactly one id',
+  );
+  assert.equal(new Set(ADVISORY_IDS).size, ADVISORY_IDS.length, 'ids are distinct');
+  for (const id of ADVISORY_IDS) {
+    assert.ok(isAdvisoryId(id), `${id} lives in the adv.* namespace`);
+  }
+  // Pinned in ADVISORY_CHECKS order, so a reordering or a swapped constant is a
+  // visible change rather than a silent one.
+  assert.deepEqual(ADVISORY_IDS, [
+    'adv.null_identity',
+    'adv.null_padding',
+    'adv.date_format',
+    'adv.time_not_increasing',
+    'adv.compressor_exceeds_supply',
+    'adv.cmpr_minutes',
+    'adv.sample_gap',
+    'adv.duplicate_records',
+    'adv.blank_admin',
+    'adv.unexplained_null_temp',
+    'adv.short_identifier',
+    'adv.null_accumulator',
+  ]);
 });
 
 test('stage 8 records advisories alongside conformance findings and still continues', async () => {

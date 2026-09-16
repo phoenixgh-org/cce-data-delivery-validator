@@ -129,6 +129,14 @@ import { advisory } from './advisory-finding.js';
 import { parseAbst } from './interval.js';
 
 /**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const SAMPLE_GAP_ID = 'adv.sample_gap' as const;
+
+/**
  * The sampling period DS01 is written around, in milliseconds: 900 s, which is
  * also the schema's own `maximum` on every per-period accumulator (CMPR, CMPR2,
  * SVA, DORV, DORF). See the header.
@@ -220,7 +228,7 @@ export const sampleGapCheck: SemanticCheck = (ctx: PipelineContext): Finding[] =
 
   return [
     advisory({
-      id: 'adv.sample_gap',
+      id: SAMPLE_GAP_ID,
       pointer: widest.pointer,
       summary:
         `${gaps.length} ${gapNoun} between consecutive readings ${verb} the ` +

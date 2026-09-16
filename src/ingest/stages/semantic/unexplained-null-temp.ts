@@ -122,6 +122,14 @@ import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
 import { advisory } from './advisory-finding.js';
 
+/**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const UNEXPLAINED_NULL_TEMP_ID = 'adv.unexplained_null_temp' as const;
+
 /** The reading this advisory grades. */
 const TEMPERATURE = 'TVC';
 
@@ -200,7 +208,7 @@ export const unexplainedNullTempCheck: SemanticCheck = (ctx: PipelineContext): F
 
   return [
     advisory({
-      id: 'adv.unexplained_null_temp',
+      id: UNEXPLAINED_NULL_TEMP_ID,
       pointer,
       summary:
         `${affected} of ${totalRecords} ${recordNoun} ${verb} ${TEMPERATURE} as null with ` +

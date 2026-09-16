@@ -96,6 +96,14 @@ import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
 import { advisory } from './advisory-finding.js';
 
+/**
+ * THIS CHECK'S ADVISORY ID, exported so the registry can collect it (axdd).
+ * `ADVISORY_IDS` in ./advisory.ts is built from these constants rather than from
+ * a second hand-maintained list, so the id the check emits and the id the
+ * coverage join asks about cannot drift apart.
+ */
+export const COMPRESSOR_EXCEEDS_SUPPLY_ID = 'adv.compressor_exceeds_supply' as const;
+
 /** The compressor-runtime objects, in the order they are reported. */
 export const COMPRESSOR_KEYS: readonly string[] = ['CMPR', 'CMPR2'];
 
@@ -197,7 +205,7 @@ export const compressorSupplyCheck: SemanticCheck = (ctx: PipelineContext): Find
 
   return [
     advisory({
-      id: 'adv.compressor_exceeds_supply',
+      id: COMPRESSOR_EXCEEDS_SUPPLY_ID,
       pointer: first.pointer,
       summary:
         `${records.size} ${recordNoun} ${reports} ${named} larger than ${SUPPLY_KEY}; the ` +

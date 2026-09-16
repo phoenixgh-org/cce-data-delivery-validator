@@ -81,18 +81,19 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck, SemanticDeps } from '../semantic.js';
-import { blankAdminCheck } from './blank-admin.js';
-import { cmprMinutesCheck } from './cmpr-minutes.js';
-import { compressorSupplyCheck } from './compressor-supply.js';
-import { dateFormatCheck } from './date-format.js';
-import { duplicateRecordsCheck } from './duplicate-records.js';
-import { nullAccumulatorCheck } from './null-accumulator.js';
-import { nullIdentityCheck } from './null-identity.js';
-import { nullPaddingCheck } from './null-padding.js';
-import { sampleGapCheck } from './sample-gap.js';
-import { shortIdentifierCheck } from './short-identifier.js';
-import { timeOrderCheck } from './time-order.js';
-import { unexplainedNullTempCheck } from './unexplained-null-temp.js';
+import type { AdvisoryId } from './advisory-finding.js';
+import { BLANK_ADMIN_ID, blankAdminCheck } from './blank-admin.js';
+import { CMPR_MINUTES_ID, cmprMinutesCheck } from './cmpr-minutes.js';
+import { COMPRESSOR_EXCEEDS_SUPPLY_ID, compressorSupplyCheck } from './compressor-supply.js';
+import { DATE_FORMAT_ID, dateFormatCheck } from './date-format.js';
+import { DUPLICATE_RECORDS_ID, duplicateRecordsCheck } from './duplicate-records.js';
+import { NULL_ACCUMULATOR_ID, nullAccumulatorCheck } from './null-accumulator.js';
+import { NULL_IDENTITY_ID, nullIdentityCheck } from './null-identity.js';
+import { NULL_PADDING_ID, nullPaddingCheck } from './null-padding.js';
+import { SAMPLE_GAP_ID, sampleGapCheck } from './sample-gap.js';
+import { SHORT_IDENTIFIER_ID, shortIdentifierCheck } from './short-identifier.js';
+import { TIME_NOT_INCREASING_ID, timeOrderCheck } from './time-order.js';
+import { UNEXPLAINED_NULL_TEMP_ID, unexplainedNullTempCheck } from './unexplained-null-temp.js';
 
 /**
  * The advisory constructor and its id helpers live in the LEAF module
@@ -140,6 +141,41 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   unexplainedNullTempCheck,
   shortIdentifierCheck,
   nullAccumulatorCheck,
+];
+
+/**
+ * THE CATALOGUE AS DATA — the same twelve advisories as {@link ADVISORY_CHECKS},
+ * in the same order, named by id rather than by function (axdd).
+ *
+ * The checks are bare functions and carry no id metadata: an id is a string
+ * literal inside each check's `advisory({ id })` call, which is fine for
+ * emission and useless to anything that wants to ask "what advisories exist?".
+ * The exercise suite's coverage join is the first such reader — it reports which
+ * advisories the case table actually fires — and it needs a source of truth that
+ * GROWS WITH THE REGISTRY rather than a list beside it that someone has to
+ * remember to update.
+ *
+ * So each check module exports its own id constant and this array collects them.
+ * A hand-maintained list here was rejected for being a second source of truth:
+ * it could disagree with what the check emits, and nothing would say so. As
+ * written the constant is the one the check passes to {@link advisory}, so the
+ * two cannot drift. What a list still cannot catch is a NEW check module added
+ * to {@link ADVISORY_CHECKS} whose id is never added here — advisory.test.ts
+ * pins the two lengths against each other for exactly that.
+ */
+export const ADVISORY_IDS: readonly AdvisoryId[] = [
+  NULL_IDENTITY_ID,
+  NULL_PADDING_ID,
+  DATE_FORMAT_ID,
+  TIME_NOT_INCREASING_ID,
+  COMPRESSOR_EXCEEDS_SUPPLY_ID,
+  CMPR_MINUTES_ID,
+  SAMPLE_GAP_ID,
+  DUPLICATE_RECORDS_ID,
+  BLANK_ADMIN_ID,
+  UNEXPLAINED_NULL_TEMP_ID,
+  SHORT_IDENTIFIER_ID,
+  NULL_ACCUMULATOR_ID,
 ];
 
 /**

@@ -414,6 +414,33 @@ test('every targeted requirement is backed by an expected finding or a rejection
   }
 });
 
+test('a case named for an advisory expects that advisory to fire (axdd)', () => {
+  // The naming convention IS the claim. An advisory case is named
+  // `adv.<id>-fail-<what-it-sends>`, so the id up to the first hyphen says which
+  // advisory the case is an exercise of — and that has to agree with what the case
+  // expects, or the coverage join credits the exercise to the wrong advisory (or
+  // to none at all, if the expectation was mistyped).
+  //
+  // The severity is part of it: `advisory()` builds `severity: 'info'` and can
+  // build nothing else, so an expectation naming any other severity would be
+  // matched against a finding the pipeline cannot produce.
+  for (const kase of EXERCISE_CASES) {
+    if (!isAdvisoryId(kase.id)) continue;
+    const hyphen = kase.id.indexOf('-');
+    assert.ok(hyphen > 0, `${kase.id}: an advisory case is named adv.<id>-fail-<what it sends>`);
+    const advisoryId = kase.id.slice(0, hyphen);
+    assert.ok(
+      kase.expectedFindings.some(
+        (finding) =>
+          finding.requirement === advisoryId &&
+          finding.severity === 'info' &&
+          (finding.profile ?? CONTRACT_PROFILE) === CONTRACT_PROFILE,
+      ),
+      `${kase.id}: is named for ${advisoryId} but expects no contract-profile info finding on it`,
+    );
+  }
+});
+
 test('every case declares at least one POST with a known §6 status', () => {
   for (const kase of EXERCISE_CASES) {
     assert.ok(kase.posts.length >= 1, `${kase.id}: a case needs at least one POST`);
