@@ -45,6 +45,7 @@ function finding(over: Partial<FindingView> = {}): FindingView {
   return {
     requirement: '3.2',
     severity: 'pass',
+    summary: null,
     detail: null,
     pointer: null,
     outdated: false,
@@ -110,12 +111,15 @@ test('the surface calls the category Advisories and uses no synonym', () => {
   // Naming is closed (Benson, 2026-08-04): "Advisories" in the dashboard, in the
   // finding prose, and in the code.
   assert.equal(ADVISORY_COPY.title, 'Advisories');
-  for (const text of COPY) {
-    assert.doesNotMatch(
-      text,
-      /data quality|practice note|observation/i,
-      `surface copy must not rename the category: ${text}`,
-    );
+  for (const [slot, text] of Object.entries(ADVISORY_COPY)) {
+    // "observation" is banned everywhere EXCEPT the blurb, whose approved wording
+    // opens "Advisories are observations, not verdicts" (agj.17, 2026-09-15).
+    // That sentence DEFINES the category in the one place it is defined; it does
+    // not rename it, and `title` above pins the name itself. Every other slot
+    // would be substituting the word for the name, which is what is closed.
+    const synonyms =
+      slot === 'blurb' ? /data quality|practice note/i : /data quality|practice note|observation/i;
+    assert.doesNotMatch(text, synonyms, `surface copy must not rename the category: ${text}`);
   }
 });
 
@@ -131,19 +135,23 @@ test('the surface copy carries no defect vocabulary', () => {
   }
 });
 
-test('the surface copy states the non-verdict claim and leads with payload size', () => {
+test('the surface copy states the non-verdict claim and names who is left asking', () => {
   // The first thing a supplier at 100 % conformance needs is that this changes
   // nothing about their grade...
-  assert.match(ADVISORY_COPY.blurb, /not verdicts/i);
-  assert.match(ADVISORY_COPY.blurb, /counts for or against your conformance/i);
+  assert.match(ADVISORY_COPY.blurb, /observations, not verdicts/i);
+  assert.match(ADVISORY_COPY.blurb, /do not render a payload nonconformant/i);
   assert.match(ADVISORY_COPY.transmissionEyebrow, /not graded/i);
   // The compliance column's one-line subhead is the only advisory copy on screen
   // when the section is collapsed, so it carries the same claim on its own.
   assert.match(ADVISORY_COPY.columnSubhead, /not verdicts/i);
   assert.match(ADVISORY_COPY.columnSubhead, /counts for or against your conformance/i);
-  // ...and the reason to care is the supplier's own bytes against the §1.4 cap —
-  // actionable self-interest, which is the strongest framing available to us.
-  assert.match(ADVISORY_COPY.blurb, /1 MB limit in §1\.4/);
+  // ...and the reason to care is the country on the other end, which is left with
+  // a question the payload does not answer.
+  assert.match(ADVISORY_COPY.blurb, /Countries cannot resolve these questions/i);
+  // The §1.4 byte-budget clause is gone by decision (agj.17, approved
+  // 2026-09-15): it framed the whole category by the one advisory it applied to,
+  // and the size argument now sits in that advisory's own rationale.
+  assert.doesNotMatch(ADVISORY_COPY.blurb, /1 MB|§1\.4/);
 });
 
 test('the surface copy concludes nothing about the supplier’s equipment', () => {

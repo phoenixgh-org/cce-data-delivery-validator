@@ -198,6 +198,7 @@ test(
         {
           requirement: '1.2',
           severity: 'pass',
+          summary: null,
           detail: null,
           pointer: null,
           outdated: false,
@@ -212,6 +213,8 @@ test(
         {
           requirement: '1.4',
           severity: 'fail',
+          // The advisory observation line (agj.17) — null on a graded finding.
+          summary: null,
           detail: 'too big',
           pointer: null,
           outdated: false,

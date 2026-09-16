@@ -322,8 +322,17 @@ category rather than additional findings on existing requirements.
 
 Several properties follow from that decision:
 
-- Advisories cost no DDL. `severity` is always `info`, and the identifier lives in its
-  own `adv.*` namespace, carried in both `finding.requirement` and `finding.code`.
+- Advisories cost almost no DDL. `severity` is always `info`, and the identifier lives
+  in its own `adv.*` namespace, carried in both `finding.requirement` and
+  `finding.code`. The one column they did add is `finding.summary` (see below).
+- An advisory carries TWO pieces of prose, not one. `summary` is the observation — one
+  line, with its numbers ("3 of 12 reports carry no appliance serial number"), shown on
+  the advisory row. `detail` is the rationale for it, kept one click away behind that
+  row's expander. A supplier scanning a list of advisories is reading for what was
+  seen; the reason it matters is what they open next. A graded §7 finding carries no
+  `summary` and keeps its explanation in `detail` alone, and a row whose `summary` is
+  absent — stored before the column existed, or emitted by a check whose copy has not
+  been split — falls back to rendering `detail` as the line, with no expander.
 - Advisories use named codes rather than numbers, because an advisory catalogue has
   no external document to number against.
 - The §7 matrix is immune by construction: the join iterates the 27 static rows and
@@ -389,7 +398,9 @@ The three tables are:
   especially useful when parsing fails; its ceilings are discussed in §12),
   `parse_ok bool`, and `schema_ok bool`.
 - `finding`: `id`, `transmission_id` (foreign key to `transmission`), `requirement`
-  (e.g., `1.4`), `severity` (`pass`, `fail`, or `info`), `detail`, `pointer` (a JSON
+  (e.g., `1.4`), `severity` (`pass`, `fail`, or `info`), `summary` (the one-line
+  advisory observation, added in `db/initdb/90-finding-summary.sql`; nullable, and
+  null on every graded finding — see §7.1), `detail`, `pointer` (a JSON
   Pointer into the payload, where relevant), `outdated bool`, and `profile`
   (`2025` or `ds013`, added in `db/initdb/60-finding-profile.sql`). `profile` names
   the requirement lineage the finding graded against, so the contract findings and

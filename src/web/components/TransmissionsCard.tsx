@@ -540,6 +540,9 @@ function PointerLine({
  * advisory rows in the compliance column. The pointer drill-down is kept: it is the one
  * piece of FindingItem that applies unchanged, and it is how a supplier sees
  * what the observation is about.
+ *
+ * The prose is two pieces since agj.17 — the observation on the row, the
+ * rationale behind the expander. {@link advisoryLine} decides which, and why.
  */
 function AdvisoryItem({
   finding,
@@ -548,6 +551,8 @@ function AdvisoryItem({
   finding: FindingView;
   onLocate?: (pointer: string) => void;
 }): ReactElement {
+  const { line, expandable } = advisoryLine(finding);
+  const [open, setOpen] = useState(false);
   return (
     <div
       style={{
@@ -566,7 +571,7 @@ function AdvisoryItem({
           alignItems: 'baseline',
           gap: 7,
           flexWrap: 'wrap',
-          marginBottom: finding.detail ? 3 : 0,
+          marginBottom: line ? 3 : 0,
         }}
       >
         <span style={{ fontWeight: 600, color: 'var(--text)' }}>
@@ -576,7 +581,36 @@ function AdvisoryItem({
           {finding.requirement}
         </span>
       </div>
-      {finding.detail && <div style={{ color: 'var(--text-muted)' }}>{finding.detail}</div>}
+      {line && (
+        <div style={{ color: 'var(--text-muted)' }}>
+          {line}
+          {expandable && (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                aria-expanded={open}
+                title={open ? 'Hide the rationale' : 'Why this is worth a look'}
+                style={{
+                  fontSize: 11,
+                  color: 'var(--accent-text)',
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
+                {open ? 'hide' : 'why'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {expandable && open && (
+        <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>{finding.detail}</div>
+      )}
       <PointerLine
         pointer={finding.pointer}
         locatable={finding.instancePath ?? finding.pointer}
@@ -584,6 +618,35 @@ function AdvisoryItem({
       />
     </div>
   );
+}
+
+/**
+ * What an advisory row SHOWS, and whether anything sits behind its expander
+ * (agj.17).
+ *
+ * An advisory carries two pieces of prose: `summary` is the one-line observation
+ * with its numbers, `detail` the rationale for it. The row shows the observation
+ * and keeps the rationale one click away, because a supplier scanning a list of
+ * advisories is reading for what was seen, not yet for why it matters.
+ *
+ * TWO COHORTS, ONE COMPONENT. `summary` arrived after findings were already being
+ * stored, and a check emits one only once its copy has been converted. So a row
+ * whose summary is null or blank — a finding written before the column existed
+ * and still inside the retention window, or a check not yet converted — falls
+ * back to rendering `detail` as the line, with no expander: exactly what it
+ * looked like before this split. The fallback is not a transitional hack to be
+ * removed; it is also what a graded finding routed here would need.
+ */
+export function advisoryLine(finding: Pick<FindingView, 'summary' | 'detail'>): {
+  /** The text on the row: the observation, or the rationale when there is none. */
+  line: string | null;
+  /** True when `detail` is held back behind the expander rather than shown. */
+  expandable: boolean;
+} {
+  const summary = typeof finding.summary === 'string' ? finding.summary.trim() : '';
+  if (summary === '') return { line: finding.detail, expandable: false };
+  const detail = typeof finding.detail === 'string' ? finding.detail.trim() : '';
+  return { line: summary, expandable: detail !== '' };
 }
 
 /**

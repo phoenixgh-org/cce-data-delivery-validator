@@ -69,6 +69,11 @@ function toFindingView(f: FindingRow) {
   return {
     requirement: f.requirement,
     severity: f.severity,
+    // Advisory prose is two pieces since agj.17: `summary` is the one-line
+    // observation shown on the row, `detail` the rationale behind its expander.
+    // Null on graded findings and on rows stored before the column existed — the
+    // browser falls back to `detail` in both cases.
+    summary: f.summary,
     detail: f.detail,
     pointer: f.pointer,
     outdated: f.outdated,

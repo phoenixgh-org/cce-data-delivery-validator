@@ -60,6 +60,7 @@ const {
   shadowFailCount,
   chipTitle,
   rawPayloadSummary,
+  advisoryLine,
 } = await import('./TransmissionsCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
@@ -293,6 +294,7 @@ function finding(severity: Severity): FindingView {
   return {
     requirement: '1.1',
     severity,
+    summary: null,
     detail: null,
     pointer: null,
     outdated: false,
@@ -539,4 +541,46 @@ test('the DS01.3 group header shows the same count as the row’s tooltip', () =
   const { shadow } = groupDetailFindings(findings, 'ds013');
   assert.equal(shadow.length, 1, 'five omissions at one path are one row');
   assert.equal(shadowFailCount(findings, 'ds013'), 5);
+});
+
+/**
+ * WHAT AN ADVISORY ROW SHOWS (agj.17). Advisory prose is two pieces — `summary`
+ * is the one-line observation with its numbers, `detail` the rationale — and the
+ * row shows the observation with the rationale behind a "why" expander.
+ *
+ * The claim worth pinning is the FALLBACK, because it is invisible in the happy
+ * path and it is what keeps two cohorts of stored findings readable: a finding
+ * written before `summary` existed and still inside the retention window, and a
+ * check whose copy has not been converted yet. Either one carries `detail` alone
+ * and must render exactly as it did before the split — as the line, with nothing
+ * behind an expander that would open on empty.
+ */
+test('an advisory carrying a summary shows it, with the rationale behind the expander', () => {
+  const { line, expandable } = advisoryLine({
+    summary: '3 of 12 reports carry no appliance serial number.',
+    detail: 'ASER is the appliance serial number, as assigned by the manufacturer.',
+  });
+  assert.equal(line, '3 of 12 reports carry no appliance serial number.');
+  assert.equal(expandable, true);
+});
+
+test('an advisory with no summary shows its detail on the row and offers no expander', () => {
+  // A finding stored before the column existed, or a check not yet converted.
+  const stored = advisoryLine({ summary: null, detail: 'Across the 48 records, TAMB is null.' });
+  assert.equal(stored.line, 'Across the 48 records, TAMB is null.');
+  assert.equal(stored.expandable, false);
+
+  // Blank is the same case as absent: a summary of spaces is not a line to show.
+  const blank = advisoryLine({ summary: '   ', detail: 'Across the 48 records, TAMB is null.' });
+  assert.equal(blank.line, 'Across the 48 records, TAMB is null.');
+  assert.equal(blank.expandable, false);
+});
+
+test('a summary with no rationale behind it opens no empty expander', () => {
+  const { line, expandable } = advisoryLine({
+    summary: '7 gaps exceed the 900 s period.',
+    detail: null,
+  });
+  assert.equal(line, '7 gaps exceed the 900 s period.');
+  assert.equal(expandable, false);
 });

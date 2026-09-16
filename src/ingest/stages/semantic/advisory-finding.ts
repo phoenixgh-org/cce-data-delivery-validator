@@ -40,14 +40,31 @@ export function isAdvisoryId(id: string | null | undefined): boolean {
   return typeof id === 'string' && id.startsWith(ADVISORY_PREFIX);
 }
 
-/** What a check supplies when it raises one advisory. */
+/**
+ * What a check supplies when it raises one advisory.
+ *
+ * TWO PIECES OF PROSE, not one (agj.17). An advisory used to carry a single
+ * paragraph that fused what was seen with why it matters, which is the wrong
+ * shape for a list a supplier scans:
+ *
+ *   - `summary` is THE OBSERVATION — one line, in the supplier's terms, carrying
+ *     the numbers ("3 of 12 reports carry no appliance serial number"). It is
+ *     what the advisory row shows, so keep it to roughly 90 characters.
+ *   - `detail` is THE RATIONALE — why a receiving country cares, or what to send
+ *     instead. A few sentences, shown behind the row's expander.
+ *
+ * Both OBSERVE, never conclude — see the wording note in advisory.ts's header.
+ *
+ * `summary` is optional for now because the checks are being converted one at a
+ * time; a check that supplies none renders exactly as it did before, with the
+ * rationale on the row and no expander.
+ */
 export interface AdvisoryInput {
   /** The `adv.*` id of the advisory being raised. */
   id: AdvisoryId;
-  /**
-   * The observation, in the supplier's terms. OBSERVE, never conclude — see the
-   * wording note in advisory.ts's header.
-   */
+  /** The one-line observation, with its numbers. Shown on the advisory row. */
+  summary?: string;
+  /** The rationale: why the observation matters to the receiving country. */
   detail: string;
   /** JSON Pointer to where it was observed, for the raw-payload drill-down. */
   pointer?: string | null;
@@ -64,6 +81,7 @@ export function advisory(input: AdvisoryInput): Finding {
   return {
     requirement: input.id,
     severity: 'info',
+    summary: input.summary ?? null,
     detail: input.detail,
     pointer: input.pointer ?? null,
     code: input.id,

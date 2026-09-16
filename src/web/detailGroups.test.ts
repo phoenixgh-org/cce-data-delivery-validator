@@ -44,6 +44,7 @@ function finding(over: Partial<FindingView> = {}): FindingView {
   return {
     requirement: '1.1',
     severity: 'fail',
+    summary: null,
     detail: null,
     pointer: null,
     outdated: false,

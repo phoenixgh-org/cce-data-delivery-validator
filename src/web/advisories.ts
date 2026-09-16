@@ -95,30 +95,36 @@ export function splitFindings(findings: readonly FindingView[]): {
  *
  * `blurb` states the non-verdict claim FIRST, because that is the thing a
  * supplier at 100 % conformance needs to know before reading anything below it,
- * and then gives the reason to care in terms of the supplier's own interest: the
- * bytes are theirs to spend against the §1.4 1 MB cap. It claims nothing about
- * what a null MEANS — that is unprovable from the receiving side, and saying it
- * would be the concluding language this category is forbidden.
+ * and then says what an advisory is FOR: data that is unexpected or contrary to
+ * best practice, worth a closer look by someone who can see past the payload.
+ * The closing line names who is left holding the question — the country
+ * receiving the data, which cannot resolve it from the payload alone. It claims
+ * nothing about what a null MEANS: that is unprovable from the receiving side,
+ * and saying it would be the concluding language this category is forbidden.
  *
- * `columnSubhead` is that claim compressed to ONE line, for the Advisories
- * section HEADER in the compliance column (agj.16) — the same slot the §7 group
- * headers give `CLASS_META[…].blurb`, and the only advisory copy still on screen
- * when the section is collapsed. It carries the half a supplier reading a column
- * of verdicts needs first: this section is not one of them and feeds no count.
- * `blurb` still renders in full directly above the rows, so the §1.4 argument is
- * never the thing that got cut. (`latestEyebrow` retired with the browser-side
- * fold — the section renders server signatures, which carry no representative
- * detail to caveat.)
+ * The byte-budget argument the blurb used to carry (bytes spent against the
+ * §1.4 1 MB cap) is GONE by decision (agj.17, approved 2026-09-15). It applied
+ * to one advisory of twelve, so it framed the category by its narrowest member;
+ * the size angle now lives in that advisory's own rationale, where it is true.
+ *
+ * `columnSubhead` is the non-verdict claim compressed to ONE line, for the
+ * Advisories section HEADER in the compliance column (agj.16) — the same slot the
+ * §7 group headers give `CLASS_META[…].blurb`, and the only advisory copy still
+ * on screen when the section is collapsed. It carries the half a supplier reading
+ * a column of verdicts needs first: this section is not one of them and feeds no
+ * count. `blurb` still renders in full directly above the rows.
+ * (`latestEyebrow` retired with the browser-side fold — the section renders
+ * server signatures, which carry no representative detail to caveat.)
  */
 export const ADVISORY_COPY = {
   /** Card heading and the per-transmission section heading. */
   title: 'Advisories',
   /** The framing line under the heading. */
   blurb:
-    'Advisories are not verdicts. Nothing here counts for or against your conformance — no ' +
-    'advisory changes a requirement’s status or any number above. Each one names bytes you are ' +
-    'spending against the 1 MB limit in §1.4, or something the payload alone leaves open to the ' +
-    'country receiving your data.',
+    'Advisories are observations, not verdicts. They are surfaced in cases where the payload ' +
+    'contains data that is unexpected or contrary to best practices. Advisories do not render a ' +
+    'payload nonconformant, but they deserve a closer review. Countries cannot resolve these ' +
+    'questions from the payload alone.',
   /** One-line framing beside the Advisories section header in the compliance column. */
   columnSubhead: 'Not verdicts — nothing here counts for or against your conformance',
   /** Sub-heading for the per-transmission block in the transmission detail. */

@@ -110,6 +110,14 @@ export type VerdictsByProfile = Partial<Record<Profile, Verdict>>;
 export interface FindingView {
   requirement: string;
   severity: Severity;
+  /**
+   * The one-line OBSERVATION an advisory carries (agj.17) — the numbers, in the
+   * supplier's terms. The advisory row shows this and puts `detail`, the
+   * rationale, behind an expander. Null on graded findings, and null on
+   * advisories stored before the column existed, where the row falls back to
+   * `detail` exactly as it rendered before.
+   */
+  summary: string | null;
   detail: string | null;
   pointer: string | null;
   /**

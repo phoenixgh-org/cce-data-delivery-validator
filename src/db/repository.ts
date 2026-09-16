@@ -100,6 +100,14 @@ export interface InsertFindingInput {
   /** Requirement id this finding speaks to, e.g. '1.4'. */
   requirement: string;
   severity: Severity;
+  /**
+   * The one-line OBSERVATION carried by an advisory (agj.17) — the numbers, in
+   * the supplier's terms, shown on the advisory row with `detail` behind the
+   * expander. Null on graded findings, and null on advisories stored before this
+   * column existed (db/initdb/90-finding-summary.sql); the dashboard falls back
+   * to `detail` for both.
+   */
+  summary?: string | null;
   /** Human-readable explanation for the dashboard. */
   detail?: string | null;
   /** JSON Pointer into the payload, or null when not path-tied. */
@@ -138,6 +146,8 @@ export interface FindingRow {
   transmission_id: string;
   requirement: string;
   severity: Severity;
+  /** One-line advisory observation (agj.17); null on graded and pre-agj.17 rows. */
+  summary: string | null;
   detail: string | null;
   pointer: string | null;
   /** True for the §3.2 outdated-but-valid info finding (§7). */
@@ -317,7 +327,7 @@ export async function listFindingsForSession(
   db: Queryable = getPool(),
 ): Promise<FindingRow[]> {
   const { rows } = await db.query<FindingRow>(
-    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer, f.outdated,
+    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.summary, f.detail, f.pointer, f.outdated,
             f.keyword, f.instance_path, f.param, f.code, f.profile
      FROM finding f
      JOIN transmission t ON t.id = f.transmission_id
@@ -383,7 +393,7 @@ export async function listFindingsInWindow(
   db: Queryable = getPool(),
 ): Promise<FindingRow[]> {
   const { rows } = await db.query<FindingRow>(
-    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.detail, f.pointer, f.outdated,
+    `SELECT f.id, f.transmission_id, f.requirement, f.severity, f.summary, f.detail, f.pointer, f.outdated,
             f.keyword, f.instance_path, f.param, f.code, f.profile
      FROM finding f
      JOIN transmission t ON t.id = f.transmission_id
@@ -517,15 +527,16 @@ export async function insertFinding(
   db: Queryable = getPool(),
 ): Promise<FindingRow> {
   const { rows } = await db.query<FindingRow>(
-    `INSERT INTO finding (transmission_id, requirement, severity, detail, pointer, outdated,
+    `INSERT INTO finding (transmission_id, requirement, severity, summary, detail, pointer, outdated,
                           keyword, instance_path, param, code, profile)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     RETURNING id, transmission_id, requirement, severity, summary, detail, pointer, outdated,
                keyword, instance_path, param, code, profile`,
     [
       transmissionId,
       input.requirement,
       input.severity,
+      input.summary ?? null,
       input.detail ?? null,
       input.pointer ?? null,
       input.outdated ?? false,
@@ -553,13 +564,14 @@ export async function insertFindings(
 ): Promise<FindingRow[]> {
   if (findings.length === 0) return [];
 
-  const COLS = 10; // per-row bound params (requirement…profile)
+  const COLS = 11; // per-row bound params (requirement…profile)
   const values: unknown[] = [];
   const tuples = findings.map((f, i) => {
     const base = i * COLS;
     values.push(
       f.requirement,
       f.severity,
+      f.summary ?? null,
       f.detail ?? null,
       f.pointer ?? null,
       f.outdated ?? false,
@@ -580,14 +592,14 @@ export async function insertFindings(
   // `outdated` is cast explicitly: a VALUES-derived column carrying a bound param
   // is inferred as `unknown`/text, so the cast pins it to boolean for the INSERT.
   const { rows } = await db.query<FindingRow>(
-    `INSERT INTO finding (requirement, severity, detail, pointer, outdated,
+    `INSERT INTO finding (requirement, severity, summary, detail, pointer, outdated,
                           keyword, instance_path, param, code, profile, transmission_id)
-     SELECT v.requirement, v.severity, v.detail, v.pointer, v.outdated::boolean,
+     SELECT v.requirement, v.severity, v.summary, v.detail, v.pointer, v.outdated::boolean,
             v.keyword, v.instance_path, v.param, v.code, v.profile, ${txParam}
      FROM (VALUES ${tuples.join(', ')})
-       AS v(requirement, severity, detail, pointer, outdated,
+       AS v(requirement, severity, summary, detail, pointer, outdated,
              keyword, instance_path, param, code, profile)
-     RETURNING id, transmission_id, requirement, severity, detail, pointer, outdated,
+     RETURNING id, transmission_id, requirement, severity, summary, detail, pointer, outdated,
                keyword, instance_path, param, code, profile`,
     values,
   );

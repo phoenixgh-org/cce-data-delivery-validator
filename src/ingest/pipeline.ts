@@ -167,10 +167,10 @@ export async function runPipeline(
 
 /**
  * One finding as echoed in the HTTP response body — the human-readable subset of
- * a {@link Finding} (`requirement`, `severity`, `detail`) plus the lineage that
- * graded it. The internal `pointer` is omitted; suppliers read the per-error
- * location from `detail`, and the full finding (with pointer) is persisted for
- * the dashboard.
+ * a {@link Finding} (`requirement`, `severity`, `summary`, `detail`) plus the
+ * lineage that graded it. The internal `pointer` is omitted; suppliers read the
+ * per-error location from `detail`, and the full finding (with pointer) is
+ * persisted for the dashboard.
  */
 export interface ResponseFinding {
   requirement: string;
@@ -184,6 +184,18 @@ export interface ResponseFinding {
    * clause ids.
    */
   profile: Profile;
+  /**
+   * The one-line OBSERVATION, on advisories that carry one (agj.17). Echoed here
+   * because this body is a teaching surface (see below): an integrator who never
+   * opens the dashboard should read the same one-liner the advisory row shows,
+   * with `detail` beneath it as the rationale.
+   *
+   * OMITTED, not null, wherever there is none — on every graded finding, which
+   * carries its explanation in `detail` alone, and on an advisory whose copy has
+   * not been split yet. A key that appears only when it says something keeps the
+   * body readable for the integrator this echo exists for.
+   */
+  summary?: string | null;
   /** Human-readable explanation; absent only if a finding carried no detail. */
   detail?: string | null;
 }
@@ -489,6 +501,10 @@ export function buildResponseBody(
     requirement: f.requirement,
     severity: f.severity,
     profile: profileOf(f),
+    // Spread rather than assigned: `summary` is carried only by an advisory that
+    // has one, and an explicit `summary: null` on every graded finding would be
+    // noise in a body a supplier reads by eye (agj.17).
+    ...(f.summary == null ? {} : { summary: f.summary }),
     detail: f.detail,
   });
   // Partitioned on the id namespace, not on position: findings arrive in stage

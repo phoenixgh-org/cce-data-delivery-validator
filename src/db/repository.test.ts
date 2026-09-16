@@ -205,6 +205,8 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
   assert.equal(single.keyword, null);
   assert.equal(single.instance_path, null);
   assert.equal(single.param, null);
+  // A graded finding carries no advisory observation line (agj.17).
+  assert.equal(single.summary, null);
   // Lineage (by1c.5): written explicitly — there is no default in the storage
   // layer, in the input type or in the column (by1c.50).
   assert.equal(single.profile, '2025');
@@ -216,6 +218,25 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
     profile: 'ds013',
   });
   assert.equal(shadow.profile, 'ds013');
+
+  // The advisory prose split (agj.17): `summary` is the observation line and
+  // `detail` the rationale. Written through the multi-row path on purpose — that
+  // INSERT binds a FIXED number of params per tuple, so a column added to the
+  // list and not to the count binds every row one field out of step, and the
+  // rows still land. Only reading a per-row value back catches that.
+  const advisory = await insertFinding(tx.id, {
+    requirement: 'adv.null_identity',
+    severity: 'info',
+    summary: '1 of 1 report carries no appliance serial number.',
+    detail: 'ASER is the appliance serial number, as assigned by the manufacturer.',
+    code: 'adv.null_identity',
+    profile: '2025',
+  });
+  assert.equal(advisory.summary, '1 of 1 report carries no appliance serial number.');
+  assert.equal(
+    advisory.detail,
+    'ASER is the appliance serial number, as assigned by the manufacturer.',
+  );
 
   const many = await insertFindings(tx.id, [
     { requirement: '1.2', severity: 'pass', profile: '2025' },
@@ -229,8 +250,26 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
       param: 'EERR',
       profile: 'ds013',
     },
+    {
+      requirement: 'adv.sample_gap',
+      severity: 'info',
+      summary: '3 gaps exceed the 900 s period.',
+      detail: 'Recording gaps have everyday causes, such as an extended power outage.',
+      code: 'adv.sample_gap',
+      profile: '2025',
+    },
   ]);
-  assert.equal(many.length, 2);
+  assert.equal(many.length, 3);
+  // Per-row summary through the multi-row path: null on the two graded rows, the
+  // observation line on the advisory.
+  assert.equal(many[0]?.summary, null);
+  assert.equal(many[1]?.summary, null);
+  assert.equal(many[2]?.summary, '3 gaps exceed the 900 s period.');
+  assert.equal(
+    many[2]?.detail,
+    'Recording gaps have everyday causes, such as an extended power outage.',
+  );
+  assert.equal(many[2]?.code, 'adv.sample_gap');
   // Per-row lineage in the multi-row INSERT: contract on the first, shadow on
   // the second — proving the column is bound per tuple, not once per statement.
   assert.equal(many[0]?.profile, '2025');
@@ -252,7 +291,7 @@ test('insertFinding / insertFindings record rows against a transmission', { skip
     'SELECT count(*) AS n FROM finding WHERE transmission_id = $1',
     [tx.id],
   );
-  assert.equal(rows[0]?.n, '4', 'all four findings recorded');
+  assert.equal(rows[0]?.n, '6', 'all six findings recorded');
 
   await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
 });
