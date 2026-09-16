@@ -77,6 +77,19 @@ the findings its own POSTs produced, even though the whole table shares one sess
 Expectations pool per case, not per POST. A case may expect **no** findings at all —
 a 405 halts before persistence, so the status _is_ the grade.
 
+A case may also name findings that must **not** appear in its own pool, in
+`absentFindings`. That is the complement of the presence rule rather than a retreat
+from it: only the ids a case names are judged, so a pooled finding nothing names is
+still ignored. An entry names `(requirement, profile)` and no severity — silent means
+no finding of that id under that lineage, at any severity — and a pooled finding that
+matches one fails the case with `unexpected finding §<id> <severity> [<profile>] —
+case declared it absent`. It exists because each advisory's header documents a
+population it deliberately says nothing about (solar records, an explained null, a
+series under the twelve-record padding floor), and until a case could state an
+absence, those rules were exercised nowhere. The scope is still the case: the pool is
+the findings of that case's own transmissions, so this is not a run-wide "no stray
+findings anywhere" check, and it is not meant to become one.
+
 ## Two transform families
 
 Payload mutators change **what** is sent; transport wrappers change **how** it is
@@ -340,9 +353,12 @@ id, rather than as a quiet line in the runner's report.
 
 The section reports **exercise, not correctness**. A fired advisory is known to be
 reachable; whether it stays silent on conformant traffic is the other half of the
-catalogue's contract, and the case model cannot yet express it — a case asserts findings
-it expects, never findings it expects to be absent. Until negative expectations exist, do
-not read `fired 12` as "the catalogue behaves".
+catalogue's contract, and the coverage join says nothing about it. That half is now
+expressible in the cases themselves: `absentFindings` lets a case declare which
+advisories its payload must NOT draw, and the two baseline pass cases declare the whole
+catalogue silent by reading `ADVISORY_IDS` off the registry. Read `fired 12` as "every
+advisory is reachable" and the silence cases as the other half — neither line alone says
+"the catalogue behaves".
 
 ### Shadow cases, and why coverage ignores them
 

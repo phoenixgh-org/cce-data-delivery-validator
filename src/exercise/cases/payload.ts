@@ -18,6 +18,7 @@
  * read off the case (`baseline`), not a directory layout.
  */
 
+import { ADVISORY_IDS } from '../../ingest/stages/semantic/advisory.js';
 import { emsBaseline } from '../baseline.js';
 import type { ExerciseCase } from '../case.js';
 import {
@@ -27,11 +28,13 @@ import {
   declareCustomDataSchema,
   dropRequiredField,
   duplicateVersionStringsIntoRecords,
+  explainedNullRuntimeDuringOutage,
   explainedNullTemperature,
   longSamplePeriod,
   nullApplianceSerial,
   nullPaddedSeries,
   nullRuntimeDuringOutage,
+  nullTemperatureWithErrorCode,
   repeatRecord,
   setInvalidValue,
   setCompressorAboveSupply,
@@ -40,6 +43,7 @@ import {
   setSchemaVersion,
   setUnsupportedSchemaVersion,
   shortApplianceMonitoringId,
+  solarPoweredRecords,
   swapRecordTimestamps,
   unexplainedNullTemperature,
 } from '../transforms/payload.js';
@@ -48,11 +52,27 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
   // ── §3.2 schema validation ────────────────────────────────────────────────
   {
     id: '3.2-pass-baseline',
-    title: 'The untouched baseline validates against the current schema',
+    title: 'The untouched baseline validates against the current schema, and raises no advisory',
     requirements: ['3.2'],
     direction: 'pass',
     posts: [{ expectedStatus: 200 }],
     expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
+    // ── THE WHOLE CATALOGUE, DECLARED SILENT (496w) ──────────────────────────
+    //
+    // A conformant baseline is the one payload every advisory is obliged to say
+    // nothing about, so this case names the whole registered set rather than a
+    // chosen few.
+    // `fired 12` in the coverage report says each advisory is REACHABLE; this is
+    // the other half of the catalogue's contract — that none of them speaks on
+    // traffic that breaks nothing. Before `absentFindings` existed neither case
+    // nor runner could state it.
+    //
+    // Reading the list off `ADVISORY_IDS` keeps the table DATA while making the
+    // registry the author of it: a thirteenth check lands here automatically, so
+    // a new advisory that fires on a conformant rtm payload fails this case
+    // instead of arriving unnoticed. The ids are contract-profile by default,
+    // which is the only lineage that grades advisories.
+    absentFindings: ADVISORY_IDS.map((id) => ({ requirement: id })),
   },
   {
     id: '3.2-fail-missing-required-field',
@@ -203,6 +223,14 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
       { requirement: '3.4', severity: 'pass' },
       { requirement: '3.1', severity: 'pass' },
     ],
+    // The same all-advisories silence '3.2-pass-baseline' declares (496w), on the
+    // other branch of the schema — and it carries more weight here, because the
+    // EMS baseline is what most of the advisory catalogue is written against.
+    // Three of the registered checks need no case of their own as a result:
+    // `adv.cmpr_minutes` is silent on this seconds-valued feed (CMPR 320/285/300
+    // against SVA 900), `adv.duplicate_records` on three records that share
+    // nothing, and `adv.null_accumulator` on a supply that never went to zero.
+    absentFindings: ADVISORY_IDS.map((id) => ({ requirement: id })),
   },
   {
     id: '3.2-fail-ems-mains-and-solar-power',
@@ -292,8 +320,15 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     // `adv.null_padding` stays silent: the EMS baseline is three records, a
     // quarter of the twelve that check requires before it will call a column
     // padded, so the lone null here is not read as padding.
+    //
+    // `adv.unexplained_null_temp` IS DECLARED SILENT (496w). That advisory is
+    // RTMD-only by construction — on the ems branch the schema itself demands the
+    // explanation, so there is no gap for it to cover — and this payload is where
+    // that claim is measured: a null TVC, on the branch the check skips, drawing
+    // nothing.
     posts: [{ transforms: [explainedNullTemperature()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
+    absentFindings: [{ requirement: 'adv.unexplained_null_temp' }],
   },
 
   // ── §3.1 manufacturer-specific data objects ───────────────────────────────
@@ -448,6 +483,32 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     expectedFindings: [{ requirement: 'adv.compressor_exceeds_supply', severity: 'info' }],
   },
 
+  // THE SILENCE HALF of the same check (496w), and the first case in the table
+  // to assert one advisory's silence on its own rather than the whole catalogue's.
+  // `adv.compressor_exceeds_supply` documents solar records as out of scope — DCSV is a voltage, and no object on the solar branch says for how
+  // long DC power was available, so there is nothing a compressor runtime could
+  // be read against (src/ingest/stages/semantic/compressor-supply.ts). That rule
+  // is what this case measures live.
+  //
+  // CMPR 900 is what makes it worth measuring: it is the schema's own maximum for
+  // the object, so on a mains record it would exceed any supply the check could
+  // read. The advisory stays quiet because the record is solar, not because the
+  // number is unremarkable.
+  //
+  // The shadow run has nothing to add: the Annex 4 draft carries the mains/solar
+  // partition unchanged, so this payload validates under both lineages (measured
+  // against the vendored bytes) and the case names no ds013 finding.
+  {
+    id: '3.2-pass-ems-solar-powered-records',
+    title: 'A solar appliance reporting a full-period compressor runtime draws no advisory',
+    requirements: [],
+    direction: 'pass',
+    baseline: emsBaseline,
+    posts: [{ transforms: [solarPoweredRecords()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
+    absentFindings: [{ requirement: 'adv.compressor_exceeds_supply' }],
+  },
+
   // The other CMPR advisory, and the pair is complementary rather than
   // overlapping: this payload's CMPR never approaches SVA, so
   // adv.compressor_exceeds_supply cannot see it, which is exactly why agj.7
@@ -495,6 +556,30 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
       // verdict §3.4 already owns.
       { requirement: '3.4', severity: 'pass' },
     ],
+  },
+
+  // THE SILENCE HALF of the cadence advisory (496w): the check allows 60 s of
+  // leeway on top of DS01's 900 s period, so a delta of exactly 960 s stays quiet
+  // and 961 s does not (src/ingest/stages/semantic/sample-gap.ts). The leeway is
+  // there to absorb whole-minute ABST stamping, which turns a nominal 900 s
+  // cadence into deltas of 840 s or 960 s with no reading missed, and a case that
+  // only ever sent hourly readings would leave the boundary itself unmeasured.
+  //
+  // Sixteen minutes is the boundary exactly. It stays on the DEFAULT (rtm)
+  // baseline, beside the fire case it mirrors, and earns the §3.4 pass for the
+  // same reason that one does: evenly spaced readings score a CV of 0 however
+  // wide the spacing is.
+  {
+    id: '3.2-pass-rtm-sixteen-minute-sampling',
+    title: 'Readings 16 minutes apart — inside the gap check’s leeway, and silent',
+    requirements: [],
+    direction: 'pass',
+    posts: [{ transforms: [longSamplePeriod(4, 16)], expectedStatus: 200 }],
+    expectedFindings: [
+      { requirement: '3.2', severity: 'pass' },
+      { requirement: '3.4', severity: 'pass' },
+    ],
+    absentFindings: [{ requirement: 'adv.sample_gap' }],
   },
 
   // The duplicate advisory, on the DEFAULT (rtm) baseline: its report carries a
@@ -595,6 +680,27 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     expectedFindings: [{ requirement: 'adv.unexplained_null_temp', severity: 'info' }],
   },
 
+  // THE SILENCE HALF, on the same branch and the same baseline (496w). The check
+  // asks only whether a code is PRESENT and non-blank, and the rtm fixture sends
+  // `EERR: "none"` — a non-empty string, and therefore an explanation. Reading
+  // that value as a placeholder would be a judgement the receiving side cannot
+  // make, which is why the fire case above has to clear the code and why this one
+  // proves the quiet branch by leaving it alone.
+  //
+  // The contract is what this case grades. The default baseline is the readiness
+  // demo, so the shadow run fails it on the five logger-identity properties
+  // whatever the temperature says; that is `readiness.rtm_identity`'s subject and
+  // is deliberately not named here.
+  {
+    id: '3.2-pass-rtm-null-tvc-with-error-code',
+    title: 'A null vaccine compartment temperature beside an error code draws no advisory',
+    requirements: [],
+    direction: 'pass',
+    posts: [{ transforms: [nullTemperatureWithErrorCode()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
+    absentFindings: [{ requirement: 'adv.unexplained_null_temp' }],
+  },
+
   // An identifier that is present, non-blank, and too short to address a national
   // fleet (krh). It takes the DEFAULT (rtm) baseline: AMID is an rtmd-report
   // property, and the baseline's other identifiers are all long enough that this
@@ -649,6 +755,28 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     ],
   },
 
+  // THE SILENCE HALF (496w), one field apart from the case above: the check reads
+  // LERR and EERR last and stays quiet when either carries a non-empty string,
+  // because a null beside a populated code is an EXPLAINED null — the device said
+  // why the accumulator is missing (src/ingest/stages/semantic/null-accumulator.ts).
+  // SVA 0 and CMPR null are still in place, so the payload is the correlated form
+  // the check exists for and the code is the only thing keeping it quiet.
+  //
+  // The DS01.3 shadow run agrees here, which it does not on the fire case: the
+  // Annex 4 draft requires exactly this non-null LERR beside a null CMPR, so the
+  // same payload that silences the advisory also satisfies the draft (measured).
+  // The case names no ds013 finding: what it is about is the advisory's silence.
+  {
+    id: '3.2-pass-ems-null-runtime-explained',
+    title: 'A null compressor runtime explained by a logger error code draws no advisory',
+    requirements: [],
+    direction: 'pass',
+    baseline: emsBaseline,
+    posts: [{ transforms: [explainedNullRuntimeDuringOutage()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
+    absentFindings: [{ requirement: 'adv.null_accumulator' }],
+  },
+
   // A column of nulls rather than an intermittent one (pwd) — the other side of
   // the case above, and the last of the twelve registered advisories to get a
   // fire case (eyok). It declares `baseline: emsBaseline` because HOLD and SVA
@@ -694,5 +822,26 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
       { requirement: 'adv.null_padding', severity: 'info' },
       { requirement: '3.2', severity: 'pass' },
     ],
+  },
+
+  // THE SILENCE HALF of the padding check, and the floor itself (496w). A
+  // property counts as padded only once at least MIN_RECORDS — 12,
+  // src/ingest/stages/semantic/null-padding.ts — records carried it and it was
+  // null in every one, so eleven records of the same null column say nothing.
+  // One record under the floor is the sharpest place to measure it: a case built
+  // on a much shorter series would leave the boundary itself unexercised.
+  //
+  // Everything else is the fire case's payload, including the HAMB/HOLD pair,
+  // which both lineages type ["number","null"] — so the shadow run has nothing to
+  // add and the case names no ds013 finding.
+  {
+    id: '3.2-pass-ems-eleven-record-null-column',
+    title: 'A null column across eleven records — one short of the padding floor, and silent',
+    requirements: [],
+    direction: 'pass',
+    baseline: emsBaseline,
+    posts: [{ transforms: [nullPaddedSeries(11)], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
+    absentFindings: [{ requirement: 'adv.null_padding' }],
   },
 ];

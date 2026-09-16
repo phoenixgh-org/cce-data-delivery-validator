@@ -14,6 +14,13 @@
  * count past a floor, a column of nulls, an explanation beside the null it
  * explains — and every one of those shapes is schema-valid whether the mutator
  * gets it right or not.
+ *
+ * The SILENCE mutators (496w) are the sharpest instance of that gap. A case built
+ * on one asserts that an advisory said nothing, and a mutator that quietly stopped
+ * putting the check's trigger in place would satisfy the case by never coming near
+ * it — green live, green in CI, and proving nothing. These tests pin the trigger:
+ * the compressor runtime that a mains record would be graded on, the null beside
+ * the code that explains it.
  */
 
 import { test } from 'node:test';
@@ -23,7 +30,14 @@ import { parseAbst } from '../../ingest/stages/semantic/interval.js';
 import { MIN_RECORDS } from '../../ingest/stages/semantic/null-padding.js';
 import { DEFAULT_BASELINE, emsBaseline } from '../baseline.js';
 import type { TransmissionPayload } from '../baseline.js';
-import { explainedNullTemperature, nullPaddedSeries, padToWireCap } from './payload.js';
+import {
+  explainedNullRuntimeDuringOutage,
+  explainedNullTemperature,
+  nullPaddedSeries,
+  nullTemperatureWithErrorCode,
+  padToWireCap,
+  solarPoweredRecords,
+} from './payload.js';
 
 const WIRE_CAP_BYTES = 1_048_576;
 
@@ -129,4 +143,56 @@ test('explainedNullTemperature nulls TVC and names a logger error beside it', ()
   assert.equal(records.length, 3);
   assert.equal(records[1]!.TVC, 4.9);
   assert.equal(records[1]!.LERR, null);
+});
+
+// ── the silence mutators (496w) ─────────────────────────────────────────────
+
+test('solarPoweredRecords converts EVERY record and keeps the full-period runtime', () => {
+  const records = recordsOf(solarPoweredRecords().apply(ems()));
+  for (const [i, record] of records.entries()) {
+    // The mains/solar oneOf is per record: an SVA left anywhere would put that
+    // record back in the check's scope and the case would be graded after all.
+    assert.ok(!('SVA' in record), `record ${i} still carries SVA`);
+    assert.equal(record.DCSV, 12.6);
+    assert.equal(record.DCCD, 4.2);
+  }
+  // The trigger: on a mains record 900 s exceeds any supply a 15-minute period
+  // can report, so the silence is the solar branch and not a mild number.
+  assert.equal(records[0]!.CMPR, 900);
+});
+
+test('solarPoweredRecords refuses a report that is already solar', () => {
+  const solar = solarPoweredRecords().apply(ems());
+  assert.throws(() => solarPoweredRecords().apply(solar), /carries no SVA/);
+});
+
+test('nullTemperatureWithErrorCode nulls TVC and leaves the explaining EERR alone', () => {
+  const before = recordsOf(DEFAULT_BASELINE({ caseId: 'transforms.test', index: 0 }))[0]!;
+  const records = recordsOf(
+    nullTemperatureWithErrorCode().apply(DEFAULT_BASELINE({ caseId: 'transforms.test', index: 1 })),
+  );
+  assert.equal(records[0]!.TVC, null);
+  // The baseline's own code, untouched — a non-empty string is what the check
+  // reads as an explanation, and clearing it is the FIRE case's job.
+  assert.equal(records[0]!.EERR, before.EERR);
+  assert.equal(records[0]!.EERR, 'none');
+});
+
+test('nullTemperatureWithErrorCode refuses a record with no code to explain the null', () => {
+  const payload = DEFAULT_BASELINE({ caseId: 'transforms.test', index: 2 });
+  recordsOf(payload)[0]!.EERR = null;
+  assert.throws(() => nullTemperatureWithErrorCode().apply(payload), /no non-blank EERR/);
+});
+
+test('explainedNullRuntimeDuringOutage keeps the outage and adds the code that explains it', () => {
+  const records = recordsOf(explainedNullRuntimeDuringOutage().apply(ems()));
+  // SVA 0 + CMPR null is the correlated form the check exists for; the code is
+  // the only thing keeping it quiet, so all three have to be present.
+  assert.equal(records[1]!.SVA, 0);
+  assert.equal(records[1]!.CMPR, null);
+  assert.equal(records[1]!.LERR, 'E7');
+  // One record only: the others keep the numeric runtime, so the null is the
+  // intermittent one rather than a padded column.
+  assert.equal(records[0]!.CMPR, 320);
+  assert.equal(records[2]!.CMPR, 300);
 });

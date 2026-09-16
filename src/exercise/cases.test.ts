@@ -375,6 +375,60 @@ test('the contract and shadow requirement vocabularies cannot be crossed', () =>
   }
 });
 
+test('an absent finding names the same vocabulary an expected finding does (496w)', () => {
+  // `absentFindings` is the COMPLEMENT of `expectedFindings` (../case.ts), so it
+  // inherits that field's two-vocabulary rule verbatim: a contract-profile entry
+  // names a COMPLIANCE_MATRIX row or an `adv.*` id, a shadow-profile one names a
+  // DS01.3 5.x.x clause. The failure this catches is sharper than on the
+  // expectation side, because a mistyped absence is SILENTLY SATISFIED — no
+  // finding will ever carry `adv.null_padded`, so the case goes green while
+  // asserting nothing at all. An expectation that names a non-existent id at
+  // least fails loudly.
+  const SHADOW_CLAUSE = /^5\.\d+\.\d+$/;
+  for (const kase of EXERCISE_CASES) {
+    for (const absent of kase.absentFindings ?? []) {
+      const profile = absent.profile ?? CONTRACT_PROFILE;
+      if (profile === CONTRACT_PROFILE) {
+        assert.ok(
+          MATRIX_IDS.has(absent.requirement) || isAdvisoryId(absent.requirement),
+          `${kase.id}: a contract absence must name a COMPLIANCE_MATRIX row or an adv.* id, ` +
+            `not ${absent.requirement}`,
+        );
+      } else {
+        assert.match(
+          absent.requirement,
+          SHADOW_CLAUSE,
+          `${kase.id}: a ${profile} absence must name a DS01.3 clause (5.x.x), not ` +
+            `${absent.requirement}`,
+        );
+      }
+    }
+  }
+});
+
+test('a case cannot both expect and forbid the same (requirement, profile)', () => {
+  // The two lists are judged independently — presence for one, silence for the
+  // other (../runner/assertions.ts) — so a case naming an id in both is a
+  // contradiction the runner cannot resolve: the expectation can only be met by a
+  // finding the absence then reports as unexpected. Severity is deliberately NOT
+  // part of the comparison, because it is not part of the absence key: "silent"
+  // means no finding of that id under that lineage at any severity, so expecting
+  // an `info` while forbidding the id is the same contradiction spelled longer.
+  for (const kase of EXERCISE_CASES) {
+    const forbidden = new Set(
+      (kase.absentFindings ?? []).map((f) => `${f.requirement}/${f.profile ?? CONTRACT_PROFILE}`),
+    );
+    for (const want of kase.expectedFindings) {
+      const key = `${want.requirement}/${want.profile ?? CONTRACT_PROFILE}`;
+      assert.ok(
+        !forbidden.has(key),
+        `${kase.id}: expects ${want.requirement} [${want.profile ?? CONTRACT_PROFILE}] and ` +
+          `declares it absent — the case cannot pass either way`,
+      );
+    }
+  }
+});
+
 test('a case naming shadowClauses really asserts something about the shadow run', () => {
   // `shadowClauses` is informational — no consumer joins on it (../case.ts) —
   // which is exactly why it can rot without anything noticing. A case that

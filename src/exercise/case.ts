@@ -92,6 +92,22 @@ export interface ExpectedFinding {
 }
 
 /**
+ * One finding the exercised session must NOT show (496w) — see
+ * {@link ExerciseCase.absentFindings} for the rule and why it does not weaken
+ * the presence contract.
+ *
+ * Matched on `(requirement, profile)` and nothing else: an absence is a
+ * statement that a check stayed QUIET, and a check that spoke at an unexpected
+ * severity still spoke.
+ */
+export interface AbsentFinding {
+  /** COMPLIANCE_MATRIX requirement id, an `adv.*` advisory id, or a DS01.3 clause. */
+  readonly requirement: string;
+  /** Which lineage must stay silent. Absent means {@link CONTRACT_PROFILE}. */
+  readonly profile?: Profile;
+}
+
+/**
  * Where a fail-direction case's defect is injected. Declared rather than
  * derived: a transform is not intrinsically a defect (adding a custom data
  * object is a §3.1 FAIL undeclared and a §3.1 PASS declared), and a sequence
@@ -282,6 +298,35 @@ export interface ExerciseCase {
    * graded by status alone and writes no finding to pool.
    */
   readonly expectedFindings: readonly ExpectedFinding[];
+  /**
+   * Findings that must NOT appear in this case's own pool (496w) — the
+   * COMPLEMENT of {@link expectedFindings}, and not a step back towards
+   * exhaustive matching.
+   *
+   * The presence rule above is kept exactly as bd 27m settled it: a pooled
+   * finding the case never named still does not fail it. What this adds is the
+   * ability to name ONE finding, deliberately, and say the case's payload must
+   * not draw it — which is how a silence rule documented in a check's header
+   * ("solar records are out of scope", "at least twelve records before a column
+   * counts as padded") becomes a fact measured against the live instance instead
+   * of an omission nobody can see. Exhaustiveness would still be brittle against
+   * grader evolution; a named absence is brittle only against the check whose
+   * silence the case is about, which is exactly what it means to assert.
+   *
+   * SEVERITY IS NOT PART OF THE KEY. An entry names `(requirement, profile)`
+   * only, and `profile` defaults to {@link CONTRACT_PROFILE} exactly as it does
+   * on an expectation. Silent means silent: no finding carrying that id under
+   * that lineage, at any severity. An absence keyed on severity would be
+   * satisfied by the same check speaking in a different voice, which is not what
+   * a silence rule says.
+   *
+   * SCOPED TO THE CASE, like every other expectation. The pool is the findings
+   * of the transmissions this case's own POSTs created (../runner/assertions.ts),
+   * so a neighbouring case that legitimately fires the advisory cannot poison it.
+   * This is NOT a run-wide "no stray findings anywhere" check, and it is not
+   * meant to become one.
+   */
+  readonly absentFindings?: readonly AbsentFinding[];
 }
 
 /** A POST resolved into the exact payload + wire request to send. */

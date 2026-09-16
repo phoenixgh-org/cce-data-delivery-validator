@@ -9,7 +9,9 @@
  *
  * The contract under test is `ExerciseCase.expectedFindings` (bd 27m):
  * PRESENCE-based, pooled per case, matched on `(requirement, severity)` plus the
- * `profile` and `outdated` qualifiers where an expectation names them.
+ * `profile` and `outdated` qualifiers where an expectation names them — and, since
+ * 496w, its complement `ExerciseCase.absentFindings`: the findings a case declares
+ * its own pool must NOT carry, matched on `(requirement, profile)` alone.
  */
 
 import { test } from 'node:test';
@@ -21,6 +23,7 @@ import {
   missingFindings,
   poolCaseFindings,
   tally,
+  unexpectedFindings,
   type FindingsByTransmission,
   type ObservedFinding,
   type PostOutcome,
@@ -206,6 +209,126 @@ test('an empty expectation list passes whatever the pool holds', () => {
     findings({}),
   );
   assert.equal(verdict.ok, true);
+});
+
+// ── declared silence (496w) ─────────────────────────────────────────────────
+//
+// The complement of the presence rule, and deliberately NOT a step towards
+// exhaustive matching: only the ids a case NAMES are judged, so a pooled finding
+// nothing names is ignored exactly as it always was. Severity is not part of the
+// key — a check that spoke at an unexpected severity still spoke.
+
+test('a pooled finding a case declared absent fails it and names the finding', () => {
+  const verdict = judgeCase(
+    singlePostCase({ absentFindings: [{ requirement: 'adv.null_padding' }] }),
+    [post()],
+    findings({
+      'tx-1': [
+        { requirement: '3.2', severity: 'pass', outdated: false },
+        { requirement: 'adv.null_padding', severity: 'info', outdated: false },
+      ],
+    }),
+  );
+  assert.equal(verdict.ok, false);
+  assert.deepEqual(verdict.unexpected, [
+    { requirement: 'adv.null_padding', severity: 'info', outdated: false },
+  ]);
+  assert.equal(verdict.failures.length, 1);
+  assert.match(
+    verdict.failures[0]!,
+    /unexpected finding §adv\.null_padding info \[2025\] — case declared it absent/,
+  );
+});
+
+test('a case whose absent finding really is absent passes', () => {
+  const verdict = judgeCase(
+    singlePostCase({ absentFindings: [{ requirement: 'adv.null_padding' }] }),
+    [post()],
+    findings({
+      'tx-1': [
+        { requirement: '3.2', severity: 'pass', outdated: false },
+        // A DIFFERENT advisory the case never named: presence-based grading is
+        // untouched, so this must not fail anything.
+        { requirement: 'adv.date_format', severity: 'info', outdated: false },
+      ],
+    }),
+  );
+  assert.equal(verdict.ok, true);
+  assert.deepEqual(verdict.unexpected, []);
+});
+
+test('severity is not part of the absence key — silent means silent', () => {
+  assert.deepEqual(
+    unexpectedFindings(
+      [{ requirement: 'adv.sample_gap' }],
+      [{ requirement: 'adv.sample_gap', severity: 'fail', outdated: false }],
+    ),
+    [{ requirement: 'adv.sample_gap', severity: 'fail', outdated: false }],
+  );
+});
+
+test('a ds013 finding does not violate a contract absence, nor the other way round', () => {
+  // The profile is part of the key for the same reason it is part of the
+  // expectation key (by1c.15): one transmission carries findings of both
+  // lineages, and a case asserting that the CONTRACT stayed quiet says nothing
+  // about what an unpublished draft would have recorded.
+  const shadowFinding = {
+    requirement: '5.3.2',
+    severity: 'fail',
+    profile: 'ds013',
+    outdated: false,
+  } as const;
+  const contractFinding = { requirement: '5.3.2', severity: 'fail', outdated: false } as const;
+
+  assert.deepEqual(unexpectedFindings([{ requirement: '5.3.2' }], [shadowFinding]), []);
+  assert.deepEqual(
+    unexpectedFindings([{ requirement: '5.3.2', profile: 'ds013' }], [contractFinding]),
+    [],
+  );
+  // Same lineage on both sides: the violation stands.
+  assert.deepEqual(
+    unexpectedFindings([{ requirement: '5.3.2', profile: 'ds013' }], [shadowFinding]),
+    [shadowFinding],
+  );
+});
+
+test('a case that declares no absences grades exactly as it did before (496w)', () => {
+  // The whole table predates the field, so the undefined case is the one that
+  // must not move: every pooled finding stays ignorable.
+  const verdict = judgeCase(
+    singlePostCase(),
+    [post()],
+    findings({
+      'tx-1': [
+        { requirement: '3.2', severity: 'pass', outdated: false },
+        { requirement: 'adv.null_padding', severity: 'info', outdated: false },
+        { requirement: '5.3.2', severity: 'fail', profile: 'ds013', outdated: false },
+      ],
+    }),
+  );
+  assert.equal(verdict.ok, true);
+  assert.deepEqual(verdict.failures, []);
+  assert.deepEqual(verdict.unexpected, []);
+  assert.deepEqual(unexpectedFindings([], verdict.pooled), []);
+});
+
+test('every violating occurrence is reported, not one per absence', () => {
+  const verdict = judgeCase(
+    singlePostCase({
+      posts: [{ expectedStatus: 200 }, { expectedStatus: 200 }],
+      absentFindings: [{ requirement: 'adv.sample_gap' }],
+    }),
+    [post(), post({ label: '#1', transmissionId: 'tx-2' })],
+    findings({
+      'tx-1': [
+        { requirement: '3.2', severity: 'pass', outdated: false },
+        { requirement: 'adv.sample_gap', severity: 'info', outdated: false },
+      ],
+      'tx-2': [{ requirement: 'adv.sample_gap', severity: 'info', outdated: false }],
+    }),
+  );
+  assert.equal(verdict.unexpected.length, 2, 'both POSTs drew the finding the case forbade');
+  assert.equal(verdict.failures.length, 2);
 });
 
 // ── verdicts ────────────────────────────────────────────────────────────────

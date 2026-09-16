@@ -9,7 +9,7 @@
  * — which is what lets the grading be tested against synthetic inputs with no
  * server present.
  *
- * TWO ASSERTIONS PER CASE:
+ * THREE ASSERTIONS PER CASE:
  *
  *   1. STATUS, per POST and in order — an exact match against
  *      `ExercisePost.expectedStatus` (DESIGN.md §6).
@@ -19,6 +19,11 @@
  *      `profile` and `outdated` qualifiers where the case names them — must
  *      appear at least once among the findings attributable to the case's POSTs,
  *      and a pooled finding the case never named does NOT fail it.
+ *   3. SILENCE, for the findings a case NAMES as absent (496w) — see
+ *      {@link ExerciseCase.absentFindings}. A pooled finding matching an absent
+ *      entry on `(requirement, profile)` — severity is not part of that key —
+ *      fails the case. This is the complement of rule 2, not a retreat from it:
+ *      only named ids are judged, so an unnamed one is still ignored.
  *
  * ATTRIBUTION is by transmission id: the ingest response names the row it wrote,
  * and the dashboard API reports findings against that same id, so a case's pool
@@ -29,7 +34,12 @@
 
 import type { Severity } from '../../db/repository.js';
 import { CONTRACT_PROFILE, type Profile } from '../../schema-registry.js';
-import { isAcceptedStatus, type ExerciseCase, type ExpectedFinding } from '../case.js';
+import {
+  isAcceptedStatus,
+  type AbsentFinding,
+  type ExerciseCase,
+  type ExpectedFinding,
+} from '../case.js';
 
 /** A finding as the dashboard API reports it, reduced to the graded facts. */
 export interface ObservedFinding {
@@ -61,7 +71,7 @@ export interface ObservedFinding {
  * is the contract is a single flip point (src/schema-registry.ts), and a literal
  * here would silently start defaulting to the shadow lineage on the day it moves.
  */
-export function profileOf(finding: ObservedFinding | ExpectedFinding): Profile {
+export function profileOf(finding: ObservedFinding | ExpectedFinding | AbsentFinding): Profile {
   return finding.profile ?? CONTRACT_PROFILE;
 }
 
@@ -94,6 +104,12 @@ export interface CaseVerdict {
   readonly pooled: readonly ObservedFinding[];
   /** Expected findings absent from {@link pooled} — the presence-check misses. */
   readonly missing: readonly ExpectedFinding[];
+  /**
+   * Pooled findings the case declared ABSENT (496w) — the silence-check
+   * violations, in pool order. Empty for a case that declares no absences, which
+   * is every case written before `absentFindings` existed.
+   */
+  readonly unexpected: readonly ObservedFinding[];
 }
 
 /**
@@ -178,6 +194,30 @@ export function missingFindings(
 }
 
 /**
+ * The pooled findings a case declared ABSENT, in pool order (496w) — the mirror
+ * of {@link missingFindings}, and the implementation of
+ * {@link ExerciseCase.absentFindings}.
+ *
+ * Matched on `(requirement, profile)` ONLY: severity is deliberately not part of
+ * the key, because an absence says a check stayed quiet and a check that spoke
+ * at another severity still spoke. Everything else about the pool is unchanged —
+ * a finding no absence names is ignored exactly as before, so the presence rule
+ * (bd 27m) is untouched.
+ *
+ * Every violating occurrence is returned, not one per absence: the pool is a
+ * case's own transmissions, so two occurrences are two records the supplier can
+ * be pointed at, and de-duplicating them would hide the second.
+ */
+export function unexpectedFindings(
+  absent: readonly AbsentFinding[],
+  pooled: readonly ObservedFinding[],
+): ObservedFinding[] {
+  if (absent.length === 0) return [];
+  const forbidden = new Set(absent.map((want) => `${want.requirement}/${profileOf(want)}`));
+  return pooled.filter((found) => forbidden.has(`${found.requirement}/${profileOf(found)}`));
+}
+
+/**
  * Grade one case from what its POSTs returned plus the session's findings.
  *
  * A count mismatch between the case's declared POSTs and the outcomes handed in
@@ -216,6 +256,17 @@ export function judgeCase(
     );
   }
 
+  // The silence half (496w). A case failing only here is an ordinary case
+  // failure — no new summary category, and the line says which finding the case
+  // declared absent so the reader is not left comparing two lists.
+  const unexpected = unexpectedFindings(kase.absentFindings ?? [], pooled);
+  for (const found of unexpected) {
+    failures.push(
+      `unexpected finding §${found.requirement} ${found.severity} [${profileOf(found)}] — ` +
+        `case declared it absent`,
+    );
+  }
+
   return {
     caseId: kase.id,
     title: kase.title,
@@ -224,6 +275,7 @@ export function judgeCase(
     posts: outcomes,
     pooled,
     missing,
+    unexpected,
   };
 }
 

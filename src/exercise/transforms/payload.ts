@@ -522,6 +522,17 @@ export function irregularCadence(
 // `targets` stays EMPTY on these. It lists COMPLIANCE_MATRIX ids and an advisory
 // id is not one — the coverage join reads §7 rows only. A case names the advisory
 // in its `expectedFindings` instead (../cases/payload.ts).
+//
+// SOME OF THEM PROVOKE SILENCE INSTEAD (496w). Each advisory's header documents a
+// population it deliberately says nothing about — solar records for the
+// compressor/supply arithmetic, an explained null, a series under the padding
+// floor — and since a case can now declare `absentFindings`, those rules are
+// exercisable too. A silence mutator sits BESIDE the firing one it is the
+// counterpart of, and puts the check's trigger in place while withholding the one
+// thing the check reads last, so the silence is the rule rather than a payload
+// that was never close to firing: {@link solarPoweredRecords} carries a
+// full-period CMPR, {@link explainedNullRuntimeDuringOutage} keeps SVA 0 beside
+// the null, {@link nullTemperatureWithErrorCode} sends the null reading.
 
 /**
  * Write a production date in a form other than ISO-8601's `YYYY-MM-DD` — e.g.
@@ -616,6 +627,77 @@ export function setCompressorAboveSupply(
       }
       record.CMPR = runtimeSeconds;
       record.SVA = supplySeconds;
+      return payload;
+    },
+  });
+}
+
+/**
+ * Convert a mains EMS report to a SOLAR one — drop `SVA` from every record and
+ * give each the DC pair (`DCSV` + `DCCD`) instead — and put a full-period
+ * compressor runtime on one of them, which is the payload
+ * `adv.compressor_exceeds_supply` must stay SILENT on (496w).
+ *
+ * Schema-VALID by design, and the validity is the whole case. `ems-record`'s
+ * `allOf[0]` is an exclusive `oneOf` between a mains branch (`required: [SVA]`,
+ * `not: { required: [DCSV, DCCD] }`) and a solar one (`required: [DCSV, DCCD]`,
+ * `not: { required: [SVA] }`), so a record carrying the DC pair and no `SVA`
+ * matches the solar branch exactly once. `DCSV` is bounded 0..999.9 and `DCCD`
+ * 0..99.9 in the shared `$defs`, and the defaults sit inside both. The Annex 4
+ * draft carries the same partition unchanged. ../cases.test.ts runs the
+ * materialized payload through the real validator, so this is checked rather
+ * than asserted.
+ *
+ * THE CONVERSION IS EVERY RECORD, not one. The `oneOf` is per record, so a
+ * report with one solar record among mains ones is still a conformant mixture
+ * and the check would simply grade the records that kept their `SVA` — which is
+ * not the silence the case is about.
+ *
+ * `CMPR` AT 900 IS THE CASE, not scaffolding. The check compares a compressor
+ * runtime against its own record's `SVA`, and 900 s is the schema's own maximum
+ * for the object — longer than any supply window a 15-minute period can hold —
+ * so on a mains record it would exceed whatever supply was reported. It draws
+ * nothing here because a solar record has no `SVA` to compare it against: `DCSV`
+ * is a VOLTAGE and nothing on the branch substitutes for the supply duration
+ * (src/ingest/stages/semantic/compressor-supply.ts). Without the 900 the case
+ * would prove only that a conformant payload is quiet.
+ *
+ * Contrast {@link addSolarPowerToMainsRecord}, which ADDS the DC pair while
+ * leaving `SVA` in place and is therefore a §3.2 violation: this one removes it,
+ * which is what makes the record a conformant solar one.
+ *
+ * EMS-only by construction: the mains/solar partition lives on `ems-record`, so
+ * a case using this declares `emsBaseline`. It throws on a report whose records
+ * carry no `SVA`, since converting an already-solar report would silently make
+ * the case prove nothing.
+ */
+export function solarPoweredRecords(
+  reportIndex = 0,
+  values: { DCSV: number; DCCD: number } = { DCSV: 12.6, DCCD: 4.2 },
+  runtimeSeconds = 900,
+  runtimeRecordIndex = 0,
+): PayloadTransform {
+  const name = `solarPoweredRecords(${reportIndex}: DCSV=${values.DCSV}, DCCD=${values.DCCD}, records/${runtimeRecordIndex} CMPR=${runtimeSeconds})`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const { records } = reportOf(payload, reportIndex, name);
+      for (const [index, record] of records.entries()) {
+        if (!('SVA' in record)) {
+          throw new Error(
+            `${name}: ${recordsPointer(reportIndex)}/${index} carries no SVA, so it is already ` +
+              `a solar record — this mutator wants a mains baseline`,
+          );
+        }
+        delete record.SVA;
+        record.DCSV = values.DCSV;
+        record.DCCD = values.DCCD;
+      }
+      const record = records[runtimeRecordIndex];
+      if (record === undefined) {
+        throw new Error(`${name}: ${recordsPointer(reportIndex)}/${runtimeRecordIndex} is missing`);
+      }
+      record.CMPR = runtimeSeconds;
       return payload;
     },
   });
@@ -835,6 +917,57 @@ export function unexplainedNullTemperature(recordIndex = 0, reportIndex = 0): Pa
 }
 
 /**
+ * Null the vaccine compartment temperature on one RTMD record and LEAVE the
+ * baseline's `EERR` in place — the payload `adv.unexplained_null_temp` must stay
+ * SILENT on (496w).
+ *
+ * The SIBLING of {@link unexplainedNullTemperature}, differing in the one
+ * mutation that transform makes second: the rtm baseline record sends
+ * `EERR: "none"`, a non-empty string the check reads as an explanation and stays
+ * quiet for. The check does not interpret the vocabulary — it asks only whether
+ * a code is present and non-blank, and deciding that `"none"` is a placeholder
+ * rather than a real code would be a judgement the receiving side cannot make
+ * (src/ingest/stages/semantic/unexplained-null-temp.ts). So this transform nulls
+ * TVC and nothing else, and the silence it earns is the check's documented rule
+ * rather than an accident of the fixture.
+ *
+ * Schema-VALID by design, and that is the point: `rtmd-record` types TVC
+ * `["number","null"]` and carries NO `allOf` tying it to anything, so a null
+ * reading satisfies the branch on its own — which is exactly why the advisory
+ * exists on this branch and the schema cannot be asked to do its job.
+ * ../cases.test.ts runs the materialized payload through the real validator, so
+ * this declaration is checked rather than asserted.
+ *
+ * RTM-only by construction, exactly as its sibling is: on `ems-record` a null
+ * TVC needs a `minLength`-1 `LERR` beside it or the record is a §3.2 rejection
+ * ({@link explainedNullTemperature} is the EMS form). It throws when the record
+ * carries no non-blank `EERR`, since without one the payload would fire the
+ * advisory and the case would assert the opposite of what it says.
+ */
+export function nullTemperatureWithErrorCode(recordIndex = 0, reportIndex = 0): PayloadTransform {
+  const name = `nullTemperatureWithErrorCode(${reportIndex}: records/${recordIndex} TVC=null, EERR kept)`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      const { records } = reportOf(payload, reportIndex, name);
+      const record = records[recordIndex];
+      if (record === undefined) {
+        throw new Error(`${name}: ${recordsPointer(reportIndex)}/${recordIndex} is missing`);
+      }
+      const code = record.EERR;
+      if (typeof code !== 'string' || code.trim() === '') {
+        throw new Error(
+          `${name}: the record carries no non-blank EERR, so a null TVC would be an ` +
+            `UNEXPLAINED one — this mutator wants a baseline that already sends a code`,
+        );
+      }
+      record.TVC = null;
+      return payload;
+    },
+  });
+}
+
+/**
  * Take the AC supply to zero on one EMS record and null that record's compressor
  * runtime — which is what `adv.null_accumulator` observes (agj.9).
  *
@@ -867,6 +1000,51 @@ export function nullRuntimeDuringOutage(recordIndex = 1, reportIndex = 0): Paylo
     apply: (payload) => {
       setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/SVA`, 0);
       setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/CMPR`, null);
+      return payload;
+    },
+  });
+}
+
+/**
+ * Take the AC supply to zero on one EMS record, null that record's compressor
+ * runtime, and put a logger error code beside it — the payload
+ * `adv.null_accumulator` must stay SILENT on (496w).
+ *
+ * The SIBLING of {@link nullRuntimeDuringOutage}, differing in the one field the
+ * check reads last: it stays quiet when `LERR` or `EERR` carries a non-empty
+ * string, because a null beside a populated code is an EXPLAINED null — the
+ * device said why the accumulator is missing, which is the behaviour the
+ * supplier is entitled to (src/ingest/stages/semantic/null-accumulator.ts). With
+ * `SVA: 0` and `CMPR: null` the payload is otherwise the correlated form that
+ * check exists for, so the code is the only thing standing between the case and
+ * an advisory.
+ *
+ * Schema-VALID by design, and under BOTH lineages (measured). `ems-record` types
+ * `SVA` and `CMPR` alike `["number","null"]`, and the record-level `oneOf` it
+ * takes part in is the TVC/LERR one: the NORMAL branch requires a numeric `TVC`
+ * and says nothing about `LERR`, so a populated `LERR` beside the baseline's
+ * numeric `TVC` still matches exactly one branch. The Annex 4 draft goes
+ * further and REQUIRES a non-null `LERR` beside a null `CMPR`, so this payload —
+ * unlike {@link nullRuntimeDuringOutage}'s — satisfies the draft as well, and
+ * the shadow run has nothing to add. ../cases.test.ts runs the materialized
+ * payload through the real validator, so the contract half is checked rather
+ * than asserted.
+ *
+ * EMS-only by construction, exactly as its sibling is: `SVA` lives on the mains
+ * branch of `ems-record.allOf[0]`, so a case using this declares `emsBaseline`.
+ */
+export function explainedNullRuntimeDuringOutage(
+  recordIndex = 1,
+  reportIndex = 0,
+  code = 'E7',
+): PayloadTransform {
+  const name = `explainedNullRuntimeDuringOutage(${reportIndex}: records/${recordIndex} SVA=0, CMPR=null, LERR="${code}")`;
+  return payloadTransform({
+    name,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/SVA`, 0);
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/CMPR`, null);
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/LERR`, code);
       return payload;
     },
   });
