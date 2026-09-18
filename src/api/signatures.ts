@@ -37,8 +37,15 @@
  * feeds a verdict surface (the §7 matrix rows via {@link signaturesForReq}, the
  * `distinctIssues` headline via {@link contractIssueSignatures}) then filters to
  * {@link CONTRACT_PROFILE}: a shadow result must never grade a supplier.
+ *
+ * THE LENS (tfnv.4) does not change any of that. It changes which package the
+ * reader is looking at, so {@link issueSignaturesUnderLens} answers "what counts
+ * here?" for the selected package and {@link withRequirementUnderLens} says which
+ * of its rows each signature belongs to. Both collapse to the contract behaviour
+ * when the contract package is the one selected, which is the default.
  */
 
+import { clauseUnderLens } from './lens.js';
 import { ADVISORY_PREFIX, isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
 import { CONTRACT_PROFILE } from '../schema-registry.js';
 import type { Profile } from '../schema-registry.js';
@@ -139,6 +146,21 @@ export interface Signature {
   last: string;
   /** Representative JSON Pointer for the issue (may be null). */
   examplePointer: string | null;
+  /**
+   * The row this signature belongs to under the SELECTED grading lens (tfnv.4).
+   *
+   * ABSENT under the contract lens, where `req` already names the row — the
+   * default response stays byte-identical. Under the DS01.3 lens it is the clause
+   * the signature is counted on: its own `req` for a draft-profile signature, the
+   * forward-mapped clause for a contract one. Also absent when a contract
+   * signature folds onto no clause at all (§3.2, which the draft re-runs), which
+   * is what tells a reader the signature has no row on the page in front of them.
+   *
+   * It exists so the browser can group signatures under the lens without
+   * mirroring the clause map, the re-run set and the §3.1 split — three rules that
+   * would then have two homes.
+   */
+  requirementUnderLens?: string;
 }
 
 /**
@@ -421,6 +443,73 @@ export function issueSignatures(sigs: readonly Signature[]): Signature[] {
  */
 export function contractIssueSignatures(sigs: readonly Signature[]): Signature[] {
   return issueSignatures(sigs).filter((s) => s.profile === CONTRACT_PROFILE);
+}
+
+/**
+ * The check code a `kind: 'check'` signature was keyed on, or null when it has
+ * none — the inverse of {@link sigKey}'s check branch (`profile|req|code`).
+ *
+ * Read back off the key rather than carried on the Signature, because the wire
+ * shape is pinned: the default response body is asserted byte-for-byte, so a new
+ * field on every signature is not free. The parse is safe for the reason the key
+ * format is: a profile id and a requirement id contain no `|`, and neither does a
+ * `tx.*` code — the LAST-RESORT key (`profile|req|detail`) is the only other
+ * three-part form, and a detail string is not a code, so the worst case is a
+ * value no code lookup matches.
+ */
+function checkCodeOf(sig: Signature): string | null {
+  if (sig.kind !== 'check') return null;
+  const parts = sig.key.split('|');
+  return parts.length === 3 ? (parts[2] ?? null) : null;
+}
+
+/**
+ * The row each signature belongs to under the selected lens, written onto the set
+ * as {@link Signature.requirementUnderLens}.
+ *
+ * Returns the input UNTOUCHED under the contract lens — same objects, same key
+ * order — so the default response is unchanged. Under another lens every
+ * non-advisory signature gains the field, except one that folds onto no row of
+ * that package (see {@link Signature.requirementUnderLens}).
+ */
+export function withRequirementUnderLens(
+  sigs: readonly Signature[],
+  lens: Profile,
+  contract: Profile = CONTRACT_PROFILE,
+): Signature[] {
+  if (lens === contract) return [...sigs];
+  return sigs.map((sig) => {
+    const row = rowUnderLens(sig, lens, contract);
+    return row === null ? { ...sig } : { ...sig, requirementUnderLens: row };
+  });
+}
+
+/**
+ * The defect signatures that COUNT under the selected lens — what
+ * `scoped.distinctIssues` is the length of.
+ *
+ * Under the contract lens this is {@link contractIssueSignatures}, unchanged.
+ * Under the DS01.3 lens it is the union of the draft's own defects and the
+ * contract defects the clause map carries onto one of its clauses: both describe
+ * a duty the selected package imposes, and counting only one half would either
+ * hide the transport failures the draft inherits or count a §3.2 result the draft
+ * re-runs for itself. Advisories are excluded here as everywhere else.
+ */
+export function issueSignaturesUnderLens(
+  sigs: readonly Signature[],
+  lens: Profile,
+  contract: Profile = CONTRACT_PROFILE,
+): Signature[] {
+  if (lens === contract) return contractIssueSignatures(sigs);
+  return issueSignatures(sigs).filter((s) => rowUnderLens(s, lens, contract) !== null);
+}
+
+/** The lens row one signature belongs to, or null when it belongs to none. */
+function rowUnderLens(sig: Signature, lens: Profile, contract: Profile): string | null {
+  if (sig.kind === 'advisory') return null;
+  if (sig.profile === lens) return sig.req;
+  if (sig.profile === contract) return clauseUnderLens(sig.req, checkCodeOf(sig));
+  return null;
 }
 
 /**

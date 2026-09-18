@@ -36,7 +36,12 @@ import type { Readiness, Signature } from '../api.js';
 const { readinessCopy, visibleReasons, reasonsToggleLabel, SKELETON_ROWS } =
   await import('./ReadinessStrip.js');
 
-/** A shadow-lineage fail signature, as `readiness.reasons` carries it. */
+/**
+ * A shadow-lineage fail signature. `readiness` no longer carries these (tfnv.4
+ * took `reasons` off the wire — the DS01.3 lens's rows are the reasons now), so
+ * they are fed straight to the two list helpers, which is all they ever needed.
+ * tfnv.8 retires the strip and these helpers with it.
+ */
 function reason(key: string, req: string, title: string, txCount: number): Signature {
   return {
     key,
@@ -54,8 +59,14 @@ function reason(key: string, req: string, title: string, txCount: number): Signa
   };
 }
 
-function readiness(passingContract: number, passingBoth: number, reasons: Signature[]): Readiness {
-  return { passingContract, passingBoth, reasons };
+/**
+ * The readiness object as the wire carries it since tfnv.4: two counts. The third
+ * argument is kept at the call sites, and ignored, so each case still reads as
+ * "these numbers, with reasons behind them" — the copy under test depends on the
+ * counts alone.
+ */
+function readiness(passingContract: number, passingBoth: number, _reasons: Signature[]): Readiness {
+  return { passingContract, passingBoth };
 }
 
 const FIVE = [
@@ -144,8 +155,9 @@ test('three or fewer reasons get no toggle at all', () => {
 });
 
 test('the reasons are taken in the order the server sent them, txCount descending', () => {
-  // src/api/verdicts.ts sorts `reasons` by txCount desc; the strip must not
-  // re-order, or the "top 3" would stop being the most widespread three.
+  // Reasons arrive txCount descending (they did from the server, and a caller
+  // that revives this list must keep that order); the strip must not re-order,
+  // or the "top 3" would stop being the most widespread three.
   const { shown } = visibleReasons(FIVE, false);
   assert.deepEqual(
     shown.map((s) => s.txCount),

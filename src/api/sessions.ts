@@ -25,10 +25,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { computeComplianceSummary } from './compliance-matrix.js';
-import type {
-  FindingCountsByRequirement,
-  OutdatedCountsByRequirement,
-} from './compliance-matrix.js';
+import { ACCEPTED_LENSES, foldUnderLens, lensMatrix, parseLens } from './lens.js';
 import {
   inScope,
   parseSource,
@@ -36,10 +33,14 @@ import {
   rollup,
   scopeTotals,
   scopeTransmissions,
-  txFailing,
   windowLowerBound,
 } from './scope.js';
-import { computeSignatures, contractIssueSignatures, txMatchesSig } from './signatures.js';
+import {
+  computeSignatures,
+  issueSignaturesUnderLens,
+  txMatchesSig,
+  withRequirementUnderLens,
+} from './signatures.js';
 import type { SignatureTransmission } from './signatures.js';
 import { deriveSourceView, sourceCounts } from './source.js';
 import { readiness, verdict } from './verdicts.js';
@@ -59,7 +60,7 @@ import {
   listTransmissions,
   listTransmissionsInWindow,
 } from '../db/repository.js';
-import type { AuthMethod, FindingRow, Severity, TransmissionRow } from '../db/repository.js';
+import type { AuthMethod, FindingRow, TransmissionRow } from '../db/repository.js';
 import { CONTRACT_PROFILE } from '../schema-registry.js';
 import type { Profile, SchemaRegistry } from '../schema-registry.js';
 
@@ -494,11 +495,20 @@ export function registerSessionsApi(app: FastifyInstance): void {
     async (
       request: FastifyRequest<{
         Params: { uuid: string };
-        Querystring: { window?: string; source?: string };
+        Querystring: { window?: string; source?: string; lens?: string };
       }>,
       reply: FastifyReply,
     ) => {
       const { uuid } = request.params;
+
+      // The lens is validated BEFORE the session lookup: it is the one query
+      // parameter that can 400, the answer does not depend on the session, and
+      // failing early keeps the response from depending on whether the uuid
+      // exists. Window and source stay resilient — they fall back (4h4.4).
+      const lens = parseLens(request.query.lens);
+      if (lens === null) {
+        return reply.code(400).send({ error: 'unknown_lens', accepted: ACCEPTED_LENSES });
+      }
 
       const session = await getSession(uuid);
       if (!session) {
@@ -536,38 +546,53 @@ export function registerSessionsApi(app: FastifyInstance): void {
       // The fully SCOPED set drives every scope-relative aggregate.
       const scopedViews = scopeTransmissions(transmissionViews, window, source, now);
 
-      // Scope-relative §7 summary: recompute countsByRequirement over the scoped
-      // set, then feed the existing server-side computeComplianceSummary.
-      // `outdated` is tallied in its own map: it is a per-finding MODIFIER, not a
-      // severity (2kx keeps the outdated-but-valid schema finding at info), and it
-      // is what lifts a session that only ever used an older registered version off
-      // 'untested' onto 'pass-outdated'.
+      // "Does this transmission fail?" answered under the SELECTED package, which
+      // is the contract verdict `txFailing` asks for whenever that package is the
+      // contract. Both reads use this one predicate so the summary's
+      // `withFailures` and the list's `failuresOnly` can never disagree.
+      const failsUnderLens = (tx: VerdictTransmission): boolean =>
+        verdict(tx, lens, grading.contractProfile) === 'fail';
+
+      // Scope-relative summary: fold the scoped set's findings onto the rows of
+      // the SELECTED requirement package, then join them with that package's
+      // matrix. `outdated` is tallied in its own map: it is a per-finding
+      // MODIFIER, not a severity (2kx keeps the outdated-but-valid schema finding
+      // at info), and it is what lifts a session that only ever used an older
+      // registered version off 'untested' onto 'pass-outdated'.
       //
-      // CONTRACT lineage only (by1c.8). The §7 matrix grades the obligations in
-      // force, so a DS01.3 shadow finding has no row to land in. Its clause ids
-      // (5.3.2, 5.3.3) happen not to collide with any of the 27 §7 ids today, so
-      // `computeComplianceSummary` would drop them anyway — the filter makes that
-      // a property of the code rather than a coincidence of the numbering, the
-      // same argument `signaturesForReq` states for the signature side.
-      const scopedCounts: FindingCountsByRequirement = {};
-      const scopedOutdated: OutdatedCountsByRequirement = {};
-      for (const t of scopedViews) {
-        for (const f of t.findings) {
-          if (f.profile !== CONTRACT_PROFILE) continue;
-          const counts = (scopedCounts[f.requirement] ??= { pass: 0, fail: 0, info: 0 });
-          counts[f.severity as Severity] += 1;
-          if (f.outdated) scopedOutdated[f.requirement] = (scopedOutdated[f.requirement] ?? 0) + 1;
-        }
-      }
-      const summary = computeComplianceSummary(scopedCounts, scopedOutdated);
+      // Under the contract lens the fold is the CONTRACT-lineage-only count this
+      // read has always done (by1c.8): the §7 matrix grades the obligations in
+      // force, so a DS01.3 finding has no row to land in. Under the DS01.3 lens
+      // it is the clause map that decides the row, and §3.2 — the one requirement
+      // the draft re-runs rather than re-tags — is excluded from the carry-forward
+      // (src/api/lens.ts states both rules).
+      const scopedFindings = scopedViews.flatMap((t) => t.findings);
+      const { counts: scopedCounts, outdated: scopedOutdated } = foldUnderLens(
+        scopedFindings,
+        lens,
+        grading.contractProfile,
+      );
+      const summary = computeComplianceSummary(
+        scopedCounts,
+        scopedOutdated,
+        lensMatrix(lens, grading.contractProfile),
+      );
 
       // computeSignatures consumes the scoped views via the shared signature-tx
       // projection (same one the list endpoint's cross-filter uses). The set now
       // also carries kind:'advisory' entries (agj.15) so the dashboard can drive
       // the ?signatureKey= cross-filter from an advisory — they ride the wire but
       // are EXCLUDED from `distinctIssues` below, which counts defects only.
+      //
+      // Under a non-contract lens each non-advisory signature also gains the row
+      // it belongs to in that package (`requirementUnderLens`), so the browser
+      // groups signatures without a second copy of the clause map.
       const scopedSignatureTxs = scopedViews.map(asSignatureTx);
-      const signatures = computeSignatures(scopedSignatureTxs);
+      const signatures = withRequirementUnderLens(
+        computeSignatures(scopedSignatureTxs),
+        lens,
+        grading.contractProfile,
+      );
 
       // DS01.3 READINESS (by1c.9) over the SAME scoped set — window + source only.
       // `failuresOnly` and `signatureKey` are list filters and are deliberately
@@ -582,7 +607,6 @@ export function registerSessionsApi(app: FastifyInstance): void {
           : readiness(scopedSignatureTxs, {
               contractProfile: grading.contractProfile,
               shadowProfile: grading.shadowProfile,
-              computeSignatures,
             });
 
       const base = session.last_post_at ?? session.created_at;
@@ -605,18 +629,30 @@ export function registerSessionsApi(app: FastifyInstance): void {
           contractProfile: grading.contractProfile,
           shadowProfile: grading.shadowProfile,
         },
+        // The requirement package every aggregate below was computed under
+        // (tfnv.4) — echoed so a reader (and a cached response) can never be in
+        // doubt which package the numbers grade, whether the caller asked for one
+        // or took the default.
+        lens,
         // Full list still ships here for the docked detail pane (see split note).
         transmissions: transmissionViews,
         summary,
         rollup: rollup(summary),
         signatures,
         sources,
-        // CONTRACT only (by1c.7): the headline counts defects against the
-        // obligations in force, so a DS01.3 shadow signature never inflates it.
+        // Counted UNDER THE LENS (tfnv.4): `distinctIssues` counts the defects the
+        // selected package names, and `withFailures` the transmissions that fail
+        // its verdict. Under the contract lens both are what they were before the
+        // lens existed (by1c.7) — the headline counts defects against the
+        // obligations in force, and a DS01.3 signature never inflates it.
         // The distinct-CCE-unit pair (p98) is folded here too, off the `body` the
         // scoped views already carry — profile-independent and verdict-independent,
         // so it needs no second read and no grading input.
-        scoped: scopeTotals(scopedViews, contractIssueSignatures(signatures).length),
+        scoped: scopeTotals(
+          scopedViews,
+          issueSignaturesUnderLens(signatures, lens, grading.contractProfile).length,
+          failsUnderLens,
+        ),
         expiresAt,
         // The shadow lineage's current bytes — version, the hash computed over
         // the vendored file at boot, and the draft date when the entry is an
@@ -682,11 +718,19 @@ export function registerSessionsApi(app: FastifyInstance): void {
           signatureKey?: string;
           cursor?: string;
           limit?: string;
+          lens?: string;
         };
       }>,
       reply: FastifyReply,
     ) => {
       const { uuid } = request.params;
+
+      // Validated before the session lookup, for the reason the summary read
+      // gives: the lens is the one parameter here that can 400.
+      const lens = parseLens(request.query.lens);
+      if (lens === null) {
+        return reply.code(400).send({ error: 'unknown_lens', accepted: ACCEPTED_LENSES });
+      }
 
       const session = await getSession(uuid);
       if (!session) {
@@ -727,10 +771,12 @@ export function registerSessionsApi(app: FastifyInstance): void {
       // bound; inScope re-applies it harmlessly and adds the now upper bound.
       const filtered = views.filter((t) => {
         if (!inScope(t, window, source, now)) return false;
-        // CONTRACT verdict (by1c.8), not "any fail finding": a transmission
-        // that conforms today and would only fail under DS01.3 is not a failure
-        // the supplier can act on under the obligations in force.
-        if (failuresOnly && !txFailing(t)) return false;
+        // The SELECTED package's verdict (tfnv.4), not "any fail finding": under
+        // the contract lens this is the contract verdict it has always been
+        // (by1c.8), so a transmission that conforms today and would only fail
+        // under DS01.3 is not listed as a failure the supplier must act on now;
+        // under the DS01.3 lens the same filter means "fails the draft".
+        if (failuresOnly && verdict(t, lens, grading.contractProfile) !== 'fail') return false;
         if (signatureKey !== null && !txMatchesSig(asSignatureTx(t), signatureKey)) return false;
         return true;
       });
@@ -757,6 +803,8 @@ export function registerSessionsApi(app: FastifyInstance): void {
         scoped,
         nextCursor,
         hasMore,
+        // The package `failuresOnly` filtered under, echoed as on the summary read.
+        lens,
       });
     },
   );

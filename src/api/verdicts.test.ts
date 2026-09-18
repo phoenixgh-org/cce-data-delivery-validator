@@ -15,7 +15,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeSignatures } from './signatures.js';
 import type { Severity, SignatureFinding, SignatureTransmission } from './signatures.js';
 import { readiness, verdict } from './verdicts.js';
 import type { Profile } from '../schema-registry.js';
@@ -240,7 +239,6 @@ test('a duplicate transferId fails BOTH profiles (by1c.10)', () => {
 const readinessOptions = {
   contractProfile: CONTRACT,
   shadowProfile: SHADOW,
-  computeSignatures,
 };
 
 /** A shadow `required` failure naming one missing property. */
@@ -273,18 +271,15 @@ test('a transmission whose shadow never ran counts in neither number', () => {
   const r = readiness([tx([contractPass]), tx([contractPass, shadowPass])], readinessOptions);
   assert.equal(r.passingContract, 2, 'it still passes the contract');
   assert.equal(r.passingBoth, 1, 'but nothing was measured under DS01.3');
-  assert.deepEqual(r.reasons, [], 'and it contributes no reason');
 });
 
-test('reasons are the shadow fail signatures of contract-PASSING traffic, txCount desc', () => {
+test('contract-FAILING traffic is outside both numbers, however it fares under DS01.3', () => {
+  // The supplier has something to fix under the contract first, and readiness is
+  // a statement about traffic that conforms today.
   const r = readiness(
     [
-      tx([contractPass, missingUnderAnnex4('LSER'), missingUnderAnnex4('LMFR')]),
       tx([contractPass, missingUnderAnnex4('LSER')]),
       tx([contractPass, missingUnderAnnex4('LSER')]),
-      // Contract-FAILING traffic contributes no reason, however widespread its
-      // shadow defect: this supplier has something to fix under the contract
-      // first, and the strip is about traffic that conforms today.
       tx([
         f({ requirement: '1.4', severity: 'fail', profile: CONTRACT }),
         missingUnderAnnex4('LMOD'),
@@ -292,22 +287,13 @@ test('reasons are the shadow fail signatures of contract-PASSING traffic, txCoun
     ],
     readinessOptions,
   );
-  assert.equal(r.passingContract, 3);
+  assert.equal(r.passingContract, 2);
   assert.equal(r.passingBoth, 0);
-  assert.equal(r.reasons.length, 2);
-  assert.match(r.reasons[0]!.title, /LSER/);
-  assert.equal(r.reasons[0]!.txCount, 3);
-  assert.match(r.reasons[1]!.title, /LMFR/);
-  assert.equal(r.reasons[1]!.txCount, 1);
-  assert.ok(
-    r.reasons.every((s) => s.profile === SHADOW),
-    'no contract signature reaches the readiness reasons',
-  );
 });
 
-test('a contract failure is never a readiness reason, even re-tagged forward', () => {
+test('a contract failure keeps a transmission out of readiness, even re-tagged forward', () => {
   // The by1c.10 case at the readiness level: the duplicate fails the contract,
-  // so its transmission is outside the reasons fold entirely.
+  // so its transmission is outside both numbers entirely.
   const r = readiness(
     [
       tx([
@@ -325,23 +311,23 @@ test('a contract failure is never a readiness reason, even re-tagged forward', (
   );
   assert.equal(r.passingContract, 0);
   assert.equal(r.passingBoth, 0);
-  assert.deepEqual(r.reasons, []);
 });
 
 test('the forward-mapped rule leaves readiness where it was (tfnv.3)', () => {
   // The reorder flips a transport halt's shadow verdict from null to 'fail', and
   // neither readiness number can move with it: both fold over contract-PASSING
   // transmissions only, and a failure carried forward is by definition a
-  // contract failure. The halted transmission is outside the fold either way.
+  // contract failure. The halted transmission is outside both either way.
   const halted = tx([f({ requirement: '1.4', severity: 'fail', profile: CONTRACT })]);
   assert.equal(verdict(halted, SHADOW, CONTRACT), 'fail');
   const r = readiness([halted, tx([contractPass, shadowPass])], readinessOptions);
   assert.equal(r.passingContract, 1);
   assert.equal(r.passingBoth, 1);
-  assert.deepEqual(r.reasons, []);
 });
 
-test('readiness over an empty scope is zeroes and no reasons', () => {
+test('readiness over an empty scope is two zeroes, and nothing else on the wire', () => {
   const r = readiness([], readinessOptions);
-  assert.deepEqual(r, { passingContract: 0, passingBoth: 0, reasons: [] });
+  // deepEqual on the WHOLE object: `reasons` left the wire with tfnv.4, and a
+  // stray third field would be a claim the DS01.3 lens already makes row by row.
+  assert.deepEqual(r, { passingContract: 0, passingBoth: 0 });
 });

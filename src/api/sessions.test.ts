@@ -1299,11 +1299,7 @@ interface ShadowResp {
   summary: Array<{ requirement: string; counts: FindingCounts; status: string }>;
   signatures: Array<{ key: string; profile: string | null; sev: string }>;
   shadow: { version: string; sha256: string; draftDate?: string } | null;
-  readiness: {
-    passingContract: number;
-    passingBoth: number;
-    reasons: Array<{ key: string; profile: string | null; sev: string; txCount: number }>;
-  } | null;
+  readiness: { passingContract: number; passingBoth: number } | null;
 }
 
 interface FindingCounts {
@@ -1443,17 +1439,10 @@ test(
       );
 
       // ── readiness over the scope: one tx conforms today, none would survive ─
-      assert.equal(body.readiness?.passingContract, 1);
-      assert.equal(body.readiness?.passingBoth, 0);
       assert.deepEqual(
-        body.readiness?.reasons.map((r) => r.key),
-        ['ds013|5.3.2|required|/data/*|LSER'],
-        'only the contract-passing transmission contributes a reason',
-      );
-      assert.equal(
-        body.readiness?.reasons.some((r) => r.key.startsWith('adv|') || r.sev !== 'fail'),
-        false,
-        'an advisory is never a readiness reason',
+        body.readiness,
+        { passingContract: 1, passingBoth: 0 },
+        'one transmission conforms today and none would survive the draft',
       );
     } finally {
       if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
@@ -1511,7 +1500,7 @@ test(
       );
       assert.deepEqual(
         body.readiness,
-        { passingContract: 0, passingBoth: 0, reasons: [] },
+        { passingContract: 0, passingBoth: 0 },
         'nothing conforms today, so there is nothing to be ready with',
       );
     } finally {
@@ -1618,6 +1607,300 @@ test('GET …/transmissions → list rows carry the same verdicts (by1c.9)', { s
     assert.deepEqual(body.transmissions[0]?.verdicts, summary.transmissions[0]?.verdicts);
   } finally {
     if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+    await app.close();
+  }
+});
+
+// ── the grading lens (tfnv.4) ───────────────────────────────────────────────
+//
+// Both session reads take `?lens=`, and under the DS01.3 lens every aggregate is
+// computed over that package's clauses instead of the §7 requirements. Grading,
+// storage and ingest are untouched: a finding keeps its 2025 requirement id in
+// the database and is translated on the way out. Four properties are pinned
+// here, because each of them is a claim about a supplier that the wire alone
+// cannot be trusted to make:
+//
+//   1. THE DEFAULT IS UNCHANGED. The response with no lens and the response with
+//      the contract lens are the same body, asserted whole rather than field by
+//      field, so nothing can quietly join the default output.
+//   2. A CONTRACT FAILURE IS CARRIED FORWARD, ONCE. §1.4 is a transport breach
+//      graded once and shared, so it lands on clause 5.1.6.
+//   3. §3.2 IS NOT CARRIED. The draft re-runs schema validation, so what the
+//      2025 schema decided is not evidence about Annex 4 and 5.3.2 reports only
+//      what the draft's own run found.
+//   4. THE §3.1 SPLIT. DS01.3 separates the custom-object duty (5.3.5) from the
+//      rest of §3.1 (5.3.3), and the custom-object check's finding code is what
+//      tells them apart.
+
+/** The lens-aware half of both session reads. */
+interface LensResp {
+  lens: string;
+  summary: Array<{
+    requirement: string;
+    counts: FindingCounts;
+    status: string;
+    members?: string[];
+    tightened?: boolean;
+    graded?: boolean;
+  }>;
+  rollup: { total: number; gradeable: number; passing: number; failing: number };
+  signatures: Array<{ key: string; profile: string | null; requirementUnderLens?: string }>;
+  scoped: { scoped: number; withFailures: number; distinctIssues: number };
+  transmissions: Array<{ id: string; verdicts: Record<string, 'pass' | 'fail' | null> }>;
+}
+
+/**
+ * A session whose traffic exercises every branch of the fold: a transport halt
+ * that carries forward, an unresolved schema version that must not, a
+ * contract-conformant payload the draft rejects, and the §3.1 custom-object
+ * failure DS01.3 files under a clause of its own.
+ */
+async function seedLensSession(uuid: string): Promise<void> {
+  const contractPass = { requirement: '3.2', severity: 'pass' as const, profile: '2025' as const };
+
+  // A — body over the wire cap: §1.4 fails, and 5.1.6 fails with it.
+  const halted = await insertTxAt(uuid, '2026-09-17T12:00:00.000Z', 'com.acme');
+  await insertFinding(halted, {
+    requirement: '1.4',
+    severity: 'fail',
+    code: 'tx.body_too_large',
+    profile: '2025',
+  });
+
+  // B — a version outside both lineages: §3.2 fails and the draft never ran.
+  const unresolved = await insertTxAt(uuid, '2026-09-17T12:01:00.000Z', 'com.acme');
+  await insertFinding(unresolved, {
+    requirement: '3.2',
+    severity: 'fail',
+    code: 'tx.unsupported_schema_version',
+    profile: '2025',
+  });
+
+  // C and E — conformant today, rejected by Annex 4 on logger identity.
+  for (const [at, param] of [
+    ['2026-09-17T12:02:00.000Z', 'LSER'],
+    ['2026-09-17T12:04:00.000Z', 'LMFR'],
+  ] as const) {
+    const tx = await insertTxAt(uuid, at, 'com.acme');
+    await insertFinding(tx, contractPass);
+    await insertFinding(tx, { ...missingUnderAnnex4(param), profile: 'ds013' });
+  }
+
+  // D — custom data objects with no meta.customDataSchema: §3.1 under 2025,
+  // clause 5.3.5 under the draft, plus a clean Annex 4 run.
+  const custom = await insertTxAt(uuid, '2026-09-17T12:03:00.000Z', 'com.acme');
+  await insertFinding(custom, contractPass);
+  await insertFinding(custom, {
+    requirement: '3.1',
+    severity: 'fail',
+    code: 'tx.missing_custom_schema',
+    pointer: '/meta/customDataSchema',
+    profile: '2025',
+  });
+  await insertFinding(custom, { requirement: '5.3.2', severity: 'pass', profile: 'ds013' });
+}
+
+test(
+  'GET /api/sessions/:uuid → the lens defaults to the contract package, byte for byte',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+      await seedLensSession(uuid);
+
+      const omitted = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` });
+      const explicit = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}?lens=2025` });
+      assert.equal(omitted.statusCode, 200);
+      assert.equal(explicit.statusCode, 200);
+      // The WHOLE body: a lens that changed anything about the default reading
+      // would change what a supplier is graded on today.
+      assert.deepEqual(omitted.json(), explicit.json());
+      assert.equal(
+        (omitted.json() as LensResp).lens,
+        '2025',
+        'the read says which package it used',
+      );
+
+      const list = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions`,
+      });
+      const listExplicit = await app.inject({
+        method: 'GET',
+        url: `/api/sessions/${uuid}/transmissions?lens=2025`,
+      });
+      assert.deepEqual(list.json(), listExplicit.json());
+      assert.equal((list.json() as LensResp).lens, '2025');
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test(
+  'GET /api/sessions/:uuid?lens=ds013 → every aggregate computed over the DS01.3 clauses',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+      await seedLensSession(uuid);
+
+      const contract = (
+        await app.inject({ method: 'GET', url: `/api/sessions/${uuid}` })
+      ).json() as LensResp;
+      const res = await app.inject({ method: 'GET', url: `/api/sessions/${uuid}?lens=ds013` });
+      assert.equal(res.statusCode, 200);
+      const body = res.json() as LensResp;
+      assert.equal(body.lens, 'ds013');
+
+      const row = new Map(body.summary.map((r) => [r.requirement, r]));
+      assert.equal(body.summary.length, 27, 'the DS01.3 package, not the §7 one');
+      assert.equal(row.has('1.4'), false, 'no 2025 requirement id survives the projection');
+
+      // (2) the transport halt is carried forward by the clause map.
+      assert.deepEqual(row.get('5.1.6')?.counts, { pass: 0, fail: 1, info: 0 });
+      assert.equal(row.get('5.1.6')?.status, 'fail');
+
+      // (3) §3.2 is NOT carried: 5.3.2 reports the draft's own run — one pass
+      // (the custom-object transmission) and two failures — and the contract
+      // schema failure on transmission B is nowhere in it.
+      assert.deepEqual(row.get('5.3.2')?.counts, { pass: 1, fail: 2, info: 0 });
+      assert.equal(row.get('5.3.2')?.status, 'mixed');
+      assert.deepEqual(
+        contract.summary.find((r) => r.requirement === '3.2')?.counts,
+        { pass: 3, fail: 1, info: 0 },
+        'the contract row still carries what the 2025 validator decided',
+      );
+
+      // (4) the §3.1 split: the custom-object failure feeds 5.3.5, and 5.3.3 —
+      // where the rest of §3.1 maps — stays untested for want of a finding.
+      assert.deepEqual(row.get('5.3.5')?.counts, { pass: 0, fail: 1, info: 0 });
+      assert.equal(row.get('5.3.5')?.status, 'fail');
+      assert.deepEqual(row.get('5.3.5')?.members, [], 'a clause DS01.3 adds, and still graded');
+      assert.deepEqual(row.get('5.3.3')?.counts, { pass: 0, fail: 0, info: 0 });
+      assert.equal(row.get('5.3.3')?.status, 'untested');
+
+      // The DS01.3 tags ride the rows, so the browser needs no second lookup.
+      assert.deepEqual(row.get('5.1.3')?.members, ['1.1', '1.2']);
+      assert.equal(row.get('5.3.2')?.tightened, true);
+
+      // rollup counts row statuses over the package now on the page.
+      assert.equal(body.rollup.total, 27);
+      assert.ok(body.rollup.failing >= 3, '5.1.6, 5.3.5 and the mixed 5.3.2 all count as failing');
+
+      // scoped: withFailures is the DRAFT verdict, and it disagrees with the
+      // contract one — which is the whole point of the lens.
+      const draftFailing = body.transmissions.filter((t) => t.verdicts['ds013'] === 'fail').length;
+      assert.equal(body.scoped.withFailures, draftFailing, 'withFailures agrees with verdict()');
+      assert.equal(body.scoped.withFailures, 4);
+      assert.equal(contract.scoped.withFailures, 3, 'and with the contract verdict under 2025');
+      assert.equal(body.scoped.scoped, 5);
+
+      // distinctIssues counts the draft's own defects plus the contract defects
+      // it inherits — §3.2, which it re-runs, is not among them.
+      assert.equal(body.scoped.distinctIssues, 4);
+      assert.equal(contract.scoped.distinctIssues, 3);
+
+      // Each signature names the row it belongs to under this lens.
+      const rowOf = new Map(body.signatures.map((s) => [s.key, s.requirementUnderLens]));
+      assert.equal(rowOf.get('2025|1.4|tx.body_too_large'), '5.1.6');
+      assert.equal(rowOf.get('2025|3.1|tx.missing_custom_schema'), '5.3.5');
+      assert.equal(
+        rowOf.get('2025|3.2|tx.unsupported_schema_version'),
+        undefined,
+        'a §3.2 defect has no row on a page showing the draft',
+      );
+      for (const sig of contract.signatures) {
+        assert.equal('requirementUnderLens' in sig, false, 'absent under the contract lens');
+      }
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test(
+  'GET …/transmissions?lens=ds013 → failuresOnly filters on the draft verdict',
+  { skip },
+  async () => {
+    const app = makeApp();
+    await app.ready();
+    let uuid: string | undefined;
+    try {
+      const session = await createSession();
+      uuid = session.uuid;
+      await seedLensSession(uuid);
+
+      const under = async (lens: string) =>
+        (
+          await app.inject({
+            method: 'GET',
+            url: `/api/sessions/${uuid}/transmissions?failuresOnly=true&lens=${lens}`,
+          })
+        ).json() as LensResp & { scoped: never };
+
+      const contract = (await under('2025')) as unknown as {
+        scoped: number;
+        transmissions: LensResp['transmissions'];
+      };
+      const draft = (await under('ds013')) as unknown as {
+        lens: string;
+        scoped: number;
+        transmissions: LensResp['transmissions'];
+      };
+
+      assert.equal(draft.lens, 'ds013');
+      assert.equal(contract.scoped, 3, 'three transmissions fail the obligations in force');
+      assert.equal(draft.scoped, 4, 'four fail the draft — a different four');
+      for (const t of draft.transmissions) {
+        assert.equal(t.verdicts['ds013'], 'fail', 'every listed row fails the package asked for');
+      }
+      // The unresolved-version transmission fails today and is NOT listed under
+      // the draft: its verdict there is null, which is not a failure.
+      const draftIds = new Set(draft.transmissions.map((t) => t.id));
+      const nullUnderDraft = contract.transmissions.filter((t) => t.verdicts['ds013'] === null);
+      assert.equal(nullUnderDraft.length, 1);
+      assert.equal(draftIds.has(nullUnderDraft[0]!.id), false);
+    } finally {
+      if (uuid) await getPool().query('DELETE FROM session WHERE uuid = $1', [uuid]);
+      await app.close();
+    }
+  },
+);
+
+test('both session reads reject an unknown lens with the accepted values', { skip }, async () => {
+  const app = makeApp();
+  await app.ready();
+  try {
+    const session = await createSession();
+    try {
+      for (const url of [
+        `/api/sessions/${session.uuid}?lens=ds01.3`,
+        `/api/sessions/${session.uuid}/transmissions?lens=ds01.3`,
+      ]) {
+        const res = await app.inject({ method: 'GET', url });
+        assert.equal(res.statusCode, 400, `${url} → 400`);
+        assert.deepEqual(res.json(), { error: 'unknown_lens', accepted: ['2025', 'ds013'] });
+      }
+      // An empty value is "no choice made", not an unknown package: the read
+      // serves the contract one rather than failing a dashboard mid-render.
+      const empty = await app.inject({ method: 'GET', url: `/api/sessions/${session.uuid}?lens=` });
+      assert.equal(empty.statusCode, 200);
+      assert.equal((empty.json() as LensResp).lens, '2025');
+    } finally {
+      await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+    }
+  } finally {
     await app.close();
   }
 });

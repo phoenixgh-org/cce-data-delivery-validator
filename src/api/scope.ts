@@ -301,14 +301,20 @@ export interface ScopeTotals {
  * the distinct-CCE-unit pair. `distinctIssues` is the length of the (already-
  * computed) signature set — passed in so this helper does not re-fold the
  * findings; the unit pair IS folded here, off the bodies the scoped views carry.
+ *
+ * `failing` defaults to {@link txFailing}, the CONTRACT verdict. The grading lens
+ * (tfnv.4) passes the verdict of the package the reader selected instead, so
+ * `withFailures` counts what fails on the page being read; the default keeps the
+ * contract reading of that number exactly as it was.
  */
 export function scopeTotals(
   transmissions: readonly (ScopedTransmission & UnitTransmission)[],
   distinctIssues: number,
+  failing: (tx: ScopedTransmission) => boolean = txFailing,
 ): ScopeTotals {
   return {
     scoped: transmissions.length,
-    withFailures: transmissions.filter(txFailing).length,
+    withFailures: transmissions.filter((tx) => failing(tx)).length,
     distinctIssues,
     ...unitTotals(transmissions),
   };

@@ -29,14 +29,14 @@
  *     it already knows (the server's registry constant, the browser's mirror in
  *     `src/web/api.ts`), and the flip when DS01.3 is adopted stays a one-literal
  *     change at the source.
- *   - `computeSignatures` lives in `src/api/signatures.ts`, which imports the
- *     registry for the same constant. {@link readiness} therefore takes the fold
- *     as a FUNCTION PARAMETER instead of importing it. The signature shape is
- *     the wire shape either side already carries, so nothing is re-implemented.
+ *   - {@link readiness} returns two COUNTS and nothing else, so it needs no
+ *     signature fold and imports none. It used to take `computeSignatures` as a
+ *     function parameter to build its `reasons` list; the grading lens replaced
+ *     that list with the DS01.3 rows themselves (tfnv.4), and the parameter went
+ *     with it rather than being kept for a caller that no longer exists.
  */
 
 import { forwardClause } from './clause-map.js';
-import type { Signature } from './signatures.js';
 import type { Profile } from '../schema-registry.js';
 
 /**
@@ -81,8 +81,12 @@ const ADVISORY_PREFIX = 'adv.';
  * schema failure as well would let a body that fails cce-interop 0.8.1 but
  * satisfies Annex 4 read as a DS01.3 failure — the opposite of what the shadow
  * run measured.
+ *
+ * EXPORTED for the grading lens (tfnv.4): the read-time fold that counts contract
+ * findings onto DS01.3 rows has to skip exactly the same ids, and a second copy
+ * of the set would be a second place to forget §3.2 is re-run.
  */
-const RE_RUN_UNDER_SHADOW: ReadonlySet<string> = new Set(['3.2']);
+export const RE_RUN_UNDER_SHADOW: ReadonlySet<string> = new Set(['3.2']);
 
 /**
  * The minimal finding shape a verdict reads. Structurally compatible with BOTH
@@ -173,27 +177,28 @@ export function verdict(
   return 'pass';
 }
 
-/** The readiness strip's numbers: how much of a conformant stream is DS01.3-ready. */
+/**
+ * How much of a conformant stream is DS01.3-ready: two counts, and nothing else.
+ *
+ * It carried a third field, `reasons` — the shadow-lineage fail signatures
+ * standing between the two counts — until the grading lens landed (tfnv.4).
+ * Under the DS01.3 lens the whole page is those reasons, row by row, so a
+ * separate list beside it was the same information told twice and the second
+ * telling could not be filtered, sorted or opened like the rest.
+ */
 export interface Readiness {
   /** Transmissions whose contract verdict is 'pass'. */
   passingContract: number;
   /** Of those, the ones whose shadow verdict is also 'pass'. */
   passingBoth: number;
-  /**
-   * What stands between the two counts: the shadow-lineage fail signatures of
-   * the contract-passing transmissions, most widespread first.
-   */
-  reasons: Signature[];
 }
 
 /** {@link readiness} inputs that are not the transmissions themselves. */
-export interface ReadinessOptions<T> {
+export interface ReadinessOptions {
   /** The lineage in force — the server's or browser's `CONTRACT_PROFILE`. */
   contractProfile: Profile;
   /** The lineage being previewed (`'ds013'` today). */
   shadowProfile: Profile;
-  /** The signature fold — `computeSignatures` from src/api/signatures.ts. */
-  computeSignatures: (transmissions: readonly T[]) => Signature[];
 }
 
 /**
@@ -203,19 +208,17 @@ export interface ReadinessOptions<T> {
  * and a set narrowed to failing transmissions would report readiness over the
  * transmissions least able to demonstrate it.
  *
- * `reasons` is folded over the contract-PASSING transmissions only, because that
- * is the question the strip asks: of the traffic that conforms today, what would
- * stop it conforming under DS01.3? A transmission already failing the contract
- * has a defect to fix either way and would otherwise crowd the list with reasons
- * the supplier is not yet ready to act on. A transmission whose shadow verdict is
- * `null` counts in neither number and contributes no reason — nothing was
- * measured, so nothing is claimed.
+ * Both numbers fold over the contract-PASSING transmissions, because that is the
+ * question being asked: of the traffic that conforms today, how much would still
+ * conform under DS01.3? A transmission already failing the contract has a defect
+ * to fix either way. One whose shadow verdict is `null` counts in the first
+ * number and not the second — nothing was measured, so nothing is claimed.
  */
-export function readiness<T extends VerdictTransmission>(
-  transmissions: readonly T[],
-  options: ReadinessOptions<T>,
+export function readiness(
+  transmissions: readonly VerdictTransmission[],
+  options: ReadinessOptions,
 ): Readiness {
-  const { contractProfile, shadowProfile, computeSignatures } = options;
+  const { contractProfile, shadowProfile } = options;
 
   const passingContract = transmissions.filter(
     (tx) => verdict(tx, contractProfile, contractProfile) === 'pass',
@@ -224,16 +227,8 @@ export function readiness<T extends VerdictTransmission>(
     (tx) => verdict(tx, shadowProfile, contractProfile) === 'pass',
   );
 
-  // txCount DESC is the ordering the strip renders ("top 3 reasons"); count and
-  // key break ties so the list is stable across reads of the same scope rather
-  // than reshuffling equally widespread reasons on every poll.
-  const reasons = [...computeSignatures(passingContract)]
-    .filter((s) => s.profile === shadowProfile && s.sev === 'fail')
-    .sort((a, b) => b.txCount - a.txCount || b.count - a.count || a.key.localeCompare(b.key));
-
   return {
     passingContract: passingContract.length,
     passingBoth: passingBoth.length,
-    reasons,
   };
 }

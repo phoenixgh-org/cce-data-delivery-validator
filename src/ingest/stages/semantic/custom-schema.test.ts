@@ -14,7 +14,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import type { PipelineContext } from '../../pipeline.js';
-import { customDataSchemaCheck, hasCustomDataSchema, scanDataObjects } from './custom-schema.js';
+import {
+  CUSTOM_SCHEMA_CODES,
+  customDataSchemaCheck,
+  hasCustomDataSchema,
+  scanDataObjects,
+} from './custom-schema.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
 
@@ -137,7 +142,9 @@ function emsPayload(
 }
 
 /** The single graded (pass/fail) §3.1 finding from a run. */
-function grade(findings: readonly { requirement: string; severity: string }[]) {
+function grade(
+  findings: readonly { requirement: string; severity: string; code?: string | null }[],
+) {
   const graded = findings.filter((f) => f.severity === 'pass' || f.severity === 'fail');
   assert.equal(graded.length, 1, 'exactly one graded §3.1 finding');
   assert.equal(graded[0]?.requirement, '3.1');
@@ -153,6 +160,20 @@ test('3.1: clean RTM payload, no custom objects → pass, conditional did not ap
   assert.equal(g.severity, 'pass');
   assert.match(findings[0]?.detail ?? '', /did not apply/i);
   assert.match(findings[0]?.detail ?? '', /§3\.2/, 'names the §3.2 division of labour');
+});
+
+test('3.1: both outcomes of the check carry a code, so the DS01.3 lens can find them', async () => {
+  // The lens files this check under clause 5.3.5 and the rest of §3.1 under
+  // 5.3.3 (src/api/lens.ts), which it can only do if the PASS is identifiable
+  // too — a code on the failure alone would leave 5.3.5 permanently untested.
+  const declared = rtmPayload({ customDataSchema: 'https://example.org/s.json' }, { ztpcm: 2.7 });
+  for (const payload of [rtmPayload(), emsPayload(), declared]) {
+    const g = grade(await customDataSchemaCheck(makeCtx(payload), deps));
+    assert.equal(g.severity, 'pass');
+    assert.equal(g.code, CUSTOM_SCHEMA_CODES.pass);
+  }
+  const failing = await customDataSchemaCheck(makeCtx(rtmPayload({}, { ztpcm: 2.7 })), deps);
+  assert.equal(grade(failing).code, CUSTOM_SCHEMA_CODES.fail);
 });
 
 test('3.1: clean EMS payload, no custom objects → pass', async () => {

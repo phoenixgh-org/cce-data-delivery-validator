@@ -624,11 +624,12 @@ a separate DS01.3 group.
 
 Two further shadow surfaces are built but not mounted: the readiness strip — of the
 in-scope traffic that passes the contract, how much would also pass the shadow
-lineage, with the leading reasons offered as cross-filters — and the grading legend
-that named both lineages and said which one is the contract. Both are held pending
-the grading-lens redesign, which reconsiders how a second lineage is surfaced at all.
-The server still computes and serves readiness (`docs/api.md`), so nothing has to
-be recomputed when that work lands.
+lineage — and the grading legend that named both lineages and said which one is the
+contract. Both are held pending the grading-lens redesign, which reconsiders how a
+second lineage is surfaced at all. The server still computes and serves the two
+readiness counts (`docs/api.md`), so nothing has to be recomputed when that work
+lands. The strip's list of leading reasons left the wire with the lens itself: under
+the DS01.3 lens the summary rows are those reasons, filterable like any other row.
 
 The vocabulary those surfaces use is deliberate and is centralized in
 [`profiles.ts`](src/web/profiles.ts), which mirrors the server's

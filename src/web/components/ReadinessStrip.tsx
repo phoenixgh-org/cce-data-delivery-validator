@@ -262,7 +262,11 @@ export function ReadinessStrip({
   activeSignatureKey,
   onSelectSignature,
 }: ReadinessStripProps): ReactElement | null {
-  const reasons = readiness?.reasons ?? NO_REASONS;
+  // ALWAYS EMPTY since tfnv.4 took `reasons` off the wire: under the DS01.3 lens
+  // the page's own rows are the reasons. The component is unmounted and tfnv.8
+  // deletes it, so the list machinery below is left standing rather than unwound
+  // here — it renders nothing, and the counts above it still read correctly.
+  const reasons = NO_REASONS;
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     setExpanded(false);

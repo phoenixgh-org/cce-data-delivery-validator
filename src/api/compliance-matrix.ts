@@ -95,8 +95,14 @@ export type DisplayStatus =
   | 'enforced'
   | 'not-applicable';
 
-/** A matrix row joined with its live counts and derived display status. */
-export interface ComplianceRow extends MatrixRow {
+/**
+ * What the join ADDS to a matrix row: the live counts, the outdated modifier and
+ * the derived status. Split out from {@link ComplianceRow} so the join can carry
+ * a richer row type through — the DS01.3 package's rows (src/api/lens.ts) add
+ * three fields of their own, and they reach the wire because the join spreads
+ * whatever row it was given rather than rebuilding a fixed shape.
+ */
+export interface ComplianceLive {
   counts: FindingCounts;
   /**
    * How many of this requirement's findings carry the `outdated` flag (2kx).
@@ -108,6 +114,9 @@ export interface ComplianceRow extends MatrixRow {
   outdated: number;
   status: DisplayStatus;
 }
+
+/** A §7 matrix row joined with its live counts and derived display status. */
+export interface ComplianceRow extends MatrixRow, ComplianceLive {}
 
 /**
  * The §7 verifiability matrix — exactly 27 rows, encoded verbatim from the
@@ -244,20 +253,29 @@ function deriveStatus(
 }
 
 /**
- * Join LIVE per-requirement finding counts onto the static §7 matrix and derive
+ * Join LIVE per-requirement finding counts onto a requirement matrix and derive
  * each row's display status (DESIGN.md §7). PURE: no DB, no HTTP, no mutation of
- * inputs. Returns all 27 rows in matrix order; requirements with no entry in
+ * inputs. Returns every row in matrix order; requirements with no entry in
  * `countsByRequirement` are treated as zero findings (→ `untested` when
  * gradeable, never a false pass).
  *
  * `outdatedByRequirement` (2kx) is the parallel count of findings carrying the
  * `outdated` flag; omitting it reproduces the pre-2kx behaviour exactly.
+ *
+ * `matrix` defaults to the §7 matrix and is the ONE thing the grading lens
+ * changes (tfnv.4): under the DS01.3 lens the caller passes that package's rows,
+ * keyed by clause id, with counts already folded through the clause map. The
+ * derivation is deliberately shared rather than copied — a package's rows differ
+ * in which requirements exist, never in what `pass`, `mixed` or `untested` mean.
+ * Row fields beyond `requirement`/`summary`/`classes` are carried through onto
+ * the result untouched.
  */
-export function computeComplianceSummary(
+export function computeComplianceSummary<T extends MatrixRow = MatrixRow>(
   countsByRequirement: FindingCountsByRequirement = {},
   outdatedByRequirement: OutdatedCountsByRequirement = {},
-): ComplianceRow[] {
-  return COMPLIANCE_MATRIX.map((row) => {
+  matrix: readonly T[] = COMPLIANCE_MATRIX as readonly T[],
+): Array<T & ComplianceLive> {
+  return matrix.map((row) => {
     const live = countsByRequirement[row.requirement];
     const counts: FindingCounts = live
       ? { pass: live.pass, fail: live.fail, info: live.info }

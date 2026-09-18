@@ -9,10 +9,12 @@ import {
   isIssue,
   isSignable,
   issueSignatures,
+  issueSignaturesUnderLens,
   sigKey,
   sigTitle,
   signaturesForReq,
   txMatchesSig,
+  withRequirementUnderLens,
 } from './signatures.js';
 import type { SignatureFinding, SignatureTransmission } from './signatures.js';
 
@@ -453,4 +455,86 @@ test('contractIssueSignatures drops ds013 signatures AND advisories', () => {
     contractIssueSignatures(sigs).map((s) => s.key),
     ['2025|1.2|tx.missing_charset'],
   );
+});
+
+// ── the grading lens (tfnv.4) ───────────────────────────────────────────────
+//
+// Under a non-contract lens the page shows a different requirement package, so
+// two questions change answer: which defects COUNT, and which row each belongs
+// to. Both are answered here, once, for the browser and the headline alike.
+
+/** The four signatures every lens case below is drawn from. */
+function lensSigs() {
+  return computeSignatures([
+    tx('t1', '2026-09-17T09:00:00.000Z', 'acme', [
+      // A transport failure: graded once under 2025, carried onto 5.1.6.
+      finding({ requirement: '1.4', code: 'tx.body_too_large' }),
+      // A contract schema failure: the draft re-runs §3.2, so this carries nowhere.
+      finding({ requirement: '3.2', keyword: 'required', instancePath: '/data/0', param: 'AMID' }),
+      // The §3.1 custom-object failure: DS01.3 files it under 5.3.5, not 5.3.3.
+      finding({ requirement: '3.1', code: 'tx.missing_custom_schema' }),
+      // The draft's own defect, already numbered in DS01.3.
+      finding({
+        profile: 'ds013',
+        requirement: '5.3.2',
+        keyword: 'required',
+        instancePath: '/data/0',
+        param: 'LSER',
+      }),
+      adv('adv.null_padding'),
+    ]),
+  ]);
+}
+
+test('issueSignaturesUnderLens: the contract lens counts exactly what it counted before', () => {
+  const sigs = lensSigs();
+  assert.deepEqual(
+    issueSignaturesUnderLens(sigs, '2025', '2025')
+      .map((s) => s.key)
+      .sort(),
+    contractIssueSignatures(sigs)
+      .map((s) => s.key)
+      .sort(),
+  );
+});
+
+test('issueSignaturesUnderLens: the draft lens counts both lineages, minus the re-run', () => {
+  const counted = issueSignaturesUnderLens(lensSigs(), 'ds013', '2025').map((s) => s.key);
+  assert.deepEqual(counted.sort(), [
+    '2025|1.4|tx.body_too_large',
+    '2025|3.1|tx.missing_custom_schema',
+    'ds013|5.3.2|required|/data/*|LSER',
+  ]);
+  // §3.2 is absent because the draft grades its counterpart itself, and the
+  // advisory is absent because an advisory is never a defect.
+});
+
+test('withRequirementUnderLens: the contract lens adds no field at all', () => {
+  const sigs = lensSigs();
+  assert.deepEqual(withRequirementUnderLens(sigs, '2025', '2025'), sigs);
+  for (const sig of withRequirementUnderLens(sigs, '2025', '2025')) {
+    assert.equal('requirementUnderLens' in sig, false);
+  }
+});
+
+test('withRequirementUnderLens: each signature names the draft row it belongs to', () => {
+  const rows = new Map(
+    withRequirementUnderLens(lensSigs(), 'ds013', '2025').map((s) => [
+      s.key,
+      s.requirementUnderLens,
+    ]),
+  );
+  assert.equal(
+    rows.get('2025|1.4|tx.body_too_large'),
+    '5.1.6',
+    'carried forward by the clause map',
+  );
+  assert.equal(rows.get('2025|3.1|tx.missing_custom_schema'), '5.3.5', 'the custom-object split');
+  assert.equal(rows.get('ds013|5.3.2|required|/data/*|LSER'), '5.3.2', 'the draft names its own');
+  assert.equal(
+    rows.get('2025|3.2|required|/data/*|AMID'),
+    undefined,
+    'a §3.2 result has no row on a page showing the draft',
+  );
+  assert.equal(rows.get('adv|adv.null_padding'), undefined, 'an advisory belongs to no row');
 });

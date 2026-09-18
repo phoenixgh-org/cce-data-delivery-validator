@@ -43,7 +43,16 @@ export interface FindingCounts {
   info: number;
 }
 
-/** One §7 matrix row joined with live counts + derived status. */
+/**
+ * One matrix row of the SELECTED requirement package, joined with live counts +
+ * derived status.
+ *
+ * `requirement` is the row's id in that package: a §7 requirement id (`3.2`)
+ * under the contract lens, a DS01.3 clause id (`5.3.2`) under the draft lens. The
+ * last three fields describe a DS01.3 row and are ABSENT under the contract lens
+ * (tfnv.4), where the package has no notion of members or of a clause that
+ * tightened.
+ */
 export interface ComplianceRow {
   requirement: string;
   summary: string;
@@ -56,6 +65,20 @@ export interface ComplianceRow {
    */
   outdated: number;
   status: DisplayStatus;
+  /**
+   * At least one of the clause's 2025 members is TIGHTENED: DS01.3 changes what
+   * conformance means there, not just where the text lives.
+   */
+  tightened?: boolean;
+  /**
+   * The 2025 requirement ids this clause merges, in 2025 document order. EMPTY
+   * for a clause DS01.3 adds — which is the test for "new in DS01.3", not
+   * `graded`: 5.3.5 has no member and is still fed, by the §3.1 custom-object
+   * check (src/api/lens.ts).
+   */
+  members?: string[];
+  /** Whether the clause has any 2025 member at all — see the caution on `members`. */
+  graded?: boolean;
 }
 
 /* ------------------------------------------------------------------ *
@@ -302,6 +325,13 @@ export interface Signature {
   last: string;
   /** Representative JSON Pointer for the issue (may be null). */
   examplePointer: string | null;
+  /**
+   * The row this signature belongs to under the selected lens (tfnv.4) — mirror
+   * `Signature.requirementUnderLens` in src/api/signatures.ts. ABSENT under the
+   * contract lens, where `req` already names the row, and absent under another
+   * lens for a signature that lands on no row of that package.
+   */
+  requirementUnderLens?: string;
 }
 
 /**
@@ -361,6 +391,14 @@ export interface ScopeTotals {
  */
 export interface SessionResponse {
   session: SessionMeta;
+  /**
+   * The requirement package every aggregate in this response was computed under
+   * (tfnv.4) — echoed whether the read asked for one or took the default, which
+   * is the contract package. `summary`, `rollup`, `signatures` and `scoped` all
+   * mean "under this lens"; `transmissions` and their per-profile `verdicts` do
+   * not change with it.
+   */
+  lens: Profile;
   transmissions: TransmissionView[];
   summary: ComplianceRow[];
   rollup: Rollup;
@@ -407,21 +445,23 @@ export interface ShadowProvenance {
 }
 
 /**
- * The readiness strip's numbers — mirror `Readiness` in src/api/verdicts.ts.
+ * The readiness numbers — mirror `Readiness` in src/api/verdicts.ts.
  *
- * `reasons` are the shadow-lineage fail signatures of the CONTRACT-PASSING
- * transmissions, most widespread first: of the traffic that conforms today, what
- * would stop it conforming under the shadow lineage. A transmission already
- * failing the contract contributes no reason — it has a defect to fix either
- * way — and one whose shadow verdict is null counts in neither number.
+ * Both counts fold over the CONTRACT-PASSING transmissions in scope: of the
+ * traffic that conforms today, how much would still conform under the shadow
+ * lineage. A transmission already failing the contract is outside both numbers —
+ * it has a defect to fix either way — and one whose shadow verdict is null counts
+ * in the first and not the second.
+ *
+ * The wire carried a third field, `reasons`, until the grading lens landed
+ * (tfnv.4): under the DS01.3 lens the page's own rows ARE those reasons, and a
+ * separate list beside them told the same thing twice.
  */
 export interface Readiness {
   /** Transmissions in scope whose contract verdict is 'pass'. */
   passingContract: number;
   /** Of those, the ones whose shadow verdict is also 'pass'. */
   passingBoth: number;
-  /** What stands between the two counts, txCount descending. */
-  reasons: Signature[];
 }
 
 /** One registered schema — mirrors `SchemaProvenance` in src/schema-registry.ts. */
@@ -555,6 +595,11 @@ export interface ListTransmissionsResponse {
   /** Opaque cursor for the next page, or null when there is no more. */
   nextCursor: string | null;
   hasMore: boolean;
+  /**
+   * The requirement package `failuresOnly` filtered under (tfnv.4), echoed as on
+   * the summary read. The rows themselves are package-independent.
+   */
+  lens: Profile;
 }
 
 /** Discriminated result of {@link listTransmissions} (mirrors GetSessionResult). */

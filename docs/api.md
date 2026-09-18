@@ -404,12 +404,15 @@ the selected scope.
 
 ### Query parameters
 
-| Param    | Values                   | Default | Meaning                                                                           |
-| -------- | ------------------------ | ------- | --------------------------------------------------------------------------------- |
-| `window` | `15m`, `1h`, `6h`, `all` | `all`   | Time window the aggregates are computed over.                                     |
-| `source` | a raw source key, `all`  | `all`   | Restrict to one source (`meta.transferSrc`); `""` is the "unknown source" bucket. |
+| Param    | Values                   | Default | Meaning                                                                                    |
+| -------- | ------------------------ | ------- | ------------------------------------------------------------------------------------------ |
+| `window` | `15m`, `1h`, `6h`, `all` | `all`   | Time window the aggregates are computed over.                                              |
+| `source` | a raw source key, `all`  | `all`   | Restrict to one source (`meta.transferSrc`); `""` is the "unknown source" bucket.          |
+| `lens`   | `2025`, `ds013`          | `2025`  | Requirement package every aggregate is computed under — see [Grading lens](#grading-lens). |
 
-Unrecognised values fall back to the defaults; this route never returns `400`.
+Unrecognised `window`/`source` values fall back to the defaults. An unrecognised
+`lens` is the one thing this route rejects: `400`
+`{"error":"unknown_lens","accepted":["2025","ds013"]}`.
 
 ### `200 OK`
 
@@ -425,6 +428,7 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
     "contractProfile": "2025",
     "shadowProfile": "ds013"
   },
+  "lens": "2025",
   "transmissions": [ /* every transmission, newest first — see the row shape below */ ],
   "summary":   [ /* 27 §7 matrix rows joined with live counts */ ],
   "rollup":    { "total": 27, "gradeable": 10, "passing": 7, "failing": 0, "untested": 3 },
@@ -433,7 +437,7 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
   "scoped":    { "scoped": 1, "withFailures": 0, "distinctIssues": 0, "units": 1, "unidentifiedReports": 0 },
   "expiresAt": "2026-08-08T05:50:33.722Z",
   "shadow":    { "version": "1", "sha256": "7e22de27d46e2b6c…", "draftDate": "2026-09-08" },
-  "readiness": { "passingContract": 1, "passingBoth": 0, "reasons": [ /* shadow-lineage signatures */ ] },
+  "readiness": { "passingContract": 1, "passingBoth": 0 },
   "schemas":   [ { "version": "0.8.0", "sha256": "e6614cc7d749be2e…", "profile": "2025" },
                  { "version": "0.8.1", "sha256": "290290fd4623d25c…", "profile": "2025" },
                  { "version": "1", "sha256": "7e22de27d46e2b6c…", "profile": "ds013", "draftDate": "2026-09-08" } ]
@@ -453,7 +457,8 @@ belongs to, and a `draftDate` when the entry is an unpublished proposal rather t
 published schema.
 
 `transmissions` is **not** scoped by `window`/`source` (the full list ships for the
-detail pane); `summary`, `rollup`, `signatures`, and `scoped` **are**.
+detail pane); `summary`, `rollup`, `signatures`, and `scoped` **are**, and those four
+are also what `lens` changes.
 `sources` is computed over the window only, so every source's in-window count is
 visible whichever one is selected. For large sessions, page the list through
 [`/transmissions`](#get-apisessionsuuidtransmissions--paginated-transmission-list)
@@ -468,8 +473,8 @@ them.
 | Field                 | Type     | Meaning                                                                                                                                                              |
 | --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `scoped`              | `number` | Transmissions in the scope.                                                                                                                                          |
-| `withFailures`        | `number` | Of those, the ones carrying at least one `fail` finding under the contract lineage.                                                                                  |
-| `distinctIssues`      | `number` | Distinct contract-lineage issue [signatures](#signature-object) in the scope. Advisories are not counted.                                                            |
+| `withFailures`        | `number` | Of those, the ones whose verdict under the selected [lens](#grading-lens) is `fail` — the contract lineage by default.                                               |
+| `distinctIssues`      | `number` | Distinct issue [signatures](#signature-object) the selected lens counts — the contract lineage's by default. Advisories are never counted.                           |
 | `units`               | `number` | Distinct CCE units reported on in the scope, keyed on the manufacturer serial `ASER` where a report carries one and on the supplier's appliance id `AMID` otherwise. |
 | `unidentifiedReports` | `number` | Reports in the scope that carried neither `ASER` nor `AMID`, and so could be counted in no unit.                                                                     |
 
@@ -506,6 +511,50 @@ computed over the selected scope rather than over the session as a whole. Both a
 `null` exactly when `session.shadowProfile` is.
 
 **`404`** — `{"error":"not_found","uuid":"…"}` for an unknown session.
+
+### Grading lens
+
+A supplier is graded against the requirement package in force, and at the same time
+has an unpublished draft to prepare for. `lens` selects which package the read reports
+under: `2025`, the UNICEF Q1 2025 requirements, or `ds013`, the DS01.3 draft. The
+default is the package in force.
+
+The lens is a **read-time projection and nothing more**. It does not change what the
+ingest pipeline grades, which validator produced a finding, what is stored, or what
+status code a transmission received — those were decided when the transmission
+arrived, from its own `meta.schemaVersion`. A finding keeps its 2025 requirement id in
+storage and is translated on the way out, which is also why switching the lens can
+never move a supplier's contractual result.
+
+What changes under `lens=ds013`:
+
+- `summary` is the DS01.3 matrix — 21 clauses with a 2025 equivalent plus the 6 the
+  draft adds — keyed by clause id (`5.1.6`) instead of requirement id (`1.4`). Each row
+  also carries `members` (the 2025 requirement ids it merges, in document order),
+  `tightened` (the clause changes what conformance means, not just where the text
+  lives), and `graded`. All three are **absent** under the contract lens.
+- Counts fold through the clause map (`docs/clause-mapping.md`). Transport and semantic
+  checks are graded once and shared, so a §1.4 failure is counted on clause 5.1.6.
+- **§3.2 is the exception**: the draft's counterpart, 5.3.2, is genuinely re-run by the
+  Annex 4 validator, so clause 5.3.2 reports what that run found and a 2025 schema
+  failure is not carried onto it. A body can fail `cce-interop` and satisfy Annex 4.
+- **§3.1 splits.** DS01.3 separates the duty to describe manufacturer-specific objects
+  with a schema (5.3.5) from the rest of §3.1 (5.3.3). The custom-object check names
+  both its outcomes with a code — `tx.missing_custom_schema` and `tx.custom_schema_ok` —
+  and those findings are counted on 5.3.5. That is why 5.3.5 is a graded row even though
+  it has no 2025 member, and why "new in DS01.3" is `members.length === 0` rather than
+  `graded === false`.
+- `rollup`, `scoped.withFailures`, `scoped.distinctIssues` and the list route's
+  `failuresOnly` all follow the same package, and each signature gains
+  `requirementUnderLens` naming the row it belongs to.
+
+Per-transmission `verdicts` do **not** change with the lens: they are already reported
+under every lineage, keyed by profile id, so a row shows both readings whichever
+package the page is set to.
+
+A row that no clause of the selected package claims is counted nowhere rather than
+guessed at. The response echoes `lens` so a reader is never left inferring which
+package the numbers grade.
 
 ### Transmission object
 
@@ -576,23 +625,24 @@ nothing to report.
   runs alongside the primary one, a conformant transmission carries `2025` passes and
   may carry `ds013` fails at the same time.
 
-| `code`                          | Req  | Raised when                                              |
-| ------------------------------- | ---- | -------------------------------------------------------- |
-| `tx.bad_media_type`             | §1.2 | `Content-Type` missing or not `application/json`         |
-| `tx.missing_charset`            | §1.2 | JSON media type without `charset=utf-8`                  |
-| `tx.body_too_large`             | §1.4 | Wire body over the 1 MiB cap                             |
-| `tx.unsupported_encoding`       | §1.6 | `Content-Encoding` other than `gzip`/`identity`          |
-| `tx.undecodable_body`           | §1.6 | gzip body would not decompress (or exceeded the cap)     |
-| `tx.double_encoded`             | §1.6 | gzip inside gzip                                         |
-| `tx.parse_failed`               | §1.1 | Body is not valid UTF-8 JSON                             |
-| `tx.missing_schema_version`     | §3.2 | `meta.schemaVersion` absent or not a string              |
-| `tx.unsupported_schema_version` | §3.2 | Declared version is not registered                       |
-| `tx.schema_invalid`             | §3.2 | Validation failed with no per-error detail               |
-| `tx.outdated_schema`            | §3.2 | Valid, but against an older registered version (info)    |
-| `tx.duplicate_transfer`         | §1.8 | Repeated `transferId` or identical content               |
-| `tx.concurrent_delivery`        | §2.1 | Another POST for this session was in flight              |
-| `tx.irregular_interval`         | §3.4 | `ABST` reading cadence looks irregular                   |
-| `tx.missing_custom_schema`      | §3.1 | Custom data objects sent without `meta.customDataSchema` |
+| `code`                          | Req  | Raised when                                                   |
+| ------------------------------- | ---- | ------------------------------------------------------------- |
+| `tx.bad_media_type`             | §1.2 | `Content-Type` missing or not `application/json`              |
+| `tx.missing_charset`            | §1.2 | JSON media type without `charset=utf-8`                       |
+| `tx.body_too_large`             | §1.4 | Wire body over the 1 MiB cap                                  |
+| `tx.unsupported_encoding`       | §1.6 | `Content-Encoding` other than `gzip`/`identity`               |
+| `tx.undecodable_body`           | §1.6 | gzip body would not decompress (or exceeded the cap)          |
+| `tx.double_encoded`             | §1.6 | gzip inside gzip                                              |
+| `tx.parse_failed`               | §1.1 | Body is not valid UTF-8 JSON                                  |
+| `tx.missing_schema_version`     | §3.2 | `meta.schemaVersion` absent or not a string                   |
+| `tx.unsupported_schema_version` | §3.2 | Declared version is not registered                            |
+| `tx.schema_invalid`             | §3.2 | Validation failed with no per-error detail                    |
+| `tx.outdated_schema`            | §3.2 | Valid, but against an older registered version (info)         |
+| `tx.duplicate_transfer`         | §1.8 | Repeated `transferId` or identical content                    |
+| `tx.concurrent_delivery`        | §2.1 | Another POST for this session was in flight                   |
+| `tx.irregular_interval`         | §3.4 | `ABST` reading cadence looks irregular                        |
+| `tx.missing_custom_schema`      | §3.1 | Custom data objects sent without `meta.customDataSchema`      |
+| `tx.custom_schema_ok`           | §3.1 | The same check passing: declared, or no custom objects (pass) |
 
 ### Compliance summary rows
 
@@ -637,19 +687,20 @@ numbers map to the DS01.3 rewrite.
 A signature collapses identical defects across transmissions into one distinct issue —
 the answer to "what are the distinct things to fix, and how widespread is each?".
 
-| Field            | Meaning                                                                                    |
-| ---------------- | ------------------------------------------------------------------------------------------ |
-| `key`            | Stable key; pass it as `signatureKey` to the list route to cross-filter.                   |
-| `req`            | Requirement, e.g. `3.2`; empty string for an advisory.                                     |
-| `profile`        | Requirement lineage the defect grades against (`2025` or `ds013`); `null` for an advisory. |
-| `title`          | Human title for the defect (for an advisory, the label derived from its id).               |
-| `kind`           | `schema` (Ajv keyword), `check` (a `tx.*` code), or `advisory` (an `adv.*` observation).   |
-| `sev`            | `fail`, or `info` for the outdated-schema signature and every advisory.                    |
-| `count`          | Raw finding count.                                                                         |
-| `txCount`        | Distinct transmissions exhibiting it.                                                      |
-| `sourceCount`    | Distinct sources exhibiting it.                                                            |
-| `first`, `last`  | ISO timestamps of the earliest and latest occurrence.                                      |
-| `examplePointer` | Representative JSON Pointer, may be `null`.                                                |
+| Field                  | Meaning                                                                                                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`                  | Stable key; pass it as `signatureKey` to the list route to cross-filter.                                                                                              |
+| `req`                  | Requirement, e.g. `3.2`; empty string for an advisory.                                                                                                                |
+| `profile`              | Requirement lineage the defect grades against (`2025` or `ds013`); `null` for an advisory.                                                                            |
+| `title`                | Human title for the defect (for an advisory, the label derived from its id).                                                                                          |
+| `kind`                 | `schema` (Ajv keyword), `check` (a `tx.*` code), or `advisory` (an `adv.*` observation).                                                                              |
+| `sev`                  | `fail`, or `info` for the outdated-schema signature and every advisory.                                                                                               |
+| `count`                | Raw finding count.                                                                                                                                                    |
+| `txCount`              | Distinct transmissions exhibiting it.                                                                                                                                 |
+| `sourceCount`          | Distinct sources exhibiting it.                                                                                                                                       |
+| `first`, `last`        | ISO timestamps of the earliest and latest occurrence.                                                                                                                 |
+| `examplePointer`       | Representative JSON Pointer, may be `null`.                                                                                                                           |
+| `requirementUnderLens` | The row this signature belongs to under the selected `lens`; absent under the contract lens, and absent for a signature that lands on no row of the selected package. |
 
 **Profiles keep the two lineages apart.** `key` is prefixed with `profile` for every
 non-advisory signature (`2025|3.2|required|/data/*|LSER` versus
@@ -667,35 +718,23 @@ merely carries an observation is a legitimate hit.
 ### Readiness object
 
 `readiness` answers one question over the whole selected scope: of the transmissions
-that satisfy the obligations in force, how many would also satisfy the DS01.3 draft,
-and what stands in the way. It is `null` when no shadow lineage is registered.
+that satisfy the obligations in force, how many would also satisfy the DS01.3 draft. It
+is `null` when no shadow lineage is registered.
 
-| Field             | Type     | Meaning                                                                                                                                                   |
-| ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `passingContract` | `number` | In-scope transmissions whose contract verdict is `pass`.                                                                                                  |
-| `passingBoth`     | `number` | Of those, the ones whose shadow verdict is also `pass`.                                                                                                   |
-| `reasons`         | `array`  | What stands between the two counts: the shadow-lineage fail [signatures](#signature-object) of the contract-passing transmissions, most widespread first. |
+It carried a third field, `reasons` — the shadow-lineage signatures standing between the
+two counts — until the grading lens landed. Under `lens=ds013` the summary rows ARE those
+reasons, clause by clause, and a list beside them said the same thing a second time in a
+form nothing could filter or open.
+
+| Field             | Type     | Meaning                                                  |
+| ----------------- | -------- | -------------------------------------------------------- |
+| `passingContract` | `number` | In-scope transmissions whose contract verdict is `pass`. |
+| `passingBoth`     | `number` | Of those, the ones whose shadow verdict is also `pass`.  |
 
 ```json
 {
   "passingContract": 1,
-  "passingBoth": 0,
-  "reasons": [
-    {
-      "key": "ds013|5.3.2|required|/data/*|LSER",
-      "req": "5.3.2",
-      "profile": "ds013",
-      "title": "Missing required property LSER",
-      "kind": "schema",
-      "sev": "fail",
-      "count": 1,
-      "txCount": 1,
-      "sourceCount": 1,
-      "first": "2026-09-14T22:10:50.865Z",
-      "last": "2026-09-14T22:10:50.865Z",
-      "examplePointer": "/data/0"
-    }
-  ]
+  "passingBoth": 0
 }
 ```
 
@@ -708,10 +747,10 @@ and `signatureKey` filters are deliberately not applied: readiness is a statemen
 the whole scope, and a set narrowed to failing transmissions would report readiness
 over the traffic least able to demonstrate it.
 
-`reasons` folds the contract-**passing** transmissions alone. A transmission that
-already fails the contract has a defect to fix either way, and including it would crowd
-the list with reasons that are not the gap between the two counts. Advisories are
-excluded here as everywhere else.
+Both counts fold the contract-**passing** transmissions alone. A transmission that
+already fails the contract has a defect to fix either way, and one whose shadow verdict
+is `null` counts in the first number and not the second: nothing was measured under the
+draft, so nothing is claimed.
 
 ## `GET /api/sessions/{uuid}/transmissions` — paginated transmission list
 
@@ -728,9 +767,11 @@ holds thousands of transmissions.
 | `signatureKey` | a `signatures[].key`            | none    | Keep only transmissions exhibiting that signature. |
 | `cursor`       | a prior response's `nextCursor` | none    | Continue after that page.                          |
 | `limit`        | integer                         | `50`    | Page size, clamped to `[1, 200]`.                  |
+| `lens`         | `2025`, `ds013`                 | `2025`  | Requirement package `failuresOnly` filters under.  |
 
-Unrecognised values fall back to defaults; a malformed `cursor` simply starts from the
-top. This route never returns `400`.
+Unrecognised values fall back to defaults and a malformed `cursor` simply starts from
+the top. As on the summary route, an unrecognised `lens` is the one rejected value:
+`400` `{"error":"unknown_lens","accepted":["2025","ds013"]}`.
 
 ### `200 OK`
 
@@ -739,7 +780,8 @@ top. This route never returns `400`.
   "transmissions": [],
   "scoped": 3,
   "nextCursor": "MTc4NTU2MzQwNjcyNjo2OGQwNGY0MS02MGY4LTRhN2MtYWIxMy02ZGVmMzVhY2I0ODk",
-  "hasMore": true
+  "hasMore": true,
+  "lens": "2025"
 }
 ```
 
@@ -751,6 +793,8 @@ top. This route never returns `400`.
   {page} of {scoped}".
 - `nextCursor` — opaque token for the next page, or `null` when there is none.
 - `hasMore` — whether more rows match beyond this page.
+- `lens` — the requirement package `failuresOnly` filtered under, echoed as on the
+  summary route. The rows themselves are the same whichever package is selected.
 
 **`404`** — `{"error":"not_found","uuid":"…"}` for an unknown session.
 

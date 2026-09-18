@@ -71,6 +71,24 @@
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck } from '../semantic.js';
 
+/**
+ * The stable codes this check files its two outcomes under — the PASS and the
+ * FAIL of one conditional obligation, named as a pair because every consumer that
+ * recognises the check has to recognise both halves.
+ *
+ * The DS01.3 grading lens is that consumer (tfnv.4): DS01.3 splits §3.1 in two,
+ * and the custom-object half is clause 5.3.5 while the rest of §3.1 maps to
+ * 5.3.3. `src/api/lens.ts` folds a finding carrying either of these codes onto
+ * 5.3.5 and every other §3.1 finding onto 5.3.3. Grading is unchanged: the code
+ * is an identifier, not a verdict, and the 2025 lens still files both under §3.1.
+ */
+export const CUSTOM_SCHEMA_CODES = {
+  /** The conditional was satisfied — declared, or no custom objects to declare. */
+  pass: 'tx.custom_schema_ok',
+  /** Custom objects present with no `meta.customDataSchema` naming a schema. */
+  fail: 'tx.missing_custom_schema',
+} as const;
+
 /** Manufacturer-specific object codes: lower-case, `z`-prefixed (clause 4.5). */
 const CUSTOM_CODE = /^z[a-z0-9]*$/;
 
@@ -237,6 +255,7 @@ export const customDataSchemaCheck: SemanticCheck = (ctx: PipelineContext): Find
     findings.push({
       requirement: '3.1',
       severity: 'pass',
+      code: CUSTOM_SCHEMA_CODES.pass,
       detail:
         'no manufacturer-specific data objects present, so the conditional ' +
         '§3.1 obligation to declare meta.customDataSchema did not apply; ' +
@@ -246,6 +265,7 @@ export const customDataSchemaCheck: SemanticCheck = (ctx: PipelineContext): Find
     findings.push({
       requirement: '3.1',
       severity: 'pass',
+      code: CUSTOM_SCHEMA_CODES.pass,
       detail:
         `manufacturer-specific data objects (${listKeys(custom)}) are declared via ` +
         `meta.customDataSchema — ${NO_FETCH_CAVEAT}; ${DIVISION_OF_LABOUR}`,
@@ -255,7 +275,7 @@ export const customDataSchemaCheck: SemanticCheck = (ctx: PipelineContext): Find
       requirement: '3.1',
       severity: 'fail',
       pointer: '/meta/customDataSchema',
-      code: 'tx.missing_custom_schema',
+      code: CUSTOM_SCHEMA_CODES.fail,
       detail:
         `manufacturer-specific data objects (${listKeys(custom)}) are present but ` +
         'meta.customDataSchema is missing or names no schema: a payload carrying ' +
