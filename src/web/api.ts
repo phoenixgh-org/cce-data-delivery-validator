@@ -72,12 +72,17 @@ export interface ComplianceRow {
   tightened?: boolean;
   /**
    * The 2025 requirement ids this clause merges, in 2025 document order. EMPTY
-   * for a clause DS01.3 adds — which is the test for "new in DS01.3", not
-   * `graded`: 5.3.5 has no member and is still fed, by the §3.1 custom-object
-   * check (src/api/lens.ts).
+   * for a clause DS01.3 adds, which is the test for "new in DS01.3" — a different
+   * question from `graded`.
    */
   members?: string[];
-  /** Whether the clause has any 2025 member at all — see the caution on `members`. */
+  /**
+   * Whether live counts feed the row: true for every clause carried forward from a
+   * 2025 requirement, and for 5.3.5, which has no 2025 member and is still fed by
+   * the §3.1 custom-object check (src/api/lens.ts). A row with `graded` false has
+   * no delivery counted on it at all, so its counts stay empty however much traffic
+   * the session has seen.
+   */
   graded?: boolean;
 }
 

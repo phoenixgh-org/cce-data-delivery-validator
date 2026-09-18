@@ -19,13 +19,14 @@
  * demands. Renumbering a clause does not change the vantage, so it must not
  * change the class.
  *
- * The six clauses with no 2025 equivalent ({@link NEW_IN_DS013}) are carried as
- * INFORMATIONAL rows: `graded: false`, no members, and the class decided per
- * clause (bd memory `lens-decisions-classes-and-verdict-2026-09-17`). They are
- * not uniformly ungradeable — 5.1.2 is enforced by the endpoint and 5.3.5 is
- * already verified passively by the §3.1 custom-object check — but no finding is
- * filed under a DS01.3 clause id by this module, and nothing here changes what
- * ingest grades or stores.
+ * The six clauses with no 2025 equivalent ({@link NEW_IN_DS013}) have no members
+ * to inherit from, so each carries the class decided for it (bd memory
+ * `lens-decisions-classes-and-verdict-2026-09-17`) and `graded` is decided from
+ * {@link NEW_FED_BY}: five of them are fed by nothing this service measures and
+ * are carried as INFORMATIONAL rows, while 5.3.5 is fed by the §3.1 custom-object
+ * check and is graded like any carried-forward clause. No finding is filed under a
+ * DS01.3 clause id by this module, and nothing here changes what ingest grades or
+ * stores.
  *
  * Internal `finding.requirement` values stay on the 2025 numbering; the lens
  * translates at read time. `docs/clause-mapping.md` remains the prose authority
@@ -34,8 +35,9 @@
 
 import { DS013_TITLE, FORWARD, NEW_IN_DS013, TIGHTENED } from './clause-map.js';
 import { COMPLIANCE_MATRIX, type ComplianceClass } from './compliance-matrix.js';
+import { CUSTOM_SCHEMA_CODES } from '../ingest/stages/semantic/custom-schema.js';
 
-/** A single DS01.3 matrix row, graded or informational. */
+/** A single DS01.3 matrix row: carried forward from 2025, or added by the draft. */
 export interface Ds013MatrixRow {
   /** DS01.3 clause id, e.g. `5.1.3`. */
   clause: string;
@@ -44,24 +46,28 @@ export interface Ds013MatrixRow {
   /**
    * One or more verifiability classes. For a graded row this is the union of the
    * members' classes in first-seen order, so `classes[0]` is the first member's
-   * primary class. For an informational row it is the single decided class.
+   * primary class. For a clause DS01.3 adds it is the single decided class.
    */
   classes: readonly ComplianceClass[];
   /**
    * True when at least one member is in {@link TIGHTENED} — the clause changes
-   * what conformance MEANS, not just where the text lives. Always false for an
-   * informational row: a clause with no 2025 equivalent cannot have tightened.
+   * what conformance MEANS, not just where the text lives. Always false for a
+   * clause DS01.3 adds: a clause with no 2025 equivalent cannot have tightened.
    */
   tightened: boolean;
   /**
    * The 2025 requirement ids this clause merges, in 2025 document order. Empty
-   * for an informational row. The lens's count fold and the web tags read it.
+   * for a clause DS01.3 adds, which is what makes a row new in the draft. The
+   * lens's count fold and the web tags read it.
    */
   members: readonly string[];
   /**
-   * True when the clause has at least one 2025 member, and therefore live
-   * findings to fold onto it. False for the six new clauses, which are listed so
-   * the card can say what DS01.3 adds beyond what we grade.
+   * True when live counts feed the row: every clause carried forward from a 2025
+   * requirement, plus a clause DS01.3 adds whose finding codes fold onto it
+   * ({@link NEW_FED_BY}). False where nothing this service measures lands on the
+   * clause, so the card can say what DS01.3 adds beyond what we grade. This is a
+   * different question from whether the clause is new — `members.length === 0`
+   * answers that — and 5.3.5 is the one row where the two answers differ.
    */
   graded: boolean;
 }
@@ -80,9 +86,9 @@ export interface Ds013MatrixRow {
  *   enforced under 5.3.2, and the completeness half mirrors §3.3.
  * - `5.3.5` custom data object schema — verified; it is already graded passively
  *   by the §3.1 check (custom object names without `meta.customDataSchema` fail).
- *   Filing those findings under 5.3.5 for the DS01.3 lens, while the 2025 lens
- *   keeps them under §3.1, needs a finding code of its own and is owed by the
- *   server lens work, not by this module.
+ *   Those findings carry a code of their own, so the lens files them under 5.3.5
+ *   while the 2025 lens keeps them under §3.1. {@link NEW_FED_BY} is where this
+ *   module reads that, and it is why 5.3.5 is the one added clause with counts.
  */
 const NEW_CLASS: Readonly<Record<string, ComplianceClass>> = {
   '5.1.1': 'attestation',
@@ -91,6 +97,23 @@ const NEW_CLASS: Readonly<Record<string, ComplianceClass>> = {
   '5.1.12': 'none',
   '5.3.1': 'attestation',
   '5.3.5': 'verified',
+};
+
+/**
+ * The finding codes that feed a clause with no 2025 member — the table that makes
+ * such a row `graded`.
+ *
+ * DS01.3 splits the single 2025 §3.1 into the transmission-metadata duties (5.3.3)
+ * and the duty to describe manufacturer-specific objects with a schema (5.3.5). The
+ * custom-object check names both of its outcomes with a code, and a §3.1 finding
+ * carrying either one folds onto 5.3.5 under the draft lens (`clauseUnderLens` in
+ * `./lens.js`). So 5.3.5 has live counts without having a member, and this table is
+ * what `buildMatrix` reads to say so — the clause id is not written into the build.
+ * A clause absent from the table is fed by nothing this service measures, and its
+ * row carries no counts.
+ */
+export const NEW_FED_BY: Readonly<Record<string, readonly string[]>> = {
+  '5.3.5': [CUSTOM_SCHEMA_CODES.fail, CUSTOM_SCHEMA_CODES.pass],
 };
 
 /**
@@ -110,20 +133,20 @@ function byClauseId(a: string, b: string): number {
 function buildMatrix(): readonly Ds013MatrixRow[] {
   // Walk COMPLIANCE_MATRIX, not FORWARD's keys, so members land in 2025 document
   // order and `classes[0]` is the first member's primary class.
-  const graded = new Map<string, { classes: ComplianceClass[]; members: string[] }>();
+  const carried = new Map<string, { classes: ComplianceClass[]; members: string[] }>();
   for (const row of COMPLIANCE_MATRIX) {
     const clause = FORWARD[row.requirement];
     if (!clause) continue;
-    const entry = graded.get(clause) ?? { classes: [], members: [] };
+    const entry = carried.get(clause) ?? { classes: [], members: [] };
     entry.members.push(row.requirement);
     for (const cls of row.classes) {
       if (!entry.classes.includes(cls)) entry.classes.push(cls);
     }
-    graded.set(clause, entry);
+    carried.set(clause, entry);
   }
 
   const rows: Ds013MatrixRow[] = [];
-  for (const [clause, entry] of graded) {
+  for (const [clause, entry] of carried) {
     rows.push({
       clause,
       summary: DS013_TITLE[clause] ?? clause,
@@ -141,7 +164,7 @@ function buildMatrix(): readonly Ds013MatrixRow[] {
       classes: cls ? [cls] : [],
       tightened: false,
       members: [],
-      graded: false,
+      graded: (NEW_FED_BY[clause]?.length ?? 0) > 0,
     });
   }
 
@@ -149,7 +172,8 @@ function buildMatrix(): readonly Ds013MatrixRow[] {
 }
 
 /**
- * The DS01.3 matrix: 21 graded clauses plus 6 informational ones, in DS01.3
- * document order. Computed once at module load.
+ * The DS01.3 matrix: 27 clauses in DS01.3 document order — 21 carried forward from
+ * 2025 requirements and 6 the draft adds. 22 of them are graded, the extra one
+ * being 5.3.5. Computed once at module load.
  */
 export const DS013_MATRIX: readonly Ds013MatrixRow[] = buildMatrix();

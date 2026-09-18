@@ -532,7 +532,8 @@ What changes under `lens=ds013`:
   draft adds — keyed by clause id (`5.1.6`) instead of requirement id (`1.4`). Each row
   also carries `members` (the 2025 requirement ids it merges, in document order),
   `tightened` (the clause changes what conformance means, not just where the text
-  lives), and `graded`. All three are **absent** under the contract lens.
+  lives), and `graded` (live counts feed the row). All three are **absent** under the
+  contract lens.
 - Counts fold through the clause map (`docs/clause-mapping.md`). Transport and semantic
   checks are graded once and shared, so a §1.4 failure is counted on clause 5.1.6.
 - **§3.2 is the exception**: the draft's counterpart, 5.3.2, is genuinely re-run by the
@@ -542,8 +543,8 @@ What changes under `lens=ds013`:
   with a schema (5.3.5) from the rest of §3.1 (5.3.3). The custom-object check names
   both its outcomes with a code — `tx.missing_custom_schema` and `tx.custom_schema_ok` —
   and those findings are counted on 5.3.5. That is why 5.3.5 is a graded row even though
-  it has no 2025 member, and why "new in DS01.3" is `members.length === 0` rather than
-  `graded === false`.
+  it has no 2025 member: `graded` reports whether live counts feed a row, while a row is
+  new in DS01.3 when `members` is empty. The two answers differ on 5.3.5 alone.
 - `rollup`, `scoped.withFailures`, `scoped.distinctIssues` and the list route's
   `failuresOnly` all follow the same package, and each signature gains
   `requirementUnderLens` naming the row it belongs to.

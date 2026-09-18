@@ -169,7 +169,7 @@ export interface LensMatrixRow extends MatrixRow {
   tightened?: boolean;
   /** The 2025 requirement ids this clause merges, in 2025 document order. */
   members?: readonly string[];
-  /** Whether the clause has any 2025 member at all (see the caution below). */
+  /** Whether live counts feed the row (see the caution below). */
   graded?: boolean;
 }
 
@@ -177,11 +177,12 @@ export interface LensMatrixRow extends MatrixRow {
  * The DS01.3 package as matrix rows: `requirement` is the clause id, and the
  * three DS01.3 fields ride along for the browser's tags.
  *
- * CAUTION on `graded`. It reports whether the clause has a 2025 MEMBER, which is
- * not the same question as whether the row has counts: 5.3.5 has no member and is
- * still fed, by the §3.1 custom-object check (see the header). Anything deciding
- * what to show as "new in DS01.3" should read `members.length === 0`, and anything
- * deciding whether a row is graded should read its class and counts.
+ * CAUTION on `graded`. It reports whether live counts FEED the row, which is not
+ * the same question as whether DS01.3 added the clause. The two agree on 26 of the
+ * 27 rows and part company on 5.3.5, which has no 2025 member and is still fed, by
+ * the §3.1 custom-object check (see the header). So anything deciding what to show
+ * as "new in DS01.3" should read `members.length === 0`, and anything deciding
+ * whether a row has numbers behind it should read `graded`.
  */
 const DS013_LENS_MATRIX: readonly LensMatrixRow[] = DS013_MATRIX.map((row) => ({
   requirement: row.clause,

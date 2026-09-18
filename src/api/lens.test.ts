@@ -204,10 +204,12 @@ test('the draft lens renders the DS01.3 clauses, keyed by clause id', () => {
   const tightened = byId.get('5.3.2');
   assert.equal(tightened?.tightened, true, '§3.2 → 5.3.2 changes what conformance means');
 
-  // 5.3.5 has no 2025 member and is still verified and fed — which is why the
-  // "new in DS01.3" test is `members.length === 0`, never `graded`.
+  // The two DS01.3 fields answer two questions: `graded` reports whether live
+  // counts feed the row, and an empty `members` is what makes a row new in the
+  // draft. 5.3.5 is the one row where the answers differ — DS01.3 adds it, and the
+  // §3.1 custom-object check feeds it (tfnv.14).
   const custom = byId.get('5.3.5');
   assert.deepEqual(custom?.members, []);
-  assert.equal(custom?.graded, false);
+  assert.equal(custom?.graded, true);
   assert.deepEqual(custom?.classes, ['verified']);
 });

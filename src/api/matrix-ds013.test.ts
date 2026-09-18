@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import { DS013_TITLE, FORWARD, NEW_IN_DS013, TIGHTENED } from './clause-map.js';
 import { COMPLIANCE_MATRIX } from './compliance-matrix.js';
-import { DS013_MATRIX, type Ds013MatrixRow } from './matrix-ds013.js';
+import { clauseUnderLens } from './lens.js';
+import { DS013_MATRIX, NEW_FED_BY, type Ds013MatrixRow } from './matrix-ds013.js';
 
 function row(clause: string): Ds013MatrixRow {
   const found = DS013_MATRIX.find((r) => r.clause === clause);
@@ -11,23 +12,27 @@ function row(clause: string): Ds013MatrixRow {
   return found;
 }
 
-test('the matrix is 21 graded clauses plus 6 informational ones', () => {
+test('the matrix is 27 clauses, 22 of them fed by live counts', () => {
   assert.equal(DS013_MATRIX.length, 27);
-  assert.equal(DS013_MATRIX.filter((r) => r.graded).length, 21);
-  assert.equal(DS013_MATRIX.filter((r) => !r.graded).length, 6);
+  assert.equal(DS013_MATRIX.filter((r) => r.graded).length, 22);
+  assert.equal(DS013_MATRIX.filter((r) => !r.graded).length, 5);
 });
 
 test('every FORWARD value appears exactly once, as a graded row', () => {
   // The join that keeps the derivation honest: re-pointing a 2025 requirement at
   // a clause the matrix does not carry fails here.
-  const graded = DS013_MATRIX.filter((r) => r.graded).map((r) => r.clause);
-  assert.deepEqual([...graded].sort(), [...new Set(Object.values(FORWARD))].sort());
-  assert.equal(new Set(graded).size, graded.length);
+  const carried = DS013_MATRIX.filter((r) => r.members.length > 0);
+  const clauses = carried.map((r) => r.clause);
+  assert.deepEqual([...clauses].sort(), [...new Set(Object.values(FORWARD))].sort());
+  assert.equal(new Set(clauses).size, clauses.length);
+  for (const r of carried) {
+    assert.equal(r.graded, true, `${r.clause} has 2025 members, so their findings feed it`);
+  }
 });
 
-test('every NEW_IN_DS013 clause appears exactly once, as an ungraded row', () => {
-  const informational = DS013_MATRIX.filter((r) => !r.graded).map((r) => r.clause);
-  assert.deepEqual([...informational].sort(), [...NEW_IN_DS013].sort());
+test('every NEW_IN_DS013 clause appears exactly once, with no members', () => {
+  const added = DS013_MATRIX.filter((r) => r.members.length === 0).map((r) => r.clause);
+  assert.deepEqual([...added].sort(), [...NEW_IN_DS013].sort());
   for (const clause of NEW_IN_DS013) {
     const r = row(clause);
     assert.deepEqual(r.members, [], `${clause} has no 2025 equivalent, so it has no members`);
@@ -37,6 +42,23 @@ test('every NEW_IN_DS013 clause appears exactly once, as an ungraded row', () =>
       `${clause} has no 2025 equivalent, so it cannot have tightened`,
     );
     assert.equal(r.classes.length, 1, `${clause} carries exactly one decided class`);
+  }
+});
+
+test('an added clause is graded exactly when a finding code folds onto it (tfnv.14)', () => {
+  // DECIDED 2026-09-18: `graded` reports whether live counts feed the row, which
+  // is a different question from whether the draft added the clause.
+  assert.equal(row('5.3.5').graded, true, 'the §3.1 custom-object codes land here');
+  for (const clause of ['5.1.1', '5.1.2', '5.1.11', '5.1.12', '5.3.1']) {
+    assert.equal(row(clause).graded, false, `nothing this service measures feeds ${clause}`);
+  }
+  // The table and the lens are the same claim: every code NEW_FED_BY lists is a
+  // code the fold counts on that clause. §3.1 is the requirement those findings
+  // are stored under, so it is what the fold is asked about.
+  for (const [clause, codes] of Object.entries(NEW_FED_BY)) {
+    for (const code of codes) {
+      assert.equal(clauseUnderLens('3.1', code), clause, `${code} does not fold onto ${clause}`);
+    }
   }
 });
 
