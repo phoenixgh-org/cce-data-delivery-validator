@@ -11,8 +11,19 @@
  * all the state (filter, open row, collapse map, selected tx) — the grading lens
  * (tfnv.5) included: this card takes the selected package as a prop and reads
  * neither the URL nor a constant of its own. Under a non-contract package the
- * card's border goes plum and the header names the package; how the ROWS
- * themselves render under that package is tfnv.6.
+ * card's border goes plum and the header names the package.
+ *
+ * THE ROWS UNDER A DRAFT PACKAGE (tfnv.6). The grouping axis does not change: a
+ * clause is grouped by its verifiability class exactly as a §7 requirement is,
+ * because being NEW or TIGHTENED in the draft is an annotation ON a requirement
+ * rather than a class of its own (owner decision, tfnv.14). So the six clauses
+ * the draft adds sit in the class groups the server sends — 5.3.5 among the
+ * Verified rows, with live counts — and what the draft adds is said on the row
+ * instead: the {@link rowTags} pills, and, for an added clause nothing feeds,
+ * one line at the head of its drill-down ({@link NOT_FED_NOTE}). The signature
+ * block reads the lens too ({@link signaturesForReq}), so clicking an issue
+ * cross-filters the transmission list under the selected package exactly as it
+ * does by default — the same Signature, and the same `key`, reach the Dashboard.
  */
 import type { CSSProperties, ReactElement } from 'react';
 import { useEffect, useState } from 'react';
@@ -74,8 +85,9 @@ export interface CompliancePaneProps {
   activeSignatureKey?: string | null;
   /**
    * The requirement package the served `summary` was computed under (tfnv.4's
-   * `lens`). Presentational here: it tints the chrome and names the package in
-   * the header.
+   * `lens`). READ-ONLY here, as everything on this card is: it tints the chrome,
+   * names the package in the header, and tells a row which signatures belong to
+   * it ({@link signaturesForReq}) — it never re-grades or re-groups anything.
    */
   lens?: Profile;
   /** The package in force, as the session serves it. */
@@ -139,6 +151,109 @@ const prefersReducedMotion =
 
 const mono = 'var(--mono)';
 
+/* ------------------------------------------------------------------ *
+ * Row annotations — what the draft package adds to a row, orthogonal to the
+ * verifiability class that groups it (tfnv.14).
+ * ------------------------------------------------------------------ */
+
+/**
+ * Whether the selected package ADDS this clause: `members` is the 2025
+ * requirement ids the clause merges, and empty is what "new in the draft" means.
+ *
+ * It is `members`, not `graded`, that answers this. The server sends both on
+ * every draft row and they part company on 5.3.5, which no 2025 requirement maps
+ * onto and which is still fed — by the §3.1 custom-object check, whose findings
+ * fold onto it (src/api/lens.ts). Reading `graded` here would drop the NEW tag
+ * from the one added clause that has numbers behind it. Absent under the contract
+ * lens, where the package has no notion of an added clause, so this is false.
+ */
+export function isNewInDraft(row: ComplianceRow): boolean {
+  return row.members !== undefined && row.members.length === 0;
+}
+
+/** A row annotation the draft package adds: the pill's word and its tooltip. */
+export interface RowTag {
+  /** `data-tag` value — the annotation, for the DOM and for the tests. */
+  id: 'tightened' | 'new';
+  /** The pill's word. */
+  label: string;
+  /** The `title` tooltip: one sentence saying what the annotation means. */
+  title: string;
+}
+
+/**
+ * The annotations a row carries, in render order — TIGHTENED before NEW.
+ *
+ * Both are pills rather than groups: a reader scanning the column wants the
+ * verifiability class first (what we can prove about this row), and the draft's
+ * relationship to the contract second. No row carries both today — a clause with
+ * no 2025 member cannot have tightened — but the order is stated rather than left
+ * to chance.
+ *
+ * The contract package's name comes from the vocabulary (`PROFILE_NAME`), never
+ * from a literal here: the day the contract in force moves, the tooltip follows
+ * it. "DS01.3" in these sentences names the DOCUMENT, which is not a lineage
+ * name and does not move.
+ */
+export function rowTags(row: ComplianceRow, contractProfile: Profile = CONTRACT_PROFILE): RowTag[] {
+  const tags: RowTag[] = [];
+  if (row.tightened === true) {
+    tags.push({
+      id: 'tightened',
+      label: 'TIGHTENED',
+      title: 'DS01.3 changes what conformance means here.',
+    });
+  }
+  if (isNewInDraft(row)) {
+    tags.push({
+      id: 'new',
+      label: 'NEW',
+      title:
+        `Added by the DS01.3 draft; nothing in the ${PROFILE_NAME[contractProfile]} ` +
+        'contract obliges this.',
+    });
+  }
+  return tags;
+}
+
+/**
+ * The line an ADDED clause that nothing feeds opens its drill-down with.
+ *
+ * Such a row shows no counts, and without this it would read like a row we
+ * simply have not seen traffic for — the same blank a conformant-but-silent
+ * requirement shows. The sentence says the blank is structural: no 2025 delivery
+ * is measured against this clause, so no volume of traffic will ever fill it.
+ * An added clause that IS fed (5.3.5) shows live counts and a status like any
+ * other row of its class, and gets no such line.
+ */
+export const NOT_FED_NOTE =
+  'New in DS01.3: no 2025 requirement maps here, so no delivery is counted on this row.';
+
+/** One annotation pill, rendered inline after the row's summary. */
+function RowTagPill({ tag }: { tag: RowTag }): ReactElement {
+  return (
+    <span
+      data-tag={tag.id}
+      title={tag.title}
+      style={{
+        marginLeft: 6,
+        padding: '1px 6px',
+        fontSize: 10,
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '.04em',
+        color: 'var(--draft)',
+        background: 'var(--draft-bg)',
+        borderRadius: 999,
+        whiteSpace: 'nowrap',
+        verticalAlign: 'middle',
+      }}
+    >
+      {tag.label}
+    </span>
+  );
+}
+
 /**
  * The deduped signatures that belong to a requirement — `Signature.req` keyed,
  * matching the prototype's `E.signaturesForReq`. Server already scoped these to
@@ -152,16 +267,39 @@ const mono = 'var(--mono)';
  * what keeps that true if a future advisory is ever given a requirement to group
  * under. Advisories reach the column through {@link advisorySignatures} instead.
  *
- * CONTRACT ONLY (by1c.7), the mirror's third guard: the §7 matrix grades
- * the obligations in force, so a 'ds013' shadow signature is excluded even if a
- * DS01.3 clause id ever collides with a §7 id.
+ * UNDER THE CONTRACT LENS, CONTRACT ONLY (by1c.7) — the mirror's third guard:
+ * the §7 matrix grades the obligations in force, so a 'ds013' shadow signature is
+ * excluded even if a DS01.3 clause id ever collides with a §7 id. That branch is
+ * unchanged, and the default view with it.
+ *
+ * UNDER ANOTHER LENS (tfnv.6) a row collects two kinds of signature, which is the
+ * fold the server performs in `withRequirementUnderLens` (src/api/signatures.ts):
+ * a signature of the SELECTED package keeps its own `req`, because it was numbered
+ * in that package when it was written, and a CONTRACT signature lands on the row
+ * the server stamped onto it as `requirementUnderLens`.
+ *
+ * Both halves read SERVED FIELDS ONLY. The stamp is why this needs no browser copy
+ * of the clause map, and why a contract signature the selected package files
+ * nowhere — a §3.2 result the draft re-runs for itself — carries no stamp and so
+ * joins no row. ComplianceCard.test.ts holds this selection equal to the server's
+ * own fold on a fixture, rather than to a transcription of the rule.
  */
 export function signaturesForReq(
   signatures: readonly Signature[],
   requirement: string,
+  lens: Profile = CONTRACT_PROFILE,
+  contractProfile: Profile = CONTRACT_PROFILE,
 ): Signature[] {
+  if (lens === contractProfile) {
+    return signatures.filter(
+      (s) => s.kind !== 'advisory' && s.profile === contractProfile && s.req === requirement,
+    );
+  }
   return signatures.filter(
-    (s) => s.kind !== 'advisory' && s.profile === CONTRACT_PROFILE && s.req === requirement,
+    (s) =>
+      s.kind !== 'advisory' &&
+      ((s.profile === lens && s.req === requirement) ||
+        (s.profile === contractProfile && s.requirementUnderLens === requirement)),
   );
 }
 
@@ -356,15 +494,21 @@ function SignatureSummary({
   signatures,
   activeSignatureKey,
   onSelectSignature,
+  lens,
+  contractProfile,
 }: {
   row: ComplianceRow;
   signatures: Signature[];
   activeSignatureKey: string | null;
   onSelectSignature?: (sig: Signature) => void;
+  /** The selected requirement package — which signatures belong to this row. */
+  lens: Profile;
+  /** The package in force, as the session serves it. */
+  contractProfile: Profile;
 }): ReactElement {
   const [showAll, setShowAll] = useState(false);
   const segments = countSegments(row);
-  const sigs = signaturesForReq(signatures, row.requirement);
+  const sigs = signaturesForReq(signatures, row.requirement, lens, contractProfile);
   const hasSigs = sigs.length > 0;
   const max = hasSigs ? Math.max(...sigs.map((s) => s.count)) : 0;
   const visible = showAll ? sigs : sigs.slice(0, 4);
@@ -437,6 +581,8 @@ function ReqRow({
   signatures,
   activeSignatureKey,
   onSelectSignature,
+  lens,
+  contractProfile,
 }: {
   row: ComplianceRow;
   dead: boolean;
@@ -446,6 +592,10 @@ function ReqRow({
   signatures: Signature[];
   activeSignatureKey: string | null;
   onSelectSignature?: (sig: Signature) => void;
+  /** The selected requirement package — the row's tags and signatures read it. */
+  lens: Profile;
+  /** The package in force, as the session serves it. */
+  contractProfile: Profile;
 }): ReactElement {
   const ref = getRequirementReference(row.requirement);
   const text = ref?.text ?? row.summary;
@@ -454,6 +604,10 @@ function ReqRow({
   // its provenance wherever it is shown. The test is the table it came out of,
   // not the id's shape: the two key spaces are disjoint, so membership is exact.
   const fromDraft = ref !== undefined && row.requirement in DS013_REFERENCE;
+  const tags = rowTags(row, contractProfile);
+  // An added clause nothing feeds: `graded` false is the server saying no live
+  // count lands here, which is a different statement from "no traffic yet".
+  const notFed = isNewInDraft(row) && row.graded === false;
 
   const rowStyle: CSSProperties = {
     display: 'flex',
@@ -487,7 +641,10 @@ function ReqRow({
             fontFamily: mono,
             fontSize: 11.5,
             color: 'var(--text-faint)',
-            width: 30,
+            // Wide enough for a six-character DS01.3 clause id ('5.1.10'); a §7
+            // id is shorter and simply sits in the same column, so the two
+            // packages align on one width rather than reflowing at the toggle.
+            width: 42,
             flexShrink: 0,
           }}
         >
@@ -500,6 +657,9 @@ function ReqRow({
             size={11}
             style={{ color: 'var(--text-faint)', marginLeft: 6, verticalAlign: 'middle' }}
           />
+          {tags.map((tag) => (
+            <RowTagPill key={tag.id} tag={tag} />
+          ))}
         </span>
         {!dead && (
           <span
@@ -541,6 +701,19 @@ function ReqRow({
             padding: '12px 16px 15px 60px',
           }}
         >
+          {notFed && (
+            <div
+              style={{
+                marginBottom: 8,
+                fontSize: 11.5,
+                lineHeight: 1.6,
+                color: 'var(--text-faint)',
+                maxWidth: 640,
+              }}
+            >
+              {NOT_FED_NOTE}
+            </div>
+          )}
           <div style={{ fontSize: 12.5, lineHeight: 1.65, maxWidth: 640 }}>{text}</div>
           {fromDraft && (
             <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-faint)', maxWidth: 640 }}>
@@ -569,6 +742,8 @@ function ReqRow({
               signatures={signatures}
               activeSignatureKey={activeSignatureKey}
               onSelectSignature={onSelectSignature}
+              lens={lens}
+              contractProfile={contractProfile}
             />
           )}
         </div>
@@ -738,8 +913,9 @@ export function ComplianceCard({
   lens = CONTRACT_PROFILE,
   contractProfile = CONTRACT_PROFILE,
 }: CompliancePaneProps): ReactElement {
-  // A non-contract package is selected (tfnv.5) — the one thing that changes the
-  // card's chrome and header. Everything below renders as it always has.
+  // A non-contract package is selected (tfnv.5) — what tints the card's chrome
+  // and names the package in the header. The rows read `lens` and
+  // `contractProfile` themselves (tfnv.6); this flag is chrome only.
   const draftLens = lens !== contractProfile;
   /*
    * Collapse state for the Advisories section, LOCAL rather than in the parent's
@@ -940,6 +1116,8 @@ export function ComplianceCard({
                     signatures={signatures}
                     activeSignatureKey={activeSignatureKey}
                     onSelectSignature={onSelectSignature}
+                    lens={lens}
+                    contractProfile={contractProfile}
                   />
                 ))}
             </div>

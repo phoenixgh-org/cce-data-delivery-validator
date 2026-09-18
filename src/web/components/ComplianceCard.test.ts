@@ -1,6 +1,7 @@
 /**
- * The compliance column's ADVISORIES section (agj.16) — and the two-sided
- * exclusion that lets it exist.
+ * The compliance column: the ADVISORIES section (agj.16) and the two-sided
+ * exclusion that lets it exist, then the card under a DRAFT grading lens
+ * (tfnv.6).
  *
  * Advisories moved INTO the verdict column, which is the one place the category
  * has always been kept out of. That is safe only because the split is explicit
@@ -28,25 +29,73 @@
  *   4. EMPTY MEANS ABSENT. No advisories → the section returns null, header and
  *      all, so a conformant session's column looks exactly as it did before.
  *
- * Like Setup.test.ts / TransmissionsCard.test.ts this reaches pure functions
- * only — the repo has no component-test harness. {@link AdvisorySection} is
- * hook-free by design (its collapse state is the parent's), so it can be CALLED
- * as a plain function and its returned element tree walked for the rows; nothing
- * here mounts or renders. The global React binding plus the dynamic import are
- * the same shim Setup.test.ts explains: src/web has no jsx tsconfig, so esbuild
- * uses the classic `React.createElement` transform.
+ * THE CARD UNDER A DRAFT LENS (tfnv.6). Four claims, and the reason each needs a
+ * test rather than a reading of the component:
+ *
+ *   5. THE GROUPING AXIS DOES NOT MOVE. All 27 DS01.3 clauses render, each in the
+ *      group of the class the SERVER sent, and there is no sixth group — being
+ *      added or tightened by the draft is an annotation, not a verifiability
+ *      class (owner decision, tfnv.14). The case that decides it is 5.3.5: an
+ *      added clause that IS fed, which an informational group would have hidden
+ *      while it was failing. It is asserted to render among the Verified rows,
+ *      with its counts.
+ *   6. THE ANNOTATIONS ARE ON THE RIGHT ROWS. Six NEW and four TIGHTENED, joined
+ *      against the served matrix rather than typed here, so re-pointing a clause
+ *      moves the expectation with it.
+ *   7. AN ADDED CLAUSE NOTHING FEEDS SAYS SO. Its drill-down opens with
+ *      {@link NOT_FED_NOTE}; a fed one (5.3.5) does not, and neither does any row
+ *      under the contract lens, whose rendering is asserted tag-free and
+ *      unchanged.
+ *   8. THE SIGNATURE SELECTION IS THE SERVER'S FOLD. `signaturesForReq` under a
+ *      lens is held equal to `withRequirementUnderLens` (src/api/signatures.ts)
+ *      on a fixture set, the clauseMap.test.ts pattern — the browser must not
+ *      invent a second rule about which issues belong to a clause, because the
+ *      key it hands to the cross-filter is what scopes the transmission list.
+ *
+ * Most of this file reaches pure functions only, the Setup.test.ts /
+ * TransmissionsCard.test.ts pattern: {@link AdvisorySection} is hook-free by
+ * design (its collapse state is the parent's), so it can be CALLED as a plain
+ * function and its returned element tree walked for the rows. `ComplianceCard`
+ * itself opens with `useState`, so the claims about the whole column use
+ * `renderToStaticMarkup` — the same published-API-no-DOM escape Setup.test.ts
+ * explains, and still no component-test harness and no jsdom. The global React
+ * binding plus the dynamic import are that file's shim too: src/web has no jsx
+ * tsconfig, so esbuild uses the classic `React.createElement` transform.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as React from 'react';
 
-import type { Signature } from '../api';
+import type { ComplianceRow, Signature } from '../api';
+import { CONTRACT_PROFILE } from '../api';
+import { PROFILE_NAME } from '../profiles.js';
+import { COMPLIANCE_MATRIX } from '../../api/compliance-matrix.js';
+import { DS013_MATRIX } from '../../api/matrix-ds013.js';
+import { clauseUnderLens as serverClauseUnderLens } from '../../api/lens.js';
+import {
+  signaturesForReq as serverSignaturesForReq,
+  withRequirementUnderLens,
+} from '../../api/signatures.js';
+import { CLASS_META } from './ui/statusMaps.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
-const { AdvisorySection, SigRow, advisorySignatures, signaturesForReq, sigTone } =
-  await import('./ComplianceCard.js');
+const {
+  AdvisorySection,
+  ComplianceCard,
+  NOT_FED_NOTE,
+  SigRow,
+  advisorySignatures,
+  isNewInDraft,
+  rowTags,
+  signaturesForReq,
+  sigTone,
+} = await import('./ComplianceCard.js');
+const { renderToStaticMarkup } = await import('react-dom/server');
+
+/** The draft package's id, as the session serves it in `lens`. */
+const DRAFT = 'ds013';
 
 /** A signature as the server rolls one; `over` states only what a test varies. */
 function sig(over: Partial<Signature> = {}): Signature {
@@ -213,4 +262,308 @@ test('no advisories renders no section at all — not an empty one', () => {
   // Collapsed is a different thing from absent: the header still renders.
   assert.notEqual(section([adv('adv.null_padding')], { collapsed: true }), null);
   assert.deepEqual(sigRows(section([adv('adv.null_padding')], { collapsed: true })), []);
+});
+
+/* ------------------------------------------------------------------ *
+ * The card under a DRAFT grading lens (tfnv.6).
+ * ------------------------------------------------------------------ */
+
+/**
+ * The 27 DS01.3 rows as the session serves them, built FROM the served matrix so
+ * that a clause re-pointed on the server moves this fixture with it. `over` lets
+ * one test give a row live counts without restating the other 26.
+ */
+function draftSummary(over: Record<string, Partial<ComplianceRow>> = {}): ComplianceRow[] {
+  return DS013_MATRIX.map((row) => ({
+    requirement: row.clause,
+    summary: row.summary,
+    classes: [...row.classes],
+    counts: { pass: 0, fail: 0, info: 0 },
+    outdated: 0,
+    status: 'untested',
+    tightened: row.tightened,
+    members: [...row.members],
+    graded: row.graded,
+    ...(over[row.clause] ?? {}),
+  })) as ComplianceRow[];
+}
+
+/** The §7 rows, with none of the three DS01.3 fields — the contract response. */
+function contractSummary(): ComplianceRow[] {
+  return COMPLIANCE_MATRIX.map((row) => ({
+    requirement: row.requirement,
+    summary: row.summary,
+    classes: [...row.classes],
+    counts: { pass: 0, fail: 0, info: 0 },
+    outdated: 0,
+    status: 'untested',
+  })) as ComplianceRow[];
+}
+
+/**
+ * The whole column's markup. Every non-gradeable group is opened, because the
+ * claim under test is which rows EXIST and where, not what the parent has
+ * collapsed.
+ */
+function cardMarkup(over: Record<string, unknown> = {}): string {
+  const props = {
+    summary: draftSummary(),
+    transmissions: [],
+    selectedTx: null,
+    onSelectTx: () => {},
+    expandedReq: null,
+    onToggleReq: () => {},
+    showNonGradeable: true,
+    onShowNonGradeableChange: () => {},
+    collapsedGroups: { 'active-only': false, none: false },
+    onToggleGroup: () => {},
+    signatures: [],
+    activeSignatureKey: null,
+    lens: DRAFT,
+    contractProfile: CONTRACT_PROFILE,
+    ...over,
+  };
+  return renderToStaticMarkup(
+    React.createElement(ComplianceCard, props as Parameters<typeof ComplianceCard>[0]),
+  );
+}
+
+/**
+ * The markup of each requirement row, keyed by its id. `data-req` opens a row and
+ * the split ends each slice where the next row begins, so a slice holds exactly
+ * one row's header and (when open) its drill-down.
+ */
+function rowSlices(markup: string): Map<string, string> {
+  const slices = new Map<string, string>();
+  for (const part of markup.split('data-req="').slice(1)) {
+    slices.set(part.slice(0, part.indexOf('"')), part);
+  }
+  return slices;
+}
+
+/** The ids carrying one annotation pill, in render order. */
+function tagged(markup: string, tag: 'new' | 'tightened'): string[] {
+  return [...rowSlices(markup)]
+    .filter(([, slice]) => slice.includes(`data-tag="${tag}"`))
+    .map(([id]) => id);
+}
+
+test('every DS01.3 clause renders, in the five class groups and no sixth one', () => {
+  const markup = cardMarkup();
+
+  // All 27, and exactly the clauses the server sent.
+  assert.deepEqual(
+    [...rowSlices(markup).keys()].sort(),
+    DS013_MATRIX.map((row) => row.clause).sort(),
+  );
+
+  // Five group headers, one per group, and nothing keyed on the annotations: an
+  // added clause is grouped by its class like any other row (tfnv.14).
+  for (const cls of ['verified', 'heuristic', 'attestation', 'active-only', 'none'] as const) {
+    const label = CLASS_META[cls].label;
+    assert.equal(markup.split(`>${label}<`).length - 1, 1, label);
+  }
+  assert.ok(!markup.includes('New in DS01.3'), 'no "New in DS01.3" group header');
+});
+
+test('5.3.5 is a Verified row with live counts, not an informational one', () => {
+  const markup = cardMarkup({
+    summary: draftSummary({
+      '5.3.5': { counts: { pass: 4, fail: 1, info: 0 }, status: 'fail' },
+    }),
+  });
+
+  // Between the Verified header and the next group's, which is where its class
+  // puts it — the row a collapsed "new in DS01.3" group would have hidden while
+  // it was failing.
+  const verified = markup.indexOf(`>${CLASS_META.verified.label}<`);
+  const heuristic = markup.indexOf(`>${CLASS_META.heuristic.label}<`);
+  const row = markup.indexOf('data-req="5.3.5"');
+  assert.ok(verified < row && row < heuristic, '5.3.5 renders among the Verified rows');
+
+  // And it renders its numbers: a row with `graded` true has counts like any other.
+  const slice = rowSlices(markup).get('5.3.5') ?? '';
+  assert.ok(slice.includes('1f'), 'the failure count is on the row');
+  assert.ok(slice.includes('4p'), 'the pass count is on the row');
+});
+
+test('six clauses carry NEW and four carry TIGHTENED, on the rows the server marks', () => {
+  const markup = cardMarkup();
+
+  assert.deepEqual(
+    tagged(markup, 'new').sort(),
+    DS013_MATRIX.filter((row) => row.members.length === 0)
+      .map((row) => row.clause)
+      .sort(),
+  );
+  assert.equal(tagged(markup, 'new').length, 6);
+
+  assert.deepEqual(tagged(markup, 'tightened').sort(), ['5.1.10', '5.3.2', '5.3.3', '5.4.1']);
+  assert.deepEqual(
+    tagged(markup, 'tightened').sort(),
+    DS013_MATRIX.filter((row) => row.tightened)
+      .map((row) => row.clause)
+      .sort(),
+  );
+});
+
+test('the tag tooltips name the contract from the vocabulary, never from a literal', () => {
+  const [tightened] = rowTags(
+    draftSummary().find((r) => r.requirement === '5.1.10') as ComplianceRow,
+  );
+  assert.deepEqual(tightened, {
+    id: 'tightened',
+    label: 'TIGHTENED',
+    title: 'DS01.3 changes what conformance means here.',
+  });
+
+  const [added] = rowTags(draftSummary().find((r) => r.requirement === '5.3.1') as ComplianceRow);
+  assert.equal(added?.label, 'NEW');
+  assert.ok(
+    added?.title.includes(PROFILE_NAME[CONTRACT_PROFILE]),
+    'the tooltip names the contract package from PROFILE_NAME',
+  );
+
+  // The NEW tag is `members` empty, NOT `graded` false: 5.3.5 is added AND fed,
+  // and reading `graded` would drop the tag from the one row where they differ.
+  const fed = draftSummary().find((r) => r.requirement === '5.3.5') as ComplianceRow;
+  assert.equal(fed.graded, true);
+  assert.equal(isNewInDraft(fed), true);
+  assert.equal(rowTags(fed).length, 1);
+});
+
+test('an added clause nothing feeds opens its drill-down saying so; a fed one does not', () => {
+  assert.ok(cardMarkup({ expandedReq: '5.1.1' }).includes(NOT_FED_NOTE));
+  assert.ok(!cardMarkup({ expandedReq: '5.3.5' }).includes(NOT_FED_NOTE));
+  // Nor does a clause carried forward from a 2025 requirement, tightened or not.
+  assert.ok(!cardMarkup({ expandedReq: '5.1.10' }).includes(NOT_FED_NOTE));
+  // Closed rows say nothing at all: the line is drill-down copy, not row chrome.
+  assert.ok(!cardMarkup().includes(NOT_FED_NOTE));
+});
+
+test('under the contract lens the rows render exactly as they did: no tags, no note', () => {
+  const markup = cardMarkup({
+    summary: contractSummary(),
+    lens: CONTRACT_PROFILE,
+    expandedReq: '3.1',
+  });
+
+  assert.deepEqual(
+    [...rowSlices(markup).keys()].sort(),
+    COMPLIANCE_MATRIX.map((r) => r.requirement).sort(),
+  );
+  assert.ok(!markup.includes('data-tag='), 'the contract package annotates nothing');
+  assert.ok(!markup.includes(NOT_FED_NOTE));
+  // The three DS01.3 fields are absent from a contract row, so the helpers that
+  // read them answer false rather than guessing.
+  for (const row of contractSummary()) {
+    assert.equal(isNewInDraft(row), false, row.requirement);
+    assert.deepEqual(rowTags(row), []);
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ * signaturesForReq under the lens — held equal to the server's fold.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A signature set covering every branch of the fold: a contract finding the map
+ * carries forward, the §3.1 split on a custom-object code, the §3.2 result the
+ * draft re-runs for itself (so it belongs to no draft row), the draft's own
+ * findings, and an advisory.
+ */
+const LENS_SIGS: Signature[] = [
+  sig({ key: '2025|1.4|tx.too_large', req: '1.4', kind: 'check' }),
+  sig({ key: '2025|3.1|tx.missing_custom_schema', req: '3.1', kind: 'check' }),
+  sig({ key: '2025|3.1|tx.transferred_at_not_utc', req: '3.1', kind: 'check' }),
+  sig({ key: '2025|3.2|required|/data|CID', req: '3.2', kind: 'schema' }),
+  sig({ key: '2025|4.3|tx.retried_permanent', req: '4.3', kind: 'check' }),
+  sig({ key: 'ds013|5.3.2|required|/data|LSER', req: '5.3.2', profile: DRAFT, kind: 'schema' }),
+  sig({ key: 'ds013|5.3.3|tx.missing_transfer_id', req: '5.3.3', profile: DRAFT, kind: 'check' }),
+  adv('adv.null_padding'),
+];
+
+/** The set as the session serves it under one lens — the server stamps the rows. */
+function served(lens: string): Signature[] {
+  return withRequirementUnderLens(
+    LENS_SIGS as never,
+    lens as never,
+    CONTRACT_PROFILE as never,
+  ) as unknown as Signature[];
+}
+
+test('under the contract lens the selection is the server’s signaturesForReq, unchanged', () => {
+  const sigs = served(CONTRACT_PROFILE);
+  for (const req of ['1.4', '3.1', '3.2', '4.3', '5.3.2', '']) {
+    assert.deepEqual(
+      signaturesForReq(sigs, req),
+      serverSignaturesForReq(sigs as never, req) as unknown as Signature[],
+      req,
+    );
+    // The defaults ARE the contract lens, so stating it changes nothing.
+    assert.deepEqual(
+      signaturesForReq(sigs, req, CONTRACT_PROFILE, CONTRACT_PROFILE),
+      signaturesForReq(sigs, req),
+    );
+  }
+});
+
+/**
+ * THE DRAFT-LENS SELECTION IS THE SERVER'S FOLD.
+ *
+ * `rowFor` in src/api/lens.ts is not exported, and the fold that applies to a
+ * SIGNATURE is `withRequirementUnderLens` (src/api/signatures.ts) — it stamps each
+ * signature with the row it belongs to under the lens, reading lens.ts's own
+ * `clauseUnderLens` for the contract half. So the expectation is that stamp,
+ * computed by the server on the same fixture set, never transcribed here.
+ */
+test('under the draft lens every row selects what the server folded onto it', () => {
+  const sigs = served(DRAFT);
+
+  for (const { clause } of DS013_MATRIX) {
+    assert.deepEqual(
+      signaturesForReq(sigs, clause, DRAFT, CONTRACT_PROFILE),
+      sigs.filter((s) => s.kind !== 'advisory' && s.requirementUnderLens === clause),
+      clause,
+    );
+  }
+
+  // The interesting rows, stated so the pin fails loudly rather than emptily:
+  // §3.1's custom-object half lands on 5.3.5 and its metadata half on 5.3.3, the
+  // draft's own finding keeps its number, and §3.2 belongs to no draft row.
+  const keysOn = (clause: string): string[] =>
+    signaturesForReq(sigs, clause, DRAFT, CONTRACT_PROFILE).map((s) => s.key);
+  assert.deepEqual(keysOn('5.3.5'), ['2025|3.1|tx.missing_custom_schema']);
+  assert.deepEqual(keysOn('5.3.3'), [
+    '2025|3.1|tx.transferred_at_not_utc',
+    'ds013|5.3.3|tx.missing_transfer_id',
+  ]);
+  assert.deepEqual(keysOn('5.1.6'), ['2025|1.4|tx.too_large']);
+  assert.deepEqual(keysOn('5.4.1'), ['2025|4.3|tx.retried_permanent']);
+  assert.deepEqual(keysOn('5.3.2'), ['ds013|5.3.2|required|/data|LSER']);
+
+  // No signature is filed twice, and no advisory is filed at all.
+  const filed = DS013_MATRIX.flatMap(({ clause }) => keysOn(clause));
+  assert.equal(new Set(filed).size, filed.length);
+  assert.ok(!filed.some((key) => key.startsWith('adv|')));
+});
+
+test('the row a contract signature lands on is lens.ts’s clauseUnderLens', () => {
+  // The stamp the browser trusts is the server's fold of the clause map: §3.1
+  // with a custom-object code goes to 5.3.5, §3.2 nowhere, the rest forward.
+  const codes: Record<string, string | null> = {
+    '2025|1.4|tx.too_large': 'tx.too_large',
+    '2025|3.1|tx.missing_custom_schema': 'tx.missing_custom_schema',
+    '2025|3.1|tx.transferred_at_not_utc': 'tx.transferred_at_not_utc',
+    '2025|3.2|required|/data|CID': null,
+    '2025|4.3|tx.retried_permanent': 'tx.retried_permanent',
+  };
+  for (const s of served(DRAFT)) {
+    if (s.profile !== CONTRACT_PROFILE || s.kind === 'advisory') continue;
+    assert.equal(
+      s.requirementUnderLens ?? null,
+      serverClauseUnderLens(s.req, codes[s.key] ?? null),
+      s.key,
+    );
+  }
 });

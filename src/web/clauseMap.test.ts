@@ -1,14 +1,20 @@
 /**
  * The browser's clause translation must equal the server's (by1c.14, tfnv.7).
  *
- * src/web/clauseMap.ts hand-copies four tables and one rule out of src/api —
- * `FORWARD` and `TIGHTENED` from clause-map.ts, `RE_RUN_UNDER_SHADOW` from
- * verdicts.ts, `CUSTOM_SCHEMA_CODES` from the custom-object check, and the fold
- * rule from lens.ts. Each server module has its own test joining it against
- * `docs/clause-mapping.md` or the §7 matrix, so what THIS file protects is the
- * COPY: a rule changed on the server and not here would renumber, hide or
- * double-count a finding in the docked detail — silently, and with nothing for a
- * supplier to notice.
+ * src/web/clauseMap.ts hand-copies six tables and one rule out of src/api —
+ * `FORWARD`, `TIGHTENED`, `NEW_IN_DS013` and `DS013_TITLE` from clause-map.ts,
+ * `RE_RUN_UNDER_SHADOW` from verdicts.ts, `CUSTOM_SCHEMA_CODES` from the
+ * custom-object check, and the fold rule from lens.ts. Each server module has its
+ * own test joining it against `docs/clause-mapping.md` or the §7 matrix, so what
+ * THIS file protects is the COPY: a rule changed on the server and not here would
+ * renumber, hide or double-count a finding in the docked detail — silently, and
+ * with nothing for a supplier to notice.
+ *
+ * The last two are pinned for a different reason (tfnv.6). Nothing in the browser
+ * reads them yet — the compliance card's NEW tag asks the served row, and a row's
+ * words are its served `summary` — so no rendering regression would catch a drift
+ * in them. The equality below is the whole of their protection, and it is what
+ * makes them safe to reach for later.
  *
  * The rule is pinned against the server's OWN FOLD rather than against a
  * transcription of it: every fixture finding is run through `foldUnderLens` and
@@ -23,7 +29,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  DS013_TITLE as SERVER_DS013_TITLE,
   FORWARD as SERVER_FORWARD,
+  NEW_IN_DS013 as SERVER_NEW_IN_DS013,
   TIGHTENED as SERVER_TIGHTENED,
   forwardClause as serverForwardClause,
 } from '../api/clause-map.js';
@@ -38,7 +46,9 @@ import { CUSTOM_SCHEMA_CODES as SERVER_CUSTOM_CODES } from '../ingest/stages/sem
 import { CONTRACT_PROFILE } from './api.js';
 import {
   CUSTOM_SCHEMA_CODES,
+  DS013_TITLE,
   FORWARD,
+  NEW_IN_DS013,
   RE_RUN_UNDER_SHADOW,
   TIGHTENED,
   clauseUnderLens,
@@ -67,6 +77,27 @@ test('the re-run, tightened and custom-code tables are the server’s', () => {
   assert.deepEqual([...RE_RUN_UNDER_SHADOW].sort(), [...SERVER_RE_RUN].sort());
   assert.deepEqual([...TIGHTENED].sort(), [...SERVER_TIGHTENED].sort());
   assert.deepEqual(CUSTOM_SCHEMA_CODES, { ...SERVER_CUSTOM_CODES });
+});
+
+test('the added-clause list and the clause titles are the server’s (tfnv.6)', () => {
+  // Order is part of the copy for NEW_IN_DS013: the server keeps it in DS01.3
+  // document order, and a surface listing the added clauses would show that order.
+  assert.deepEqual(NEW_IN_DS013, [...SERVER_NEW_IN_DS013]);
+  assert.deepEqual(DS013_TITLE, { ...SERVER_DS013_TITLE });
+});
+
+/**
+ * The two mirrored tables also have to agree with the MATRIX the lens serves,
+ * which is the thing a future consumer would be rendering beside them. Both joins
+ * are the server's own (matrix-ds013.test.ts makes them there too); repeating
+ * them on the mirror is what says the copy is usable, not merely identical.
+ */
+test('the mirrored tables cover the DS01.3 matrix: every clause titled, the added ones listed', () => {
+  const added = DS013_MATRIX.filter((row) => row.members.length === 0).map((row) => row.clause);
+  assert.deepEqual([...added].sort(), [...NEW_IN_DS013].sort());
+  for (const row of DS013_MATRIX) {
+    assert.equal(typeof DS013_TITLE[row.clause], 'string', row.clause);
+  }
 });
 
 /**

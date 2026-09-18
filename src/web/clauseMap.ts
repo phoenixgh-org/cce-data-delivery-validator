@@ -12,12 +12,22 @@
  * dependency-free by design, but they sit under src/api, which browser code does
  * not import (src/web/api.ts's header states the rule).
  *
- * WHAT IS MIRRORED, and what is not. The forward map, the re-run set, the
- * tightened set and the custom-object check's two codes are here because
- * {@link clauseUnderLens} and {@link tightenedUnderLens} read them. `NEW_IN_DS013`
- * and `DS013_TITLE` still have no browser consumer — the DS01.3 matrix arrives
- * on the session response — so copying them would put two more tables on the
- * drift list for nothing.
+ * WHAT IS MIRRORED. Every clause table src/api/clause-map.ts exports, plus the
+ * re-run set and the custom-object check's two codes (tfnv.6). Two of them are
+ * READ here — {@link clauseUnderLens} and {@link tightenedUnderLens} are built on
+ * {@link FORWARD} and {@link TIGHTENED} — and two are not:
+ *
+ *   - {@link NEW_IN_DS013} has no browser consumer. The compliance card's NEW tag
+ *     asks the SERVED row instead (`members` empty), which is the right question
+ *     to ask of a row that already carries the answer, and asking a local list
+ *     would let the card disagree with the matrix it is rendering.
+ *   - {@link DS013_TITLE} has none either. A row's words are `row.summary`, served
+ *     with the row, and the docked detail titles a clause from the same response.
+ *
+ * They are mirrored anyway, and deliberately: the copy costs nothing at runtime,
+ * and clauseMap.test.ts holds both equal to the server's, so the day a surface
+ * does need a clause's name or the added-clause list offline, it finds a table
+ * the tests already pin rather than a fresh transcription nobody checks.
  *
  * Every table below is held equal to its server original by clauseMap.test.ts,
  * and {@link clauseUnderLens} is held equal to the server's own fold on a fixture
@@ -91,6 +101,67 @@ export const RE_RUN_UNDER_SHADOW: ReadonlySet<string> = new Set(['3.2']);
  * carries the clause-by-clause reasoning.
  */
 export const TIGHTENED: ReadonlySet<string> = new Set(['1.8', '3.1', '3.2', '4.3']);
+
+/**
+ * The DS01.3 clauses with no 2025 equivalent, in document order — mirror
+ * `NEW_IN_DS013` in src/api/clause-map.ts.
+ *
+ * The 2025 contract obliges a supplier to none of these: they are what the draft
+ * ADDS. That is a separate question from whether this service measures anything
+ * against them — 5.3.5 is on this list and is fed, by the §3.1 custom-object
+ * check, so a row's counts follow the served `graded` flag and not this table
+ * (src/api/matrix-ds013.ts states the split).
+ *
+ * No browser consumer today; see the module header for why it is here.
+ */
+export const NEW_IN_DS013: readonly string[] = [
+  '5.1.1',
+  '5.1.2',
+  '5.1.11',
+  '5.1.12',
+  '5.3.1',
+  '5.3.5',
+];
+
+/**
+ * Short titles for the DS01.3 clauses that can reach the dashboard — every value
+ * of {@link FORWARD} plus every entry of {@link NEW_IN_DS013}. Mirror
+ * `DS013_TITLE` in src/api/clause-map.ts, whose wording is derived from
+ * `docs/clause-mapping.md`.
+ *
+ * These are NOT the words a row shows. A served row carries its own `summary`,
+ * and a surface that has the row reads that; these are the fallback for a surface
+ * that has only a clause id. No browser consumer today; see the module header.
+ */
+export const DS013_TITLE: Readonly<Record<string, string>> = {
+  '5.1.1': 'Employer data access rights',
+  '5.1.2': 'Transport of data',
+  '5.1.3': 'UTF-8 JSON over HTTPS',
+  '5.1.5': 'Authentication method',
+  '5.1.6': 'Payload size limit',
+  '5.1.7': 'Response code handling',
+  '5.1.8': 'Compression',
+  '5.1.9': 'Custom headers',
+  '5.1.10': 'No duplicates',
+  '5.1.11': 'Transmission frequency',
+  '5.1.12': 'Optional pull API',
+  '5.2.1': 'Rate-limiting strategy',
+  '5.2.2': 'Batching and timeliness',
+  '5.2.3': 'Alarm timeliness',
+  '5.3.1': 'General payload contents',
+  '5.3.2': 'Validates against Annex 4',
+  '5.3.3': 'Transmission metadata',
+  '5.3.4': 'Completeness of recorded objects',
+  '5.3.5': 'Custom data object schema',
+  '5.3.6': 'Logger time resolution',
+  '5.4.1': 'Retry on failure',
+  '5.4.2': 'Backoff strategy',
+  '5.4.3': 'Logging of failed attempts',
+  '5.4.4': 'Retransmission on request',
+  '5.4.5': 'Support contact and SLA',
+  '5.4.6': 'Transmission monitoring',
+  '5.4.7': 'Failure notification',
+};
 
 /**
  * The custom-object check's two outcome codes — mirror `CUSTOM_SCHEMA_CODES` in
