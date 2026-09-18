@@ -205,9 +205,18 @@ Resolution is the precondition and not a formality. A missing, non-string, or
 unregistered `meta.schemaVersion` is a §3.2 failure that halts stage 7 with `422`
 before either profile is chosen, and a body that never parsed or a transport halt
 before stage 7 never reaches the choice at all. Those transmissions carry no shadow
-findings and no shadow verdict, and the response says nothing about a second
-lineage — there is no second ruleset to report until the first one has been
-identified.
+findings, and the response says nothing about a second lineage — there is no second
+ruleset to report until the first one has been identified.
+
+Their shadow verdict, however, is null only when nothing carries forward either.
+Transport and semantic breaches are graded once and shared between the two lineages
+through the clause map, so a transport halt that fails §1.4 is also a failure of
+DS01.3 clause 5.1.6 and reads that way under both. A null verdict is reserved for
+the transmission about which the draft can say nothing at all: neither validator saw
+the body and no failure maps forward onto one of its clauses. An unresolved
+`meta.schemaVersion` is the ordinary case, because §3.2 is the one requirement whose
+DS01.3 counterpart is re-run by the shadow validator rather than re-tagged, and here
+that run never happened.
 
 Findings are numbered by the profile that produced them rather than by the role it
 played, so the same validator files under the same clause whichever way round it

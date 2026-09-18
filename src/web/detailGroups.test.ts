@@ -159,11 +159,15 @@ test('a contract failure that re-tags forward is not repeated as a shadow row', 
 });
 
 /**
- * THE SUFFIX GATES ON THE SHADOW HAVING RUN (by1c.41). `verdict()` returns null
- * for a lineage that filed no finding at all — a transport halt stops the
- * pipeline before the schema stage — and the list row then reads "not graded".
- * The detail pane must not claim the DS01.3 failure the verdict engine declined
- * to assert, so the same gate is applied here.
+ * THE SUFFIX GATES ON THE SHADOW HAVING RUN (by1c.41). A transport halt stops the
+ * pipeline before the schema stage, so the shadow lineage files no finding and
+ * this pane has no shadow run to point at.
+ *
+ * Since tfnv.3 the list row for such a transmission does read a DS01.3 fail —
+ * `verdict()` consults forward-mapped contract failures before it answers null —
+ * so the gate here is narrower than the verdict rule by design, and stays that
+ * way until the grading lens replaces the suffix with one findings list per
+ * lineage. See the docblock on `alsoFailsClause`.
  */
 test('no shadow finding on the transmission means no suffix, whatever the clause map says', () => {
   const halted = finding({ requirement: '1.3', code: 'auth.missing_bearer' });

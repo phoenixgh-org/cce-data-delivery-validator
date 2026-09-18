@@ -33,8 +33,8 @@ import { findingSignatureKey, generalizePath } from './signatureKey';
 
 /**
  * The 2025 ids that are NOT re-tagged forward into the shadow verdict — mirror
- * `RE_RUN_UNDER_SHADOW` in src/api/verdicts.ts:79, whose `verdict()` rule
- * (src/api/verdicts.ts:142) is what this suffix reports on.
+ * `RE_RUN_UNDER_SHADOW` in src/api/verdicts.ts:85, whose `verdict()` rule
+ * (src/api/verdicts.ts:155) is what this suffix reports on.
  *
  * Only §3.2 qualifies: transport and semantic checks are emitted once under 2025
  * numbering and re-tagged for the shadow profile, so a 2025 failure on one of
@@ -56,13 +56,17 @@ const SCHEMA_ROW_TITLE = 'schema';
  * for every session with no shadow lineage — where the whole shadow vocabulary
  * is hidden and the detail pane reads exactly as it did before this bite.
  *
- * Null too when the shadow lineage never ran on this transmission (by1c.41).
- * `verdict()` in src/api/verdicts.ts:153 refuses to grade a transmission that
- * carries no finding of the shadow lineage at all — a transport halt files its
- * §1.3 or §1.6 failure and halts the pipeline before the schema stage, so no
- * shadow finding is ever written — and the dot on the list row therefore reads
- * "not graded". A suffix here would assert the shadow result the verdict engine
- * has just declined to assert.
+ * Null too when the shadow lineage never ran on this transmission (by1c.41): a
+ * transport halt files its §1.3 or §1.6 failure and halts the pipeline before the
+ * schema stage, so no shadow finding is ever written and this pane has no shadow
+ * run to point at.
+ *
+ * That gate no longer matches the list row exactly. Since tfnv.3, `verdict()`
+ * (src/api/verdicts.ts:155) consults forward-mapped contract failures before it
+ * answers null, so the same transport halt now shows a DS01.3 fail dot while the
+ * detail pane leaves its finding unsuffixed. The suffix is deliberately left as
+ * it is: it names a clause the SHADOW RUN reached, and the grading lens retires
+ * the suffix altogether in favour of one findings list per lineage.
  */
 export function alsoFailsClause(
   f: FindingView,
@@ -236,8 +240,8 @@ export function groupDetailFindings(
 ): DetailGroups {
   const graded = findings.filter((f) => !isAdvisory(f));
   // Whether the shadow validator ran on this transmission at all — the presence
-  // of ANY finding of that lineage, which is the test `verdict()` makes at
-  // src/api/verdicts.ts:153. A clean shadow run still writes one `pass` finding,
+  // of ANY finding of that lineage, which is the second test `verdict()` makes
+  // at src/api/verdicts.ts:171. A clean shadow run still writes one `pass` finding,
   // so a lineage that ran is always detectable; nothing here infers it from the
   // session's `shadowProfile`, which only says a shadow lineage is registered.
   const shadowRan = shadowProfile !== null && findings.some((f) => f.profile === shadowProfile);

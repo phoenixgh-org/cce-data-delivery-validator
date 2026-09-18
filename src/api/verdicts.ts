@@ -40,16 +40,22 @@ import type { Signature } from './signatures.js';
 import type { Profile } from '../schema-registry.js';
 
 /**
- * A lineage's verdict on one transmission: it passed, it failed, or the lineage
- * never ran on it (`null`).
+ * A lineage's verdict on one transmission: it passed, it failed, or this lineage
+ * has nothing to say about it (`null`).
  *
- * `null` is a SHADOW-ONLY answer and it is not a soft fail. A shadow run is
- * skipped whenever there is nothing to shadow-grade — an unparseable body, an
- * unresolvable `meta.schemaVersion`, a transport stage that halted before the
- * schema stage. Reporting 'pass' there would claim a check that never happened;
- * reporting 'fail' would blame a supplier for the validator's own short-circuit.
- * The contract verdict is never null: a transmission with no contract findings
- * at all failed nothing, which is exactly what the pre-shadow `txFailing` said.
+ * `null` is a SHADOW-ONLY answer and it is not a soft fail. It asserts two things
+ * at once (tfnv.3): the shadow run was skipped because there was nothing to
+ * shadow-grade — an unparseable body, an unresolvable `meta.schemaVersion`, a
+ * transport stage that halted before the schema stage — AND no contract failure
+ * is carried forward onto a clause of this lineage. Transport and semantic
+ * breaches are graded once and shared through the clause map, so a halt before
+ * the schema stage still names a failed clause under the other lineage; `null`
+ * is reserved for the case where neither validator saw the body and nothing
+ * forward-mapped failed either. Reporting 'pass' there would claim a check that
+ * never happened; reporting 'fail' would blame a supplier for the validator's
+ * own short-circuit. The contract verdict is never null: a transmission with no
+ * contract findings at all failed nothing, which is exactly what the pre-shadow
+ * `txFailing` said.
  */
 export type Verdict = 'pass' | 'fail' | null;
 
@@ -133,11 +139,18 @@ function isRetaggedForward(requirement: string): boolean {
  *   - Contract lineage: 'fail' when the transmission carries any non-advisory
  *     fail finding of that lineage, else 'pass'. This is the pre-shadow
  *     `txFailing` (src/api/scope.ts), unchanged.
- *   - Shadow lineage: `null` when the transmission carries no finding of that
- *     lineage at all (the shadow never ran). Otherwise 'fail' when the shadow
- *     run itself failed, OR when a contract failure is re-tagged forward by the
- *     clause map ({@link isRetaggedForward}) — a transport or semantic breach is
- *     graded once and counts under both lineages. Else 'pass'.
+ *   - Shadow lineage, in this order: 'fail' when a contract failure is re-tagged
+ *     forward by the clause map ({@link isRetaggedForward}) — a transport or
+ *     semantic breach is graded once and counts under both lineages; else `null`
+ *     when the transmission carries no finding of that lineage at all; else
+ *     'fail' when the shadow run itself failed; else 'pass'.
+ *
+ * The forward check comes FIRST (tfnv.3). Asking "did this lineage run?" first
+ * answered `null` for every transport halt, which reads as "not graded here" on
+ * a page that grades against DS01.3 — yet a 401 is a §1.3 failure and §1.3 maps
+ * onto clause 5.1.5, so the draft plainly has a failed clause to report. `null`
+ * now means the body reached NEITHER validator under this package AND nothing
+ * forward-mapped failed: genuinely nothing to say, rather than nothing measured.
  */
 export function verdict(
   tx: VerdictTransmission,
@@ -147,13 +160,16 @@ export function verdict(
   if (profile === contractProfile) {
     return tx.findings.some((f) => isGradedFail(f, contractProfile)) ? 'fail' : 'pass';
   }
+  // A contract failure the clause map carries forward is a failure of this
+  // lineage too, whether or not its validator ever ran — so it is asked before
+  // "did this lineage run?", not after.
+  if (tx.findings.some((f) => isGradedFail(f, contractProfile) && isRetaggedForward(f.requirement)))
+    return 'fail';
   // No finding of this lineage means the shadow validator never ran (unresolved
   // schemaVersion, unparseable body, a transport halt). A clean shadow run still
   // writes one `pass` finding, so "it ran" is detectable without a second field.
   if (!tx.findings.some((f) => f.profile === profile)) return null;
   if (tx.findings.some((f) => isGradedFail(f, profile))) return 'fail';
-  if (tx.findings.some((f) => isGradedFail(f, contractProfile) && isRetaggedForward(f.requirement)))
-    return 'fail';
   return 'pass';
 }
 

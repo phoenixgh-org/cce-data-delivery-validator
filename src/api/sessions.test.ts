@@ -1469,6 +1469,12 @@ test(
     // `1.0.0` is a well-formed semver that no lineage registers, so §3.2 rejects
     // it and the shadow validator never runs: the contract verdict is 'fail' and
     // the shadow verdict is null — "not measured", not "would fail".
+    //
+    // Still null after tfnv.3 narrowed the rule, and for the narrower reason: a
+    // contract failure the clause map carries forward now fails the shadow too,
+    // but §3.2 is the one forward entry that is NOT carried (its counterpart
+    // 5.3.2 is re-run, and here it never ran). A transport halt on §1.x in the
+    // same position would read 'fail' under both lineages.
     const app = makeApp();
     await app.ready();
     let uuid: string | undefined;

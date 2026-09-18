@@ -3,10 +3,13 @@
  *
  * The properties pinned here are the ones the whole shadow design rests on and
  * none of which the compiler can hold: that a shadow failure never reaches the
- * contract verdict, that "the shadow did not run" is a third answer rather than
- * a quiet pass, that a transport breach graded once counts under both lineages
- * while a §3.2 schema failure does not, and that the rule is symmetric — the day
- * `CONTRACT_PROFILE` flips, the roles swap with no change here.
+ * contract verdict, that "nothing to say" is a third answer rather than a quiet
+ * pass — and that it is narrower than "the shadow did not run", since a contract
+ * failure the clause map carries forward is reported even when the shadow
+ * validator never ran (tfnv.3) — that a transport breach graded once counts
+ * under both lineages while a §3.2 schema failure does not, and that the rule is
+ * symmetric: the day `CONTRACT_PROFILE` flips, the roles swap with no change
+ * here.
  */
 
 import test from 'node:test';
@@ -81,16 +84,21 @@ test('a shadow failure never reaches the contract verdict', () => {
   assert.equal(verdict(t, SHADOW, CONTRACT), 'fail');
 });
 
-// ── null: the shadow never ran ──────────────────────────────────────────────
+// ── null: nothing this lineage can say ──────────────────────────────────────
 
-test('shadow verdict is null when the transmission carries no shadow finding', () => {
-  // A transport halt: the body never reached the schema stage, so neither
-  // lineage graded the payload and only the transport finding exists.
+test('a transport halt fails the shadow lineage through the clause map (tfnv.3)', () => {
+  // The body never reached the schema stage, so no shadow finding exists — but
+  // §1.4 maps onto clause 5.1.6, and a failed clause is a failed clause however
+  // the halt was numbered. "Not graded here" would understate it.
   const t = tx([f({ requirement: '1.4', severity: 'fail', profile: CONTRACT })]);
-  assert.equal(verdict(t, SHADOW, CONTRACT), null);
+  assert.equal(verdict(t, SHADOW, CONTRACT), 'fail');
+  assert.equal(verdict(t, CONTRACT, CONTRACT), 'fail');
 });
 
 test('null is not a soft fail: an unresolved schemaVersion grades neither lineage', () => {
+  // §3.2 is the one forward entry that is NOT re-tagged (RE_RUN_UNDER_SHADOW):
+  // its counterpart 5.3.2 is re-run by the shadow validator, which here never
+  // ran. So nothing was measured and nothing carries forward — genuinely null.
   const t = tx([
     f({
       requirement: '3.2',
@@ -101,6 +109,22 @@ test('null is not a soft fail: an unresolved schemaVersion grades neither lineag
   ]);
   assert.equal(verdict(t, SHADOW, CONTRACT), null);
   assert.equal(verdict(t, CONTRACT, CONTRACT), 'fail');
+});
+
+test('null survives a finding that grades nothing: an advisory carries nowhere', () => {
+  // An advisory is an observation about a conformant payload, not a defect, so
+  // it is not a contract failure to carry forward. With no shadow finding either
+  // there is nothing to report under the draft.
+  const t = tx([
+    f({
+      requirement: 'adv.null_padding',
+      severity: 'info',
+      profile: CONTRACT,
+      code: 'adv.null_padding',
+    }),
+  ]);
+  assert.equal(verdict(t, SHADOW, CONTRACT), null);
+  assert.equal(verdict(t, CONTRACT, CONTRACT), 'pass');
 });
 
 test('a clean shadow run passes on its single pass finding', () => {
@@ -301,6 +325,19 @@ test('a contract failure is never a readiness reason, even re-tagged forward', (
   );
   assert.equal(r.passingContract, 0);
   assert.equal(r.passingBoth, 0);
+  assert.deepEqual(r.reasons, []);
+});
+
+test('the forward-mapped rule leaves readiness where it was (tfnv.3)', () => {
+  // The reorder flips a transport halt's shadow verdict from null to 'fail', and
+  // neither readiness number can move with it: both fold over contract-PASSING
+  // transmissions only, and a failure carried forward is by definition a
+  // contract failure. The halted transmission is outside the fold either way.
+  const halted = tx([f({ requirement: '1.4', severity: 'fail', profile: CONTRACT })]);
+  assert.equal(verdict(halted, SHADOW, CONTRACT), 'fail');
+  const r = readiness([halted, tx([contractPass, shadowPass])], readinessOptions);
+  assert.equal(r.passingContract, 1);
+  assert.equal(r.passingBoth, 1);
   assert.deepEqual(r.reasons, []);
 });
 
