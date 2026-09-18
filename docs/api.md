@@ -739,9 +739,10 @@ form nothing could filter or open.
 }
 ```
 
-The dashboard does not render readiness at the moment — the strip that showed it is
-unmounted pending a redesign of how a second lineage is surfaced (`DESIGN.md` §10) —
-but the field is served as described.
+The dashboard renders readiness as one sentence on the transmissions summary card
+under `lens=ds013` — of the in-scope traffic that passes UNICEF Q1 2025, how much
+also passes the draft (`DESIGN.md` §10). Under the contract lens the sentence is not
+shown, but the field is served either way.
 
 Readiness is computed over `window` and `source` only. The list route's `failuresOnly`
 and `signatureKey` filters are deliberately not applied: readiness is a statement about

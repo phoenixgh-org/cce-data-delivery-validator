@@ -540,9 +540,11 @@ DS01.3 rows — 27 clause(s): exercised 1, not exercised 26
 **Exercised**, not covered, and the word is chosen. The 2025 join grades a row on being
 claimed in both directions; this one asks only whether any case names the clause, because
 the draft is unpublished and a run against it is preparation rather than grading. A
-clause with no exercise is therefore printed, never failed — several of the 27 are
-informational rows the receiving side files no finding under at all, and a CI failure
-demanding a case for each would be demanding an exercise that does not exist. What CI
+clause with no exercise is therefore printed, never failed. A clause the draft adds is
+informational unless a finding code feeds it — `NEW_FED_BY` in `src/api/matrix-ds013.ts`,
+which today names 5.3.5 alone — so five of the 27 rows are ones the receiving side files
+no finding under at all, and a CI failure demanding a case for each would be demanding an
+exercise that does not exist. What CI
 does pin is the mechanical half: a clause a case names that the draft matrix does not
 carry is reported as an unknown claim, exactly as a mistyped requirement id is.
 

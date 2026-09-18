@@ -321,16 +321,22 @@ describing the standard rather than this service's reach.
 same session under DS01.3 clause numbers, and the rows it renders are computed
 from the clause map joined onto the 27 rows above
 ([`src/api/matrix-ds013.ts`](src/api/matrix-ds013.ts)). Twenty-one DS01.3 clauses
-are graded, each carrying the 2025 requirements it merges. A clause that merges
-several of them inherits the union of their verifiability classes, with the first
-member's class still primary, for the reason given just above: the class
-describes the receiver's vantage rather than the standard, so renumbering a
-clause cannot change it. The six DS01.3 clauses with no 2025 equivalent are
-listed informationally, each with the class decided for it — 5.1.1, 5.1.11 and
-5.3.1 self-attestation, 5.1.2 enforced, 5.1.12 none, and 5.3.5 verified, since
-the §3.1 custom-object check already grades it passively. Deriving the matrix
-rather than typing it out a second time means the two can never drift: a change
-to the map or to a 2025 row moves both, and the join is tested.
+carry forward the 2025 requirements they merge. A clause that merges several of
+them inherits the union of their verifiability classes, with the first member's
+class still primary, for the reason given just above: the class describes the
+receiver's vantage rather than the standard, so renumbering a clause cannot
+change it.
+
+Twenty-two of the 27 clauses are fed by live counts. `graded` on the served row
+means exactly that — this session's traffic feeds the row — so it covers the
+twenty-one clauses with 2025 members plus 5.3.5, which has no 2025 equivalent
+and is fed all the same by the §3.1 custom-object check. The remaining five have
+no 2025 equivalent and no code behind them, so they are listed with the class
+decided for each and carry no counts: 5.1.1, 5.1.11 and 5.3.1 self-attestation,
+5.1.2 enforced, and 5.1.12 none. Deriving the matrix rather than typing it out a
+second time means the two can never drift: a change to the map or to a 2025 row
+moves both, and the join is tested —
+[`matrix-ds013.test.ts`](src/api/matrix-ds013.test.ts) pins the 22-of-27 split.
 
 ### 7.1 Advisories
 
@@ -594,9 +600,10 @@ cannot be read or compiled fail the process loudly rather than degrading silentl
 
 Each session's dashboard at `/d/{uuid}` is a single scrolling page. From the top:
 
-- The header is one line: the report title on the left, and the scope controls —
-  the time window and the source — on the right. Everything below the header is
-  relative to that scope.
+- The header is one line: the report title on the left, and on the right the
+  requirement-package toggle — "UNICEF Q1 2025" or "DS01.3 DRAFT" — beside the
+  scope controls, the time window and the source. Everything below the header is
+  relative to that scope and to the package selected.
 - Endpoint and setup is a collapsed bar that expands into a panel. The bar carries
   the ingest URL and the endpoint meta beside it: the schema version the endpoint
   currently expects, whether §1.3 authentication is on, and the days left before
@@ -615,25 +622,48 @@ Each session's dashboard at `/d/{uuid}` is a single scrolling page. From the top
   counts and transmission counts in one band and named neither.
 - Compliance summary renders the §7 matrix as §7 describes. Each row drills down to
   the verbatim text of the 2025 requirement, with the service's own reading of it in
-  a separate guidance field, so a supplier can always tell the two apart.
+  a separate guidance field, so a supplier can always tell the two apart. Under the
+  DS01.3 DRAFT lens the card renders the derived matrix instead: the same five
+  verifiability-class groups, with TIGHTENED and NEW as tags on the rows rather than
+  groups of their own, and a drill-down that quotes the draft clause text under a
+  provenance line naming the review draft it was transcribed from.
 - Transmissions is a reverse-chronological, paginated list. Each transmission drills
   into the returned status, the compression and wire-byte picture, a raw payload
   inspector, and the findings, with JSON Pointers to schema errors. The list pane is
   height-capped so the detail pane stays on screen.
 - Lifecycle shows the 7-day inactivity expiry clock.
 
-Shadow grading reaches two of those surfaces today. The transmissions list carries a
-verdict dot per lineage, and the docked detail splits into the contract findings and
-a separate DS01.3 group.
+A second requirement package is read through a lens rather than shown beside the
+first. The header toggle swaps the whole dashboard between UNICEF Q1 2025, the
+default, and DS01.3 DRAFT, and the choice lives in the URL query so a link carries
+the view it was copied from. The lens is a read-time projection: it changes which
+package the page reports under, never what the ingest pipeline graded, what was
+stored, or what status code a transmission received. A supplier's contractual
+result reads the same whichever way the toggle is set.
 
-Two further shadow surfaces are built but not mounted: the readiness strip — of the
-in-scope traffic that passes the contract, how much would also pass the shadow
-lineage — and the grading legend that named both lineages and said which one is the
-contract. Both are held pending the grading-lens redesign, which reconsiders how a
-second lineage is surfaced at all. The server still computes and serves the two
-readiness counts (`docs/api.md`), so nothing has to be recomputed when that work
-lands. The strip's list of leading reasons left the wire with the lens itself: under
-the DS01.3 lens the summary rows are those reasons, filterable like any other row.
+Under the DS01.3 DRAFT lens the page takes a plum tint on the active toggle segment
+and on the summary and pane card borders, and a banner sits under the setup bar for
+as long as the lens is on. The banner says the draft is a preview that is not yet
+published, gives the date of the bytes behind it, and offers the way back to UNICEF
+Q1 2025. The tint carries no other meaning anywhere on the page, so it alone answers
+which package is being read from any scroll position.
+
+Everything the lens reports is computed under the selected package on the server:
+the summary counts, the issue signatures, the list filters, and the findings list in
+the docked transmission detail, which is one list under one numbering rather than
+two. The transmissions list keeps a verdict dot per package, the selected one bold
+and the other dimmed, with a dashed "not graded here" dot where the draft never ran
+on that transmission. The row's tone dot reads the lens as well, so it agrees with
+the cells beside it.
+
+The surfaces that put a second lineage next to the first are retired: the readiness
+strip, the grading legend, the separate "would also fail under DS01.3" group in the
+transmission detail, and the "· also 5.1.3" suffix on a requirement name. Each of
+them asked a reader to hold two rulesets at once on a page laid out for one.
+Readiness itself survives as a sentence on the transmissions summary card under the
+draft lens — of the in-scope traffic that passes UNICEF Q1 2025, how much also
+passes the draft — from the two counts the server computes and serves on the session
+read (`docs/api.md`).
 
 The vocabulary those surfaces use is deliberate and is centralized in
 [`profiles.ts`](src/web/profiles.ts), which mirrors the server's
@@ -644,9 +674,9 @@ agreement must not be told that the version their contract requires is stale.
 
 Each lineage carries two names, and they answer different questions. The
 requirement package a reader chooses between is named "UNICEF Q1 2025" and
-"DS01.3 DRAFT", on every surface that names a package: the verdict columns, the
-cross-filter chip prefix, the detail-group headings, and the grading lens the
-dashboard is moving to. "DRAFT" says what the DS01.3 bytes are — an unpublished
+"DS01.3 DRAFT", on every surface that names a package: the header toggle, the
+draft banner, the verdict columns, the cross-filter chip, and the detail
+headings. "DRAFT" says what the DS01.3 bytes are — an unpublished
 proposal — not that they supersede anything. The schema document the bytes come
 from keeps its own name, "cce-interop" and "DS01.3 Annex 4", for the two
 provenance lines that tell a reader which artifact was loaded: the ingest
@@ -719,11 +749,12 @@ The following items are deferred from v1:
   returns controlled error responses and measures retry count, backoff shape,
   `Retry-After` adherence, and abandonment on permanent failure.
 - Guided retransmission scenarios for the §5 requirements.
-- A delta ledger for the shadow lineage: a per-session view of what DS01.3 changes
-  clause by clause for the traffic the supplier actually sent, rather than the
-  per-transmission verdicts and the readiness summary of §10. It is deferred until
-  DS01.3 publishes, because a ledger of differences is worth reading once the
-  target is fixed. Publication itself needs no redesign: the two lineages are
+- A delta ledger for the DS01.3 DRAFT package: a per-session view of what the draft
+  changes clause by clause for the traffic the supplier actually sent. The grading
+  lens of §10 now reports each clause's status under the draft, so what a ledger
+  would add is the clause-by-clause difference from UNICEF Q1 2025, not the DS01.3
+  view itself. It is deferred until DS01.3 publishes, because a ledger of
+  differences is worth reading once the target is fixed. Publication itself needs no redesign: the two lineages are
   symmetric, and `CONTRACT_PROFILE` in `src/schema-registry.ts` is the single flip
   point that makes DS01.3 the contract and `cce-interop` the shadow.
 - A production-endpoint mode for real data, which would need to address retention,

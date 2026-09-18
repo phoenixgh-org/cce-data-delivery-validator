@@ -78,11 +78,16 @@ and a transport rejection before either are each answered under the 2025
 requirements alone. The shadow run never changes the HTTP response code and never touches the
 matrix above: those rows grade the 2025 requirements, which are the contract in
 force. What it produces instead is a preview: the transmissions list carries a
-verdict per transmission under each lineage, the docked detail keeps the DS01.3
-findings in a group of their own, and the ingest response names the lineage on
-every finding. The session read also serves a readiness figure — how much of the
-passing traffic would also pass DS01.3 — which the dashboard does not render at the
-moment, pending a redesign of how a second lineage is surfaced. Keeping the two lineages apart is the point — a supplier under
+verdict per transmission under each lineage, and the ingest response names the
+lineage on every finding.
+
+The dashboard reads under one package at a time. A toggle in the header swaps the
+whole view between UNICEF Q1 2025 and DS01.3 DRAFT, and under the draft lens the
+compliance matrix, the counts, the filters and the transmission detail are all
+reported under DS01.3 clause numbers, with a banner saying the draft is not yet
+published. The transmissions summary card there carries the readiness figure the
+session read serves — of the traffic that passes UNICEF Q1 2025, how much also
+passes the draft. Keeping the two lineages apart is the point — a supplier under
 a 2025 agreement should be able to see what is coming without being told that the
 version their contract requires is stale.
 
