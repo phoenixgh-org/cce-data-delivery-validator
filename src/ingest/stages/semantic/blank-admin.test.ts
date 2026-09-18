@@ -479,17 +479,24 @@ test('EMS: the observation names the count and every blank field, and the ration
   );
 });
 
-test('RTMD: the rationale names its own branch, and nothing else moves', () => {
-  // The approved copy (agj.17, 2026-09-15) is one paragraph for both branches;
-  // the only thing that varies is the name of the report schema whose `required`
-  // list was read.
+test('RTMD: the rationale names its own branch and only the objects it reads', () => {
+  // The approved copy (agj.17, 2026-09-15) is one paragraph for both branches.
+  // Two things vary: the name of the report schema whose `required` list was
+  // read, and the opening sentence's categories — rtmd-report's admin list
+  // (CID EDOP EMFR EMOD EPQS ESER) holds no appliance and no logger object, so
+  // naming them would be untrue on this branch (uvjd, decided 2026-09-18).
+  // Pinned verbatim rather than derived from the EMS string: a derivation would
+  // follow the EMS copy wherever it went.
   assert.equal(
     summaryOf(RTM_BLANK_ADMIN),
     '1 of 1 report delivers required admin objects blank — EMFR is null.',
   );
   assert.equal(
     detailOf(RTM_BLANK_ADMIN),
-    detailOf(EMS_BLANK_ADMIN).replace('The ems-report requires', 'The rtmd-report requires'),
+    'These objects describe the country and the monitoring device once per report. The ' +
+      'rtmd-report requires them but accepts null and sets no minimum length, so a blank ' +
+      'satisfies the schema. These objects are important and should not be blank; a ' +
+      'receiving country cannot infer the correct values.',
   );
 });
 

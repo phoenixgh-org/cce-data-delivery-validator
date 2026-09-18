@@ -238,12 +238,20 @@ export const blankAdminCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
   // than letting it read as a claim about all of them.
   const lead = affected === 1 ? '' : 'in the first, ';
   const list = joinPhrases(firstBlanks);
-  // The rationale is the approved copy (agj.17, 2026-09-15), and the only thing
-  // that moves with the branch is the name of the report schema whose `required`
-  // list was read. Neither variant claims the report identifies nothing: ASER
-  // and AMID belong to adv.null_identity, are never read here, and may well be
-  // populated.
+  // The rationale is the approved copy (agj.17, 2026-09-15). Two things move
+  // with the branch: the name of the report schema whose `required` list was
+  // read, and the categories the opening sentence names. Neither variant claims
+  // the report identifies nothing: ASER and AMID belong to adv.null_identity,
+  // are never read here, and may well be populated.
   const branch = ems ? 'ems-report' : 'rtmd-report';
+  // uvjd (decided 2026-09-18): the sentence names only what the branch reads.
+  // RTMD_ADMIN_FIELDS is CID EDOP EMFR EMOD EPQS ESER — the country and the
+  // monitoring device; no appliance object and no L* logger object is in the
+  // list at all. The EMS sentence stays byte-for-byte as approved.
+  const objects = ems
+    ? 'These objects describe the country, appliance, logger and monitoring device once per ' +
+      'report.'
+    : 'These objects describe the country and the monitoring device once per report.';
 
   return [
     advisory({
@@ -251,8 +259,7 @@ export const blankAdminCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
       pointer: `/data/${firstIndex}`,
       summary: `${affected} of ${total} ${reportNoun} ${verb} required admin objects blank — ${lead}${list}.`,
       detail:
-        'These objects describe the country, appliance, logger and monitoring device once ' +
-        `per report. The ${branch} requires them but accepts null and sets no minimum ` +
+        `${objects} The ${branch} requires them but accepts null and sets no minimum ` +
         'length, so a blank satisfies the schema. These objects are important and should not ' +
         'be blank; a receiving country cannot infer the correct values.',
     }),
