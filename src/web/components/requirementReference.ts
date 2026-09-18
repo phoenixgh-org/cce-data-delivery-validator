@@ -176,7 +176,7 @@ export const REQUIREMENT_REFERENCE: Record<string, RequirementReference> = {
  * parameter: under the DS01.3 lens the server already serves `5.x.y` clause ids,
  * and under the contract lens it serves 2025 ids. The two key spaces are
  * disjoint — every DS01.3 key is `5.x.y`, no 2025 key is — so the order of the
- * two lookups cannot change an answer; `requirementReference.test.ts` asserts
+ * two lookups cannot change an answer; `ds013Reference.test.ts` asserts
  * the disjointness rather than trusting it.
  */
 export function getRequirementReference(id: string): RequirementReference | undefined {
