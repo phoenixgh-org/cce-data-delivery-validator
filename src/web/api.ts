@@ -269,9 +269,9 @@ export interface SessionMeta {
   contractProfile: Profile;
   /**
    * The lineage previewed beside it, or null when the service registers only
-   * one. NULL IS THE HIDE SIGNAL: with no shadow lineage there is no readiness
-   * strip, no second verdict dot and no "would also fail" group, and no surface
-   * needs to test for a version by name to know it.
+   * one. NULL IS THE HIDE SIGNAL: with no shadow lineage there is no second
+   * verdict column on the transmissions list and no grading-lens toggle in the
+   * header, and no surface needs to test for a version by name to know it.
    */
   shadowProfile: Profile | null;
 }

@@ -623,9 +623,9 @@ export function registerSessionsApi(app: FastifyInstance): void {
           // Which lineage the dashboard's verdict surfaces mean (by1c.9). Both
           // come off the registry: `contractProfile` is the obligations in force,
           // `shadowProfile` the lineage previewed beside them — null when the
-          // registry holds one lineage, which is what hides all three shadow
-          // surfaces (readiness strip, second verdict dot, "would also fail"
-          // group) without any of them testing for a version by name.
+          // registry holds one lineage, which is what hides both shadow surfaces
+          // (the second verdict column on the transmissions list and the grading
+          // lens toggle) without either of them testing for a version by name.
           contractProfile: grading.contractProfile,
           shadowProfile: grading.shadowProfile,
         },
