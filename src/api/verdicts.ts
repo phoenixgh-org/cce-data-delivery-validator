@@ -5,7 +5,7 @@
  * WHY: since bd by1c.6 the schema stage grades every transmission twice, so the
  * raw question "does this transmission carry a `severity === 'fail'` finding?"
  * no longer has a single answer. Asked of the contract lineage it decides the
- * scorecard, the pass-rate trend and the failures-only filter; asked of the
+ * summary counts and every per-transmission readout above the list; asked of the
  * shadow lineage it decides how the same payload would fare once DS01.3
  * publishes. Every consumer that used to ask the raw question now asks this
  * module which profile it means, so a shadow failure can never grade a supplier

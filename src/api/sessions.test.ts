@@ -1006,7 +1006,7 @@ test(
  * persisted as an ordinary `finding` row (NO DDL — `finding.requirement` is
  * plain `text`), read back through GET /api/sessions/:uuid, and shown to leave
  * every scope-relative aggregate in that response untouched — the 27-row §7
- * summary, the gradeable rollup, the pass trend and the scope totals alike.
+ * summary, the gradeable rollup and the scope totals alike.
  *
  * The session is seeded 100% CONFORMANT first (a pass on all ten gradeable §7
  * rows), because that is pwd's acceptance sentence: a supplier at 100% must
@@ -1066,7 +1066,6 @@ test(
         }>;
         summary: Array<{ requirement: string; status: string; counts: unknown; outdated: number }>;
         rollup: unknown;
-        trend: unknown;
         scoped: unknown;
         signatures: Array<{ key: string; req: string; kind: string; sev: string; title: string }>;
       }
@@ -1114,7 +1113,6 @@ test(
       // ── THE PIN: every verdict-bearing aggregate is unchanged. ──────────────
       assert.deepEqual(after.summary, before.summary, 'the §7 matrix moved');
       assert.deepEqual(after.rollup, before.rollup, 'the gradeable rollup moved');
-      assert.deepEqual(after.trend, before.trend, 'the pass-rate trend moved');
       assert.deepEqual(after.scoped, before.scoped, 'the scope totals moved');
       // `scoped` covers the distinctIssues headline: advisories now fold into the
       // signature set (agj.15) but issueSignatures() keeps them out of that count.

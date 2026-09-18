@@ -20,8 +20,8 @@
  * The header is one line now (vamh.1): ReportHeader carries the title and the two
  * scope controls, which used to sit in a FilterBar strip below the scorecard. That
  * component is gone, along with the header's endpoint sentence, the pass-rate
- * sparkline and the "live · updated just now" dot. The scope state and the `load`
- * callback did not move — only where the controls are rendered.
+ * chart that sat beside it and the "live · updated just now" dot. The scope state
+ * and the `load` callback did not move — only where the controls are rendered.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';

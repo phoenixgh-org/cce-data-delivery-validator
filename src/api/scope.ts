@@ -2,16 +2,15 @@
  * Scope helpers (4h4.4) — the reusable, PURE core that makes every number above
  * the dashboard list mean "within this scope". No DB, no HTTP: callers hand in an
  * already-fetched transmission set and these helpers parse the window/source
- * params, narrow the set, and pre-aggregate the scope-relative rollup, pass-rate
- * trend, and scope totals the browser would otherwise have to compute over every
- * raw finding.
+ * params, narrow the set, and pre-aggregate the scope-relative rollup and scope
+ * totals the browser would otherwise have to compute over every raw finding.
  *
  * These are the shared semantics 4h4.5 (the paginated/filterable list endpoint)
  * reuses — kept in this small sibling module precisely so both endpoints scope
  * identically. This is a behavioral port of design_handoff_scale_at_volume/
- * redesign/engine.js `rollup()`/`passTrend()`/`txFailing()`, with the prototype's
- * `f.sev`/`f.req`/`tx.mins` accessors adapted to the landed view: findings carry
- * `severity`/`requirement`, and time buckets on `received_at` epoch (ms), not
+ * redesign/engine.js `rollup()`/`txFailing()`, with the prototype's `f.sev`/`f.req`
+ * accessors adapted to the landed view: findings carry `severity`/`requirement`,
+ * and the window bound reads `received_at` as an epoch (ms), not the prototype's
  * minutes-since-midnight.
  *
  * {@link txFailing} now delegates to the verdict engine (by1c.8) and so reads
@@ -147,8 +146,12 @@ export function rollup(summary: readonly ComplianceRow[]): Rollup {
   };
 }
 
-/** The minimal transmission shape the trend/totals read (findings + time). */
-export interface TrendTransmission {
+/**
+ * The minimal transmission shape the scope helpers read (findings + time). Named
+ * for the scope, not for any one readout: {@link txFailing} takes it, and
+ * {@link scopeTotals} takes it intersected with {@link UnitTransmission}.
+ */
+export interface ScopedTransmission {
   received_at: string | Date;
   findings: readonly VerdictFinding[];
 }
@@ -158,50 +161,14 @@ export interface TrendTransmission {
  * contract rule (src/api/verdicts.ts), which is the engine.js `txFailing` this
  * was ported from plus the profile test.
  *
- * The profile test is what keeps the scorecard, the pass-rate trend and the
- * `withFailures` readout meaning what they meant before the shadow run existed
- * (by1c.8). Since bd by1c.6 a perfectly conformant payload can carry `fail`
- * findings describing how it would fare under DS01.3; those grade a different
- * lineage and must not move a single number a supplier is graded on today.
+ * The profile test is what keeps the scorecard and the `withFailures` readout
+ * meaning what they meant before the shadow run existed (by1c.8). Since bd by1c.6
+ * a perfectly conformant payload can carry `fail` findings describing how it would
+ * fare under DS01.3; those grade a different lineage and must not move a single
+ * number a supplier is graded on today.
  */
-export function txFailing(tx: TrendTransmission): boolean {
+export function txFailing(tx: ScopedTransmission): boolean {
   return verdict(tx, CONTRACT_PROFILE, CONTRACT_PROFILE) === 'fail';
-}
-
-/** One pass-rate trend bucket. `rate` is pass/(pass+fail), or null when empty. */
-export interface TrendBucket {
-  tot: number;
-  fail: number;
-  rate: number | null;
-}
-
-/**
- * Pass-rate trend — VERBATIM port of engine.js `passTrend()`, bucketing on the
- * `received_at` EPOCH (ms) instead of the prototype's minutes-since-midnight.
- * Splits the scope's [min,max] received_at span into `nb` (default 30) buckets;
- * each bucket reports raw `{ tot, fail, rate }` where rate = pass/(pass+fail) or
- * null for an empty bucket. Empty-bucket carry-forward is a RENDER concern (the
- * Sparkline component) — this returns RAW per-bucket values. Empty set → [].
- */
-export function passTrend(transmissions: readonly TrendTransmission[], nb = 30): TrendBucket[] {
-  if (transmissions.length === 0) return [];
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const t of transmissions) {
-    const at = epoch(t.received_at);
-    if (at < lo) lo = at;
-    if (at > hi) hi = at;
-  }
-  const span = Math.max(1, hi - lo);
-  const buckets = Array.from({ length: nb }, () => ({ pass: 0, fail: 0 }));
-  for (const tx of transmissions) {
-    const i = Math.min(nb - 1, Math.floor(((epoch(tx.received_at) - lo) / span) * nb));
-    buckets[i]![txFailing(tx) ? 'fail' : 'pass'] += 1;
-  }
-  return buckets.map((b) => {
-    const tot = b.pass + b.fail;
-    return { tot, fail: b.fail, rate: tot ? b.pass / tot : null };
-  });
 }
 
 /** The minimal transmission shape the CCE-unit count reads: the parsed body. */
@@ -336,7 +303,7 @@ export interface ScopeTotals {
  * findings; the unit pair IS folded here, off the bodies the scoped views carry.
  */
 export function scopeTotals(
-  transmissions: readonly (TrendTransmission & UnitTransmission)[],
+  transmissions: readonly (ScopedTransmission & UnitTransmission)[],
   distinctIssues: number,
 ): ScopeTotals {
   return {

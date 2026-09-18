@@ -1,7 +1,7 @@
 /**
  * Scope helper tests (4h4.4) — PURE, no DB. Covers window parsing + default
  * fallback, the scope predicate (time bound + source filter), the engine.js
- * rollup/passTrend ports, scope totals, and window-aware source counts not
+ * rollup/txFailing ports, scope totals, and window-aware source counts not
  * narrowed by the selected source.
  */
 
@@ -14,7 +14,6 @@ import {
   inScope,
   parseSource,
   parseWindow,
-  passTrend,
   rollup,
   scopeTotals,
   scopeTransmissions,
@@ -172,11 +171,11 @@ test('rollup folds pass-outdated into passing (2kx) — it must not fall out of 
   );
 });
 
-// ── passTrend (30 buckets, {tot,fail,rate}) ─────────────────────────────────
+// ── txFailing (the contract verdict) ────────────────────────────────────────
 
 /**
- * A trend fixture. Findings carry a requirement and a PROFILE because `txFailing`
- * is the contract verdict now (by1c.8), not a bare severity scan.
+ * A finding fixture. Findings carry a requirement and a PROFILE because
+ * `txFailing` is the contract verdict now (by1c.8), not a bare severity scan.
  */
 const f = (severity: string, profile: Profile = '2025', requirement = '3.2') => ({
   requirement,
@@ -198,9 +197,9 @@ test('txFailing keys off a contract-profile severity===fail', () => {
 /**
  * THE PROPERTY by1c.8 EXISTS FOR: a transmission that conforms under the
  * contract and fails only the DS01.3 shadow run is NOT a failing transmission.
- * Everything above the list — the pass-rate trend, `withFailures`, the
- * failures-only filter — reads this predicate, so a leak here would restate a
- * preview of the next revision as a defect against the obligations in force.
+ * Everything above the list — `withFailures` and the counts derived from it —
+ * reads this predicate, so a leak here would restate a preview of the next
+ * revision as a defect against the obligations in force.
  */
 test('a shadow-only failure does not make a transmission failing', () => {
   const shadowOnly = {
@@ -209,32 +208,6 @@ test('a shadow-only failure does not make a transmission failing', () => {
   };
   assert.equal(txFailing(shadowOnly), false);
   assert.deepEqual(scopeTotals([shadowOnly], 0).withFailures, 0);
-  assert.equal(passTrend([shadowOnly])[0]?.fail, 0);
-});
-
-test('passTrend returns exactly 30 buckets with {tot,fail,rate}, empty buckets null', () => {
-  // Two tx far apart so most of the 30 buckets are empty (→ rate null).
-  const buckets = passTrend([tx(0, false), tx(290, true)]);
-  assert.equal(buckets.length, 30);
-  // first bucket: 1 pass → rate 1; last bucket: 1 fail → rate 0.
-  assert.deepEqual(buckets[0], { tot: 1, fail: 0, rate: 1 });
-  assert.deepEqual(buckets[29], { tot: 1, fail: 1, rate: 0 });
-  // at least one interior empty bucket has rate === null (NOT carried forward).
-  const empties = buckets.filter((b) => b.tot === 0);
-  assert.ok(empties.length > 0, 'has empty buckets');
-  for (const b of empties) assert.equal(b.rate, null);
-});
-
-test('passTrend on the empty set returns []', () => {
-  assert.deepEqual(passTrend([]), []);
-});
-
-test('passTrend rate = pass/(pass+fail) for mixed buckets', () => {
-  // All at the same instant → all land in bucket 0 (span clamps to 1).
-  const buckets = passTrend([tx(0, false), tx(0, false), tx(0, true)]);
-  assert.equal(buckets[0]!.tot, 3);
-  assert.equal(buckets[0]!.fail, 1);
-  assert.equal(buckets[0]!.rate, 2 / 3);
 });
 
 // ── scope totals ────────────────────────────────────────────────────────────
@@ -252,7 +225,7 @@ test('scopeTotals reports scoped / withFailures / distinctIssues / units', () =>
   const scoped = [tx(0, false), tx(1, true), tx(2, true)];
   const totals = scopeTotals(scoped, 4 /* distinct sig count passed in */);
   // These fixtures carry no body at all, so the unit pair is the empty answer:
-  // the trend fixtures predate p98 and must keep meaning what they meant.
+  // the verdict fixtures predate p98 and must keep meaning what they meant.
   assert.deepEqual(totals, {
     scoped: 3,
     withFailures: 2,

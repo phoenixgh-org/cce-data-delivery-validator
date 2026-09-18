@@ -33,7 +33,6 @@ import {
   inScope,
   parseSource,
   parseWindow,
-  passTrend,
   rollup,
   scopeTotals,
   scopeTransmissions,
@@ -478,8 +477,8 @@ export function registerSessionsApi(app: FastifyInstance): void {
   // SCOPE-AWARE session read (4h4.4). Accepts a time `window` (15m|1h|6h|all,
   // default all) + `source` (a raw source key | all, default all) and returns,
   // over the SCOPED transmission set, a pre-aggregated payload so the browser
-  // never holds every raw finding to render the scorecard/compliance/sparkline/
-  // signatures: { session, summary, rollup, signatures, trend, sources, scoped }.
+  // never holds every raw finding to render the compliance and signature
+  // surfaces: { session, summary, rollup, signatures, sources, scoped }.
   // Unknown/invalid window/source values FALL BACK to defaults (no 400) to keep
   // the dashboard resilient. 404/meta/expiresAt and the per-tx findings drill-down
   // are preserved.
@@ -609,7 +608,6 @@ export function registerSessionsApi(app: FastifyInstance): void {
         summary,
         rollup: rollup(summary),
         signatures,
-        trend: passTrend(scopedViews),
         sources,
         // CONTRACT only (by1c.7): the headline counts defects against the
         // obligations in force, so a DS01.3 shadow signature never inflates it.

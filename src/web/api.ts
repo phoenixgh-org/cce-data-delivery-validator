@@ -300,16 +300,6 @@ export interface Signature {
 }
 
 /**
- * One pass-rate trend bucket — mirror src/api/scope.ts `TrendBucket`. `rate` is
- * pass/(pass+fail), or null for an empty bucket (a RENDER concern downstream).
- */
-export interface TrendBucket {
-  tot: number;
-  fail: number;
-  rate: number | null;
-}
-
-/**
  * One filter `<select>` option — mirror src/api/source.ts `SourceCount`
  * (SourceView + count): a source view plus its in-scope count.
  */
@@ -370,7 +360,6 @@ export interface SessionResponse {
   summary: ComplianceRow[];
   rollup: Rollup;
   signatures: Signature[];
-  trend: TrendBucket[];
   sources: SourceCount[];
   /** SUMMARY `scoped` is a ScopeTotals OBJECT (`scoped.scoped` is nested). */
   scoped: ScopeTotals;

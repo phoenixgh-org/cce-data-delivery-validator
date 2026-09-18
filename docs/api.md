@@ -429,7 +429,6 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
   "summary":   [ /* 27 §7 matrix rows joined with live counts */ ],
   "rollup":    { "total": 27, "gradeable": 10, "passing": 7, "failing": 0, "untested": 3 },
   "signatures": [ /* distinct defects + advisories, most widespread first */ ],
-  "trend":     [ { "tot": 1, "fail": 0, "rate": 1 } /* 30 buckets, or [] when empty */ ],
   "sources":   [ { "source": "com.example", "sourceCode": "EXA", "sourceLabel": "com.example", "count": 1 } ],
   "scoped":    { "scoped": 1, "withFailures": 0, "distinctIssues": 0 },
   "expiresAt": "2026-08-08T05:50:33.722Z",
@@ -454,7 +453,7 @@ belongs to, and a `draftDate` when the entry is an unpublished proposal rather t
 published schema.
 
 `transmissions` is **not** scoped by `window`/`source` (the full list ships for the
-detail pane); `summary`, `rollup`, `signatures`, `trend`, and `scoped` **are**.
+detail pane); `summary`, `rollup`, `signatures`, and `scoped` **are**.
 `sources` is computed over the window only, so every source's in-window count is
 visible whichever one is selected. For large sessions, page the list through
 [`/transmissions`](#get-apisessionsuuidtransmissions--paginated-transmission-list)
@@ -469,7 +468,7 @@ computed over the traffic in scope.
 
 | Field                     | Type             | Purpose                                                                                                                                                       |
 | ------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session.contractProfile` | `string`         | The lineage in force (`2025`) — what the compliance summary, `rollup`, `trend` and `scoped.distinctIssues` grade.                                             |
+| `session.contractProfile` | `string`         | The lineage in force (`2025`) — what the compliance summary, `rollup` and `scoped.distinctIssues` grade.                                                      |
 | `session.shadowProfile`   | `string \| null` | The lineage previewed beside it (`ds013`), or `null` when the registry holds a single lineage. That `null` is the one signal that hides every shadow surface. |
 | `shadow`                  | `object \| null` | Provenance of the shadow lineage's current bytes: `version`, the full 64-char `sha256`, and `draftDate` when the entry is an unpublished proposal.            |
 | `readiness`               | `object \| null` | How much of the in-scope traffic that passes the contract would also pass the shadow lineage — see [Readiness object](#readiness-object).                     |

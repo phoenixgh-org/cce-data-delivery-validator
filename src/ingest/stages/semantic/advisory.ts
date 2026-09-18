@@ -28,7 +28,7 @@
  *      join to iterate the counts map instead would silently break it.
  *   2. Severity is ALWAYS `info` (2kx locked "no fourth severity, no DDL"), and
  *      every verdict-bearing aggregate keys off `fail` — `deriveStatus`,
- *      `txFailing`/`passTrend`/`scopeTotals` (src/api/scope.ts). `info` on its
+ *      `txFailing`/`scopeTotals` (src/api/scope.ts). `info` on its
  *      own moves nothing.
  *   3. `outdated` stays FALSE. `isIssue` (src/api/signatures.ts) counts a
  *      finding as a "distinct issue to fix" when it is a `fail` OR an `info`
