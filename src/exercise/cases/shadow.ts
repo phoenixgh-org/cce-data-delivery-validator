@@ -23,18 +23,22 @@
  * That is a domain the other three modules do not cover.
  *
  * WHAT IS ASSERTED, AND WHERE. The `expectedFindings` entries carrying
- * `profile: 'ds013'` are the real assertion, matched live on (requirement,
- * severity, profile) like any other. `shadowClauses` is informational: the
- * coverage join reads `requirements` onto COMPLIANCE_MATRIX, which is 2025-only
- * by construction, so a 5.x clause is recorded on the case rather than joined
- * (see ../case.ts and docs/exercise-suite.md).
+ * `profile: 'ds013'` are the real assertion about the shadow run, matched live
+ * on (requirement, severity, profile) like any other. `shadowClauses` says what
+ * the case is ABOUT, and since tfnv.10 it is load-bearing: the DS01.3 coverage
+ * join reads it onto DS013_MATRIX (../runner/coverage.ts), so a clause some case
+ * lists prints as exercised and a clause nobody lists prints as not exercised.
+ * It stays a field of its own because `requirements` joins onto
+ * COMPLIANCE_MATRIX, which is 2025-only by construction — a 5.x clause is not a
+ * row there (see ../case.ts and docs/exercise-suite.md).
  *
  * EVERY CASE HERE DECLARES `requirements: []` (by1c.42), the same way the `adv.*`
- * cases in ./payload.ts do and for the same reason. That field is what the
+ * cases in ./payload.ts do and for the same reason. That field is what the §7
  * coverage join counts as a CLAIM — the requirements a case TARGETS, not the ones
  * its `expectedFindings` happen to mention (../runner/coverage.ts). A readiness
- * case targets no matrix row: what it exercises is the shadow run, and the §3.2
- * pass it also earns is the incidental one every accepted POST earns. Naming
+ * case targets no COMPLIANCE_MATRIX row — its claim is the `shadowClauses` entry
+ * above: what it exercises is the shadow run, and the §3.2 pass it also earns is
+ * the incidental one every accepted POST earns. Naming
  * §3.2 here would print one extra §3.2 pass exercise per case, every one of them
  * a re-run of `3.2-pass-baseline`, which is the coverage inflation that rule
  * exists to stop.
