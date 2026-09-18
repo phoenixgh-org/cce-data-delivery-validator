@@ -8,12 +8,17 @@
  * defaults mirror the prototype's engine.js GROUPS.
  *
  * Props match `CompliancePaneProps` in Dashboard.tsx verbatim; the parent owns
- * all the state (filter, open row, collapse map, selected tx).
+ * all the state (filter, open row, collapse map, selected tx) — the grading lens
+ * (tfnv.5) included: this card takes the selected package as a prop and reads
+ * neither the URL nor a constant of its own. Under a non-contract package the
+ * card's border goes plum and the header names the package; how the ROWS
+ * themselves render under that package is tfnv.6.
  */
 import type { CSSProperties, ReactElement } from 'react';
 import { useEffect, useState } from 'react';
-import type { ComplianceClass, ComplianceRow, Signature, TransmissionView } from '../api';
+import type { ComplianceClass, ComplianceRow, Profile, Signature, TransmissionView } from '../api';
 import { CONTRACT_PROFILE } from '../api';
+import { PROFILE_NAME } from '../profiles';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
 import { CLASS_META } from './ui/statusMaps';
@@ -66,6 +71,14 @@ export interface CompliancePaneProps {
   onSelectSignature?: (sig: Signature) => void;
   /** Key of the currently active signature cross-filter (drives active-row styling), or null. */
   activeSignatureKey?: string | null;
+  /**
+   * The requirement package the served `summary` was computed under (tfnv.4's
+   * `lens`). Presentational here: it tints the chrome and names the package in
+   * the header.
+   */
+  lens?: Profile;
+  /** The package in force, as the session serves it. */
+  contractProfile?: Profile;
 }
 
 /* ------------------------------------------------------------------ *
@@ -712,7 +725,12 @@ export function ComplianceCard({
   signatures = [],
   onSelectSignature,
   activeSignatureKey = null,
+  lens = CONTRACT_PROFILE,
+  contractProfile = CONTRACT_PROFILE,
 }: CompliancePaneProps): ReactElement {
+  // A non-contract package is selected (tfnv.5) — the one thing that changes the
+  // card's chrome and header. Everything below renders as it always has.
+  const draftLens = lens !== contractProfile;
   /*
    * Collapse state for the Advisories section, LOCAL rather than in the parent's
    * `collapsedGroups` — that map is keyed by `ComplianceClass` and advisories are
@@ -778,7 +796,7 @@ export function ComplianceCard({
       style={{
         flex: REQUIREMENTS_PANE_FLEX,
         background: 'var(--surface)',
-        border: '1px solid var(--border-strong)',
+        border: `1px solid var(${draftLens ? '--draft-border' : '--border-strong'})`,
         borderRadius: 8,
         overflow: 'hidden',
         boxShadow: 'var(--shadow)',
@@ -797,6 +815,13 @@ export function ComplianceCard({
         }}
       >
         <span style={{ fontSize: 13, fontWeight: 700 }}>Compliance summary</span>
+        {/* Which package these rows ARE (tfnv.5). The name is the vocabulary's,
+            and the plum is the page's one signal that a draft is being read. */}
+        {draftLens && (
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--draft)' }}>
+            {`· ${PROFILE_NAME[lens]}`}
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         <label
           style={{

@@ -14,6 +14,11 @@
  *      endpoint sentence and the "live · updated just now" dot were removed, and
  *      the mono schema/auth/days-left meta moved to the setup bar; a header that
  *      quietly regained any of them is the defect vamh.1 exists to prevent.
+ *   3. THE LENS TOGGLE (tfnv.5) IS ABSENT WITHOUT A SHADOW LINEAGE, names both
+ *      packages from the vocabulary, raises the package it was given, and tints
+ *      nothing plum while the contract package is selected. Plum is reserved for
+ *      the draft lens, so a default view carrying it would signal the whole page
+ *      is graded against a draft when it is not.
  *
  * No DOM and no renderer: the repo has neither. The element tree is walked
  * directly — function components are called with their own props, which is enough
@@ -27,7 +32,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as React from 'react';
 
-import type { SourceCount } from '../api.js';
+import { CONTRACT_PROFILE, type Profile, type SourceCount } from '../api.js';
+import { PROFILE_NAME } from '../profiles.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
@@ -159,4 +165,69 @@ test('the header carries the title and the controls, and nothing else', () => {
   ]) {
     assert.ok(!copy.includes(gone), `the header must not say "${gone}"`);
   }
+});
+
+/** The lens package: the one lineage that is not the contract one. */
+const LENS: Profile = (Object.keys(PROFILE_NAME) as Profile[]).find(
+  (p) => p !== CONTRACT_PROFILE,
+) as Profile;
+
+/** The lens props as the Dashboard passes them for a session WITH a shadow lineage. */
+const lensProps = {
+  lens: CONTRACT_PROFILE,
+  contractProfile: CONTRACT_PROFILE,
+  shadowProfile: LENS,
+  onLensChange: () => undefined,
+};
+
+/** Every `style` object in the rendered tree, flattened to its values. */
+function styleValues(tree: unknown): string[] {
+  return [...walk(tree)]
+    .map((el) => el.props['style'])
+    .filter((s): s is Record<string, unknown> => typeof s === 'object' && s !== null)
+    .flatMap((s) => Object.values(s))
+    .filter((v): v is string => typeof v === 'string');
+}
+
+test('no shadow lineage, no lens toggle', () => {
+  // `shadowProfile === null` is the hide signal every shadow surface reads: with
+  // one requirement package there is nothing to choose between.
+  const tree = header({ ...lensProps, shadowProfile: null });
+  assert.ok(!text(tree).includes('Requirements'), text(tree));
+  assert.deepEqual(
+    [...walk(tree)].filter((el) => el.type === 'button').map((b) => b.props['children']),
+    ['15m', '1h', '6h', 'All'],
+  );
+});
+
+test('the lens toggle names both packages from the vocabulary', () => {
+  const copy = text(header(lensProps));
+  assert.ok(copy.includes('Requirements'), copy);
+  assert.ok(copy.includes(PROFILE_NAME[CONTRACT_PROFILE]), copy);
+  assert.ok(copy.includes(PROFILE_NAME[LENS]), copy);
+});
+
+test('each lens segment raises onLensChange with its own package', () => {
+  const raised: Profile[] = [];
+  const tree = header({ ...lensProps, onLensChange: (p) => raised.push(p) });
+  const buttons = [...walk(tree)].filter((el) => el.type === 'button');
+  // The lens segments come FIRST in the right-end row, ahead of the window ones.
+  const lensButtons = buttons.slice(0, 2);
+  assert.deepEqual(
+    lensButtons.map((b) => b.props['children']),
+    [PROFILE_NAME[CONTRACT_PROFILE], PROFILE_NAME[LENS]],
+  );
+  for (const button of lensButtons) (button.props['onClick'] as () => void)();
+  assert.deepEqual(raised, [CONTRACT_PROFILE, LENS]);
+});
+
+test('plum appears under the draft lens and nowhere else', () => {
+  for (const tree of [header(), header(lensProps)]) {
+    assert.ok(
+      !styleValues(tree).some((v) => v.includes('--draft')),
+      'the contract lens must not tint anything plum',
+    );
+  }
+  const drafted = styleValues(header({ ...lensProps, lens: LENS }));
+  assert.ok(drafted.includes('var(--draft)'), 'the active segment fills plum under the draft lens');
 });

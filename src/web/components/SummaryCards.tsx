@@ -30,14 +30,24 @@
  * PRESENTATIONAL only: no state, no fetch, no handlers. The cards match the pane
  * cards' chrome (1px --border-strong, 8px radius, --shadow) and the panes' own
  * flex bases, so each card's edges line up with the pane below it.
+ *
+ * UNDER THE GRADING LENS (tfnv.5) two things change, and only under the draft
+ * package: the borders go plum with the rest of the page's cards, and each card
+ * says which package its numbers belong to — the requirements eyebrow names the
+ * package it is counting, and the transmissions sentence carries the one number
+ * the retired readiness strip was for, how much of the traffic that conforms
+ * today would also conform under the draft. The lens is a PROP: no component
+ * reads the URL, and the page has exactly one owner of that state.
  */
 import type { ReactElement, ReactNode } from 'react';
 
-import type { Rollup, ScopeTotals } from '../api';
+import type { Profile, Readiness, Rollup, ScopeTotals } from '../api';
+import { CONTRACT_PROFILE } from '../api';
 // The gutter and the two flex bases are the panes' own (src/web/layout.ts): the
 // cards and the panes read one source, so a pane change moves the card row with
 // it instead of silently misaligning it (vamh.8).
 import { PANE_GUTTER, REQUIREMENTS_PANE_FLEX, TRANSMISSIONS_PANE_FLEX } from '../layout';
+import { PROFILE_NAME } from '../profiles';
 import { unitsTitle } from '../scopeCopy';
 
 /** One numeral and its label, as the retired scorecard strip rendered them. */
@@ -84,16 +94,25 @@ interface CardProps {
   flex: string;
   sentence: ReactNode;
   figures: readonly FigureSpec[];
+  /** Plum border while a non-contract package is selected (tfnv.5). */
+  draftLens: boolean;
 }
 
-function Card({ eyebrow, background, flex, sentence, figures }: CardProps): ReactElement {
+function Card({
+  eyebrow,
+  background,
+  flex,
+  sentence,
+  figures,
+  draftLens,
+}: CardProps): ReactElement {
   return (
     <div
       style={{
         flex,
         minWidth: 0,
         background,
-        border: '1px solid var(--border-strong)',
+        border: `1px solid var(${draftLens ? '--draft-border' : '--border-strong'})`,
         borderRadius: 8,
         boxShadow: 'var(--shadow)',
         padding: '11px 16px 13px',
@@ -123,10 +142,31 @@ export interface SummaryCardsProps {
   rollup: Rollup;
   /** Scope totals for the transmissions side, as served. */
   scoped: ScopeTotals;
+  /** The requirement package these numbers were computed under (tfnv.4's `lens`). */
+  lens?: Profile;
+  /** The package in force, as the session serves it. */
+  contractProfile?: Profile;
+  /**
+   * How much of the scope's contract-conformant traffic would also pass the
+   * draft package, as served. Null when no shadow lineage is registered, and the
+   * sentence drops the clause rather than showing a zero that would read as
+   * "none of it would pass".
+   */
+  readiness?: Readiness | null;
 }
 
-export function SummaryCards({ rollup, scoped }: SummaryCardsProps): ReactElement {
+export function SummaryCards({
+  rollup,
+  scoped,
+  lens = CONTRACT_PROFILE,
+  contractProfile = CONTRACT_PROFILE,
+  readiness = null,
+}: SummaryCardsProps): ReactElement {
   const { units, unidentifiedReports } = scoped;
+  // A non-contract package is selected: tint the chrome and name the package on
+  // the cards. Under the contract package this is false and every string below
+  // is the one it has always been.
+  const draftLens = lens !== contractProfile;
   return (
     <div
       style={{
@@ -137,9 +177,13 @@ export function SummaryCards({ rollup, scoped }: SummaryCardsProps): ReactElemen
       }}
     >
       <Card
-        eyebrow="REQUIREMENTS"
+        // The rollup counts the SELECTED package's requirements, so the eyebrow
+        // names it: 12 of 27 under the contract package and 12 of 27 under the
+        // draft are different sets of 27.
+        eyebrow={draftLens ? `REQUIREMENTS · ${PROFILE_NAME[lens]}` : 'REQUIREMENTS'}
         background="var(--surface)"
         flex={REQUIREMENTS_PANE_FLEX}
+        draftLens={draftLens}
         sentence={
           <>
             <Num>{`${rollup.gradeable} of ${rollup.total}`}</Num>
@@ -156,6 +200,7 @@ export function SummaryCards({ rollup, scoped }: SummaryCardsProps): ReactElemen
         eyebrow="TRANSMISSIONS"
         background="var(--surface-tx)"
         flex={TRANSMISSIONS_PANE_FLEX}
+        draftLens={draftLens}
         sentence={
           <>
             {'received in this scope, from '}
@@ -168,6 +213,17 @@ export function SummaryCards({ rollup, scoped }: SummaryCardsProps): ReactElemen
                 {' · '}
                 <Num>{unidentifiedReports}</Num>
                 {` report${unidentifiedReports === 1 ? '' : 's'} named no appliance`}
+              </>
+            )}
+            {/* The readiness number (tfnv.8 retires the strip that carried it):
+                of the traffic conforming to the contract today, how much would
+                also conform under the package being read. Only meaningful while
+                that package is not the contract one. */}
+            {draftLens && readiness !== null && (
+              <>
+                {' · '}
+                <Num>{readiness.passingBoth}</Num>
+                {` of the ${readiness.passingContract} passing ${PROFILE_NAME[contractProfile]} also pass here`}
               </>
             )}
           </>

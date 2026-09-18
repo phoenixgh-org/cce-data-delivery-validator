@@ -555,18 +555,26 @@ export type GetSessionResult = { ok: true; data: SessionResponse } | { ok: false
 
 /**
  * Read a session by uuid, optionally scoped by `window`/`source` (the scope-aware
- * summary, 4h4.4). Returns a discriminated result: `{ ok: false }` for a 404
- * (unknown/expired uuid) so the shell can render a friendly state; throws only on
- * network / unexpected (5xx) errors. `opts` is optional so existing no-arg
- * callers keep compiling; only provided keys are serialized into the query.
+ * summary, 4h4.4) and read under a requirement package via `lens` (tfnv.4).
+ * Returns a discriminated result: `{ ok: false }` for a 404 (unknown/expired
+ * uuid) so the shell can render a friendly state; throws only on network /
+ * unexpected (5xx) errors. `opts` is optional so existing no-arg callers keep
+ * compiling; only provided keys are serialized into the query.
+ *
+ * `lens` is serialized ONLY when the caller supplies it. The Dashboard omits it
+ * while the contract package is selected, so the default view's request URL is
+ * the one it has always been and an unknown value can only ever come from a
+ * caller that asked for one (the server answers HTTP 400 – Bad Request with
+ * `unknown_lens` in that case).
  */
 export async function getSession(
   uuid: string,
-  opts?: { window?: string; source?: string },
+  opts?: { window?: string; source?: string; lens?: Profile },
 ): Promise<GetSessionResult> {
   const params = new URLSearchParams();
   if (opts?.window !== undefined) params.set('window', opts.window);
   if (opts?.source !== undefined) params.set('source', opts.source);
+  if (opts?.lens !== undefined) params.set('lens', opts.lens);
   const qs = params.toString();
   const url = `/api/sessions/${encodeURIComponent(uuid)}${qs ? `?${qs}` : ''}`;
   const res = await fetch(url);
@@ -610,7 +618,9 @@ export type ListTransmissionsResult =
 /**
  * Read a page of a session's transmissions, scoped + filtered + cursor-paginated
  * (4h4.5). `failuresOnly` serializes as `failuresOnly=true`; falsy/absent params
- * are OMITTED. `cursor` is an OPAQUE token from a prior page's `nextCursor` —
+ * are OMITTED — including `lens` (tfnv.4), which is sent only when the caller
+ * names a requirement package, so the default view's URL is unchanged and
+ * `failuresOnly` keeps meaning "fails the contract" unless asked otherwise. `cursor` is an OPAQUE token from a prior page's `nextCursor` —
  * passed back verbatim, never parsed client-side. Returns a discriminated result
  * ({ ok: false } for a 404 unknown/expired uuid) mirroring {@link getSession};
  * throws only on network / unexpected (5xx) errors.
@@ -624,11 +634,13 @@ export async function listTransmissions(
     signatureKey?: string;
     cursor?: string;
     limit?: number;
+    lens?: Profile;
   } = {},
 ): Promise<ListTransmissionsResult> {
   const params = new URLSearchParams();
   if (opts.window !== undefined) params.set('window', opts.window);
   if (opts.source !== undefined) params.set('source', opts.source);
+  if (opts.lens !== undefined) params.set('lens', opts.lens);
   if (opts.failuresOnly) params.set('failuresOnly', 'true');
   if (opts.signatureKey !== undefined && opts.signatureKey.length > 0) {
     params.set('signatureKey', opts.signatureKey);

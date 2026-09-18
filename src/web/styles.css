@@ -38,6 +38,16 @@
   --neutral: #6b727c; /* untested/enforced */
   --neutral-bg: #eef0f3;
 
+  /* Grading lens (tfnv.5) — plum, RESERVED for the DS01.3 DRAFT lens and given
+   * no other meaning on the page: the active toggle segment, the banner under
+   * the setup bar and the four card borders while that lens is selected. A
+   * reader who sees plum anywhere is being told one thing, that the numbers in
+   * front of them are graded against the draft package rather than the contract
+   * one (owner, 2026-09-17; teal was offered and declined). */
+  --draft: #6f4a9c; /* text, active segment fill */
+  --draft-bg: #efe8f6; /* banner ground */
+  --draft-border: #cbb8dc; /* card borders under the lens */
+
   --shadow: 0 1px 2px rgba(20, 24, 30, 0.05), 0 1px 1px rgba(20, 24, 30, 0.04); /* card shadow */
   --shadow-modal: 0 20px 50px rgba(0, 0, 0, 0.25); /* modal */
 

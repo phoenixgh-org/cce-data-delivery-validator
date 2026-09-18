@@ -93,6 +93,14 @@ export interface TransmissionsCardProps {
   signatures: Signature[];
   /** Cross-filter the list by a signature — the shadow rows' click (by1c.14). */
   onSelectSignature: (sig: Signature) => void;
+  /**
+   * Whether a non-contract requirement package is selected (tfnv.5). The card's
+   * border takes the lens tint with the rest of the page's cards; the list and
+   * the docked detail are unchanged here — reading them under the lens is
+   * tfnv.7. A boolean rather than the package itself because chrome is all this
+   * card does with the lens today.
+   */
+  draftLens?: boolean;
 }
 
 /** Row status-dot tone derived from a transmission's findings (not HTTP). */
@@ -2068,6 +2076,7 @@ export function TransmissionsCard({
   shadowProfile,
   signatures,
   onSelectSignature,
+  draftLens = false,
 }: TransmissionsCardProps): ReactElement {
   // Default to the newest (first) transmission when nothing is selected or the
   // selection no longer exists. The API returns newest-first, so [0] is newest.
@@ -2112,7 +2121,7 @@ export function TransmissionsCard({
       style={{
         flex: TRANSMISSIONS_PANE_FLEX,
         background: 'var(--surface-tx)',
-        border: '1px solid var(--border-strong)',
+        border: `1px solid var(${draftLens ? '--draft-border' : '--border-strong'})`,
         borderRadius: 8,
         overflow: 'hidden',
         boxShadow: 'var(--shadow)',

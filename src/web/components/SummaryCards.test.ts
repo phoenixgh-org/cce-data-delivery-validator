@@ -17,6 +17,14 @@
  * reports". The units tooltip stays as well — it carries the identifier rule and
  * the DESIGN §7 "counts what was received" caveat.
  *
+ * The grading lens (tfnv.5) adds two more copy cases, and they are copy cases
+ * for the same reason: under the draft package the cards count a DIFFERENT set
+ * of requirements and a different notion of passing, and the only thing saying
+ * so on the cards themselves is the eyebrow's package name and the sentence
+ * carrying the readiness number. Both must appear under that package, and
+ * NEITHER may appear under the contract one, where they would describe a draft
+ * nobody is graded against.
+ *
  * No DOM and no renderer: the repo has neither. The element tree is walked
  * directly, function components called with their own props — the same pattern
  * as ReportHeader.test.ts, which explains the global React binding and the
@@ -27,7 +35,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as React from 'react';
 
-import type { Rollup, ScopeTotals } from '../api.js';
+import {
+  CONTRACT_PROFILE,
+  type Profile,
+  type Readiness,
+  type Rollup,
+  type ScopeTotals,
+} from '../api.js';
+import { PROFILE_NAME } from '../profiles.js';
 import { unitsTitle } from '../scopeCopy.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
@@ -178,4 +193,81 @@ test('the units figure keeps the disclosure tooltip', () => {
       .filter((t): t is string => typeof t === 'string');
     assert.deepEqual(titled, [unitsTitle(unidentifiedReports)]);
   }
+});
+
+/** The lens package: the one lineage that is not the contract one. */
+const LENS: Profile = (Object.keys(PROFILE_NAME) as Profile[]).find(
+  (p) => p !== CONTRACT_PROFILE,
+) as Profile;
+
+/** Readiness as the summary read serves it — values distinct from both fixtures. */
+const readiness: Readiness = { passingContract: 17, passingBoth: 11 };
+
+/** The row under a chosen package, its two cards in render order. */
+function lensCards(overrides: Partial<Parameters<typeof SummaryCards>[0]> = {}) {
+  const row = SummaryCards({
+    rollup,
+    scoped,
+    lens: LENS,
+    contractProfile: CONTRACT_PROFILE,
+    readiness,
+    ...overrides,
+  });
+  const children = (row.props as { children: unknown }).children;
+  assert.ok(Array.isArray(children) && children.length === 2, 'the row renders two cards');
+  return { row, requirements: children[0], transmissions: children[1] };
+}
+
+/** Each card's border, read off the card element itself. */
+function borders(row: unknown): string[] {
+  return [...walk(row)]
+    .map((el) => el.props['style'])
+    .filter((s): s is Record<string, unknown> => typeof s === 'object' && s !== null)
+    .map((s) => s['border'])
+    .filter((b): b is string => typeof b === 'string');
+}
+
+test('under the draft lens the eyebrow names the package and the sentence carries readiness', () => {
+  const { requirements, transmissions } = lensCards();
+  // The name comes from the vocabulary, never from a literal here.
+  assert.ok(
+    text(requirements).includes(`REQUIREMENTS · ${PROFILE_NAME[LENS]}`),
+    text(requirements),
+  );
+  assert.ok(
+    text(transmissions).includes(
+      `· 11 of the 17 passing ${PROFILE_NAME[CONTRACT_PROFILE]} also pass here`,
+    ),
+    text(transmissions),
+  );
+  // Both cards take the lens's border; nothing else on the card changes.
+  assert.deepEqual(borders(lensCards().row), [
+    '1px solid var(--draft-border)',
+    '1px solid var(--draft-border)',
+  ]);
+});
+
+test('no readiness, no readiness clause', () => {
+  const right = text(lensCards({ readiness: null }).transmissions);
+  assert.ok(!right.includes('also pass here'), right);
+  // The rest of the sentence is untouched.
+  assert.ok(right.includes('received in this scope, from 9 CCE units'), right);
+});
+
+test('the contract lens renders exactly what it rendered before the lens existed', () => {
+  // Served readiness and an explicit contract lens: neither the package name nor
+  // the readiness clause may appear, and the borders stay the card border.
+  const { row, requirements, transmissions } = lensCards({ lens: CONTRACT_PROFILE });
+  const left = text(requirements);
+  assert.ok(left.includes('REQUIREMENTS'), left);
+  assert.ok(!left.includes('·  '), left);
+  assert.ok(!left.includes(PROFILE_NAME[LENS]), left);
+  assert.ok(!text(transmissions).includes('also pass here'), text(transmissions));
+  assert.deepEqual(borders(row), [
+    '1px solid var(--border-strong)',
+    '1px solid var(--border-strong)',
+  ]);
+  // And the row the Dashboard rendered before the lens existed — no lens props
+  // at all — is the same row.
+  assert.equal(text(cards().row), text(row));
 });

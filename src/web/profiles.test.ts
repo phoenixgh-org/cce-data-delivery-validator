@@ -22,6 +22,7 @@ import {
   PROFILE_NAME,
   PROFILE_VOCABULARY,
   formatDraftDate,
+  formatDraftDateLong,
   gradingLegend,
   gradingLegendTitle,
   profileLabel,
@@ -90,6 +91,15 @@ test('an unrecognised draft date is shown as the server sent it', () => {
   assert.equal(formatDraftDate('2026-09'), '2026-09');
   assert.equal(formatDraftDate('2026-13-08'), '2026-13-08');
   assert.equal(formatDraftDate(''), '');
+});
+
+test('the long form carries the year, and passes an unrecognised date through', () => {
+  // The lens banner (tfnv.5) dates an unpublished proposal at the end of a
+  // sentence, where a bare "Sep 8" leaves the reader to guess the year.
+  assert.equal(formatDraftDateLong('2026-09-08'), 'Sep 8, 2026');
+  assert.equal(formatDraftDateLong('2026-01-01'), 'Jan 1, 2026');
+  assert.equal(formatDraftDateLong('2026-13-08'), '2026-13-08');
+  assert.equal(formatDraftDateLong(''), '');
 });
 
 test('a draft shadow entry is named as a draft, dated', () => {

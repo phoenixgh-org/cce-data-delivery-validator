@@ -98,6 +98,24 @@ export function formatDraftDate(date: string): string {
 }
 
 /**
+ * A draft date in full, as the lens banner states it: `'2026-09-08'` → `"Sep 8,
+ * 2026"`.
+ *
+ * The same parse as {@link formatDraftDate}, and for the same reason — the date
+ * is provenance and must read the same in every time zone. The two lengths are
+ * separate because their sentences are: the legend sets the date beside a
+ * version in a cramped strip, where the year is noise, while the banner makes it
+ * the end of a sentence that dates an unpublished proposal, where a bare
+ * "Sep 8" leaves the reader to guess the year.
+ *
+ * Anything that is not a YYYY-MM-DD date comes back unchanged, as there too.
+ */
+export function formatDraftDateLong(date: string): string {
+  const short = formatDraftDate(date);
+  return short === date ? date : `${short}, ${date.slice(0, 4)}`;
+}
+
+/**
  * The shadow half of a legend, split so a surface can set the provenance detail
  * in the mono stack while the name stays in the body face.
  */

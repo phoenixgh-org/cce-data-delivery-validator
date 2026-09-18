@@ -22,28 +22,46 @@
  * component is gone, along with the header's endpoint sentence, the pass-rate
  * chart that sat beside it and the "live · updated just now" dot. The scope state
  * and the `load` callback did not move — only where the controls are rendered.
+ *
+ * THE GRADING LENS (tfnv.5) is owned here too, beside the scope state and for the
+ * same reason: it is a read parameter. It selects the requirement PACKAGE the
+ * page is read under — the obligations in force, or the DS01.3 draft — and both
+ * reads carry it, so every number on the page comes back computed under one
+ * package rather than being mixed client-side. It changes nothing about what
+ * ingest graded or what response code a supplier received.
+ *
+ * It lives in the URL query as well as in state, because a supplier sharing a
+ * dashboard link is sharing a view, and a view under the draft package is a
+ * different view. The key is DELETED when the contract package is selected, so
+ * the default link stays the bare `/d/{uuid}` it has always been, and the lens is
+ * sent to the server only in the same case — the default request URLs are
+ * unchanged by this bite.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import {
+  CONTRACT_PROFILE,
   deleteSessionData,
   getSession,
   listTransmissions,
   type ComplianceClass,
   type ListTransmissionsResponse,
+  type Profile,
   type SessionResponse,
   type Signature,
   type TransmissionView,
 } from '../api';
 import { ComplianceCard } from '../components/ComplianceCard';
 import { DeleteModal } from '../components/DeleteModal';
+import { LensBanner } from '../components/LensBanner';
 import { ReportHeader, type WindowValue } from '../components/ReportHeader';
 import { Setup } from '../components/Setup';
 import { SummaryCards } from '../components/SummaryCards';
 import { TransmissionsCard } from '../components/TransmissionsCard';
 // The body's gutter, shared with the summary-card row above it (src/web/layout.ts).
 import { PANE_GUTTER } from '../layout';
+import { PROFILE_NAME } from '../profiles';
 
 type State =
   | { phase: 'loading' }
@@ -62,9 +80,61 @@ const POLL_INTERVAL_MS = 5000;
 /** Per-verifiability-class collapse map for the non-gradeable groups. */
 type CollapsedGroups = Partial<Record<ComplianceClass, boolean>>;
 
+/**
+ * The requirement package a `?lens=` value names, or null when it names none.
+ *
+ * Checked against the vocabulary's own keys rather than a list written here, so
+ * a registered package is a valid lens by virtue of being registered. A value
+ * from a hand-edited or stale link is simply not a package: the caller falls
+ * back to the contract one rather than asking the server about it (the server
+ * answers HTTP 400 – Bad Request for an unknown lens, which would turn a typo in
+ * a shared link into an error page).
+ *
+ * A package that IS registered but is not this session's own (a link to a
+ * session with no shadow lineage) survives this check and is corrected once the
+ * session lands — see the reconcile effect.
+ */
+function parseLens(raw: string | null): Profile | null {
+  if (raw === null) return null;
+  return (Object.keys(PROFILE_NAME) as Profile[]).find((profile) => profile === raw) ?? null;
+}
+
 export function Dashboard() {
   const { uuid } = useParams<{ uuid: string }>();
   const [state, setState] = useState<State>({ phase: 'loading' });
+
+  // ---- Grading lens (tfnv.5). The requirement package the whole page is read
+  // under, initialised from the link that opened it and written back on every
+  // change so the link a supplier copies carries the view they are looking at.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [lens, setLens] = useState<Profile>(
+    () => parseLens(searchParams.get('lens')) ?? CONTRACT_PROFILE,
+  );
+  /**
+   * Select a requirement package: state and URL together, always.
+   *
+   * The key is REMOVED rather than set to the contract package, so a link copied
+   * from the default view is the link it has always been and no reader has to
+   * know which package `2025` is. `replace` keeps the toggle out of the back
+   * stack — flipping a lens is looking at the same report differently, not
+   * navigating somewhere — while the other query keys are preserved, since
+   * nothing here owns them.
+   */
+  const onLensChange = useCallback(
+    (next: Profile) => {
+      setLens(next);
+      setSearchParams(
+        (prev) => {
+          const params = new URLSearchParams(prev);
+          if (next === CONTRACT_PROFILE) params.delete('lens');
+          else params.set('lens', next);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   // ---- Scope state (4h4.9). These drive the SERVER-computed scope: the summary
   // read passes {window,source}; the list read passes {window,source,failuresOnly,
@@ -135,8 +205,14 @@ export function Dashboard() {
         setState({ phase: 'not-found' });
         return;
       }
+      // Omitted entirely under the contract package: `?lens=2025` and no lens at
+      // all mean the same thing to the server, and not sending it keeps the
+      // default request URL the one every prior bite pinned.
+      const lensOpt = lens === CONTRACT_PROFILE ? {} : { lens };
       // Summary read (drives the phase machine + summary cards + compliance pane).
-      getSession(uuid, { window, source })
+      // The lens rides along ONLY when a non-contract package is selected, so the
+      // default view asks for exactly the URL it always did (`lensOpt` below).
+      getSession(uuid, { window, source, ...lensOpt })
         .then((result) => {
           if (cancelled?.()) return;
           if (result.ok) setState({ phase: 'ready', data: result.data });
@@ -162,6 +238,7 @@ export function Dashboard() {
         source,
         failuresOnly,
         signatureKey: selectedSignature?.key,
+        ...lensOpt,
       })
         .then((result) => {
           if (cancelled?.()) return;
@@ -179,7 +256,10 @@ export function Dashboard() {
           // Swallow — the summary read drives the error/not-found states.
         });
     },
-    [uuid, window, source, failuresOnly, selectedSignature],
+    // `lens` sits with the scope values: changing it re-creates this callback,
+    // which re-runs BOTH reads under the newly-selected package, and the poll
+    // below re-enters whatever lens is current because it calls THIS callback.
+    [uuid, window, source, failuresOnly, selectedSignature, lens],
   );
 
   // Full-screen loading RESET is keyed on `uuid` ONLY (3ta). Post-4h4.9 `load`
@@ -263,6 +343,18 @@ export function Dashboard() {
   // until the first list read lands.
   const listRows = accumulatedRows;
 
+  // A lens this session does not have (tfnv.5): a link carrying ?lens= for a
+  // package the service registers but this session does not grade in shadow —
+  // there is no toggle to leave it by, and every count would be read under a
+  // package the header cannot even name. Fall back to the contract package, and
+  // drop the key so the corrected view is what a re-share carries. Runs only
+  // once the session lands, because until then there is nothing to check against.
+  useEffect(() => {
+    if (data === null) return;
+    if (lens === data.session.contractProfile || lens === data.session.shadowProfile) return;
+    onLensChange(data.session.contractProfile);
+  }, [data, lens, onLensChange]);
+
   // Auto-collapse rule (README §Interactions): Setup is open while the endpoint
   // has zero transmissions; the FIRST transmission collapses it ONCE (tracked
   // via autoCollapsed so a later manual reopen isn't fought by the poll).
@@ -322,6 +414,9 @@ export function Dashboard() {
       failuresOnly,
       signatureKey: selectedSignature?.key,
       cursor: listCursor,
+      // The appended page is read under the SAME package as the anchor page;
+      // omitted under the contract one, as in `load`.
+      ...(lens === CONTRACT_PROFILE ? {} : { lens }),
     })
       .then((result) => {
         if (listAnchorRef.current !== anchorToken) return;
@@ -336,7 +431,7 @@ export function Dashboard() {
       .finally(() => {
         if (listAnchorRef.current === anchorToken) setIsLoadingMore(false);
       });
-  }, [uuid, listCursor, isLoadingMore, window, source, failuresOnly, selectedSignature]);
+  }, [uuid, listCursor, isLoadingMore, window, source, failuresOnly, selectedSignature, lens]);
 
   const toggleGroup = useCallback((cls: ComplianceClass) => {
     setCollapsedGroups((prev) => ({ ...prev, [cls]: !prev[cls] }));
@@ -401,6 +496,9 @@ export function Dashboard() {
   const { session, expiresAt, schemas } = state.data;
   const ingestUrl = `/i/${session.uuid}`;
   const hasData = txCount > 0;
+  // A non-contract package is selected: the banner is on and the four cards take
+  // the lens tint. One derivation, passed down — no component reads the URL.
+  const draftLens = lens !== session.contractProfile;
 
   return (
     <main
@@ -419,6 +517,12 @@ export function Dashboard() {
         sources={state.data.sources}
         onWindowChange={setWindow}
         onSourceChange={setSource}
+        // Grading lens (tfnv.5) — the package selector, ahead of the scope
+        // controls. Hidden when the session registers no shadow lineage.
+        lens={lens}
+        contractProfile={session.contractProfile}
+        shadowProfile={session.shadowProfile}
+        onLensChange={onLensChange}
       />
 
       {/* Setup — controlled collapsed bar + expanded panel (108.7). The
@@ -436,12 +540,33 @@ export function Dashboard() {
         onRequestDelete={() => setDeleteModalOpen(true)}
       />
 
+      {/* Lens banner (tfnv.5) — directly under the setup bar, and only while a
+          non-contract package is selected. It says which package the page below
+          is graded against, dates the bytes from the session's own provenance,
+          and carries the way back. */}
+      {draftLens && (
+        <LensBanner
+          lens={lens}
+          contractProfile={session.contractProfile}
+          shadow={state.data.shadow}
+          onLensChange={onLensChange}
+        />
+      )}
+
       {/* Summary cards (vamh.3) — the scorecard strip's headline row, split into
           one card per column so each set of numbers sits above the pane whose
           noun it counts. The cards own their gutter and gap, matched to the
           two-pane body below so their edges land on the pane edges; everything
           they render comes from the SERVER rollup and scope totals. */}
-      <SummaryCards rollup={rollup} scoped={state.data.scoped} />
+      <SummaryCards
+        rollup={rollup}
+        scoped={state.data.scoped}
+        // Under the draft package the eyebrow names it, the transmissions
+        // sentence carries the readiness number, and both borders go plum.
+        lens={lens}
+        contractProfile={session.contractProfile}
+        readiness={state.data.readiness}
+      />
 
       {/* Two-pane body */}
       <div
@@ -474,6 +599,10 @@ export function Dashboard() {
           signatures={state.data.signatures}
           onSelectSignature={onSelectSignature}
           activeSignatureKey={selectedSignature?.key ?? null}
+          // Chrome and header only in this bite; the rows under the lens are
+          // tfnv.6.
+          lens={lens}
+          contractProfile={session.contractProfile}
         />
         <TransmissionsCard
           // The list renders the paginated PAGE rows (scoped/filtered), not the
@@ -502,6 +631,9 @@ export function Dashboard() {
           // array and the same handler the compliance column uses.
           signatures={state.data.signatures}
           onSelectSignature={onSelectSignature}
+          // Chrome only in this bite; the list and detail under the lens are
+          // tfnv.7.
+          draftLens={draftLens}
         />
       </div>
 
