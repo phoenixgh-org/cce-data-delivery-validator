@@ -104,6 +104,11 @@ export function advisory(input: AdvisoryInput): Finding {
  * ingest time reads it — the bar is an assertion about prose a human wrote, not a
  * filter applied to it.
  *
+ * Both readers reach it through {@link violatesAdvisoryCopyBar}, which is the
+ * single entry point: this constant is only half the bar, and a reader that
+ * applies it on its own — without removing {@link ADVISORY_COPY_EXEMPT_PHRASES}
+ * first — is enforcing a different rule from the one a live run enforces.
+ *
  * No `g` flag on purpose: a global regular expression carries `lastIndex` between
  * calls, and a shared one would then answer differently depending on who tested
  * a string last.
@@ -154,4 +159,29 @@ export function advisoryCopyBannedWordsWith(...extraWords: [string, ...string[]]
     `${ADVISORY_COPY_BANNED_WORDS.source}|\\b(?:${extraWords.join('|')})\\b`,
     ADVISORY_COPY_BANNED_WORDS.flags,
   );
+}
+
+/**
+ * Whether a piece of advisory copy breaks the wording bar: the one place the two
+ * halves of the bar are combined.
+ *
+ * The bar is {@link ADVISORY_COPY_BANNED_WORDS} applied to the copy with
+ * {@link ADVISORY_COPY_EXEMPT_PHRASES} removed first, and a reader that keeps
+ * only one half grades copy by a rule of its own. Both halves of that mistake
+ * have happened: a per-check test spelled out its own shortened word list and
+ * never stripped the exempt phrases, so the EMS arm of
+ * `adv.unexplained_null_temp` passed its unit test and then failed the live
+ * audit (agj.25). Route every reader through here instead.
+ *
+ * `bar` defaults to the shared word list. A reader holding its own copy to a
+ * stricter one passes the result of {@link advisoryCopyBannedWordsWith}, so the
+ * exempt phrases are handled identically whichever list is in force.
+ */
+export function violatesAdvisoryCopyBar(
+  copy: string,
+  bar: RegExp = ADVISORY_COPY_BANNED_WORDS,
+): boolean {
+  let bare = copy;
+  for (const phrase of ADVISORY_COPY_EXEMPT_PHRASES) bare = bare.split(phrase).join(' ');
+  return bar.test(bare);
 }

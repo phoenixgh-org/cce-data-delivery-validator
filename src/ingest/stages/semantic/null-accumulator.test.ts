@@ -32,7 +32,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
-import { ADVISORY_COPY_BANNED_WORDS } from './advisory-finding.js';
+import { violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { nullAccumulatorCheck } from './null-accumulator.js';
 import { nullPaddingCheck } from './null-padding.js';
@@ -447,11 +447,12 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
   // should be an explicit 0" is a recommendation in the house sense, the same
   // way sample_gap's "loggers should rarely produce gaps" is, and neither says
   // the payload broke a rule.
-  // The list itself is imported, not re-spelled here (7qjf): a second copy
-  // would drift the day a word is added to the shared bar.
-  const defectWords = ADVISORY_COPY_BANNED_WORDS;
+  // The bar is imported and applied through its one helper, not re-spelled here
+  // (7qjf, agj.25): a second copy would drift the day a word is added to the
+  // shared list, and a copy that skipped the exempt phrases would read approved
+  // copy as a defect.
   for (const copy of [summaryOf(OUTAGE), detailOf(OUTAGE)]) {
-    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.ok(!violatesAdvisoryCopyBar(copy), `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation about/i, 'no renaming');
   }
 });
@@ -523,10 +524,10 @@ test('it names what arrived, then why an explicit 0 is what the country can add 
 test('the plural form clears the same wording bars as the singular', () => {
   // The category's two rules are acceptance for every form of the sentence, not
   // only the one the other copy tests happen to drive.
-  // The bar is the shared constant here too (w1e5): a re-spelled copy three
-  // lines from the import would drift the day a word is added to it.
+  // The bar is reached through the shared helper here too (w1e5): a re-spelled
+  // copy three lines from the import would drift the day a word is added to it.
   for (const copy of [summaryOf(OUTAGE_BOTH), detailOf(OUTAGE_BOTH)]) {
-    assert.doesNotMatch(copy, ADVISORY_COPY_BANNED_WORDS, `copy reads as a defect: ${copy}`);
+    assert.ok(!violatesAdvisoryCopyBar(copy), `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${copy}`);
   }
 });

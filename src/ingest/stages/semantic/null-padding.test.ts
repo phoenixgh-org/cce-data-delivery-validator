@@ -29,7 +29,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
-import { ADVISORY_COPY_BANNED_WORDS } from './advisory-finding.js';
+import { violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { MIN_RECORDS, nullPaddingCheck } from './null-padding.js';
 
@@ -356,13 +356,14 @@ test('the detail carries no defect vocabulary and no synonym for the category', 
   // prescriptive "should" left the banned list, because the detail now carries
   // an explicit, hedged recommendation — that is the advisory doing its job,
   // not defect vocabulary.
-  // The list itself is imported, not re-spelled here (7qjf): a second copy
-  // would drift the day a word is added to the shared bar.
-  const defectWords = ADVISORY_COPY_BANNED_WORDS;
+  // The bar is imported and applied through its one helper, not re-spelled here
+  // (7qjf, agj.25): a second copy would drift the day a word is added to the
+  // shared list, and a copy that skipped the exempt phrases would read approved
+  // copy as a defect.
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
 
   for (const copy of [finding?.summary ?? '', finding?.detail ?? '']) {
-    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.ok(!violatesAdvisoryCopyBar(copy), `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
   }
 });

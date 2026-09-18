@@ -38,6 +38,7 @@ import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
 import { isAdvisoryId } from './advisory.js';
+import { violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { unexplainedNullTempCheck } from './unexplained-null-temp.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
@@ -563,17 +564,17 @@ test('it names what arrived, then why a null TVC is worth following up', () => {
 });
 
 test('the copy carries no defect vocabulary and no synonym for the category', () => {
-  // `error` is deliberately absent from this list where the other advisories
-  // carry it: LERR and EERR are titled "Logger Error Codes" and "EMD Error
-  // Codes" in the schema itself, so naming the field is naming the payload
-  // rather than grading it. "should" is absent too — the approved rationale's
-  // "should be investigated" is a recommendation in the house sense, not a
-  // statement that the payload broke a rule. Everything else that reads as a
-  // verdict is barred.
-  const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|fail|fails|failed|failing|failure|invalid|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  // The shared bar, through the one helper that applies it (agj.25). This test
+  // used to carry a word list of its own with `error` and `invalid` struck off,
+  // which is how the EMS arm's copy below passed here and then failed the live
+  // audit. Naming the LERR/EERR field is still allowed — "error code" is one of
+  // ADVISORY_COPY_EXEMPT_PHRASES, removed from the copy before the words are
+  // looked for, because the schema itself titles those fields "Logger Error
+  // Codes" and "EMD Error Codes". `should` is not on the shared bar either: the
+  // approved rationale's "should be investigated" is a recommendation in the
+  // house sense, not a statement that the payload broke a rule.
   for (const copy of [summaryOf(RTM_UNEXPLAINED), detailOf(RTM_UNEXPLAINED)]) {
-    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.ok(!violatesAdvisoryCopyBar(copy), `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation about/i, 'no renaming');
   }
 });
@@ -649,15 +650,15 @@ test('PIN: the §7 summary is identical with and without the EMS advisory', asyn
 });
 
 test('EMS: the copy carries no defect vocabulary and concludes nothing about the device', () => {
-  // The same rule the rtm copy is held to, with one deliberate difference: the
-  // approved rationale names what a REAL code would do ("names a sensor or
-  // logger condition"), which is a statement about error codes rather than a
-  // claim that this device's sensor failed. "validation" is the schema's own
-  // word for what the payload passed, not a verdict on the supplier.
-  const defectWords =
-    /\b(warn|warning|issue|issues|defect|defects|fail|fails|failed|failing|failure|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  // The same rule the rtm copy is held to, and the same shared helper applies
+  // it. The approved rationale names what a REAL code would do ("names a sensor
+  // or logger condition"), which is a statement about error codes rather than a
+  // claim that this device's sensor failed; "error code" is exempt for exactly
+  // that reason, so the copy clears the full shared bar rather than a shortened
+  // one. "validation" is the schema's own word for what the payload passed, not
+  // a verdict on the supplier, and `invalid` on the bar does not reach it.
   for (const copy of [summaryOf(EMS_BLANK_LERR), detailOf(EMS_BLANK_LERR)]) {
-    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.ok(!violatesAdvisoryCopyBar(copy), `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation about/i, 'no renaming');
   }
   assert.doesNotMatch(

@@ -33,7 +33,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
-import { advisoryCopyBannedWordsWith } from './advisory-finding.js';
+import { advisoryCopyBannedWordsWith, violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { nullIdentityCheck } from './null-identity.js';
 import { shortIdentifierCheck } from './short-identifier.js';
@@ -492,11 +492,13 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
   // The shared bar plus `should` (7qjf): nothing in this check's approved
   // prose recommends anything, so a recommendation here would be the copy
   // drifting toward a verdict. Composed from the shared list rather than
-  // spelled out, so a word added there reaches this stricter bar too.
+  // spelled out, so a word added there reaches this stricter bar too, and
+  // applied through the shared helper (agj.25) so the exempt phrases are
+  // removed the way a live run removes them.
   const defectWords = advisoryCopyBannedWordsWith('should');
   for (const payload of [EMS_SHORT_ID, RTM_SHORT_ID]) {
     for (const copy of [summaryOf(payload), detailOf(payload)]) {
-      assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+      assert.ok(!violatesAdvisoryCopyBar(copy, defectWords), `copy reads as a defect: ${copy}`);
       assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
     }
   }

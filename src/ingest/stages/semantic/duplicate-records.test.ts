@@ -36,7 +36,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
-import { ADVISORY_COPY_BANNED_WORDS, ADVISORY_COPY_EXEMPT_PHRASES } from './advisory-finding.js';
+import { violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { duplicateRecordsCheck } from './duplicate-records.js';
 import { duplicateCheck } from './duplicate.js';
@@ -577,10 +577,10 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
   // this payload, so it is removed before the bar is applied rather than the bar
   // being loosened.
   //
-  // The bar itself is imported rather than written here (y0w4): the exercise
-  // runner holds a LIVE instance's advisory copy to the same words, and two
-  // copies of the list would drift the day one of them grew a word.
-  const defectWords = ADVISORY_COPY_BANNED_WORDS;
+  // The bar is imported and applied through its one helper rather than written
+  // here (y0w4, agj.25): the exercise runner holds a LIVE instance's advisory
+  // copy to the same words with the same phrases removed first, and a second
+  // copy of either half would drift the day one of them changed.
   const finding = only(emsPayload(RE_APPENDED));
 
   assert.match(
@@ -588,10 +588,8 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
     /clause 1\.8 allows after a delivery failure/,
     'the exemption',
   );
-  const stripExempt = (copy: string) =>
-    ADVISORY_COPY_EXEMPT_PHRASES.reduce((text, phrase) => text.split(phrase).join(' '), copy);
-  for (const copy of [finding.summary ?? '', stripExempt(finding.detail ?? '')]) {
-    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+  for (const copy of [finding.summary ?? '', finding.detail ?? '']) {
+    assert.ok(!violatesAdvisoryCopyBar(copy), `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
   }
 });

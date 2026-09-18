@@ -32,7 +32,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
-import { ADVISORY_COPY_BANNED_WORDS } from './advisory-finding.js';
+import { violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { blankAdminCheck } from './blank-admin.js';
 import { nullIdentityCheck } from './null-identity.js';
@@ -506,16 +506,17 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
   // the approved rationale's "should not be blank" is a recommendation in the
   // house sense, the same way sample_gap's "loggers should rarely produce gaps"
   // is, and neither states that the payload broke a rule.
-  // The list itself is imported, not re-spelled here (7qjf): a second copy
-  // would drift the day a word is added to the shared bar.
-  const defectWords = ADVISORY_COPY_BANNED_WORDS;
+  // The bar is imported and applied through its one helper, not re-spelled here
+  // (7qjf, agj.25): a second copy would drift the day a word is added to the
+  // shared list, and a copy that skipped the exempt phrases would read approved
+  // copy as a defect.
   for (const copy of [
     summaryOf(EMS_BLANK_ADMIN),
     detailOf(EMS_BLANK_ADMIN),
     summaryOf(RTM_BLANK_ADMIN),
     detailOf(RTM_BLANK_ADMIN),
   ]) {
-    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.ok(!violatesAdvisoryCopyBar(copy), `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
   }
 });

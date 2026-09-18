@@ -32,7 +32,7 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
-import { ADVISORY_COPY_BANNED_WORDS } from './advisory-finding.js';
+import { violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 import { intervalCheck } from './interval.js';
 import { SAMPLE_GAP_EPSILON_MS, SAMPLE_PERIOD_MS, sampleGapCheck } from './sample-gap.js';
@@ -519,13 +519,14 @@ test('the copy carries no defect vocabulary and no synonym for the category', ()
   // payload broke no rule — a longer sampling period violates nothing the schema
   // or §7 expresses — so any of these would be a false statement about the
   // supplier rather than a harsh tone.
-  // The list itself is imported, not re-spelled here (7qjf): a second copy
-  // would drift the day a word is added to the shared bar.
-  const defectWords = ADVISORY_COPY_BANNED_WORDS;
+  // The bar is imported and applied through its one helper, not re-spelled here
+  // (7qjf, agj.25): a second copy would drift the day a word is added to the
+  // shared list, and a copy that skipped the exempt phrases would read approved
+  // copy as a defect.
   const [finding] = advisories(checkOnly(emsPayload(HOURLY)));
 
   for (const copy of [finding?.summary ?? '', finding?.detail ?? '']) {
-    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.ok(!violatesAdvisoryCopyBar(copy), `copy reads as a defect: ${copy}`);
     assert.doesNotMatch(copy, /data quality|practice note|observation/i, 'no renaming');
   }
 });

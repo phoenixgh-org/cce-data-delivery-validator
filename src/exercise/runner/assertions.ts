@@ -36,9 +36,8 @@ import { foldUnderLens, type LensFinding } from '../../api/lens.js';
 import type { Verdict } from '../../api/verdicts.js';
 import type { Severity } from '../../db/repository.js';
 import {
-  ADVISORY_COPY_BANNED_WORDS,
-  ADVISORY_COPY_EXEMPT_PHRASES,
   isAdvisoryId,
+  violatesAdvisoryCopyBar,
 } from '../../ingest/stages/semantic/advisory-finding.js';
 import { CONTRACT_PROFILE, type Profile } from '../../schema-registry.js';
 import {
@@ -377,13 +376,6 @@ export interface CopyAudit {
   readonly notes: readonly string[];
 }
 
-/** Remove the exempt phrases, then ask whether the banned vocabulary remains. */
-function readsAsDefect(copy: string): boolean {
-  let bare = copy;
-  for (const phrase of ADVISORY_COPY_EXEMPT_PHRASES) bare = bare.split(phrase).join(' ');
-  return ADVISORY_COPY_BANNED_WORDS.test(bare);
-}
-
 /** Collapse repeats without reordering: the same defect fires once per transmission. */
 function distinct(lines: readonly string[]): string[] {
   return [...new Set(lines)];
@@ -395,8 +387,8 @@ function distinct(lines: readonly string[]): string[] {
  *
  * Every advisory finding in the session is held to three things: `summary` is a
  * non-blank string, `detail` is a non-blank string, and neither reads as a
- * defect ({@link ADVISORY_COPY_BANNED_WORDS}, with the phrases in
- * {@link ADVISORY_COPY_EXEMPT_PHRASES} removed first). That is the same bar the
+ * defect ({@link violatesAdvisoryCopyBar}, the shared entry point to the
+ * wording bar). That is the same bar, applied through the same helper, that the
  * per-check copy tests hold each check's own prose to; what this adds is the
  * rest of the path — repository INSERT, SELECT, `toFindingView`, the dashboard
  * API — which no pure test can reach without a running instance.
@@ -457,7 +449,7 @@ export function auditAdvisoryCopy(findingsByTransmission: FindingsByTransmission
       } else if (found.summary.trim().length === 0) {
         violations.push(`${id}: summary is blank`);
       } else {
-        if (readsAsDefect(found.summary)) {
+        if (violatesAdvisoryCopyBar(found.summary)) {
           violations.push(`${id}: summary reads as a defect: ${found.summary}`);
         }
         if (found.summary.length > SUMMARY_LENGTH_HINT) {
@@ -471,7 +463,7 @@ export function auditAdvisoryCopy(findingsByTransmission: FindingsByTransmission
 
     if (found.detail === undefined || found.detail.trim().length === 0) {
       violations.push(`${id}: detail is blank`);
-    } else if (readsAsDefect(found.detail)) {
+    } else if (violatesAdvisoryCopyBar(found.detail)) {
       violations.push(`${id}: detail reads as a defect: ${found.detail}`);
     }
   }
