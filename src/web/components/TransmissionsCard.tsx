@@ -218,9 +218,9 @@ const LIST_VISIBLE_ROWS = 10;
  * bar — no longer render at all, and a third, the readiness strip, is no longer
  * mounted. What sits above the list today is:
  *   header ~48 + setup bar ~35 + summary-card row ~131              ≈ 214
- *   + body padding 16 + card header ~44 + verdict column header 26 + list 340
- *                                                                   = 640
- * so the docked detail starts at ~640px. Each term, measured off the styles that
+ *   + body padding 16 + card header ~44 + verdict column header ~41 + list 340
+ *                                                                   = 655
+ * so the docked detail starts at ~655px. Each term, measured off the styles that
  * produce it:
  *   - header: ReportHeader's 10px padding top and bottom + a 27px Seg control
  *     (11.5px label at line-height 1.5, 4px padding, 1px border) + a 1px bottom
@@ -239,14 +239,22 @@ const LIST_VISIBLE_ROWS = 10;
  *     body's own 16px supplies it.
  *   - verdict column header (by1c.12): the strip of lineage labels rendered
  *     immediately above this region — 5px padding top and bottom + a 10px eyebrow
- *     at the inherited line-height 1.5 (15px) + a 1px bottom border = 26px.
+ *     at the inherited line-height 1.5 that WRAPS TO TWO LINES (2 × 15px) + a 1px
+ *     bottom border = ~41px. The wrap is deliberate and it is what this term is
+ *     worth today: VERDICT_COL_PX is 58, narrow enough that "UNICEF Q1 2025" and
+ *     "DS01.3 DRAFT" each break in the same place rather than widening the
+ *     columns into the row's own content (tfnv.1, VerdictDot.tsx:39-51), and
+ *     nothing in the strip sets `whiteSpace: nowrap`. The term was 26px while
+ *     each label still fit on one line.
  *
- * That clears the fold on an 800px-tall viewport (~160px of detail visible, above
- * its own 120px min-height) and comfortably so at 1000px (~360px). An active issue
- * chip adds ~33px, leaving ~127px — still inside the budget, but thin enough that
- * anything added above the list has to be measured rather than assumed. The list
- * keeps its own scrollbar and stays virtualized — this caps the region, it does
- * not page the data.
+ * At an 800px-tall viewport that leaves ~145px of the detail region visible, above
+ * its own 120px min-height, and ~345px at 1000px. An active issue chip adds ~33px
+ * above the list, which leaves ~112px — BELOW that min-height. In that one case
+ * the budget does NOT clear the fold: the region's own minHeight of 120 wins, the
+ * page grows to ~808px and scrolls by ~8px. Thin enough, either way, that anything
+ * added above the list has to be measured rather than assumed. The list keeps its
+ * own scrollbar and stays virtualized — this caps the region, it does not page the
+ * data.
  */
 const LIST_MAX_HEIGHT_PX = ROW_ESTIMATE_PX * LIST_VISIBLE_ROWS;
 
@@ -327,8 +335,8 @@ export function findingsCell(findings: FindingView[]): FindingsCell {
 /**
  * How many findings the SHADOW lineage failed this transmission on — the count
  * in the verdict pair's tooltip parenthetical AND the count on the detail pane's
- * "Would also fail under DS01.3" header, which is the same question asked twice
- * and must not come back with two numbers (by1c.39).
+ * "Would also fail under DS01.3 DRAFT" header, which is the same question asked
+ * twice and must not come back with two numbers (by1c.39).
  *
  * Advisories are excluded for the reason {@link findingsCell} gives: an advisory
  * is not a verdict and must never inflate a number a supplier has to explain.
@@ -681,6 +689,35 @@ export interface AlsoFails {
   hint: string;
 }
 
+/**
+ * The tooltip on a "· also 5.1.3" mark (tfnv.12).
+ *
+ * The clause number needs the word "clause" in front of it, because the lineage
+ * name ends in a shouted word: "Also fails under DS01.3 DRAFT 5.1.3" runs the
+ * package name straight into a number and reads as one identifier. Naming the
+ * number for what it is separates them.
+ *
+ * Exported so a test can pin the sentence: the name is composed from the profile
+ * vocabulary, never written here, so a rename moves the tooltip and the pin
+ * together (by1c.36).
+ */
+export function alsoFailsHint(shadowProfile: Profile, clause: string): string {
+  return `Also fails ${PROFILE_NAME[shadowProfile]} clause ${clause}`;
+}
+
+/**
+ * The tooltip on a shadow finding's cross-filter button (tfnv.12) — the question
+ * the row exists to answer: which other transmissions carry this same issue?
+ *
+ * Empty when no shadow lineage is registered, which is the case where no shadow
+ * row renders at all. Exported, and composed from the vocabulary, for the reason
+ * {@link alsoFailsHint} gives.
+ */
+export function shadowRowHint(shadowProfile: Profile | null): string {
+  if (shadowProfile === null) return '';
+  return `Filter the list by this ${PROFILE_NAME[shadowProfile]} issue`;
+}
+
 function FindingItem({
   finding,
   alsoFails,
@@ -765,7 +802,7 @@ function FindingItem({
 }
 
 /**
- * One row of the "Would also fail under DS01.3" group (by1c.14).
+ * One row of the "Would also fail under DS01.3 DRAFT" group (by1c.14).
  *
  * Two affordances, both of which a shadow failure had before this group existed
  * and by1c.40 restored: the row's text is a button on the same `?signatureKey=`
@@ -1737,8 +1774,7 @@ function TxDetail({
     body: tx.body,
   });
   const copy = detailGroupCopy(shadowProfile, contract.length);
-  const shadowName = shadowProfile === null ? null : PROFILE_NAME[shadowProfile];
-  const rowHint = shadowName === null ? '' : `Filter the list by this ${shadowName} issue`;
+  const rowHint = shadowRowHint(shadowProfile);
 
   // Raw-payload inspector state. Open/closed PERSISTS across row selections (so
   // payloads can be compared row to row); the pending scroll target does not.
@@ -1906,11 +1942,11 @@ function TxDetail({
               key={i}
               finding={row.finding}
               alsoFails={
-                row.alsoFails === null || shadowName === null
+                row.alsoFails === null || shadowProfile === null
                   ? null
                   : {
                       clause: row.alsoFails,
-                      hint: `Also fails under ${shadowName} ${row.alsoFails}`,
+                      hint: alsoFailsHint(shadowProfile, row.alsoFails),
                     }
               }
               onSelectReq={onSelectReq}
@@ -1927,8 +1963,8 @@ function TxDetail({
         </div>
       )}
 
-      {/* "Would also fail under DS01.3" (by1c.14) — rendered ONLY when the shadow
-          run failed on its own. A contract failure that re-tags forward is marked
+      {/* "Would also fail under DS01.3 DRAFT" (by1c.14) — rendered ONLY when the
+          shadow run failed on its own. A contract failure that re-tags forward is marked
           in place above instead, so nothing appears twice.
 
           The count is the number of shadow FAILURES, which is the number the

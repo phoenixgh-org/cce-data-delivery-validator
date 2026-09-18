@@ -41,6 +41,7 @@ import * as React from 'react';
 import { CONTRACT_PROFILE } from '../api';
 import type { FindingView, Severity } from '../api';
 import { groupDetailFindings } from '../detailGroups.js';
+import { PROFILE_NAME } from '../profiles.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
@@ -61,6 +62,8 @@ const {
   chipTitle,
   rawPayloadSummary,
   advisoryLine,
+  alsoFailsHint,
+  shadowRowHint,
 } = await import('./TransmissionsCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
@@ -583,4 +586,35 @@ test('a summary with no rationale behind it opens no empty expander', () => {
   });
   assert.equal(line, '7 gaps exceed the 900 s period.');
   assert.equal(expandable, false);
+});
+
+/**
+ * THE TWO SHADOW TOOLTIPS (tfnv.12). Both title attributes compose a lineage
+ * name, both are invisible until a pointer rests on the element, and neither was
+ * pinned — so a rename could have reworded them with nothing to notice.
+ *
+ * Two claims, in this order of importance:
+ *
+ *   1. THE NAME COMES FROM THE VOCABULARY. The expectations are built from
+ *      `PROFILE_NAME`, never from the words themselves, so renaming a lineage in
+ *      src/web/profiles.ts moves the tooltip and this pin together rather than
+ *      breaking it. What would fail here is a tooltip that named a lineage from a
+ *      literal, or abbreviated the name to fit.
+ *   2. "CLAUSE" SITS BETWEEN THE NAME AND THE NUMBER. The name ends in a shouted
+ *      word, so "… DS01.3 DRAFT 5.1.3" reads as one identifier; the word names
+ *      the number for what it is. That is a wording decision, not a derivable
+ *      fact, which is exactly the kind this file exists to hold.
+ */
+test('the shadow row’s cross-filter tooltip names the lineage, and is empty without one', () => {
+  assert.equal(shadowRowHint('ds013'), `Filter the list by this ${PROFILE_NAME.ds013} issue`);
+  // No shadow lineage means no shadow row to hint at.
+  assert.equal(shadowRowHint(null), '');
+});
+
+test('the “also” mark’s tooltip puts the word clause between the lineage and the number', () => {
+  assert.equal(alsoFailsHint('ds013', '5.1.3'), `Also fails ${PROFILE_NAME.ds013} clause 5.1.3`);
+  assert.ok(
+    alsoFailsHint('ds013', '5.1.3').includes(`${PROFILE_NAME.ds013} clause 5.1.3`),
+    'the clause number must not sit directly against the lineage name',
+  );
 });
