@@ -118,7 +118,7 @@ export const NEW_FED_BY: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * DS01.3 document order: compare clause ids segment by segment, numerically, so
- * `5.1.8` sorts before `5.1.9` (a plain string sort would not).
+ * `5.1.9` sorts before `5.1.10` (a plain string sort would not).
  */
 function byClauseId(a: string, b: string): number {
   const left = a.split('.').map(Number);

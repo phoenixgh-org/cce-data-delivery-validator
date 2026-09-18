@@ -1,6 +1,6 @@
 -- Widen session.auth_method to admit 'bearer' (5bs.4).
 --
--- DS01.3 clause 5.1.5 names THREE authentication methods where the 2025
+-- DS01.3 clause 5.1.4 names THREE authentication methods where the 2025
 -- requirements named two; the third is `Authorization: Bearer <token>`
 -- (RFC 6750). 10-session.sql created auth_method with a CHECK listing only
 -- ('header', 'basic'), so the value has to be admitted here.

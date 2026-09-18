@@ -14,10 +14,18 @@
  * because ordinary TypeScript relative imports (`../pipeline.js`) match that
  * and are perfectly legitimate.
  *
- * Reach: every published text file, whether it is named by the `EXTENSIONS`
- * allowlist or by the `EXTENSIONLESS` set below. Both are needed because a file
- * with no extension (`Dockerfile`) carries comments just as a `.sh` or `.js`
- * file does, and a sibling path in any of them would otherwise pass lint.
+ * Reach: every tracked file whose name ends in an `EXTENSIONS` entry or appears
+ * in the `EXTENSIONLESS` set below, anywhere under the repo root outside
+ * `SKIP_DIRS` and `SKIP_PATHS`. Both lists are needed because a file with no
+ * extension (`Dockerfile`) carries comments just as a `.sh` or `.js` file does,
+ * and a sibling path in any of them would otherwise pass lint.
+ *
+ * Two kinds of tracked text file sit deliberately outside that reach. Every
+ * `.json` file is out so the vendored `src/schemas/*.json` can never be edited
+ * to satisfy a guard (see `EXTENSIONS` below). The dot-ignore files
+ * (`.gitignore`, `.dockerignore`, `.prettierignore`) are out because they list
+ * tool paths rather than prose and are not published pages, so a sibling
+ * reference has no reason to appear in one.
  */
 
 import { readdir, readFile } from 'node:fs/promises';
@@ -36,8 +44,25 @@ const SKIP_PATHS = new Set(['docs/internal']);
  * artifact, so they must never be edited to satisfy a guard. That exclusion is
  * why this stays an allowlist rather than a denylist of binary types — a
  * denylist would sweep the vendored schemas back in.
+ *
+ * Entries are matched with `endsWith`, not a parsed extension, so `.example`
+ * reaches `.env.example` (cce-data-delivery-validator-47le).
  */
-const EXTENSIONS = ['.md', '.ts', '.tsx', '.sql', '.yml', '.yaml', '.mjs', '.cjs', '.js', '.sh'];
+const EXTENSIONS = [
+  '.md',
+  '.ts',
+  '.tsx',
+  '.sql',
+  '.yml',
+  '.yaml',
+  '.mjs',
+  '.cjs',
+  '.js',
+  '.sh',
+  '.html',
+  '.css',
+  '.example',
+];
 
 /**
  * Tracked files an extension allowlist cannot reach, matched by exact name.
@@ -115,7 +140,8 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `no sibling-repo references (checked ${EXTENSIONS.join(', ')} and ${[...EXTENSIONLESS].join(
-    ', ',
-  )} outside ${[...SKIP_DIRS].join(', ')})`,
+  `no sibling-repo references (checked files ending in ${EXTENSIONS.join(', ')} plus ${[
+    ...EXTENSIONLESS,
+  ].join(', ')}, outside ${[...SKIP_DIRS, ...SKIP_PATHS].join(', ')}; .json and the dot-ignore ` +
+    `files are excluded by design)`,
 );
