@@ -47,7 +47,7 @@ import { CONTRACT_PROFILE, SchemaRegistry, type SchemaProvenance } from '../../s
 
 // Dynamic + awaited so the assignment above runs BEFORE Setup's graph evaluates
 // (static imports are all hoisted, which would defeat it).
-const { sampleBody } = await import('./Setup.js');
+const { endpointMeta, sampleBody } = await import('./Setup.js');
 
 /** The live registry, exactly as the service loads it at boot. */
 const registry = SchemaRegistry.load();
@@ -302,4 +302,86 @@ test('the panel sample and the README quick-start body are the same shape', () =
       ' quick-start block), or drop the docblock claim if the divergence is deliberate.' +
       ' Sample VALUES may differ freely; key structure may not.',
   );
+});
+
+/**
+ * The collapsed bar's meta segment (vamh.2) — `schema 0.8.1 · auth on · 7d left`.
+ *
+ * The segment used to sit in the page header and list EVERY registered contract
+ * version: "schema 0.8.0, 0.8.1". That is a true statement about what the service
+ * accepts and a false one about what it grades, and it was read as neither — the
+ * owner read it as the versions the validator had SEEN in the traffic
+ * (2026-09-17). So what is pinned here is the single-version rule and the two
+ * lines it must not cross:
+ *
+ *   1. ONE VERSION, THE CURRENT CONTRACT ONE. With 0.8.0 and 0.8.1 both
+ *      registered the segment names 0.8.1 alone, selected as the LAST
+ *      contract-profile entry in the served order — the same selection
+ *      `sampleBody` makes, and the same reason.
+ *   2. NEVER A VERSION THE SERVICE DID NOT REPORT. An empty contract set says
+ *      "no schema" rather than naming a version from a literal (beads 3cq), and
+ *      the shadow lineage's revision never appears — it is named, and labelled a
+ *      draft, in the expanded panel's provenance line instead.
+ *
+ * The accepted set with its hashes is unchanged and still in that panel; this
+ * segment is the one-glance version of it, not a replacement.
+ */
+function contractVersions(): string[] {
+  return panelSchemas()
+    .filter((s) => s.profile === CONTRACT_PROFILE)
+    .map((s) => s.version);
+}
+
+/** An expiry a whole number of days out; the segment ceils, so shave a second. */
+function inDays(days: number): string {
+  return new Date(Date.now() + days * 86_400_000 - 1_000).toISOString();
+}
+
+test('the meta segment names ONLY the current contract version', () => {
+  const versions = contractVersions();
+  assert.ok(versions.length > 1, 'the registry vendors more than one contract version');
+
+  const meta = endpointMeta(panelSchemas(), true, inDays(7));
+  const current = registry.currentVersion();
+  assert.ok(meta.startsWith(`schema ${current} ·`), meta);
+
+  // The point of the rule: every OTHER registered version is absent, including
+  // the shadow lineage's revision.
+  for (const version of versions.filter((v) => v !== current)) {
+    assert.ok(!meta.includes(version), `the segment must not name ${version}`);
+  }
+  const shadow = registry.shadowFor(CONTRACT_PROFILE);
+  assert.notEqual(shadow, null, 'a shadow lineage is registered');
+  assert.ok(!meta.includes(`schema ${shadow!.version}`), meta);
+});
+
+test('the meta segment reads schema, auth state and days left, in that order', () => {
+  assert.equal(
+    endpointMeta(panelSchemas(), true, inDays(7)),
+    `schema ${registry.currentVersion()} · auth on · 7d left`,
+  );
+  assert.equal(
+    endpointMeta(panelSchemas(), false, inDays(1)),
+    `schema ${registry.currentVersion()} · auth off · 1d left`,
+  );
+});
+
+test('a sub-day remainder still reads as a day left, and an elapsed one as none', () => {
+  assert.ok(
+    endpointMeta(panelSchemas(), false, new Date(Date.now() + 60_000).toISOString()).endsWith(
+      '1d left',
+    ),
+  );
+  assert.ok(
+    endpointMeta(panelSchemas(), false, new Date(Date.now() - 60_000).toISOString()).endsWith(
+      '0d left',
+    ),
+  );
+});
+
+test('with no contract version registered the segment says so rather than guessing', () => {
+  const shadowOnly = panelSchemas().filter((s) => s.profile !== CONTRACT_PROFILE);
+  assert.ok(shadowOnly.length > 0, 'the fixture keeps a shadow entry to be ignored');
+  assert.equal(endpointMeta(shadowOnly, true, inDays(7)), 'no schema · auth on · 7d left');
+  assert.equal(endpointMeta([], false, inDays(7)), 'no schema · auth off · 7d left');
 });

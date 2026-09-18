@@ -1,8 +1,10 @@
 /**
  * Setup (108.7) — a CONTROLLED collapsed bar + expanded two-column panel
  * (redesign README §2 "Setup bar / Setup panel"). The bar (chevron + "Endpoint
- * & setup" + truncated ingest URL + "Start here →" when the endpoint has no
- * data yet + Expand/Collapse) toggles the panel. The panel's LEFT column hosts
+ * & setup" + truncated ingest URL + the `schema … · auth … · Nd left` meta +
+ * "Start here →" when the endpoint has no data yet + Expand/Collapse) toggles the
+ * panel. The meta came down from the page header (vamh.2): it describes the
+ * endpoint, so it belongs beside it. The panel's LEFT column hosts
  * the onboarding copy fields (ingest URL, headers, gzip §1.6, curl example);
  * the RIGHT column hosts the §1.3 auth opt-in card, the schema & lifecycle line,
  * and the Danger zone trigger.
@@ -46,6 +48,12 @@ export interface SetupProps {
    * literal here, which is how a fabricated hash once shipped (beads 3cq).
    */
   schemas: SchemaProvenance[];
+  /**
+   * ISO timestamp the session expires at (DESIGN §11). The collapsed bar's meta
+   * segment counts the days off it — the page header used to, before that meta
+   * moved down here beside the endpoint it describes (vamh.2).
+   */
+  expiresAt: string;
   /** Refetch the session so the dashboard reflects the new auth state. */
   onAuthChange: () => void;
   /** Controlled open state. When omitted, the component manages its own. */
@@ -160,6 +168,56 @@ const SHA256_PREFIX_CHARS = 8;
 /** `290290fd…` — a sha256 abbreviated for display only, never for comparison. */
 function shortSha(sha256: string): string {
   return `${sha256.slice(0, SHA256_PREFIX_CHARS)}…`;
+}
+
+/**
+ * The CURRENT contract version, as the collapsed bar names it (vamh.2). It used
+ * to list every contract-lineage entry — "schema 0.8.0, 0.8.1" — which reads as a
+ * claim about what the validator GRADES against, when what it states is what the
+ * validator ACCEPTS. A supplier reading it asked whether those were versions we
+ * had seen in their traffic (owner, 2026-09-17); neither reading was true.
+ *
+ * So the bar names one version: the one a transmission is graded as current
+ * against. `schemas` is ordered oldest-first within each lineage
+ * (SchemaRegistry.provenance()), so that is the LAST contract-profile entry — the
+ * same selection {@link sampleBody} makes for the same reason.
+ *
+ * The accepted set, with hashes, stays in the expanded panel's "Validating
+ * against official …" line, where there is room to say what accepting two
+ * versions means. The shadow lineage is named there too and never here.
+ *
+ * With no contract version registered there is nothing truthful to name, so the
+ * segment says so rather than guessing (the provenance line's rule, beads 3cq).
+ */
+function schemaLabel(schemas: SchemaProvenance[]): string {
+  const current = schemas.filter((s) => s.profile === CONTRACT_PROFILE).at(-1)?.version;
+  return current === undefined ? 'no schema' : `schema ${current}`;
+}
+
+const MS_PER_DAY = 86_400_000;
+
+/** Whole days remaining until `expiresAt`; ceil so a sub-day remainder reads as 1. */
+function daysLeft(expiresAt: string): number {
+  return Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / MS_PER_DAY));
+}
+
+/**
+ * The collapsed bar's meta segment: `schema 0.8.1 · auth on · 7d left`.
+ *
+ * It describes the endpoint, so it sits beside the endpoint rather than in the
+ * page header where it used to be (vamh.2). All three facts come off the session
+ * read — none is a literal here.
+ *
+ * Exported as a string function so Setup.test.ts can hold the single-version rule
+ * to account without a renderer: the defect this segment replaced was a wording
+ * one, and wording is what there is to assert.
+ */
+export function endpointMeta(
+  schemas: SchemaProvenance[],
+  authEnabled: boolean,
+  expiresAt: string,
+): string {
+  return `${schemaLabel(schemas)} · auth ${authEnabled ? 'on' : 'off'} · ${daysLeft(expiresAt)}d left`;
 }
 
 /**
@@ -578,6 +636,7 @@ export function Setup(props: SetupProps) {
     session,
     ingestUrl,
     schemas,
+    expiresAt,
     onAuthChange,
     open,
     onToggleOpen,
@@ -643,6 +702,19 @@ export function Setup(props: SetupProps) {
           }}
         >
           {ingestUrl}
+        </span>
+        {/* Endpoint meta (vamh.2) — what the endpoint accepts, whether it is
+            authenticated, and how long it has left, beside the endpoint itself.
+            It sat in the page header until the header collapsed to one line. */}
+        <span
+          style={{
+            fontFamily: 'var(--mono)',
+            fontSize: 11,
+            color: 'var(--text-faint)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {endpointMeta(schemas, session.auth_enabled, expiresAt)}
         </span>
         {hasData === false && (
           <span style={{ fontSize: 11, color: 'var(--accent-text)', fontWeight: 600 }}>

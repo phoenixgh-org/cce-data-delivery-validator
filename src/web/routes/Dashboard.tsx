@@ -394,7 +394,7 @@ export function Dashboard() {
     );
   }
 
-  const { session, schemas } = state.data;
+  const { session, expiresAt, schemas } = state.data;
   const ingestUrl = `/i/${session.uuid}`;
   const hasData = txCount > 0;
 
@@ -427,6 +427,7 @@ export function Dashboard() {
         session={session}
         ingestUrl={ingestUrl}
         schemas={schemas}
+        expiresAt={expiresAt}
         onAuthChange={() => load()}
         onRequestDelete={() => setDeleteModalOpen(true)}
       />
