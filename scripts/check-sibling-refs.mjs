@@ -13,6 +13,11 @@
  * The check anchors on the known sibling repo NAMES rather than a bare `../`,
  * because ordinary TypeScript relative imports (`../pipeline.js`) match that
  * and are perfectly legitimate.
+ *
+ * Reach: every published text file, whether it is named by the `EXTENSIONS`
+ * allowlist or by the `EXTENSIONLESS` set below. Both are needed because a file
+ * with no extension (`Dockerfile`) carries comments just as a `.sh` or `.js`
+ * file does, and a sibling path in any of them would otherwise pass lint.
  */
 
 import { readdir, readFile } from 'node:fs/promises';
@@ -28,9 +33,19 @@ const SKIP_PATHS = new Set(['docs/internal']);
 /**
  * Scanned file types. `.json` is deliberately absent: `src/schemas/*.json` are
  * vendored upstream bytes that must stay byte-identical to the published
- * artifact, so they must never be edited to satisfy a guard.
+ * artifact, so they must never be edited to satisfy a guard. That exclusion is
+ * why this stays an allowlist rather than a denylist of binary types — a
+ * denylist would sweep the vendored schemas back in.
  */
-const EXTENSIONS = ['.md', '.ts', '.tsx', '.sql', '.yml', '.yaml', '.mjs', '.cjs'];
+const EXTENSIONS = ['.md', '.ts', '.tsx', '.sql', '.yml', '.yaml', '.mjs', '.cjs', '.js', '.sh'];
+
+/**
+ * Tracked files an extension allowlist cannot reach, matched by exact name.
+ * They are published text like any other source, and a `../sibling` path in one
+ * of them would otherwise pass the guard silently
+ * (cce-data-delivery-validator-mpza).
+ */
+const EXTENSIONLESS = new Set(['Caddyfile', 'Dockerfile', 'LICENSE']);
 
 /**
  * The guard exempts itself by path: the PATTERNS table below has to spell the
@@ -66,7 +81,10 @@ async function* walk(dir) {
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name) || SKIP_PATHS.has(rel)) continue;
       yield* walk(abs);
-    } else if (entry.isFile() && EXTENSIONS.some((ext) => entry.name.endsWith(ext))) {
+    } else if (
+      entry.isFile() &&
+      (EXTENSIONS.some((ext) => entry.name.endsWith(ext)) || EXTENSIONLESS.has(entry.name))
+    ) {
       if (!EXEMPT_FILES.has(rel)) yield rel;
     }
   }
@@ -97,5 +115,7 @@ if (violations.length > 0) {
 }
 
 console.log(
-  `no sibling-repo references (checked ${EXTENSIONS.join(', ')} outside ${[...SKIP_DIRS].join(', ')})`,
+  `no sibling-repo references (checked ${EXTENSIONS.join(', ')} and ${[...EXTENSIONLESS].join(
+    ', ',
+  )} outside ${[...SKIP_DIRS].join(', ')})`,
 );

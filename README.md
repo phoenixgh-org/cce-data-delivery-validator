@@ -367,13 +367,14 @@ npm run exercise -- --help            # print usage
 ```
 
 The target resolves argument → `EXERCISE_BASE_URL` → `http://localhost:3000`. Exit
-codes are `0` (every case passed), `1` (a case failed) and `2` (could not run — the
-target was unreachable, or is not a validator).
+codes are `0` (every case passed, the advisory copy is clean and the lens agrees),
+`1` (a case failed, or the advisory-copy or grading-lens audit found a violation)
+and `2` (could not run — the target was unreachable, or is not a validator).
 
 Each run **mints its own session** and prints a per-case verdict, run counts, the
-advisory copy the instance served, the coverage report — requirement coverage and
-the advisory join — and that session's dashboard URL. The console output is
-a summary; **the dashboard is the detailed report**.
+advisory copy the instance served, the grading-lens audit, the coverage report —
+requirement coverage and the advisory join — and that session's dashboard URL. The
+console output is a summary; **the dashboard is the detailed report**.
 
 Two caveats for the `run exercise` activity:
 

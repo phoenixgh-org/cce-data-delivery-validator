@@ -250,17 +250,27 @@ function countsOf(
 
 // ── acceptance: it fires on a fully conformant EMS payload ───────────────────
 
-test('the fixture really is schema-conformant on both registered contract versions', () => {
+test('the fixtures really are schema-conformant on both registered contract versions', () => {
   // A null CMPR needs no explanation on the 0.8.x lineage — that gap is the
-  // whole surface of this advisory.
+  // whole surface of this advisory. OUTAGE_BOTH is here because it is the only
+  // fixture that drives the plural copy, and it reaches the check through
+  // checkOnly(), which sets schemaOk by hand: without this, a future contract
+  // version that made a null CMPR2 illegal would leave the plural sentence
+  // pinned below unreachable on the wire while its test kept passing (b8dm).
+  const fixtures = [
+    { label: 'OUTAGE', payload: OUTAGE },
+    { label: 'OUTAGE_BOTH', payload: OUTAGE_BOTH },
+  ];
   for (const version of ['0.8.0', '0.8.1']) {
     const entry = registry.get(version);
     assert.ok(entry, `${version} is registered`);
-    assert.equal(
-      entry.validate(OUTAGE),
-      true,
-      `${version}: SVA 0 with a null CMPR is legal: ${JSON.stringify(entry.validate.errors)}`,
-    );
+    for (const { label, payload } of fixtures) {
+      assert.equal(
+        entry.validate(payload),
+        true,
+        `${version}/${label}: SVA 0 with a null accumulator is legal: ${JSON.stringify(entry.validate.errors)}`,
+      );
+    }
   }
 });
 
