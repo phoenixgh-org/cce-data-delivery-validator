@@ -36,6 +36,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import * as React from 'react';
 
 import { CONTRACT_PROFILE } from '../api';
@@ -636,4 +637,55 @@ test('the TIGHTENED tag’s tooltip says the clause changed, not that it moved',
   const hint = tightenedHint('ds013');
   assert.ok(hint.startsWith(`${PROFILE_NAME.ds013} tightens`), hint);
   assert.match(hint, /not a renumbering/);
+});
+
+/**
+ * WHO MAY SCROLL THE PAGE TO THE RAW-PAYLOAD REGION (bcb, ei0). Two claims the
+ * compiler cannot hold, and which no test here can hold by rendering either:
+ * this file reaches pure functions only (see the header), the suite has no DOM,
+ * and both claims live in a component's hook wiring. They are pinned against the
+ * source text instead, which is enough to notice the wiring being rewired.
+ *
+ *   1. THE LOCATE LINK REVEALS, ONCE (ei0). "Show this location in the raw
+ *      payload" has to end with the location on the screen. Opening the
+ *      inspector scrolls its INNER container to the pointer; only a `revealSeq`
+ *      bump scrolls the page to the region itself, which can otherwise sit well
+ *      below the fold. Exactly one bump per locate: the counter is the whole
+ *      signal, and a second bump in the same handler is a second scroll.
+ *   2. THE REVEAL EFFECT STILL KEYS ON `revealSeq` ALONE (bcb). That is what
+ *      keeps the page still on an open transition nobody asked to be taken to —
+ *      row selection, the section's own heading row. Adding `open` to the
+ *      dependencies would make every later open scroll the page, because
+ *      `revealSeq` never returns to 0.
+ */
+const componentSource = readFileSync(new URL('./TransmissionsCard.tsx', import.meta.url), 'utf8');
+
+/** The body of a `const <name> = useCallback((…) => { … }, [deps]);` binding. */
+function callbackBody(name: string): string {
+  const start = componentSource.indexOf(`const ${name} = useCallback(`);
+  assert.notEqual(start, -1, `${name} not found — the pin below cannot hold`);
+  const end = componentSource.indexOf('\n  }, [', start);
+  assert.notEqual(end, -1, `${name} has no recognisable end`);
+  return componentSource.slice(start, end);
+}
+
+test('a locate call bumps the reveal counter exactly once', () => {
+  const body = callbackBody('onLocate');
+  assert.equal((body.match(/setRevealSeq\(/g) ?? []).length, 1, body);
+  assert.match(body, /setRevealSeq\(\(n\) => n \+ 1\)/);
+});
+
+test('the header control is the only other control that bumps it', () => {
+  assert.equal((componentSource.match(/setRevealSeq\(/g) ?? []).length, 2);
+  assert.match(
+    callbackBody('toggleRawFromHeader'),
+    /if \(!rawOpen\) setRevealSeq\(\(n\) => n \+ 1\)/,
+  );
+});
+
+test('the reveal effect keys on the counter alone, so an unasked-for open does not scroll', () => {
+  assert.match(
+    componentSource,
+    /rootRef\.current\?\.scrollIntoView\(\{ block: 'nearest'[^}]*\}\);\n\s*\}, \[revealSeq\]\);/,
+  );
 });

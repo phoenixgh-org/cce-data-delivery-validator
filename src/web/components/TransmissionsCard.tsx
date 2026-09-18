@@ -1630,9 +1630,10 @@ function RawPayload({
   onToggle: () => void;
   locate: LocateRequest | null;
   /**
-   * Bumped when the header control OPENS the section, to scroll this region
-   * into view. The header sits above the findings and the region stays below
-   * them, so without this the click has no visible effect (9q4).
+   * Bumped by a control that asks for this region — the header control when it
+   * OPENS the section (9q4), and a finding's locate link (ei0) — to scroll the
+   * region into view. The header sits above the findings and the region stays
+   * below them, so without this the click has no visible effect.
    */
   revealSeq: number;
 }): ReactElement {
@@ -1684,13 +1685,13 @@ function RawPayload({
   // when the region is already visible.
   //
   // `revealSeq` is the ONLY dependency, and that is the whole mechanism (bcb):
-  // it is bumped in exactly one place — the header control, and only when that
-  // control is the one opening the section. Keying on `open` as well would fire
-  // this on every later false->true transition once the header had been used
-  // once, since `revealSeq` never returns to 0 — hijacking the section's own
-  // heading row and onLocate, which are already on screen and do their own
-  // inner scroll respectively. `open` is guaranteed true here without being
-  // read: the same click that bumps `revealSeq` sets it.
+  // it is bumped only by the controls that ask for this region — the header
+  // control when it opens the section, and a finding's locate link (ei0).
+  // Keying on `open` as well would fire this on every later false->true
+  // transition once either control had been used, since `revealSeq` never
+  // returns to 0 — hijacking the section's own heading row, which is already on
+  // screen. `open` is guaranteed true here without being read: the same click
+  // that bumps `revealSeq` sets it.
   useEffect(() => {
     if (revealSeq === 0) return;
     rootRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1861,10 +1862,19 @@ function TxDetail({
     setLocate(null);
   }, [tx.id]);
 
-  // A finding's JSON Pointer opens the inspector and scrolls to that line.
+  // A finding's JSON Pointer opens the inspector and scrolls to that line. The
+  // `revealSeq` bump asks the region to scroll itself into view as well (ei0):
+  // the link promises to SHOW the location, but the region sits below the
+  // findings, so opening it alone can leave the located line off the screen —
+  // and the header control then reads "Collapse the raw payload", so the
+  // natural next click closes it. The reveal uses `block: 'nearest'`, a no-op
+  // when the region is already visible, so bcb's invariant still holds: the
+  // page scrolls only when the user asked for the region — now from either
+  // control.
   const onLocate = useCallback((p: string) => {
     seqRef.current += 1;
     setRawOpen(true);
+    setRevealSeq((n) => n + 1);
     setLocate({ pointer: p, seq: seqRef.current });
   }, []);
 
