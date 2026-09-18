@@ -19,6 +19,8 @@ import { Icon } from './ui/Icon';
 import { CLASS_META } from './ui/statusMaps';
 import { getRequirementReference } from './requirementReference';
 import { ADVISORY_COPY } from '../advisories';
+// Pane width shared with the summary card above it (src/web/layout.ts, vamh.8).
+import { REQUIREMENTS_PANE_FLEX } from '../layout';
 
 /* ------------------------------------------------------------------ *
  * Props — EXACT copy of Dashboard.tsx CompliancePaneProps + CollapsedGroups.
@@ -774,7 +776,7 @@ export function ComplianceCard({
   return (
     <div
       style={{
-        flex: '1 1 57%',
+        flex: REQUIREMENTS_PANE_FLEX,
         background: 'var(--surface)',
         border: '1px solid var(--border-strong)',
         borderRadius: 8,

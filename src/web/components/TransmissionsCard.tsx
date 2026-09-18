@@ -33,6 +33,9 @@ import {
   shadowRowText,
   type ShadowRow,
 } from '../detailGroups';
+// Pane width shared with the summary card above it, and the detail region's own
+// share of this card's height (src/web/layout.ts, vamh.8).
+import { TRANSMISSIONS_PANE_FLEX, TX_DETAIL_FLEX } from '../layout';
 import { PROFILE_NAME } from '../profiles';
 import { Icon } from './ui/Icon';
 import { StatusPill } from './ui/StatusPill';
@@ -214,10 +217,10 @@ const LIST_VISIBLE_ROWS = 10;
  * (vamh.9). Two terms the earlier budget carried — a scorecard strip and a filter
  * bar — no longer render at all, and a third, the readiness strip, is no longer
  * mounted. What sits above the list today is:
- *   header ~48 + setup bar ~35 + summary-card row ~124              ≈ 207
+ *   header ~48 + setup bar ~35 + summary-card row ~131              ≈ 214
  *   + body padding 16 + card header ~44 + verdict column header 26 + list 340
- *                                                                   = 633
- * so the docked detail starts at ~635px. Each term, measured off the styles that
+ *                                                                   = 640
+ * so the docked detail starts at ~640px. Each term, measured off the styles that
  * produce it:
  *   - header: ReportHeader's 10px padding top and bottom + a 27px Seg control
  *     (11.5px label at line-height 1.5, 4px padding, 1px border) + a 1px bottom
@@ -225,17 +228,22 @@ const LIST_VISIBLE_ROWS = 10;
  *   - setup bar: Setup's collapsed row, 8px padding top and bottom + a 12px label
  *     at line-height 1.5 (18px) + a 1px bottom border.
  *   - summary-card row: SummaryCards' 16px row padding-top + a card of 11px/13px
- *     padding, a 10px eyebrow (~12px), a 3px gap and an 11.5px sentence at
- *     line-height 1.5 (17px), a 9px gap, and a figure of a 26px numeral at
- *     line-height 1, a 2px gap and an 11px label (~13px), inside a 1px border.
- *     The row has no bottom padding — the two-pane body's own 16px supplies it.
+ *     padding, a 10px eyebrow at the inherited line-height 1.5 (15px), a 3px gap
+ *     and an 11.5px sentence at line-height 1.5 (17px), a 9px gap, and a figure
+ *     of a 26px numeral at line-height 1, a 2px gap and an 11px label at the
+ *     inherited 1.5 (16.5px), inside a 1px border. Neither the eyebrow nor the
+ *     label sets a line-height of its own, and styles.css:52 puts a UNITLESS
+ *     1.5 on :root, so both inherit it as a multiplier rather than rendering at
+ *     their font size (vamh.10 — the earlier budget read them as 12px and 13px
+ *     and came out 7px short). The row has no bottom padding — the two-pane
+ *     body's own 16px supplies it.
  *   - verdict column header (by1c.12): the strip of lineage labels rendered
  *     immediately above this region — 5px padding top and bottom + a 10px eyebrow
  *     at the inherited line-height 1.5 (15px) + a 1px bottom border = 26px.
  *
- * That clears the fold on an 800px-tall viewport (~165px of detail visible, above
- * its own 120px min-height) and comfortably so at 1000px (~365px). An active issue
- * chip adds ~33px, leaving ~132px — still inside the budget, but thin enough that
+ * That clears the fold on an 800px-tall viewport (~160px of detail visible, above
+ * its own 120px min-height) and comfortably so at 1000px (~360px). An active issue
+ * chip adds ~33px, leaving ~127px — still inside the budget, but thin enough that
  * anything added above the list has to be measured rather than assumed. The list
  * keeps its own scrollbar and stays virtualized — this caps the region, it does
  * not page the data.
@@ -1095,7 +1103,7 @@ export const META_GRID_COLUMNS = 3;
  * Height cap for the raw-payload scroll region (5bs.3).
  *
  * The inspector lives INSIDE the docked detail pane, which already owns
- * `overflowY: auto` (flex '1 1 44%', minHeight 120), so adding content here
+ * `overflowY: auto` ({@link TX_DETAIL_FLEX}, minHeight 120), so adding content here
  * cannot change the pane's own footprint and the fold budget documented on
  * LIST_MAX_HEIGHT_PX is untouched. This second cap keeps a large payload from
  * monopolising the pane's scroll: the JSON scrolls inside its own region so the
@@ -2066,7 +2074,7 @@ export function TransmissionsCard({
   return (
     <div
       style={{
-        flex: '1 1 44%',
+        flex: TRANSMISSIONS_PANE_FLEX,
         background: 'var(--surface-tx)',
         border: '1px solid var(--border-strong)',
         borderRadius: 8,
@@ -2256,7 +2264,7 @@ export function TransmissionsCard({
           {/* Pinned detail region — selecting a row only swaps this; list never reflows. */}
           <div
             style={{
-              flex: '1 1 44%',
+              flex: TX_DETAIL_FLEX,
               minHeight: 120,
               overflowY: 'auto',
               background: 'var(--detail)',

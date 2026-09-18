@@ -42,6 +42,8 @@ import { ReportHeader, type WindowValue } from '../components/ReportHeader';
 import { Setup } from '../components/Setup';
 import { SummaryCards } from '../components/SummaryCards';
 import { TransmissionsCard } from '../components/TransmissionsCard';
+// The body's gutter, shared with the summary-card row above it (src/web/layout.ts).
+import { PANE_GUTTER } from '../layout';
 
 type State =
   | { phase: 'loading' }
@@ -446,8 +448,8 @@ export function Dashboard() {
         style={{
           flex: 1,
           display: 'flex',
-          gap: 16,
-          padding: 16,
+          gap: PANE_GUTTER,
+          padding: PANE_GUTTER,
           background: 'var(--canvas)',
           minHeight: 0,
         }}

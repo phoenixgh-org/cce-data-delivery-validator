@@ -34,21 +34,11 @@
 import type { ReactElement, ReactNode } from 'react';
 
 import type { Rollup, ScopeTotals } from '../api';
+// The gutter and the two flex bases are the panes' own (src/web/layout.ts): the
+// cards and the panes read one source, so a pane change moves the card row with
+// it instead of silently misaligning it (vamh.8).
+import { PANE_GUTTER, REQUIREMENTS_PANE_FLEX, TRANSMISSIONS_PANE_FLEX } from '../layout';
 import { unitsTitle } from '../scopeCopy';
-
-/**
- * Gutter and gap, in px. The same value the two-pane body uses for its padding
- * and its gap (Dashboard.tsx), which is what makes the card edges land on the
- * pane edges; change both together or the row stops aligning.
- */
-const GUTTER = 16;
-
-/**
- * The panes' flex values, mirrored so each card tracks the width of the pane it
- * sits above. Equal-width cards would align only if the panes were equal too.
- */
-const REQUIREMENTS_FLEX = '1 1 57%';
-const TRANSMISSIONS_FLEX = '1 1 44%';
 
 /** One numeral and its label, as the retired scorecard strip rendered them. */
 interface FigureSpec {
@@ -141,15 +131,15 @@ export function SummaryCards({ rollup, scoped }: SummaryCardsProps): ReactElemen
     <div
       style={{
         display: 'flex',
-        gap: GUTTER,
-        padding: `${GUTTER}px ${GUTTER}px 0`,
+        gap: PANE_GUTTER,
+        padding: `${PANE_GUTTER}px ${PANE_GUTTER}px 0`,
         background: 'var(--canvas)',
       }}
     >
       <Card
         eyebrow="REQUIREMENTS"
         background="var(--surface)"
-        flex={REQUIREMENTS_FLEX}
+        flex={REQUIREMENTS_PANE_FLEX}
         sentence={
           <>
             <Num>{`${rollup.gradeable} of ${rollup.total}`}</Num>
@@ -165,7 +155,7 @@ export function SummaryCards({ rollup, scoped }: SummaryCardsProps): ReactElemen
       <Card
         eyebrow="TRANSMISSIONS"
         background="var(--surface-tx)"
-        flex={TRANSMISSIONS_FLEX}
+        flex={TRANSMISSIONS_PANE_FLEX}
         sentence={
           <>
             {'received in this scope, from '}
