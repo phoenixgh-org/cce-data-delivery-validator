@@ -308,6 +308,21 @@ self-attestation under the 2025 requirements is self-attestation under their
 successor too, and a verifiability class that moved with the ruleset would be
 describing the standard rather than this service's reach.
 
+**The DS01.3 matrix is derived, not a second table.** The grading lens shows the
+same session under DS01.3 clause numbers, and the rows it renders are computed
+from the clause map joined onto the 27 rows above
+([`src/api/matrix-ds013.ts`](src/api/matrix-ds013.ts)). Twenty-one DS01.3 clauses
+are graded, each carrying the 2025 requirements it merges. A clause that merges
+several of them inherits the union of their verifiability classes, with the first
+member's class still primary, for the reason given just above: the class
+describes the receiver's vantage rather than the standard, so renumbering a
+clause cannot change it. The six DS01.3 clauses with no 2025 equivalent are
+listed informationally, each with the class decided for it — 5.1.1, 5.1.11 and
+5.3.1 self-attestation, 5.1.2 enforced, 5.1.12 none, and 5.3.5 verified, since
+the §3.1 custom-object check already grades it passively. Deriving the matrix
+rather than typing it out a second time means the two can never drift: a change
+to the map or to a 2025 row moves both, and the join is tested.
+
 ### 7.1 Advisories
 
 An advisory names a payload that is fully schema-compliant and fully
