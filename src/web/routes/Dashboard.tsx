@@ -61,6 +61,7 @@ import { SummaryCards } from '../components/SummaryCards';
 import { TransmissionsCard } from '../components/TransmissionsCard';
 // The body's gutter, shared with the summary-card row above it (src/web/layout.ts).
 import { PANE_GUTTER } from '../layout';
+import { lensOpt } from '../lensQuery';
 import { PROFILE_NAME } from '../profiles';
 
 type State =
@@ -207,12 +208,13 @@ export function Dashboard() {
       }
       // Omitted entirely under the contract package: `?lens=2025` and no lens at
       // all mean the same thing to the server, and not sending it keeps the
-      // default request URL the one every prior bite pinned.
-      const lensOpt = lens === CONTRACT_PROFILE ? {} : { lens };
+      // default request URL the one every prior bite pinned. The rule itself is
+      // `lensOpt` in src/web/lensQuery.ts, where a test pins it (tfnv.17).
+      const lensOpts = lensOpt(lens, CONTRACT_PROFILE);
       // Summary read (drives the phase machine + summary cards + compliance pane).
       // The lens rides along ONLY when a non-contract package is selected, so the
-      // default view asks for exactly the URL it always did (`lensOpt` below).
-      getSession(uuid, { window, source, ...lensOpt })
+      // default view asks for exactly the URL it always did (`lensOpts` below).
+      getSession(uuid, { window, source, ...lensOpts })
         .then((result) => {
           if (cancelled?.()) return;
           if (result.ok) setState({ phase: 'ready', data: result.data });
@@ -238,7 +240,7 @@ export function Dashboard() {
         source,
         failuresOnly,
         signatureKey: selectedSignature?.key,
-        ...lensOpt,
+        ...lensOpts,
       })
         .then((result) => {
           if (cancelled?.()) return;
@@ -416,7 +418,7 @@ export function Dashboard() {
       cursor: listCursor,
       // The appended page is read under the SAME package as the anchor page;
       // omitted under the contract one, as in `load`.
-      ...(lens === CONTRACT_PROFILE ? {} : { lens }),
+      ...lensOpt(lens, CONTRACT_PROFILE),
     })
       .then((result) => {
         if (listAnchorRef.current !== anchorToken) return;

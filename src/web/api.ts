@@ -550,6 +550,69 @@ export async function createSession(): Promise<CreateSessionResponse> {
   return (await res.json()) as CreateSessionResponse;
 }
 
+/* ------------------------------------------------------------------ *
+ * Query serialisation.
+ * ------------------------------------------------------------------ */
+
+/** Read options {@link getSession} serializes into its query string. */
+export interface SessionQueryOpts {
+  window?: string;
+  source?: string;
+  lens?: Profile;
+}
+
+/** Read options {@link listTransmissions} serializes into its query string. */
+export interface TransmissionsQueryOpts {
+  window?: string;
+  source?: string;
+  failuresOnly?: boolean;
+  signatureKey?: string;
+  cursor?: string;
+  limit?: number;
+  lens?: Profile;
+}
+
+/**
+ * The query string of a session read, without the leading `?` — empty when no
+ * option is supplied.
+ *
+ * Split out of {@link getSession} (tfnv.17) so the serialisation is pinnable on
+ * its own: the claim that a default read asks for the URL it always did is a
+ * property of these two lines, and a test that has to stub `fetch` to see them
+ * pins the plumbing as much as the rule. Only supplied keys are serialized, so
+ * `lens` is absent unless a caller named a requirement package.
+ */
+export function sessionQuery(opts?: SessionQueryOpts): string {
+  const params = new URLSearchParams();
+  if (opts?.window !== undefined) params.set('window', opts.window);
+  if (opts?.source !== undefined) params.set('source', opts.source);
+  if (opts?.lens !== undefined) params.set('lens', opts.lens);
+  return params.toString();
+}
+
+/**
+ * The query string of a transmissions page read, without the leading `?`.
+ *
+ * Same split, and the same omission rule with two additions the list read has
+ * always made: a falsy `failuresOnly` and an empty `signatureKey`/`cursor` are
+ * omitted rather than sent empty. Key ORDER is part of what is pinned — the URL
+ * a supplier's browser requests today is `window`, `source`, `lens`,
+ * `failuresOnly`, `signatureKey`, `cursor`, `limit`.
+ */
+export function transmissionsQuery(opts: TransmissionsQueryOpts = {}): string {
+  const params = new URLSearchParams();
+  if (opts.window !== undefined) params.set('window', opts.window);
+  if (opts.source !== undefined) params.set('source', opts.source);
+  if (opts.lens !== undefined) params.set('lens', opts.lens);
+  if (opts.failuresOnly) params.set('failuresOnly', 'true');
+  if (opts.signatureKey !== undefined && opts.signatureKey.length > 0) {
+    params.set('signatureKey', opts.signatureKey);
+  }
+  if (opts.cursor !== undefined && opts.cursor.length > 0) params.set('cursor', opts.cursor);
+  if (opts.limit !== undefined) params.set('limit', String(opts.limit));
+  return params.toString();
+}
+
 /** Discriminated result of {@link getSession}. */
 export type GetSessionResult = { ok: true; data: SessionResponse } | { ok: false; status: number };
 
@@ -567,15 +630,8 @@ export type GetSessionResult = { ok: true; data: SessionResponse } | { ok: false
  * caller that asked for one (the server answers HTTP 400 – Bad Request with
  * `unknown_lens` in that case).
  */
-export async function getSession(
-  uuid: string,
-  opts?: { window?: string; source?: string; lens?: Profile },
-): Promise<GetSessionResult> {
-  const params = new URLSearchParams();
-  if (opts?.window !== undefined) params.set('window', opts.window);
-  if (opts?.source !== undefined) params.set('source', opts.source);
-  if (opts?.lens !== undefined) params.set('lens', opts.lens);
-  const qs = params.toString();
+export async function getSession(uuid: string, opts?: SessionQueryOpts): Promise<GetSessionResult> {
+  const qs = sessionQuery(opts);
   const url = `/api/sessions/${encodeURIComponent(uuid)}${qs ? `?${qs}` : ''}`;
   const res = await fetch(url);
   if (res.status === 404) {
@@ -627,27 +683,9 @@ export type ListTransmissionsResult =
  */
 export async function listTransmissions(
   uuid: string,
-  opts: {
-    window?: string;
-    source?: string;
-    failuresOnly?: boolean;
-    signatureKey?: string;
-    cursor?: string;
-    limit?: number;
-    lens?: Profile;
-  } = {},
+  opts: TransmissionsQueryOpts = {},
 ): Promise<ListTransmissionsResult> {
-  const params = new URLSearchParams();
-  if (opts.window !== undefined) params.set('window', opts.window);
-  if (opts.source !== undefined) params.set('source', opts.source);
-  if (opts.lens !== undefined) params.set('lens', opts.lens);
-  if (opts.failuresOnly) params.set('failuresOnly', 'true');
-  if (opts.signatureKey !== undefined && opts.signatureKey.length > 0) {
-    params.set('signatureKey', opts.signatureKey);
-  }
-  if (opts.cursor !== undefined && opts.cursor.length > 0) params.set('cursor', opts.cursor);
-  if (opts.limit !== undefined) params.set('limit', String(opts.limit));
-  const qs = params.toString();
+  const qs = transmissionsQuery(opts);
   const url = `/api/sessions/${encodeURIComponent(uuid)}/transmissions${qs ? `?${qs}` : ''}`;
   const res = await fetch(url);
   if (res.status === 404) {
