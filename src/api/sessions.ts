@@ -161,7 +161,9 @@ function deriveGrading(registry: SchemaRegistry): Grading {
  * dashboard's contract column does not.
  *
  * A key is absent only when the registry holds no such lineage; within a key,
- * `null` means that lineage never ran on this transmission (see `Verdict`).
+ * `null` is narrower than "that lineage never ran": the body reached neither
+ * validator under this package AND nothing forward-mapped failed, which in
+ * practice leaves only an unresolved `meta.schemaVersion` (see `Verdict`).
  */
 type VerdictsByProfile = Partial<Record<Profile, Verdict>>;
 

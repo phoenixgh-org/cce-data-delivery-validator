@@ -87,10 +87,15 @@ export const CONTRACT_PROFILE: Profile = '2025';
  * One lineage's verdict on one transmission — mirror `Verdict` in
  * src/api/verdicts.ts (browser code, re-declared; see the header).
  *
- * `null` is a SHADOW-ONLY answer and it is NOT a soft fail: that lineage never
- * ran on the transmission (an unparseable body, a `meta.schemaVersion` outside
- * both lineages, a transport stage that halted first). Render it as "not
- * measured", never as a failure.
+ * `null` is a SHADOW-ONLY answer and it is NOT a soft fail: the body reached
+ * NEITHER validator under this package AND nothing forward-mapped failed. An
+ * unparseable body or a transport stage that halted first does NOT produce it —
+ * each files a contract requirement (1.1, or 1.1/1.2/1.3/1.4/1.6) that the
+ * clause map carries forward, so the shadow lineage reads `fail` there too. What
+ * survives as `null` is a `meta.schemaVersion` outside both lineages: it files
+ * §3.2, the one requirement the shadow re-runs rather than re-tags, so the draft
+ * has nothing of its own to report. Render it as "not measured", never as a
+ * failure.
  */
 export type Verdict = 'pass' | 'fail' | null;
 

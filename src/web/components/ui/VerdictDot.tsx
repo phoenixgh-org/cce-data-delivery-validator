@@ -21,7 +21,8 @@ import { PROFILE_NAME } from '../../profiles';
 /**
  * A dot's rendered state. `na` is "this lineage does not apply here" — reserved
  * for the matrix (e.g. an Attachment 2 clause under DS01.3) and NOT rendered in
- * list rows in this bite; a lineage that simply never ran is dropped from the
+ * list rows in this bite; a `null` verdict — the body reached neither validator
+ * under this package and nothing forward-mapped failed — is dropped from the
  * pair instead, since an absent dot claims nothing.
  */
 export type VerdictDotState = 'pass' | 'fail' | 'na';
@@ -177,10 +178,13 @@ export function verdictPairTitle({
  * under the second label (by1c.34), which told a supplier the wrong lineage had
  * failed.
  *
- * A dot is rendered only for a lineage that actually graded the transmission: no
- * shadow lineage registered, or a shadow that never ran, leaves its cell EMPTY
- * rather than shifting the other dot. The hatched `na` dot is not used here (see
- * {@link VerdictDotState}).
+ * A dot is rendered on the verdict VALUE, not on whether the lineage ran: only
+ * `pass` and `fail` draw one, so no shadow lineage registered, or a `null` shadow
+ * verdict (the body reached neither validator under this package and nothing
+ * forward-mapped failed), leaves its cell EMPTY rather than shifting the other
+ * dot. A shadow whose validator never ran but which inherits a forward-mapped
+ * contract failure reads `fail`, and so draws a filled dot. The hatched `na` dot
+ * is not used here (see {@link VerdictDotState}).
  */
 export function VerdictPair(props: VerdictPairInput): ReactElement {
   const { contract, shadow, shadowProfile } = props;
