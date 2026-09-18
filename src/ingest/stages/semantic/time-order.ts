@@ -37,10 +37,23 @@
  * ── WHAT COUNTS AS A STEP THAT IS NOT FORWARD ────────────────────────────────
  * Within ONE report, records are walked in ARRAY ORDER and each parseable ABST
  * is compared against the previous parseable one. A pair is noted when the later
- * position's timestamp is EARLIER than (steps back) or EQUAL to (repeats) the
- * one before it — "strictly increasing" makes a repeat as much of an observation
- * as a reversal, and a repeat is the commoner of the two in practice (a series
- * re-stamped at whole-minute resolution, a record duplicated in assembly).
+ * position's timestamp is NOT LATER than the one before it — "strictly
+ * increasing" makes a repeat as much of an observation as a reversal, and a
+ * repeat is the commoner of the two in practice (a series re-stamped at
+ * whole-minute resolution, a record duplicated in assembly).
+ *
+ * WHICH OF THE TWO IT IS, IS DECIDED ON THE RAW STRINGS (9uyy, decided
+ * 2026-09-18). {@link parseAbst} resolves ABST to WHOLE MILLISECONDS, and that
+ * is its floor, while the schema's pattern admits arbitrarily many fraction
+ * digits — so two DIFFERENT values can parse to one epoch
+ * (`20240115T033000.0004Z` and `20240115T033000Z`). The repeat test therefore
+ * compares the ABST STRINGS AS SENT: equal strings repeat, and two different
+ * values never read as the same one. A pair whose strings differ but whose
+ * epochs are equal is a reversal FINER THAN A MILLISECOND — counted with the
+ * reversals, and observed as a step back of less than a millisecond rather than
+ * measured at a resolution we do not have. parseAbst itself is unchanged: the
+ * millisecond floor is §3.4's contract (./interval.ts), and this module does not
+ * move it.
  *
  * Reports are independent. Two devices' series have no ordering relationship to
  * each other, so the walk never crosses a report boundary; the counts are then
@@ -111,15 +124,24 @@ interface NotForward {
   pointer: string;
   /**
    * How far back it steps from the previous parseable ABST, in MILLISECONDS —
-   * the resolution {@link parseAbst} resolves ABST to, kept unrounded because
-   * the repeat-vs-reversal distinction is made on this value. Zero, and only
-   * exactly zero, means the timestamp REPEATS rather than reverses: ABST's
-   * pattern admits a fractional part, so a step back of a few hundred
-   * milliseconds is two DIFFERENT timestamps in the payload as sent, and
+   * the resolution {@link parseAbst} resolves ABST to, and its floor. Kept
+   * unrounded: ABST's pattern admits a fractional part, so a step back of a few
+   * hundred milliseconds is two DIFFERENT timestamps in the payload as sent, and
    * rounding it away would let the observation describe it as a tie it is not —
    * see {@link minutesPhrase}, which is what protects that.
+   *
+   * ZERO DOES NOT BY ITSELF MEAN A REPEAT (9uyy). A reversal finer than a
+   * millisecond lands here as zero too, because that is where parseAbst's
+   * resolution runs out; `repeat` below is what separates the two.
    */
   backwardMs: number;
+  /**
+   * TRUE when this position's ABST STRING is identical to the previous parseable
+   * one's. The repeat test is made on the values AS SENT, not on the parsed
+   * epoch, so two different strings never read as the same timestamp (9uyy).
+   * FALSE alongside `backwardMs === 0` is a reversal finer than a millisecond.
+   */
+  repeat: boolean;
 }
 
 /**
@@ -131,19 +153,25 @@ function scanReport(report: unknown, reportIndex: number): NotForward[] {
   if (!Array.isArray(records)) return [];
 
   const found: NotForward[] = [];
-  let previous: number | null = null;
+  // The raw string is carried alongside the epoch because the repeat test is
+  // made on it (9uyy) — see the header.
+  let previous: { epochMs: number; abst: string } | null = null;
   for (const [recordIndex, record] of records.entries()) {
-    const epochMs = parseAbst(isPlainObject(record) ? record.ABST : undefined);
+    const abst = isPlainObject(record) ? record.ABST : undefined;
+    const epochMs = parseAbst(abst);
     // Unparseable or absent: skipped, and the chain continues from the last
     // value that did parse. See the header.
     if (epochMs === null) continue;
-    if (previous !== null && epochMs <= previous) {
+    // parseAbst returns a number only for a string it matched.
+    const text = abst as string;
+    if (previous !== null && epochMs <= previous.epochMs) {
       found.push({
         pointer: `/data/${reportIndex}/records/${recordIndex}/ABST`,
-        backwardMs: previous - epochMs,
+        backwardMs: previous.epochMs - epochMs,
+        repeat: text === previous.abst,
       });
     }
-    previous = epochMs;
+    previous = { epochMs, abst: text };
   }
   return found;
 }
@@ -156,8 +184,12 @@ function scanReport(report: unknown, reportIndex: number): NotForward[] {
  * A POSITIVE STEP NEVER RENDERS AS `0 min`. ABST's pattern admits a fractional
  * part, so a reversal of a few hundred milliseconds is two DIFFERENT timestamps
  * in the payload as sent (1dda); rounding it away would read as the tie it is
- * not, and zero is reserved for an exactly repeated timestamp. Steps under a
- * thousandth of a minute therefore keep one significant figure instead.
+ * not, and zero is reserved for a timestamp repeated STRING FOR STRING. Steps
+ * under a thousandth of a minute therefore keep one significant figure instead.
+ *
+ * A reversal below parseAbst's millisecond floor never reaches this function:
+ * the caller renders it as "less than a millisecond" (9uyy), because `0 min`
+ * there would describe a tie the payload does not carry.
  */
 function minutesPhrase(ms: number): string {
   const minutes = ms / 60_000;
@@ -182,6 +214,11 @@ export const timeOrderCheck: SemanticCheck = (ctx: PipelineContext): Finding[] =
   const worstMs = found.reduce((max, one) => Math.max(max, one.backwardMs), 0);
   const recordNoun = found.length === 1 ? 'record' : 'records';
   const carry = found.length === 1 ? 'carries' : 'carry';
+  // A zero-millisecond step whose ABST strings DIFFER is a reversal parseAbst
+  // cannot measure, not a tie (9uyy). Say what is known — that it steps back by
+  // less than a millisecond — rather than printing the `0 min` a repeat reads as.
+  const finerThanMs = worstMs === 0 && found.some((one) => !one.repeat);
+  const widestPhrase = finerThanMs ? 'less than a millisecond' : minutesPhrase(worstMs);
 
   return [
     advisory({
@@ -189,7 +226,7 @@ export const timeOrderCheck: SemanticCheck = (ctx: PipelineContext): Finding[] =
       pointer: first.pointer,
       summary:
         `${found.length} ${recordNoun} ${carry} an ABST no later than the one before; the ` +
-        `widest step back is ${minutesPhrase(worstMs)}.`,
+        `widest step back is ${widestPhrase}.`,
       detail:
         "E006 reads a report's records as a time series with ABST strictly increasing down " +
         'the array, and the receiving country stores them in the order sent. Sorting records ' +

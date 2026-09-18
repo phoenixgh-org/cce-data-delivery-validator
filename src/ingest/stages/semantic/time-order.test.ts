@@ -355,13 +355,41 @@ test('a sub-second reversal is a step BACK, not a repeat (1dda)', () => {
   assert.match(finding.summary ?? '', /the widest step back is 0.005 min\.$/);
 });
 
-test('only an exactly equal epoch value reads as a repeat', () => {
-  // The same instant written two ways is a tie; anything else is a step.
-  const [tie] = advisories(checkOnly(emsPayload(['20240115T033000.000Z', '20240115T033000Z'])));
+test('the repeat test is made on the ABST STRINGS as sent (9uyy)', () => {
+  // Decided 2026-09-18: equal strings repeat, and nothing else does. parseAbst
+  // resolves ABST to whole milliseconds while the pattern admits arbitrarily
+  // many fraction digits, so a finer reversal arrives with a zero-millisecond
+  // gap — two DIFFERENT values in the payload as sent, which the observation
+  // has to say rather than calling them a tie.
+  const finerPayload = emsPayload(['20240115T033000.0004Z', '20240115T033000Z']);
+  assert.equal(
+    registry.get('0.8.1')?.validate(finerPayload),
+    true,
+    "a four-digit fraction is schema-valid — the precision is the supplier's to use",
+  );
+
+  const [finer] = advisories(checkOnly(finerPayload));
+  assert.ok(finer, 'a reversal finer than a millisecond raised nothing');
+  assert.equal(
+    finer.summary,
+    '1 record carries an ABST no later than the one before; the widest step back is less than ' +
+      'a millisecond.',
+  );
+  assert.doesNotMatch(finer.summary ?? '', /0 min|same ABST/, 'it is a reversal, not a repeat');
+
+  // A repeat is a repeat string for string, and keeps its 0 min reading.
+  const [tie] = advisories(checkOnly(emsPayload(['20240115T033000Z', '20240115T033000Z'])));
   assert.ok(tie);
   assert.match(tie.summary ?? '', /the widest step back is 0 min\.$/);
 
-  // And a step of one millisecond is named rather than rounded away.
+  // The same instant written two ways is two different strings, and reads as a
+  // step rather than a repeat. That is the deliberate consequence of testing the
+  // strings: the parsed epoch cannot tell `.000Z` from `.0004Z`, and only one of
+  // the two readings can be given to both.
+  const written = advisories(checkOnly(emsPayload(['20240115T033000.000Z', '20240115T033000Z'])));
+  assert.match(written[0]?.summary ?? '', /the widest step back is less than a millisecond\.$/);
+
+  // A step of one millisecond is inside parseAbst's resolution and is measured.
   const [step] = advisories(checkOnly(emsPayload(['20240115T033000.001Z', '20240115T033000Z'])));
   assert.ok(step);
   assert.match(step.summary ?? '', /the widest step back is 0.00002 min\.$/);
