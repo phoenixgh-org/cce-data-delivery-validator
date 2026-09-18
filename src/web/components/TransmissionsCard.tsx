@@ -105,7 +105,7 @@ export interface TransmissionsCardProps {
 }
 
 /** Row status-dot tone derived from a transmission's findings (not HTTP). */
-type DotTone = 'pass' | 'mixed' | 'fail' | 'neutral';
+export type DotTone = 'pass' | 'mixed' | 'fail' | 'neutral';
 
 const DOT_COLOR: Record<DotTone, string> = {
   pass: 'var(--pass)',
@@ -115,29 +115,57 @@ const DOT_COLOR: Record<DotTone, string> = {
 };
 
 /**
- * The findings that GRADE a transmission under the contract in force — the only
- * ones the row's verdict surfaces may read (by1c.8).
+ * The findings that GRADE a transmission under the SELECTED package (by1c.8,
+ * tfnv.7, tfnv.18) — the only ones the row's verdict surfaces may read.
  *
- * Since bd by1c.6 a transmission also carries findings from the DS01.3 shadow
- * run. Those describe a different lineage's verdict, so a payload that conforms
- * today would otherwise show a red dot and a fail count for obligations that are
- * not yet in force. The shadow verdict gets its own column in bd by1c.12; here
- * the filter simply keeps it out of the contract one.
+ * Since bd by1c.6 a transmission carries findings from two lineages, and a
+ * finding of one package is not automatically a verdict in the other: it is
+ * shown under the clause {@link clauseUnderLens} gives it, and a finding that
+ * package shows nowhere is not the row's to report. Under the contract lens that
+ * is the contract lineage alone, which is what this filter did before the lens
+ * existed.
+ *
+ * Advisories are excluded here, as they are everywhere a number or a tone is
+ * derived: an advisory is raised against a payload that broke no rule, and it
+ * must never give a conformant transmission something to explain.
+ *
+ * One function so the row's tone dot and its findings cell fold the SAME set —
+ * the two surfaces sit 40px apart and a reader takes them as one statement.
  */
-function contractFindings(findings: FindingView[]): FindingView[] {
-  return findings.filter((f) => f.profile === CONTRACT_PROFILE);
+function gradedUnderLens(
+  findings: FindingView[],
+  lens: Profile,
+  contractProfile: Profile,
+): FindingView[] {
+  return findings.filter(
+    (f) => !isAdvisory(f) && clauseUnderLens(f, lens, contractProfile) !== null,
+  );
 }
 
 /**
- * Derive the row dot tone from the transmission's CONTRACT findings:
+ * Derive the row's 6px tone dot from the findings the selected package grades:
  *   any fail            -> fail
  *   pass AND fail mix    -> (covered by the fail branch; "mixed" = some pass + some fail)
  *   all pass             -> pass
  *   none                 -> neutral
  * Per the spec, any fail dominates; a mix of pass+fail reads as "mixed".
+ *
+ * IT READS THE SELECTED PACKAGE (tfnv.18). The dot folded the contract lineage
+ * alone, on the reasoning that a DS01.3 result was not a verdict against any
+ * obligation in force. Once the reader can choose which package the page reports
+ * on, that reasoning names the wrong package: a transmission that conforms to
+ * cce-interop and fails Annex 4 drew a green dot at the head of the row beside a
+ * red fail count and a filled DS01.3 dot — the row's largest colour signal
+ * reporting the package the reader did not select. It now folds exactly the set
+ * {@link findingsCell} counts, so the two cannot disagree: never green while the
+ * cell counts a failure, and grey where the selected package grades nothing.
  */
-function dotTone(all: FindingView[]): DotTone {
-  const findings = contractFindings(all);
+export function dotTone(
+  all: FindingView[],
+  lens: Profile = CONTRACT_PROFILE,
+  contractProfile: Profile = CONTRACT_PROFILE,
+): DotTone {
+  const findings = gradedUnderLens(all, lens, contractProfile);
   if (findings.length === 0) return 'neutral';
   const hasFail = findings.some((f) => f.severity === 'fail');
   const hasPass = findings.some((f) => f.severity === 'pass');
@@ -329,9 +357,7 @@ export function findingsCell(
   lens: Profile = CONTRACT_PROFILE,
   contractProfile: Profile = CONTRACT_PROFILE,
 ): FindingsCell {
-  const graded = findings.filter(
-    (f) => !isAdvisory(f) && clauseUnderLens(f, lens, contractProfile) !== null,
-  );
+  const graded = gradedUnderLens(findings, lens, contractProfile);
   const findingCount = graded.length;
   const failCount = failCountUnderLens(graded, lens, contractProfile);
   const plural = (n: number): string => (n === 1 ? 'finding' : 'findings');
@@ -413,7 +439,7 @@ function TxRow({
   lens: Profile;
   contractProfile: Profile;
 }): ReactElement {
-  const tone = dotTone(tx.findings);
+  const tone = dotTone(tx.findings, lens, contractProfile);
   const outdated = tx.findings.some((f) => f.outdated);
   const findings = findingsCell(tx.findings, lens, contractProfile);
   const reports = reportCount(tx.body);
@@ -503,9 +529,13 @@ function TxRow({
       </span>
       {/* Verdict dots (by1c.12) — one per registered lineage, each right-aligned
           in its own VERDICT_COL_PX cell so it sits under the header label that
-          names its lineage (by1c.34). Neutral by design: the 6px tone dot at the
-          head of the row already colours the contract verdict. The slot is 11px
-          tall, so it sits inside the existing line box and ROW_ESTIMATE_PX holds. */}
+          names its lineage (by1c.34). Neutral by design, and still so under the
+          lens: the 6px tone dot at the head of the row colours ONE verdict — the
+          selected package's, since tfnv.18 — and these dots stand for both
+          lineages at once. Colouring them would put a second red beside the
+          first, for a package the reader did not select. Shape carries the
+          verdict here instead. The slot is 11px tall, so it sits inside the
+          existing line box and ROW_ESTIMATE_PX holds. */}
       <span
         style={{
           display: 'flex',

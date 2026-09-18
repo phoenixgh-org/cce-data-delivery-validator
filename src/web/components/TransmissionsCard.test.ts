@@ -54,6 +54,7 @@ const {
   reportCountTitle,
   META_GRID_COLUMNS,
   findingsCell,
+  dotTone,
   flaggedPointers,
   signatureEyebrow,
   verdictColumns,
@@ -462,6 +463,46 @@ test('a transmission that only fails §3.2 reads OK under the draft lens', () =>
 test('advisories are counted nowhere under either lens', () => {
   const findings = [finding('pass'), advisoryFinding('adv.null_padding')];
   assert.equal(findingsCell(findings, 'ds013', CONTRACT_PROFILE).title, '1 finding, none failed');
+});
+
+/**
+ * The row's 6px tone dot (tfnv.18). It folds the same set the findings cell
+ * counts, so the two ends of one row cannot report different packages: the dot
+ * used to colour the contract lineage alone, which under the draft lens painted
+ * a green dot beside a red fail count.
+ */
+test('the tone dot follows the selected package', () => {
+  // Conforms to the contract, fails Annex 4: the draft re-runs §3.2 and files its
+  // own finding, so the 2025 pass is not the draft's to show.
+  const findings: FindingView[] = [
+    { ...finding('pass'), requirement: '3.2' },
+    shadowFinding('fail'),
+  ];
+
+  assert.equal(dotTone(findings, 'ds013', CONTRACT_PROFILE), 'fail');
+  assert.equal(dotTone(findings, CONTRACT_PROFILE, CONTRACT_PROFILE), 'pass');
+});
+
+test('the tone dot is unchanged under the contract lens, which is the default', () => {
+  assert.equal(dotTone([]), 'neutral');
+  assert.equal(dotTone([finding('pass'), finding('pass')]), 'pass');
+  assert.equal(dotTone([finding('fail')]), 'fail');
+  assert.equal(dotTone([finding('pass'), finding('fail')]), 'mixed');
+  // Nothing graded either way: info-only, and an advisory is not a verdict.
+  assert.equal(dotTone([finding('info')]), 'neutral');
+  assert.equal(dotTone([advisoryFinding('adv.null_padding')]), 'neutral');
+  // A DS01.3 failure is no part of the contract verdict.
+  assert.equal(dotTone([finding('pass'), shadowFinding('fail')]), 'pass');
+});
+
+test('the tone dot still reads mixed where the draft grades a pass and a fail', () => {
+  // §1.4 carries forward to 5.1.6 and passed there; the DS01.3 run failed 5.3.2.
+  const findings: FindingView[] = [
+    { ...finding('pass'), requirement: '1.4' },
+    shadowFinding('fail'),
+  ];
+
+  assert.equal(dotTone(findings, 'ds013', CONTRACT_PROFILE), 'mixed');
 });
 
 test('the inspector highlights finding pointers but never an advisory’s', () => {
