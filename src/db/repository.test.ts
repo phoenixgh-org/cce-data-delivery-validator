@@ -24,10 +24,12 @@ import {
   bumpLastPostAt,
   createSession,
   findPriorTransmissions,
+  findPriorUnitWindows,
   getSession,
   insertFinding,
   insertFindings,
   insertTransmission,
+  insertUnitWindows,
   purgeExpiredSessions,
   type Profile,
 } from './repository.js';
@@ -348,6 +350,190 @@ test(
     await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
   },
 );
+
+/** Epoch ms of an instant, for building windows to store. */
+function at(iso: string): number {
+  return Date.parse(iso);
+}
+
+test(
+  'unit windows round-trip and findPriorUnitWindows returns only OTHER transmissions (agj.24)',
+  { skip },
+  async () => {
+    const session = await createSession();
+    const hashA = createHash('sha256').update('body-A').digest();
+    const hashB = createHash('sha256').update('body-B').digest();
+
+    const first = await insertTransmission({
+      sessionUuid: session.uuid,
+      transferId: 'T-1',
+      contentHash: hashA,
+    });
+    const second = await insertTransmission({
+      sessionUuid: session.uuid,
+      transferId: 'T-2',
+      contentHash: hashB,
+    });
+
+    await insertUnitWindows(first.id, session.uuid, [
+      {
+        unitKey: 'aser:sn-1',
+        abstMin: at('2026-09-01T00:00:00Z'),
+        abstMax: at('2026-09-01T06:00:00Z'),
+        recordCount: 24,
+      },
+      {
+        unitKey: 'amid:fridge-2',
+        abstMin: at('2026-09-01T00:00:00Z'),
+        abstMax: at('2026-09-01T02:00:00Z'),
+        recordCount: 8,
+      },
+    ]);
+    await insertUnitWindows(second.id, session.uuid, [
+      {
+        unitKey: 'aser:sn-1',
+        abstMin: at('2026-09-01T05:00:00Z'),
+        abstMax: at('2026-09-01T11:00:00Z'),
+        recordCount: 24,
+      },
+    ]);
+
+    // The second POST asks what came before for its own unit: only the first
+    // transmission's row, with the bounds and receipt time it needs to describe it.
+    const priors = await findPriorUnitWindows(session.uuid, ['aser:sn-1'], {
+      excludeContentHash: hashB,
+      excludeTransferId: 'T-2',
+    });
+    assert.equal(priors.length, 1, 'a transmission never sees its own window');
+    assert.equal(priors[0]?.transmission_id, first.id);
+    assert.equal(priors[0]?.unit_key, 'aser:sn-1');
+    assert.equal(priors[0]?.transfer_id, 'T-1');
+    assert.equal(priors[0]?.abst_min.getTime(), at('2026-09-01T00:00:00Z'));
+    assert.equal(priors[0]?.abst_max.getTime(), at('2026-09-01T06:00:00Z'));
+    assert.ok(priors[0]?.received_at instanceof Date, 'received_at joins off transmission');
+
+    // A unit this session never reported on matches nothing…
+    assert.deepEqual(
+      await findPriorUnitWindows(session.uuid, ['aser:never'], {}),
+      [],
+      'unknown unit key → no priors',
+    );
+    // …and no unit keys at all short-circuits without running SQL.
+    assert.deepEqual(await findPriorUnitWindows(session.uuid, [], {}), []);
+
+    // Several keys at once, newest transmission first.
+    const both = await findPriorUnitWindows(session.uuid, ['aser:sn-1', 'amid:fridge-2'], {});
+    assert.equal(both.length, 3, 'every window for either key, both transmissions');
+    assert.equal(both[0]?.transmission_id, second.id, 'newest-first');
+
+    // Another session's windows are invisible even under the same unit key.
+    const other = await createSession();
+    const otherTx = await insertTransmission({ sessionUuid: other.uuid });
+    await insertUnitWindows(otherTx.id, other.uuid, [
+      {
+        unitKey: 'aser:sn-1',
+        abstMin: at('2026-09-01T00:00:00Z'),
+        abstMax: at('2026-09-01T06:00:00Z'),
+        recordCount: 24,
+      },
+    ]);
+    assert.deepEqual(
+      (await findPriorUnitWindows(session.uuid, ['aser:sn-1'], {})).map((r) => r.transmission_id),
+      [second.id, first.id],
+      'the lookup stays inside its own session',
+    );
+
+    await getPool().query('DELETE FROM session WHERE uuid = ANY($1)', [[session.uuid, other.uuid]]);
+  },
+);
+
+/**
+ * The two exclusions the §1.8-graded repeats need: an exact replay (same content
+ * hash) and a re-send under the same transfer id never reach the observation.
+ * Both are `IS DISTINCT FROM`, so a prior whose column is NULL survives — a
+ * transmission that carried no transfer id is not a re-send of one that did.
+ */
+test('findPriorUnitWindows excludes same-hash and same-transferId priors', { skip }, async () => {
+  const session = await createSession();
+  const hash = createHash('sha256').update('same-bytes').digest();
+
+  const replay = await insertTransmission({
+    sessionUuid: session.uuid,
+    transferId: 'T-1',
+    contentHash: hash,
+  });
+  const novel = await insertTransmission({
+    sessionUuid: session.uuid,
+    transferId: 'T-9',
+    contentHash: createHash('sha256').update('other-bytes').digest(),
+  });
+  const anonymous = await insertTransmission({ sessionUuid: session.uuid });
+
+  const window = {
+    unitKey: 'aser:sn-1',
+    abstMin: at('2026-09-01T00:00:00Z'),
+    abstMax: at('2026-09-01T06:00:00Z'),
+    recordCount: 24,
+  };
+  for (const tx of [replay, novel, anonymous]) {
+    await insertUnitWindows(tx.id, session.uuid, [window]);
+  }
+
+  const ids = async (opts: Parameters<typeof findPriorUnitWindows>[2]): Promise<Set<string>> =>
+    new Set(
+      (await findPriorUnitWindows(session.uuid, ['aser:sn-1'], opts)).map((r) => r.transmission_id),
+    );
+
+  assert.deepEqual(
+    await ids({}),
+    new Set([replay.id, novel.id, anonymous.id]),
+    'no exclusions → every prior window',
+  );
+  assert.deepEqual(
+    await ids({ excludeContentHash: hash }),
+    new Set([novel.id, anonymous.id]),
+    'the exact replay is dropped; the null-hash row is kept',
+  );
+  assert.deepEqual(
+    await ids({ excludeTransferId: 'T-1' }),
+    new Set([novel.id, anonymous.id]),
+    'the repeated transfer id is dropped; the null-transferId row is kept',
+  );
+  assert.deepEqual(
+    await ids({ excludeContentHash: hash, excludeTransferId: 'T-9' }),
+    new Set([anonymous.id]),
+    'both exclusions apply together',
+  );
+
+  await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+});
+
+test('unit windows cascade-delete with their transmission (§11 retention)', { skip }, async () => {
+  const session = await createSession();
+  const tx = await insertTransmission({ sessionUuid: session.uuid });
+  await insertUnitWindows(tx.id, session.uuid, [
+    {
+      unitKey: 'aser:sn-1',
+      abstMin: at('2026-09-01T00:00:00Z'),
+      abstMax: at('2026-09-01T06:00:00Z'),
+      recordCount: 24,
+    },
+  ]);
+
+  const count = async (): Promise<string | undefined> =>
+    (
+      await getPool().query<{ n: string }>(
+        'SELECT count(*) AS n FROM transmission_unit_window WHERE transmission_id = $1',
+        [tx.id],
+      )
+    ).rows[0]?.n;
+
+  assert.equal(await count(), '1', 'window stored');
+  await getPool().query('DELETE FROM transmission WHERE id = $1', [tx.id]);
+  assert.equal(await count(), '0', 'window cascade-deleted with its transmission');
+
+  await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+});
 
 test(
   'purgeExpiredSessions deletes sessions inactive >7 days and cascades; recent survives (§11)',

@@ -10,6 +10,7 @@
 import type { Pool, PoolClient } from 'pg';
 
 import { getPool } from './pool.js';
+import type { UnitWindow } from '../identity/unit-key.js';
 
 /** Anything we can run a query against: the pool or a checked-out client. */
 export type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
@@ -458,6 +459,69 @@ export async function findPriorTransmissions(
 }
 
 /**
+ * One prior ABST window: the span an EARLIER transmission in this session covered
+ * for one CCE unit, with the two transmission columns the observation needs to
+ * describe it (when it arrived, and under which transfer id).
+ */
+export interface PriorUnitWindow {
+  transmission_id: string;
+  unit_key: string;
+  abst_min: Date;
+  abst_max: Date;
+  received_at: Date;
+  transfer_id: string | null;
+}
+
+/**
+ * Find the ABST windows earlier transmissions in the SAME session recorded for
+ * any of `unitKeys` (agj.24, the read behind `adv.abst_window_overlap`). Like
+ * {@link findPriorTransmissions} this runs BEFORE the current transmission is
+ * persisted, so it only ever returns EARLIER rows and a transmission can never
+ * overlap itself. It leans on the `(session_uuid, unit_key)` index from
+ * `db/initdb/95-transmission-unit-window.sql`.
+ *
+ * Two kinds of prior are EXCLUDED here rather than in the caller, so the
+ * observation never sees a repeat it would have to un-say:
+ *
+ *   - `excludeContentHash` — an exact replay of the same bytes. §1.8 already
+ *     grades that, and §5 REQUIRES retransmission after a failed delivery, so
+ *     the identical window it produces is expected, not remarkable.
+ *   - `excludeTransferId` — a re-send under the same transfer id, graded by the
+ *     same §1.8 check whether or not the bytes changed.
+ *
+ * Both comparisons are `IS DISTINCT FROM`, so a prior whose column is NULL is
+ * KEPT: a transmission that carried no transfer id is not a re-send of one that
+ * did. A null/absent option applies no exclusion at all.
+ *
+ * With no unit keys there is nothing to match, so it short-circuits to `[]` with
+ * no SQL run. Results are newest-first, so a caller naming a single prior names
+ * the most recent one.
+ */
+export async function findPriorUnitWindows(
+  sessionUuid: string,
+  unitKeys: readonly string[],
+  opts: { excludeContentHash?: Buffer | null; excludeTransferId?: string | null },
+  db: Queryable = getPool(),
+): Promise<PriorUnitWindow[]> {
+  // No unit keys → nothing this body could overlap (skip the query).
+  if (unitKeys.length === 0) return [];
+
+  const { rows } = await db.query<PriorUnitWindow>(
+    `SELECT w.transmission_id, w.unit_key, w.abst_min, w.abst_max,
+            t.received_at, t.transfer_id
+     FROM transmission_unit_window w
+     JOIN transmission t ON t.id = w.transmission_id
+     WHERE w.session_uuid = $1
+       AND w.unit_key = ANY($2::text[])
+       AND ($3::bytea IS NULL OR t.content_hash IS DISTINCT FROM $3)
+       AND ($4::text IS NULL OR t.transfer_id IS DISTINCT FROM $4)
+     ORDER BY t.received_at DESC`,
+    [sessionUuid, [...unitKeys], opts.excludeContentHash ?? null, opts.excludeTransferId ?? null],
+  );
+  return rows;
+}
+
+/**
  * Insert a transmission for a session and return the full inserted row.
  *
  * `content_hash` is intentionally NON-UNIQUE (DESIGN.md §8): every POST is
@@ -604,6 +668,62 @@ export async function insertFindings(
     values,
   );
   return rows;
+}
+
+/**
+ * Record this transmission's ABST windows — one row per identified report-unit
+ * (agj.24). Called AFTER {@link insertTransmission}, on the same client as
+ * {@link insertFindings}, so the windows and the findings of one POST land or
+ * roll back together.
+ *
+ * `session_uuid` is passed in rather than read back off the transmission: the
+ * caller already has it, and the column exists precisely so the prior-window
+ * lookup never has to join to find the session.
+ *
+ * Epoch-ms bounds are bound as ISO-8601 instants; the column is `timestamptz`,
+ * so the stored value is the same instant however the server's timezone is set.
+ *
+ * No `ON CONFLICT`: `computeUnitWindows` already yields one entry per unit, and
+ * this runs once per transmission, so a primary-key collision would mean a
+ * double write rather than a legitimate repeat — better raised than swallowed.
+ * Empty `windows` writes nothing and runs no SQL.
+ */
+export async function insertUnitWindows(
+  transmissionId: string,
+  sessionUuid: string,
+  windows: readonly UnitWindow[],
+  db: Queryable = getPool(),
+): Promise<void> {
+  if (windows.length === 0) return;
+
+  const COLS = 4; // per-row bound params (unit_key…record_count)
+  const values: unknown[] = [transmissionId, sessionUuid];
+  const tuples = windows.map((w, i) => {
+    // +2 for the transmission_id / session_uuid params bound once, up front.
+    const base = i * COLS + 2;
+    values.push(
+      w.unitKey,
+      new Date(w.abstMin).toISOString(),
+      new Date(w.abstMax).toISOString(),
+      w.recordCount,
+    );
+    const ph = Array.from({ length: COLS }, (_, j) => `$${base + j + 1}`);
+    return `(${ph.join(', ')})`;
+  });
+
+  // The VALUES-derived columns carry bound params, which infer as text, so each
+  // is cast explicitly for the INSERT (the same treatment insertFindings gives
+  // its boolean).
+  await db.query(
+    `INSERT INTO transmission_unit_window (
+       transmission_id, session_uuid, unit_key, abst_min, abst_max, record_count
+     )
+     SELECT $1, $2, v.unit_key, v.abst_min::timestamptz, v.abst_max::timestamptz,
+            v.record_count::integer
+     FROM (VALUES ${tuples.join(', ')})
+       AS v(unit_key, abst_min, abst_max, record_count)`,
+    values,
+  );
 }
 
 /**

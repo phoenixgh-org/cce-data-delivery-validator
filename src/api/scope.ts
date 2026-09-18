@@ -23,6 +23,7 @@ import type { ComplianceRow } from './compliance-matrix.js';
 import { verdict } from './verdicts.js';
 import type { VerdictFinding } from './verdicts.js';
 import { CONTRACT_PROFILE } from '../schema-registry.js';
+import { unitKey } from '../identity/unit-key.js';
 
 /** The four selectable time windows (DESIGN.md §10 scope control). */
 export type Window = '15m' | '1h' | '6h' | 'all';
@@ -192,60 +193,6 @@ export interface UnitTotals {
 /** Whether a value is a plain (non-array) object we can read keys off. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * A string identifier with surrounding whitespace removed, or `null` when the
- * value is not a usable identifier (absent, JSON `null`, a non-string, or blank).
- * Trimmed but NOT case-folded: `"ab"` and `"AB"` are different serials, and we
- * have no warrant to merge them.
- */
-function identifier(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-}
-
-/**
- * The identity key for one report object, or `null` when the report names no
- * appliance. Lineage-agnostic — it needs no `meta.transferType` branch, because
- * the two branches of `src/schemas/cce-interop-0.8.1.json` carry disjoint
- * appliance identifiers:
- *
- *   - `$defs/rtmd-report` REQUIRES `AMID` (`["string"]`, "the ID of the appliance
- *     object in the RTMD supplier’s cloud platform … a stable reference to the
- *     appliance"); `ASER` is optional there.
- *   - `$defs/ems-report` has NO `AMID` property at all; it REQUIRES `ASER`
- *     (`["string","null"]`, appliance manufacturer serial number) alongside
- *     `AMFR`/`AMOD`/`APQS`.
- *   - `AID` (programme asset id) is optional on both and is the EMPLOYER’S
- *     handle, not the supplier’s, so it is not the key.
- *   - `LSER` and `ESER` name the logger and the monitoring device — the thing
- *     doing the watching, not the equipment being watched. Counting those would
- *     be a different number (one CCE can be re-instrumented, one logger moved).
- *
- * DECIDED 2026-08-04 (Benson, bd p98) — CCE IDENTITY IS THE EQUIPMENT ID. So
- * `ASER`, the manufacturer’s serial for the appliance itself, is PREFERRED, and
- * `AMID`, the supplier platform’s own handle on it, is the FALLBACK for the RTMD
- * reports that carried no serial. Every EMS report keys on `ASER`; an RTMD report
- * keys on `ASER` when the supplier sent one and on `AMID` otherwise.
- *
- * `AMFR` plays no part in the key. The serial identifies the equipment on its
- * own here — this is a count of identifier values as they arrived, not an
- * attempt to make them globally unique.
- *
- * NOTE the two namespaces never reconcile: a manufacturer serial and a
- * supplier-internal id are different kinds of name, so the same physical
- * refrigerator reported under each counts as TWO units. That is inherent to a
- * passive receiver — resolving identity is out of scope (see p98’s notes) — and
- * it is disclosed in the readout’s tooltip rather than fixed here.
- */
-function unitKey(report: Record<string, unknown>): string | null {
-  const aser = identifier(report['ASER']);
-  if (aser !== null) return `aser:${aser}`;
-  const amid = identifier(report['AMID']);
-  if (amid !== null) return `amid:${amid}`;
-  return null;
 }
 
 /**

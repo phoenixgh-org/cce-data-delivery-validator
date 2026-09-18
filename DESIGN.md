@@ -415,7 +415,7 @@ idempotent replays. This service records every POST and flags repeats instead,
 because duplicate detection is the §1.8 signal being graded and must never be
 collapsed silently.
 
-The three tables are:
+The tables are:
 
 - `session`: `uuid` (primary key), `created_at`, `last_post_at`, `auth_enabled bool`,
   `auth_method` (`header`, `basic`, or `bearer`), `auth_header_name`, and
@@ -450,8 +450,21 @@ The three tables are:
   `instance_path`, and `param` for schema (§3.2) errors, and `code` (e.g.,
   `tx.missing_charset`) for transport and heuristic findings. All are nullable and
   populated only where they apply.
+- `transmission_unit_window`: `transmission_id` (foreign key to `transmission`),
+  `session_uuid`, `unit_key`, `abst_min timestamptz`, `abst_max timestamptz`, and
+  `record_count int`, added in `db/initdb/95-transmission-unit-window.sql`. One row
+  per report-unit per transmission: the span of `ABST` values that transmission
+  delivered for one appliance, as parsed from the payload. It exists so the service
+  can observe the PQS "chunk of records placed at the end of the previous data file"
+  failure, which §1.8 cannot see — two POSTs sharing most of their records are
+  byte-novel and both pass the whole-body hash. A report that names no appliance, or
+  whose records carry no parseable `ABST`, writes no row. The rows carry no
+  independent lifetime: `ON DELETE CASCADE` from `transmission` means the §11
+  inactivity purge reaches them transitively, so the sweep still needs no per-table
+  delete. An index on `(session_uuid, unit_key)` serves the one read, "every earlier
+  window in this session for these units".
 
-Three indexes support the access patterns: `transmission (session_uuid, received_at
+Three indexes on `transmission` support the access patterns: `(session_uuid, received_at
 DESC)` for the dashboard's reverse-chronological list and per-session rollups, and
 `(session_uuid, content_hash)` and `(session_uuid, transfer_id)` for duplicate
 detection (§1.8). Concurrency observation (§2.1) is in-flight request tracking per
@@ -462,7 +475,8 @@ numbered DDL files are the chosen mechanism for evolving it, and there is no
 migration runner; the alternative was weighed and declined on September 15, 2026.
 Two properties make the manual route safe enough: every file added after the first
 cut (`50-session-auth-bearer`, `60-finding-profile`, `70-finding-profile-no-default`,
-`80-contract-profile-marker`, `90-finding-summary`) is idempotent and applies in a single command, and the
+`80-contract-profile-marker`, `90-finding-summary`, `95-transmission-unit-window`) is
+idempotent and applies in a single command, and the
 flip-day guard fails closed when `service_marker` is absent
 ([`contract-marker.ts`](src/db/contract-marker.ts)), so a forgotten apply refuses to
 boot rather than running on. The operator procedure for an existing volume is
@@ -470,6 +484,12 @@ boot rather than running on. The operator procedure for an existing volume is
 in `docs/deployment.md`; the decision is worth revisiting if a second external
 operator appears, or if a post-first-boot file that cannot be made idempotent
 becomes necessary.
+
+One mechanical constraint on the numbering: the entrypoint replays the directory in
+glob order, which is byte order, and `-` sorts before every digit. A file numbered
+`100-` would therefore run straight after `10-session`, ahead of the tables it
+depends on, so the two-digit scheme ends at `90` and later files take the gaps
+between the existing numbers.
 
 ## 9. Schema registry and versioning
 
