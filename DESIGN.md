@@ -354,7 +354,13 @@ Several properties follow from that decision:
 
 - Advisories cost almost no DDL. `severity` is always `info`, and the identifier lives
   in its own `adv.*` namespace, carried in both `finding.requirement` and
-  `finding.code`. The one column they did add is `finding.summary` (see below).
+  `finding.code`. The one column they did add is `finding.summary` (see below). One
+  advisory has since added a table of its own: `adv.abst_window_overlap` (agj.24)
+  compares this delivery against the `ABST` windows earlier deliveries in the session
+  recorded, which needs `transmission_unit_window` (section 8) and a read at stage 8.
+  It is the exception rather than the new rule — every other check in the catalogue is
+  a pure function of one parsed body, and a proposal that needs storage is a design
+  decision rather than a registration.
 - An advisory carries TWO pieces of prose, not one. `summary` is the observation — one
   line, with its numbers ("3 of 12 reports carry no appliance serial number"), shown on
   the advisory row. `detail` is the rationale for it, kept one click away behind that
@@ -397,6 +403,7 @@ raw-payload inspector) in
 | `adv.unexplained_null_temp`     | An `rtmd-report` record whose `TVC` is `null` while neither `LERR` nor `EERR` accounts for it, or an `ems-report` record whose `null` `TVC` carries a `LERR` of blank space — the one shape `minLength: 1` admits; every other unexplained EMS null is a §3.2 failure | [`unexplained-null-temp.ts`](src/ingest/stages/semantic/unexplained-null-temp.ts) |
 | `adv.short_identifier`          | An identifier delivered populated and shorter than four characters — `ASER`, `LSER`, `ESER`, `AMID`, `AID`, `LID`, `EID`, and `SID` under every `DLST` sensor; product and place codes (`CSER`, `CSER2`, `FID`, `CID`) excluded                                       | [`short-identifier.ts`](src/ingest/stages/semantic/short-identifier.ts)           |
 | `adv.null_accumulator`          | A mains EMS record whose compressor runtime (`CMPR`, `CMPR2`) is `null` in a period whose own `SVA` is 0, with neither `LERR` nor `EERR` accounting for it and the same accumulator numeric elsewhere in the report                                                   | [`null-accumulator.ts`](src/ingest/stages/semantic/null-accumulator.ts)           |
+| `adv.abst_window_overlap`       | Two transmissions in one session for the same appliance whose `ABST` windows intersect while their bodies differ; an exact replay and a re-used `transferId` are excluded and graded under §1.8                                                                       | [`abst-window-overlap.ts`](src/ingest/stages/semantic/abst-window-overlap.ts)     |
 
 All modules are under `src/ingest/stages/semantic/`.
 

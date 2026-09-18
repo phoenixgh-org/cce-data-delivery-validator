@@ -43,6 +43,7 @@ function makeDeps(concurrentAtEntry: number): SemanticDeps {
   return {
     concurrentAtEntry,
     findPriorTransmissions: async (): Promise<PriorTransmission[]> => [],
+    findPriorUnitWindows: async () => [],
   };
 }
 

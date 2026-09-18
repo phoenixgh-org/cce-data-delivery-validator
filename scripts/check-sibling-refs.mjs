@@ -20,12 +20,14 @@
  * extension (`Dockerfile`) carries comments just as a `.sh` or `.js` file does,
  * and a sibling path in any of them would otherwise pass lint.
  *
- * Two kinds of tracked text file sit deliberately outside that reach. Every
+ * Three kinds of tracked text file sit deliberately outside that reach. Every
  * `.json` file is out so the vendored `src/schemas/*.json` can never be edited
  * to satisfy a guard (see `EXTENSIONS` below). The dot-ignore files
  * (`.gitignore`, `.dockerignore`, `.prettierignore`) are out because they list
  * tool paths rather than prose and are not published pages, so a sibling
- * reference has no reason to appear in one.
+ * reference has no reason to appear in one. And this file itself is out, by
+ * path, via `EXEMPT_FILES` below — it has to spell the sibling names out to
+ * match them.
  */
 
 import { readdir, readFile } from 'node:fs/promises';

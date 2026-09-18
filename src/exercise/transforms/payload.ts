@@ -1539,3 +1539,62 @@ export function appendSecondReport(reportIndex = 0): PayloadTransform {
     },
   });
 }
+
+/**
+ * Pin `AMID` — the appliance identity an `rtmd-report` keys on — to a fixed
+ * value, so the two POSTs of a case are about the same appliance and no other
+ * case's traffic is.
+ *
+ * Benign scaffolding in the same sense as {@link setTransferId}, and needed for
+ * the same reason: `adv.abst_window_overlap` compares a delivery against the
+ * earlier deliveries in the session that named the SAME appliance
+ * (src/identity/unit-key.ts), and the runner plays the whole table against one
+ * session. A case that leaned on the baseline's own `appliance-1` would be
+ * making a statement about every other rtm case's traffic as well as its own.
+ * A case-owned identity keeps the observation — and the SILENCE its counterpart
+ * case asserts — a fact about the two POSTs the case actually sent.
+ *
+ * THE VALUE STAYS WELL PAST FOUR CHARACTERS, so `adv.short_identifier` says
+ * nothing about it, and non-blank, so `adv.null_identity` does not either.
+ */
+export function setApplianceMonitoringId(value: string, reportIndex = 0): PayloadTransform {
+  return payloadTransform({
+    name: `setApplianceMonitoringId(${reportIndex}: AMID="${value}")`,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/AMID`, value);
+      return payload;
+    },
+  });
+}
+
+/**
+ * Replace a report's `records` with `count` clones of its first record, stamped
+ * at `everyMinutes` intervals starting `startOffsetMinutes` after that record's
+ * own `ABST` — an explicit reading WINDOW, which is what
+ * `adv.abst_window_overlap` compares between two transmissions.
+ *
+ * The start offset is the whole point and is why this is not
+ * {@link regularCadence}: two POSTs of one case declare two windows, and whether
+ * they intersect is the case. `readingWindow(0, 4)` and `readingWindow(30, 4)`
+ * share their last two stamps; `readingWindow(0, 4)` and `readingWindow(120, 4)`
+ * share none.
+ *
+ * The series stays EVENLY SPACED at the 15-minute DS01 sampling period by
+ * default, so the window a case declares costs it nothing elsewhere: §3.4 grades
+ * the cadence a pass (CV 0) and `adv.sample_gap` stays silent. Cloning the first
+ * record leaves every other value at the baseline's, so the timestamps are the
+ * only thing this varies — which is also what makes two POSTs with different
+ * offsets differ in their bytes.
+ */
+export function readingWindow(
+  startOffsetMinutes: number,
+  count: number,
+  everyMinutes = 15,
+  reportIndex = 0,
+): PayloadTransform {
+  const name =
+    `readingWindow(${reportIndex}: ${count} records from +${startOffsetMinutes}min, ` +
+    `every ${everyMinutes}min)`;
+  const offsets = Array.from({ length: count }, (_, i) => startOffsetMinutes + i * everyMinutes);
+  return withCadence(name, [], offsets, reportIndex);
+}

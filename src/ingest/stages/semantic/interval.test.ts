@@ -19,6 +19,7 @@ const JSON_UTF8 = 'application/json; charset=utf-8';
 const deps: SemanticDeps = {
   concurrentAtEntry: 1,
   findPriorTransmissions: async () => [],
+  findPriorUnitWindows: async () => [],
 };
 
 /** A parse+schema-valid PipelineContext carrying `parsedBody`. */

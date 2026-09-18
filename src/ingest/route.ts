@@ -24,10 +24,13 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getPool } from '../db/pool.js';
 import {
   findPriorTransmissions,
+  findPriorUnitWindows,
   insertFindings,
   insertTransmission,
+  insertUnitWindows,
   type Queryable,
 } from '../db/repository.js';
+import { computeUnitWindows } from '../identity/unit-key.js';
 import { normalizeVersion, type SchemaRegistry } from '../schema-registry.js';
 import { enterSession, leaveSession } from './concurrency-tracker.js';
 import {
@@ -219,6 +222,16 @@ async function persistTransmission(
     // `profileOf` the response body uses, so wire and row can never disagree.
     await insertFindings(tx.id, stampProfiles(findings), client);
 
+    // The ABST window this transmission covered, per appliance (agj.24) — written
+    // AFTER the row it hangs off, on the same client as the findings, so one
+    // transaction carries the whole record of the POST. It is written whether or
+    // not `adv.abst_window_overlap` fired: the rows are what the NEXT delivery
+    // for the same appliance is compared against, not evidence for this one.
+    // `computeUnitWindows` returns nothing for an unparsed body, so the halts
+    // that persist a row without one (400/413/422) write no windows and need no
+    // branch here.
+    await insertUnitWindows(tx.id, ctx.sessionUuid, computeUnitWindows(ctx.parsedBody), client);
+
     await client.query('COMMIT');
     return tx.id;
   } catch (err) {
@@ -279,7 +292,11 @@ export function registerIngestRoute(app: FastifyInstance): void {
       // release it in a `finally` so the count is freed even if persistence throws.
       const concurrentAtEntry = enterSession(uuid);
       try {
-        const semanticDeps: SemanticDeps = { concurrentAtEntry, findPriorTransmissions };
+        const semanticDeps: SemanticDeps = {
+          concurrentAtEntry,
+          findPriorTransmissions,
+          findPriorUnitWindows,
+        };
 
         // Body stages (3–7[, 8]): reached with a valid session + POST, so a row is
         // persisted regardless of whether a body stage short-circuits.

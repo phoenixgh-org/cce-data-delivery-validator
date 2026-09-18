@@ -22,6 +22,17 @@
  * freshly owned payload (../baseline.ts), so a §1.8 case that leaned on it would
  * decay silently the day it is swapped (bd b8r).
  *
+ * THE ONE ADVISORY IN THIS FILE. Advisory cases live in ./payload.ts, because an
+ * advisory reads the body. `adv.abst_window_overlap` (agj.24) is the exception
+ * and belongs here: it is the only advisory graded from how two transmissions
+ * relate — one delivery's ABST window against the windows earlier deliveries in
+ * the session recorded for the same appliance — so it is a sequence heuristic
+ * that happens to be an advisory, and it needs the multi-POST shape this file
+ * owns. Both of its cases PIN the appliance identity with
+ * `setApplianceMonitoringId`, so what each asserts is a fact about its own two
+ * POSTs rather than about every other rtm case the runner played into the same
+ * session.
+ *
  * §3.4 IS GRADED WITHIN ONE PAYLOAD, so its two cases are single-POST despite
  * living in the sequence table: the interval check reads `records[].ABST` of the
  * transmission in front of it and never looks at earlier ones
@@ -30,8 +41,15 @@
  * exercise a heuristic that does not exist.
  */
 
+import { ABST_WINDOW_OVERLAP_ID } from '../../ingest/stages/semantic/abst-window-overlap.js';
 import type { ExerciseCase } from '../case.js';
-import { irregularCadence, regularCadence, setTransferId } from '../transforms/payload.js';
+import {
+  irregularCadence,
+  readingWindow,
+  regularCadence,
+  setApplianceMonitoringId,
+  setTransferId,
+} from '../transforms/payload.js';
 
 export const SEQUENCE_CASES: readonly ExerciseCase[] = [
   // ── §3.4 reading cadence ──────────────────────────────────────────────────
@@ -112,6 +130,94 @@ export const SEQUENCE_CASES: readonly ExerciseCase[] = [
       },
     ],
     expectedFindings: [{ requirement: '1.8', severity: 'pass' }],
+  },
+
+  // ── adv.abst_window_overlap (the cross-transmission window shape) ─────────
+  {
+    id: 'adv.abst_window_overlap-fail-second-delivery-reoverlaps-the-first',
+    title:
+      'A second delivery for the same appliance covering an overlapping ABST window is observed',
+    // Empty by the advisory-case rule: an advisory is not a COMPLIANCE_MATRIX
+    // row, so the claim is the expectation below (../cases.test.ts, by1c.42).
+    requirements: [],
+    direction: 'fail',
+    fault: {
+      layer: 'sequence',
+      note: 'the second POST re-sends the last two readings of the first under a new transferId',
+    },
+    // The PQS shape, at transmission granularity: the first delivery covers
+    // +0…+45 minutes and the second covers +30…+75, so the two share the
+    // readings at +30 and +45. Neither §1.8 flavour applies — the transferIds
+    // differ and the bytes differ with them — which is precisely the gap this
+    // advisory exists to speak into (agj.14).
+    posts: [
+      {
+        label: 'first',
+        transforms: [
+          setApplianceMonitoringId('exercise-overlap-appliance'),
+          readingWindow(0, 4),
+          setTransferId('exercise-adv-overlap-a'),
+        ],
+        expectedStatus: 200,
+      },
+      {
+        label: 'second',
+        transforms: [
+          setApplianceMonitoringId('exercise-overlap-appliance'),
+          readingWindow(30, 4),
+          setTransferId('exercise-adv-overlap-b'),
+        ],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [{ requirement: ABST_WINDOW_OVERLAP_ID, severity: 'info' }],
+  },
+  {
+    id: '1.8-fail-exact-retransmission-of-one-appliance',
+    title: 'A byte-identical retransmission is a §1.8 duplicate and draws no window observation',
+    requirements: ['1.8'],
+    direction: 'fail',
+    fault: {
+      layer: 'sequence',
+      note: 'the second POST is byte-identical to the first, transferId included',
+    },
+    // The OTHER half of the advisory's contract, and the reason it is worth a
+    // case of its own beside `1.8-fail-repeated-transfer-id`: requirements §5
+    // REQUIRES a supplier to re-send after a delivery that was not accepted, so
+    // the identical window a retransmission produces must draw no observation.
+    // The exclusion is made in SQL (`findPriorUnitWindows` drops priors sharing
+    // this transmission's content hash or transferId), and this case is what
+    // measures it against a live instance rather than against the query text.
+    //
+    // A deliberate replay: both POSTs pin the same transferId, and everything
+    // else is deterministic, so the two bodies are byte-identical. Exempt from
+    // the table's transferId-uniqueness invariant WITHIN itself only, on the
+    // strength of the §1.8 fail it expects (../cases.test.ts).
+    posts: [
+      {
+        label: 'first',
+        transforms: [
+          setApplianceMonitoringId('exercise-retransmit-appliance'),
+          readingWindow(0, 4),
+          setTransferId('exercise-1.8-retransmit'),
+        ],
+        expectedStatus: 200,
+      },
+      {
+        label: 'retransmission',
+        transforms: [
+          setApplianceMonitoringId('exercise-retransmit-appliance'),
+          readingWindow(0, 4),
+          setTransferId('exercise-1.8-retransmit'),
+        ],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [
+      { requirement: '1.8', severity: 'pass' },
+      { requirement: '1.8', severity: 'fail' },
+    ],
+    absentFindings: [{ requirement: ABST_WINDOW_OVERLAP_ID }],
   },
 
   // ── §2.1 serial delivery (the concurrent-delivery shape) ──────────────────

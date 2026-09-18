@@ -274,12 +274,19 @@ invalidity it claims is held by `cases.test.ts`'s real-Ajv check on the declared
 
 An advisory is an observation the service offers a supplier, not a requirement it
 grades — so the case model treats it as a first-class target while the coverage join
-refuses to count it as a requirement. Seventeen cases exercise the twelve registered
+refuses to count it as a requirement. Eighteen cases exercise the thirteen registered
 advisories today.
 
 **Where they live.** In `cases/payload.ts`, beside the requirement cases. The grouping
 rule is unchanged: an advisory reads the body, so it belongs with the payload domain.
 There is no advisory module and no advisory directory.
+
+**One exception, and the rule it follows.** `adv.abst_window_overlap` is graded from how
+two transmissions relate rather than from one body — one delivery's `ABST` window against
+the windows earlier deliveries in the session recorded for the same appliance — so its
+cases live in `cases/sequence.ts` with the other multi-POST heuristics. The grouping rule
+did not change; this advisory is simply a sequence heuristic that happens to be an
+advisory.
 
 **`requirements` is empty.** Every `adv.*` case declares `requirements: []` (by1c.42),
 because an advisory is not a `COMPLIANCE_MATRIX` row: naming one in `requirements`
@@ -303,7 +310,7 @@ since planting a defect is a statement about the draft as well as about the advi
 
 **A silence case** is the other half of the catalogue's contract, and it is an ordinary
 pass-direction case carrying `absentFindings`: the payload is conformant traffic the
-advisory must NOT speak about. Twelve cases declare an absence today. Most name a
+advisory must NOT speak about. Thirteen cases declare an absence today. Most name a
 single advisory — the population its own header says it is silent on, such as solar
 records or an explained null — while the two baseline pass cases,
 `3.2-pass-baseline` and `3.2-pass-ems-baseline` — and the EMS readiness pass case
@@ -487,7 +494,7 @@ advisory it did not set out to provoke.
 Fired advisories are annotated with payload types exactly as requirements are:
 
 ```
-advisories — 12 registered: fired 12
+advisories — 13 registered: fired 13
   [types] after an advisory are the payload branches its fire case(s) send — [ems] means ems ONLY
   fired                      adv.null_identity[ems,rtm] adv.null_padding[ems] adv.date_format[ems,rtm] …
   NOT EXERCISED              —

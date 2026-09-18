@@ -27,6 +27,7 @@ const JSON_UTF8 = 'application/json; charset=utf-8';
 const deps = {
   concurrentAtEntry: 1,
   findPriorTransmissions: async () => [],
+  findPriorUnitWindows: async () => [],
 };
 
 /** A PipelineContext whose parse+schema stages already ran on `parsedBody`. */

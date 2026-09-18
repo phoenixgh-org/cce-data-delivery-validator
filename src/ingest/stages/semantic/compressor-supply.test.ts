@@ -47,6 +47,7 @@ const registry = SchemaRegistry.load();
 const deps: SemanticDeps = {
   concurrentAtEntry: 1,
   findPriorTransmissions: async () => [],
+  findPriorUnitWindows: async () => [],
 };
 
 // ── fixtures ────────────────────────────────────────────────────────────────

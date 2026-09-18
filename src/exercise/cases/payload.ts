@@ -74,7 +74,7 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     // nor runner could state it.
     //
     // Reading the list off `ADVISORY_IDS` keeps the table DATA while making the
-    // registry the author of it: a thirteenth check lands here automatically, so
+    // registry the author of it: a fourteenth check lands here automatically, so
     // a new advisory that fires on a conformant rtm payload fails this case
     // instead of arriving unnoticed. The ids are contract-profile by default,
     // which is the only lineage that grades advisories.
@@ -1020,8 +1020,8 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
   },
 
   // A column of nulls rather than an intermittent one (pwd) — the other side of
-  // the case above, and the last of the twelve registered advisories to get a
-  // fire case (eyok). It declares `baseline: emsBaseline` because HOLD and SVA
+  // the case above, and the last of the twelve advisories registered at the
+  // time to get a fire case (eyok). It declares `baseline: emsBaseline` because HOLD and SVA
   // are ems-record properties, and it synthesizes a TWELVE-record series because
   // that is the check's floor: a property counts as padded only once at least
   // MIN_RECORDS (12, src/ingest/stages/semantic/null-padding.ts) records carried

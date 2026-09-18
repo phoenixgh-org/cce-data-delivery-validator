@@ -81,6 +81,7 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck, SemanticDeps } from '../semantic.js';
+import { ABST_WINDOW_OVERLAP_ID, abstWindowOverlapCheck } from './abst-window-overlap.js';
 import type { AdvisoryId } from './advisory-finding.js';
 import { BLANK_ADMIN_ID, blankAdminCheck } from './blank-admin.js';
 import { CMPR_MINUTES_ID, cmprMinutesCheck } from './cmpr-minutes.js';
@@ -121,8 +122,8 @@ export {
  * (agj.4), `adv.compressor_exceeds_supply` (agj.3), `adv.cmpr_minutes` (agj.7),
  * `adv.sample_gap` (agj.6), `adv.duplicate_records` (agj.8),
  * `adv.blank_admin` (agj.5), `adv.unexplained_null_temp` (agj.2),
- * `adv.short_identifier` (krh) and `adv.null_accumulator` (agj.9); it grows from
- * here. Each is written in the ordinary
+ * `adv.short_identifier` (krh), `adv.null_accumulator` (agj.9) and
+ * `adv.abst_window_overlap` (agj.24); it grows from here. Each is written in the ordinary
  * `export const …Check: SemanticCheck =` idiom the §7 checks use: the imports
  * run ONE WAY (checks ← advisory-finding.ts, this registry ← checks), so there
  * is no cycle and no load-order hazard to work around (igw). A new check needs
@@ -141,10 +142,11 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   unexplainedNullTempCheck,
   shortIdentifierCheck,
   nullAccumulatorCheck,
+  abstWindowOverlapCheck,
 ];
 
 /**
- * THE CATALOGUE AS DATA — the same twelve advisories as {@link ADVISORY_CHECKS},
+ * THE CATALOGUE AS DATA — the same thirteen advisories as {@link ADVISORY_CHECKS},
  * in the same order, named by id rather than by function (axdd).
  *
  * The checks are bare functions and carry no id metadata: an id is a string
@@ -176,6 +178,7 @@ export const ADVISORY_IDS: readonly AdvisoryId[] = [
   UNEXPLAINED_NULL_TEMP_ID,
   SHORT_IDENTIFIER_ID,
   NULL_ACCUMULATOR_ID,
+  ABST_WINDOW_OVERLAP_ID,
 ];
 
 /**

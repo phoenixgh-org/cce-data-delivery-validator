@@ -218,7 +218,7 @@ test('rows no case claims are printed without a type annotation', () => {
 // ── the advisory join (axdd) ────────────────────────────────────────────────
 
 /**
- * A synthetic catalogue, so these tests pin the RULES rather than today's twelve
+ * A synthetic catalogue, so these tests pin the RULES rather than today's thirteen
  * registered advisories — the same reason `MATRIX` above is not COMPLIANCE_MATRIX.
  */
 const ADVISORIES: readonly AdvisoryId[] = ['adv.alpha', 'adv.beta', 'adv.gamma'];
