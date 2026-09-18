@@ -97,14 +97,15 @@ export function advisory(input: AdvisoryInput): Finding {
  * broke no rule, so "warning", "issue", "error", "must" and their relatives
  * would be false statements about the supplier rather than merely a harsh tone.
  *
- * It lives here, beside {@link advisory}, because two different readers enforce
- * it and a second copy would let them drift: the per-check copy tests hold each
- * check's own `summary`/`detail` to it, and the exercise runner audits the copy a
- * LIVE instance actually served (`src/exercise/runner/assertions.ts`). Nothing at
- * ingest time reads it — the bar is an assertion about prose a human wrote, not a
- * filter applied to it.
+ * It lives here, beside {@link advisory}, because several different readers
+ * enforce it and a second copy would let them drift: the per-check copy tests
+ * hold each check's own `summary`/`detail` to it, the exercise runner audits the
+ * copy a LIVE instance actually served (`src/exercise/runner/assertions.ts`), and
+ * the dashboard surface-copy test holds the web surface copy to it
+ * (`src/web/advisories.test.ts`). Nothing at ingest time reads it — the bar is an
+ * assertion about prose a human wrote, not a filter applied to it.
  *
- * Both readers reach it through {@link findAdvisoryCopyViolation} and its
+ * Every reader reaches it through {@link findAdvisoryCopyViolation} and its
  * boolean sugar {@link violatesAdvisoryCopyBar}, which are the single entry
  * point: the finder is the primitive — it strips the exempt phrases and returns
  * the offending word, for a caller that wants to name it — and the boolean is

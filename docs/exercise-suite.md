@@ -367,10 +367,13 @@ repository, the dashboard API and the browser — a path no pure test can walk. 
 runner holds the copy a live instance actually served to one session-level invariant
 (`auditAdvisoryCopy` in `runner/assertions.ts`): each advisory finding has a non-blank
 summary and a non-blank detail, and neither uses the defect vocabulary the category is
-closed to. The word list is imported from `ADVISORY_COPY_BANNED_WORDS` beside
-`advisory()`, so the per-check copy tests and the runner cannot drift apart, and the
-clause-1.8 phrase "a delivery failure" is removed before the bar is applied rather than
-struck off it. It is deliberately not an `ExpectedFinding` field: the copy is prose a
+closed to. The runner applies the bar through `violatesAdvisoryCopyBar`, the one shared
+helper the per-check copy tests, the runner and the dashboard surface-copy test all call,
+so no reader can grade copy by a rule of its own. The helper carries both halves of the
+bar: the phrases in `ADVISORY_COPY_EXEMPT_PHRASES` beside `advisory()` are removed from
+the copy before the word list is applied, rather than struck off that list, so a phrase
+that names a clause or a data object stays available to a rationale while the bare word
+stays banned. It is deliberately not an `ExpectedFinding` field: the copy is prose a
 grader may reword, and a case matching on it would fail on an edit that changed no
 behaviour. The runner prints one line per distinct `(advisory, summary)` pair, and a
 violation fails the run on its own — exit 1 even with every case green. Two things are
