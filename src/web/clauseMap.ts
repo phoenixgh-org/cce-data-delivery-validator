@@ -45,12 +45,12 @@ import { isAdvisory } from './api';
 export const FORWARD: Readonly<Record<string, string>> = {
   '1.1': '5.1.3',
   '1.2': '5.1.3',
-  '1.3': '5.1.5',
-  '1.4': '5.1.6',
-  '1.5': '5.1.7',
-  '1.6': '5.1.8',
-  '1.7': '5.1.9',
-  '1.8': '5.1.10',
+  '1.3': '5.1.4',
+  '1.4': '5.1.5',
+  '1.5': '5.1.6',
+  '1.6': '5.1.7',
+  '1.7': '5.1.8',
+  '1.8': '5.1.9',
   '2.1': '5.2.1',
   '2.2': '5.2.2',
   '2.3': '5.2.3',
@@ -88,7 +88,7 @@ export function forwardClause(req: string): string | null {
  * `RE_RUN_UNDER_SHADOW` in src/api/verdicts.ts.
  *
  * Only §3.2 qualifies. Transport and semantic checks are graded once and shared
- * between the packages, so a §1.4 failure is a 5.1.6 failure; §3.2's counterpart
+ * between the packages, so a §1.4 failure is a 5.1.5 failure; §3.2's counterpart
  * (5.3.2) is genuinely re-run by the Annex 4 validator, which writes its own
  * findings. Translating the 2025 schema result onto 5.3.2 as well would report a
  * defect the DS01.3 run never measured, on a body that may satisfy Annex 4.
@@ -117,8 +117,8 @@ export const TIGHTENED: ReadonlySet<string> = new Set(['1.8', '3.1', '3.2', '4.3
 export const NEW_IN_DS013: readonly string[] = [
   '5.1.1',
   '5.1.2',
+  '5.1.10',
   '5.1.11',
-  '5.1.12',
   '5.3.1',
   '5.3.5',
 ];
@@ -137,14 +137,14 @@ export const DS013_TITLE: Readonly<Record<string, string>> = {
   '5.1.1': 'Employer data access rights',
   '5.1.2': 'Transport of data',
   '5.1.3': 'UTF-8 JSON over HTTPS',
-  '5.1.5': 'Authentication method',
-  '5.1.6': 'Payload size limit',
-  '5.1.7': 'Response code handling',
-  '5.1.8': 'Compression',
-  '5.1.9': 'Custom headers',
-  '5.1.10': 'No duplicates',
-  '5.1.11': 'Transmission frequency',
-  '5.1.12': 'Optional pull API',
+  '5.1.4': 'Authentication method',
+  '5.1.5': 'Payload size limit',
+  '5.1.6': 'Response code handling',
+  '5.1.7': 'Compression',
+  '5.1.8': 'Custom headers',
+  '5.1.9': 'No duplicates',
+  '5.1.10': 'Transmission frequency',
+  '5.1.11': 'Optional pull API',
   '5.2.1': 'Rate-limiting strategy',
   '5.2.2': 'Batching and timeliness',
   '5.2.3': 'Alarm timeliness',
@@ -224,7 +224,7 @@ export function clauseUnderLens(
 /**
  * The DS01.3 clauses whose conformance TIGHTENED — {@link TIGHTENED} carried
  * through the forward map, never hand-typed, so a re-pointed row moves both
- * halves together. Today: 5.1.10, 5.3.2, 5.3.3, 5.4.1.
+ * halves together. Today: 5.1.9, 5.3.2, 5.3.3, 5.4.1.
  */
 const TIGHTENED_CLAUSES: ReadonlySet<string> = new Set(
   [...TIGHTENED].map((req) => forwardClause(req)).filter((c): c is string => c !== null),
@@ -250,7 +250,7 @@ export function tightenedUnderLens(clause: string): boolean {
  * lens shows nowhere cannot be one of its failures. So under the DS01.3 lens a
  * 2025 §3.2 failure does NOT count (Annex 4 re-runs that clause and files its
  * own), a DS01.3 5.3.2 failure does, and a §1.4 transport failure still does,
- * under 5.1.6. It replaces `shadowFailCount`, which asked the same question of
+ * under 5.1.5. It replaces `shadowFailCount`, which asked the same question of
  * one package only.
  *
  * It counts FINDINGS, not rows: the detail collapses several missing properties

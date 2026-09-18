@@ -119,7 +119,7 @@ export async function createExerciseSession(baseUrl: string): Promise<SessionHan
 
 /**
  * Opt the session into §1.3 bearer auth through the SAME dashboard API a supplier
- * would use (`POST /api/sessions/{uuid}/auth`, DS01.3 clause 5.1.5 / RFC 6750),
+ * would use (`POST /api/sessions/{uuid}/auth`, DS01.3 clause 5.1.4 / RFC 6750),
  * and return the show-once plaintext token for the runner's `TransportContext`.
  *
  * The service echoes the credential EXACTLY ONCE (DESIGN §12) — it stores only a

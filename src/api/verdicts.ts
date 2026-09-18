@@ -152,7 +152,7 @@ function isRetaggedForward(requirement: string): boolean {
  * The forward check comes FIRST (tfnv.3). Asking "did this lineage run?" first
  * answered `null` for every transport halt, which reads as "not graded here" on
  * a page that grades against DS01.3 — yet a 401 is a §1.3 failure and §1.3 maps
- * onto clause 5.1.5, so the draft plainly has a failed clause to report. `null`
+ * onto clause 5.1.4, so the draft plainly has a failed clause to report. `null`
  * now means the body reached NEITHER validator under this package AND nothing
  * forward-mapped failed: genuinely nothing to say, rather than nothing measured.
  */

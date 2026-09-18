@@ -402,7 +402,7 @@ const CROSS_FILTER_HINT = 'Filter the list by this issue';
  * The tooltip on a row whose id the lens TRANSLATED: `§1.4 under UNICEF Q1 2025`.
  *
  * Findings are stored on 2025 numbering and translated at read time (bd memory
- * `requirement-numbering-2025-retained`), so a supplier reading §5.1.6 here and
+ * `requirement-numbering-2025-retained`), so a supplier reading §5.1.5 here and
  * §1.4 in their own logs needs the two connected. Naming the package the other
  * number belongs to is what connects them; the name comes from the vocabulary.
  */

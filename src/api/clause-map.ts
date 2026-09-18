@@ -17,6 +17,18 @@
  * it browser-safe. The test joins against `src/api/compliance-matrix.ts` so that
  * a new matrix row cannot silently lack a mapping; the module itself must not
  * import it, or the dependency runs the wrong way.
+ *
+ * NUMBERING. The DS01.3 clause ids below are taken from 'Review draft PQS E006
+ * DS01.3 revision 29-Jul-2026', read with its tracked changes ACCEPTED. The draft
+ * deletes the §5.1 heading "Content type and character encoding" and folds its
+ * one sentence into 5.1.3; a deleted heading is not counted, so §5.1 runs 5.1.1
+ * through 5.1.11 with no gap. An All Markup view of the same draft still numbers
+ * that heading, and every §5.1 clause from "Authentication" onward reads one
+ * higher there — so a reader comparing against the redline will find an off-by-
+ * one. Decided 2026-09-18 (tfnv.20); `docs/clause-mapping.md` carries the full
+ * provenance note, and the re-pin checklist (`CLAUDE.md`, "One exception, for
+ * drafts only"; `DESIGN.md` §9.5) requires re-verifying §5.1 against the
+ * accepted-changes rendering of the next revision.
  */
 
 /**
@@ -29,12 +41,12 @@
 export const FORWARD: Readonly<Record<string, string>> = {
   '1.1': '5.1.3',
   '1.2': '5.1.3',
-  '1.3': '5.1.5',
-  '1.4': '5.1.6',
-  '1.5': '5.1.7',
-  '1.6': '5.1.8',
-  '1.7': '5.1.9',
-  '1.8': '5.1.10',
+  '1.3': '5.1.4',
+  '1.4': '5.1.5',
+  '1.5': '5.1.6',
+  '1.6': '5.1.7',
+  '1.7': '5.1.8',
+  '1.8': '5.1.9',
   '2.1': '5.2.1',
   '2.2': '5.2.2',
   '2.3': '5.2.3',
@@ -60,7 +72,7 @@ export const FORWARD: Readonly<Record<string, string>> = {
  * The 2025 ids whose DS01.3 clause changes what conformance MEANS — not just
  * where the text lives. A renumbering alone does not qualify; these four do:
  *
- * - `1.8` → 5.1.10: "should not duplicate" becomes "shall not".
+ * - `1.8` → 5.1.9: "should not duplicate" becomes "shall not".
  * - `3.1` → 5.3.3: `meta.customDataSchema` added, `transferredAt` narrowed to
  *   UTC RFC 3339 with `Z`, `transferType` should → shall.
  * - `3.2` → 5.3.2: the schema-precedence tiebreaker is replaced by a duty to
@@ -86,8 +98,8 @@ export const TIGHTENED: ReadonlySet<string> = new Set(['1.8', '3.1', '3.2', '4.3
 export const NEW_IN_DS013: readonly string[] = [
   '5.1.1',
   '5.1.2',
+  '5.1.10',
   '5.1.11',
-  '5.1.12',
   '5.3.1',
   '5.3.5',
 ];
@@ -102,14 +114,14 @@ export const DS013_TITLE: Readonly<Record<string, string>> = {
   '5.1.1': 'Employer data access rights',
   '5.1.2': 'Transport of data',
   '5.1.3': 'UTF-8 JSON over HTTPS',
-  '5.1.5': 'Authentication method',
-  '5.1.6': 'Payload size limit',
-  '5.1.7': 'Response code handling',
-  '5.1.8': 'Compression',
-  '5.1.9': 'Custom headers',
-  '5.1.10': 'No duplicates',
-  '5.1.11': 'Transmission frequency',
-  '5.1.12': 'Optional pull API',
+  '5.1.4': 'Authentication method',
+  '5.1.5': 'Payload size limit',
+  '5.1.6': 'Response code handling',
+  '5.1.7': 'Compression',
+  '5.1.8': 'Custom headers',
+  '5.1.9': 'No duplicates',
+  '5.1.10': 'Transmission frequency',
+  '5.1.11': 'Optional pull API',
   '5.2.1': 'Rate-limiting strategy',
   '5.2.2': 'Batching and timeliness',
   '5.2.3': 'Alarm timeliness',

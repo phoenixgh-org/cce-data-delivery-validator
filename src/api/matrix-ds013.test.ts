@@ -49,7 +49,7 @@ test('an added clause is graded exactly when a finding code folds onto it (tfnv.
   // DECIDED 2026-09-18: `graded` reports whether live counts feed the row, which
   // is a different question from whether the draft added the clause.
   assert.equal(row('5.3.5').graded, true, 'the §3.1 custom-object codes land here');
-  for (const clause of ['5.1.1', '5.1.2', '5.1.11', '5.1.12', '5.3.1']) {
+  for (const clause of ['5.1.1', '5.1.2', '5.1.10', '5.1.11', '5.3.1']) {
     assert.equal(row(clause).graded, false, `nothing this service measures feeds ${clause}`);
   }
   // The table and the lens are the same claim: every code NEW_FED_BY lists is a
@@ -104,7 +104,7 @@ test('members are the 2025 ids in document order', () => {
   assert.deepEqual(row('5.4.1').members, ['4.1', '4.2', '4.3']);
   assert.deepEqual(row('5.4.2').members, ['4.4', '4.5']);
   assert.deepEqual(row('5.4.4').members, ['5.1', '5.2', '5.3']);
-  assert.deepEqual(row('5.1.6').members, ['1.4']);
+  assert.deepEqual(row('5.1.5').members, ['1.4']);
 });
 
 test('tightened rows are exactly what TIGHTENED maps forward to', () => {
@@ -113,9 +113,9 @@ test('tightened rows are exactly what TIGHTENED maps forward to', () => {
     .map((r) => r.clause)
     .sort();
   assert.deepEqual(actual, expected);
-  // Pinned so a silent edit to either source shows up here: 1.8 → 5.1.10,
+  // Pinned so a silent edit to either source shows up here: 1.8 → 5.1.9,
   // 3.1 → 5.3.3, 3.2 → 5.3.2, 4.3 → 5.4.1.
-  assert.deepEqual(actual, ['5.1.10', '5.3.2', '5.3.3', '5.4.1']);
+  assert.deepEqual(actual, ['5.1.9', '5.3.2', '5.3.3', '5.4.1']);
 });
 
 test('a merged clause inherits the union of its member classes', () => {
@@ -147,8 +147,8 @@ test('the new clauses carry the decided classes', () => {
   // DECIDED 2026-09-17: the "New in DS01.3" group is not uniformly ungradeable.
   assert.deepEqual(row('5.1.1').classes, ['attestation']);
   assert.deepEqual(row('5.1.2').classes, ['enforced']);
-  assert.deepEqual(row('5.1.11').classes, ['attestation']);
-  assert.deepEqual(row('5.1.12').classes, ['none']);
+  assert.deepEqual(row('5.1.10').classes, ['attestation']);
+  assert.deepEqual(row('5.1.11').classes, ['none']);
   assert.deepEqual(row('5.3.1').classes, ['attestation']);
   assert.deepEqual(row('5.3.5').classes, ['verified']);
 });

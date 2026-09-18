@@ -361,7 +361,7 @@ some and not others is a violation, which is the regression the audit exists to 
 
 **The grading lens is audited against the evidence beneath it.** The dashboard can be
 switched from the UNICEF Q1 2025 requirements to the DS01.3 draft, and under that lens
-every count is folded at read time: a §1.4 failure is counted on clause 5.1.6, a §3.1
+every count is folded at read time: a §1.4 failure is counted on clause 5.1.5, a §3.1
 custom-object finding on 5.3.5, and the Annex 4 validator's own findings on 5.3.2. The
 fold and the verdict rule are pure and unit-tested. What no pure test reaches is the
 path between them on a real instance — the scoping, the join onto the draft matrix, the
@@ -384,7 +384,7 @@ so a run can be checked against the page without opening the dashboard:
 ```
 grading lens — ds013: 27 row(s) served, 10 carrying a failure
   5.1.3   2 fail (folded 2) from 2 transmission(s)
-  5.1.6   1 fail (folded 1) from 1 transmission(s)
+  5.1.5   1 fail (folded 1) from 1 transmission(s)
   5.3.2   199 fail (folded 199) from 49 transmission(s)
 ```
 
@@ -534,7 +534,7 @@ says which of them the table exercises:
 DS01.3 rows — 27 clause(s): exercised 1, not exercised 26
   a clause is exercised when a case names it in `shadowClauses` — reported, never failed
   exercised                  5.3.2[ems,rtm]
-  not exercised              5.1.1 5.1.2 5.1.3 5.1.5 5.1.6 5.1.7 5.1.8 …
+  not exercised              5.1.1 5.1.2 5.1.3 5.1.4 5.1.5 5.1.6 5.1.7 …
 ```
 
 **Exercised**, not covered, and the word is chosen. The 2025 join grades a row on being

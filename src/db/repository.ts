@@ -24,7 +24,7 @@ export const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * The §1.3 opt-in auth method (DESIGN.md §8). `bearer` (RFC 6750) is the third
- * method DS01.3 clause 5.1.5 adds; the `session.auth_method` CHECK constraint was
+ * method DS01.3 clause 5.1.4 adds; the `session.auth_method` CHECK constraint was
  * widened for it in db/initdb/50-session-auth-bearer.sql, so keep the two in step.
  */
 export type AuthMethod = 'header' | 'basic' | 'bearer';

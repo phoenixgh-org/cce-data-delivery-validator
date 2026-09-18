@@ -58,6 +58,9 @@ MAY therefore be replaced in place when the proposal is revised: swap the bytes,
 update the registry entry's draft date, update the hash asserted in the registry
 test, keeping the key, and re-transcribe `src/web/components/ds013Reference.ts`
 when the clause text changed — it quotes the draft the dashboard grades against.
+Verify §5.1 numbering against the accepted-changes rendering of the current draft
+revision while you are there: the headings are auto-numbered, so a clause that
+moves or a deleted heading that is restored shifts every id after it.
 Every published `cce-interop` file stays immutable.
 
 ```bash

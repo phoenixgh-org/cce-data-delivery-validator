@@ -398,7 +398,7 @@ test('six clauses carry NEW and four carry TIGHTENED, on the rows the server mar
   );
   assert.equal(tagged(markup, 'new').length, 6);
 
-  assert.deepEqual(tagged(markup, 'tightened').sort(), ['5.1.10', '5.3.2', '5.3.3', '5.4.1']);
+  assert.deepEqual(tagged(markup, 'tightened').sort(), ['5.1.9', '5.3.2', '5.3.3', '5.4.1']);
   assert.deepEqual(
     tagged(markup, 'tightened').sort(),
     DS013_MATRIX.filter((row) => row.tightened)
@@ -409,7 +409,7 @@ test('six clauses carry NEW and four carry TIGHTENED, on the rows the server mar
 
 test('the tag tooltips name the contract from the vocabulary, never from a literal', () => {
   const [tightened] = rowTags(
-    draftSummary().find((r) => r.requirement === '5.1.10') as ComplianceRow,
+    draftSummary().find((r) => r.requirement === '5.1.9') as ComplianceRow,
   );
   assert.deepEqual(tightened, {
     id: 'tightened',
@@ -436,7 +436,7 @@ test('an added clause nothing feeds opens its drill-down saying so; a fed one do
   assert.ok(cardMarkup({ expandedReq: '5.1.1' }).includes(NOT_FED_NOTE));
   assert.ok(!cardMarkup({ expandedReq: '5.3.5' }).includes(NOT_FED_NOTE));
   // Nor does a clause carried forward from a 2025 requirement, tightened or not.
-  assert.ok(!cardMarkup({ expandedReq: '5.1.10' }).includes(NOT_FED_NOTE));
+  assert.ok(!cardMarkup({ expandedReq: '5.1.9' }).includes(NOT_FED_NOTE));
   // Closed rows say nothing at all: the line is drill-down copy, not row chrome.
   assert.ok(!cardMarkup().includes(NOT_FED_NOTE));
 });
@@ -538,7 +538,7 @@ test('under the draft lens every row selects what the server folded onto it', ()
     '2025|3.1|tx.transferred_at_not_utc',
     'ds013|5.3.3|tx.missing_transfer_id',
   ]);
-  assert.deepEqual(keysOn('5.1.6'), ['2025|1.4|tx.too_large']);
+  assert.deepEqual(keysOn('5.1.5'), ['2025|1.4|tx.too_large']);
   assert.deepEqual(keysOn('5.4.1'), ['2025|4.3|tx.retried_permanent']);
   assert.deepEqual(keysOn('5.3.2'), ['ds013|5.3.2|required|/data|LSER']);
 

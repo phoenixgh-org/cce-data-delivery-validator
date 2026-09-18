@@ -244,7 +244,7 @@ test('the printed run shows what the draft package made of the session', () => {
       advisoryCopy: auditAdvisoryCopy(observed),
       lens: auditLensRows(
         'ds013',
-        [{ requirement: '5.1.6', counts: { pass: 0, fail: 1, info: 0 } }],
+        [{ requirement: '5.1.5', counts: { pass: 0, fail: 1, info: 0 } }],
         observed,
         new Map([['tx-1', { ds013: 'fail' as const }]]),
       ),
@@ -254,6 +254,6 @@ test('the printed run shows what the draft package made of the session', () => {
   const printed = lines.join('\n');
 
   assert.match(printed, /grading lens — ds013: 1 row\(s\) served, 1 carrying a failure/);
-  assert.match(printed, /5\.1\.6 {2}1 fail \(folded 1\) from 1 transmission\(s\)/);
+  assert.match(printed, /5\.1\.5 {2}1 fail \(folded 1\) from 1 transmission\(s\)/);
   assert.doesNotMatch(printed, /grading lens[^]*FAIL/);
 });

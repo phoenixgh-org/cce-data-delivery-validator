@@ -196,9 +196,9 @@ test('under the contract lens the translation is the identity, and hides the oth
  */
 test('tightenedUnderLens answers for the four DS01.3 clauses the draft tightened', () => {
   const tightened = DS013_MATRIX.filter((row) => row.tightened).map((row) => row.clause);
-  assert.deepEqual([...tightened].sort(), ['5.1.10', '5.3.2', '5.3.3', '5.4.1']);
+  assert.deepEqual([...tightened].sort(), ['5.1.9', '5.3.2', '5.3.3', '5.4.1']);
   for (const clause of tightened) assert.equal(tightenedUnderLens(clause), true, clause);
-  for (const clause of ['5.1.3', '5.1.6', '5.3.4', '5.4.4', '5.3.5', '1.8', '']) {
+  for (const clause of ['5.1.3', '5.1.5', '5.3.4', '5.4.4', '5.3.5', '1.8', '']) {
     assert.equal(tightenedUnderLens(clause), false, clause);
   }
 });
@@ -216,7 +216,7 @@ test('the fail count follows the lens: §3.2 drops out, 5.3.2 joins, transport s
   ];
   // Under the contract package: the two contract failures, neither DS01.3 one.
   assert.equal(failCountUnderLens(findings, CONTRACT_PROFILE, CONTRACT_PROFILE), 2);
-  // Under the draft: §1.4 carried forward to 5.1.6 plus the DS01.3 failure;
+  // Under the draft: §1.4 carried forward to 5.1.5 plus the DS01.3 failure;
   // §3.2 is re-run by Annex 4 and its 2025 result is not the draft's to report.
   assert.equal(failCountUnderLens(findings, DRAFT, CONTRACT_PROFILE), 2);
 });

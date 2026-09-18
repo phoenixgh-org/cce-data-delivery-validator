@@ -150,7 +150,7 @@ test('under the draft lens a contract finding shows its clause and keeps its sto
   assert.equal(rows.length, 1);
   const row = rows[0]!;
   assert.equal(row.kind, 'finding');
-  assert.equal(row.id, '5.1.6');
+  assert.equal(row.id, '5.1.5');
   assert.equal(row.kind === 'finding' && row.storedId, '1.4');
 });
 
@@ -191,11 +191,11 @@ test('the §3.1 custom-object finding lands on 5.3.5, the rest of §3.1 on 5.3.3
 });
 
 test('a tightened clause is tagged under the draft lens and nowhere else', () => {
-  // 1.8 → 5.1.10, one of the four clauses whose conformance changed.
+  // 1.8 → 5.1.9, one of the four clauses whose conformance changed.
   const tightened = detailRows([finding({ requirement: '1.8' })], DRAFT);
-  assert.equal(tightened[0]?.id, '5.1.10');
+  assert.equal(tightened[0]?.id, '5.1.9');
   assert.equal(tightened[0]?.tightened, true);
-  // 1.4 → 5.1.6 is a renumbering, not a tightening.
+  // 1.4 → 5.1.5 is a renumbering, not a tightening.
   assert.equal(detailRows([finding({ requirement: '1.4' })], DRAFT)[0]?.tightened, false);
   // Under the contract lens nothing is tightened: it is the package a tightening
   // would be measured against.

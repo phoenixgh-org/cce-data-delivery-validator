@@ -165,7 +165,7 @@ source for.
 | Framework                  | Request body is at most 2 MiB (Fastify `bodyLimit`; see §12)                                                                                                                                                                | `413` before any stage runs. No row is written, and the body is a framework error rather than the ingest response shape. |
 | 0. Session                 | The UUID exists and has not expired                                                                                                                                                                                         | `404`                                                                                                                    |
 | 1. Method and TLS          | POST over HTTPS (§1.1)                                                                                                                                                                                                      | TLS is enforced at the edge. A non-POST request receives `405`.                                                          |
-| 2. Authentication (opt-in) | If enabled, the configured credential is present and correct (§1.3). The credential is a token in a configurable header, HTTP Basic, or `Authorization: Bearer` (RFC 6750; the third method, added by DS01.3 clause 5.1.5). | `401`                                                                                                                    |
+| 2. Authentication (opt-in) | If enabled, the configured credential is present and correct (§1.3). The credential is a token in a configurable header, HTTP Basic, or `Authorization: Bearer` (RFC 6750; the third method, added by DS01.3 clause 5.1.4). | `401`                                                                                                                    |
 | 3. Size                    | Wire body is at most 1 MB after content encoding (§1.4)                                                                                                                                                                     | `413` plus a finding                                                                                                     |
 | 4. Content-Type            | `application/json; charset=utf-8` (§1.2)                                                                                                                                                                                    | A finding; processing continues. `415` is optional under the guidance and is never returned.                             |
 | 5. Content-Encoding        | If `gzip`, decompress; detect illegal double encoding such as base64 (§1.6)                                                                                                                                                 | A finding; `400` if the body cannot be decoded                                                                           |
@@ -211,7 +211,7 @@ ruleset to report until the first one has been identified.
 Their shadow verdict, however, is null only when nothing carries forward either.
 Transport and semantic breaches are graded once and shared between the two lineages
 through the clause map, so a transport halt that fails §1.4 is also a failure of
-DS01.3 clause 5.1.6 and reads that way under both. A null verdict is reserved for
+DS01.3 clause 5.1.5 and reads that way under both. A null verdict is reserved for
 the transmission about which the draft can say nothing at all: neither validator saw
 the body and no failure maps forward onto one of its clauses. An unresolved
 `meta.schemaVersion` is the ordinary case, because §3.2 is the one requirement whose
@@ -332,8 +332,8 @@ means exactly that — this session's traffic feeds the row — so it covers the
 twenty-one clauses with 2025 members plus 5.3.5, which has no 2025 equivalent
 and is fed all the same by the §3.1 custom-object check. The remaining five have
 no 2025 equivalent and no code behind them, so they are listed with the class
-decided for each and carry no counts: 5.1.1, 5.1.11 and 5.3.1 self-attestation,
-5.1.2 enforced, and 5.1.12 none. Deriving the matrix rather than typing it out a
+decided for each and carry no counts: 5.1.1, 5.1.10 and 5.3.1 self-attestation,
+5.1.2 enforced, and 5.1.11 none. Deriving the matrix rather than typing it out a
 second time means the two can never drift: a change to the map or to a 2025 row
 moves both, and the join is tested —
 [`matrix-ds013.test.ts`](src/api/matrix-ds013.test.ts) pins the 22-of-27 split.
@@ -578,6 +578,12 @@ not the whole act: the dashboard also quotes the draft's clause text, so
 re-transcribe `src/web/components/ds013Reference.ts` when the clause text
 changed, and update the draft revision its header names. A drill-down that quotes
 a superseded draft under the current one's date reads as the settled text.
+
+Verify §5.1 numbering against the accepted-changes rendering of the current draft
+revision at the same time. The draft's headings are auto-numbered by style rather
+than typed, so a clause that moves — or a deleted heading that is restored —
+shifts every id after it, and the clause map, the reference table and
+`docs/clause-mapping.md` all have to move together.
 
 Upstream 0.8.2 is the first version to define `meta.customDataSchema`. Its own
 `$comment` there states that the conditional is deliberately not enforced by the

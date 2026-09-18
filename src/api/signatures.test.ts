@@ -467,7 +467,7 @@ test('contractIssueSignatures drops ds013 signatures AND advisories', () => {
 function lensSigs() {
   return computeSignatures([
     tx('t1', '2026-09-17T09:00:00.000Z', 'acme', [
-      // A transport failure: graded once under 2025, carried onto 5.1.6.
+      // A transport failure: graded once under 2025, carried onto 5.1.5.
       finding({ requirement: '1.4', code: 'tx.body_too_large' }),
       // A contract schema failure: the draft re-runs §3.2, so this carries nowhere.
       finding({ requirement: '3.2', keyword: 'required', instancePath: '/data/0', param: 'AMID' }),
@@ -526,7 +526,7 @@ test('withRequirementUnderLens: each signature names the draft row it belongs to
   );
   assert.equal(
     rows.get('2025|1.4|tx.body_too_large'),
-    '5.1.6',
+    '5.1.5',
     'carried forward by the clause map',
   );
   assert.equal(rows.get('2025|3.1|tx.missing_custom_schema'), '5.3.5', 'the custom-object split');

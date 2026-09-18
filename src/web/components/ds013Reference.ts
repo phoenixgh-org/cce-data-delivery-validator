@@ -23,6 +23,7 @@
  * (`src/schemas/pqs-e006-ds01-annex4-1.json`) is the one file in this repo that
  * MAY be replaced in place when the proposal is revised. When that happens the
  * clause text usually moved too: re-transcribe this module from the new draft,
+ * verify §5.1 numbering against the accepted-changes rendering of that revision,
  * update {@link DS013_REFERENCE_SOURCE}'s revision, and re-run the tests. See
  * `CLAUDE.md` ("One exception, for drafts only") and `DESIGN.md` §9.5.
  *
@@ -43,14 +44,15 @@
  *
  * NUMBERING. Keys are the clause ids `DS013_TITLE` and `docs/clause-mapping.md`
  * carry, which is what `DS013_MATRIX` keys its rows by; the join is asserted in
- * `ds013Reference.test.ts`. `5.1.4` is deliberately absent: the draft's
- * "Content type and character encoding" clause was folded into 5.1.3, and its
- * heading survives only as a deletion. Read with changes accepted, a word
- * processor renumbers what follows, so 5.1.5 through 5.1.12 here would render
- * one lower in the accepted view. The clause CONTENT each key names is not in
- * doubt, only the number the published document will print; the discrepancy is
- * recorded on tfnv.9 and the repo keeps `docs/clause-mapping.md`'s numbering
- * until the spec settles it.
+ * `ds013Reference.test.ts`. They are the ACCEPTED-CHANGES numbering of the
+ * 29-Jul-2026 review draft, the same reading the quoted text comes from: the
+ * draft deletes the "Content type and character encoding" heading and folds its
+ * one sentence into 5.1.3, and a deleted heading is not counted, so §5.1 runs
+ * 5.1.1 through 5.1.11 with no gap. An All Markup view of the same draft still
+ * numbers that heading, and every §5.1 clause from 5.1.4 "Authentication" onward
+ * reads one higher there; a reader comparing this table against the redline will
+ * find that off-by-one and nothing else. Decided 2026-09-18 (tfnv.20), and
+ * `docs/clause-mapping.md` carries the full provenance note.
  */
 import { CONTRACT_PROFILE } from '../api';
 import { PROFILE_NAME } from '../profiles';
@@ -82,39 +84,39 @@ export const DS013_REFERENCE: Record<string, RequirementReference> = {
     guidance:
       "HTTPS is terminated at our edge, so non-TLS traffic never reaches the validator — that half is enforced, not a test of your choice. From your actual traffic we verify the POST method, that the body parses as UTF-8 JSON, and the Content-Type header against the clause's example value. A missing charset, a different media type, or “text/json” all fail. DS01.3 states the format and the header duty in one clause, so we grade them as one row.",
   },
-  '5.1.5': {
+  '5.1.4': {
     text: 'Supplier shall, at employer’s discretion, authenticate against employer system by one of the following methods. The employer shall specify the desired method and supply the credentials: Bearer token. Supplier sends an employer-issued token in the standard Authorization header using the Bearer scheme (RFC 6750): Authorization: Bearer <token>; HTTP Basic Authentication. Supplier sends an encoded credential in the standard Authorization header using the Basic scheme (RFC 7617): Authorization: Basic <base64(username:password)>; API token in a configurable header. Supplier sends an employer-issued token in an HTTP header whose name is configurable on a per-employer basis (e.g., x-api-key: <token>).',
     guidance:
       'Auth is opt-in: enable it from the endpoint panel, pick a method there, and we generate the credential for you. All three methods this clause names are offered — Bearer (RFC 6750), HTTP Basic (RFC 7617), and an access token in a header whose name you choose. Once enabled we enforce the chosen method and grade it from real traffic; a credential presented under the wrong scheme fails like a wrong secret.',
   },
-  '5.1.6': {
+  '5.1.5': {
     text: 'Supplier shall limit the size of HTTP request bodies to 1 megabyte as measured after any applicable content encoding (e.g., compression) is applied.',
     guidance:
       'We measure the raw request body length, after any content encoding. Bodies over the 1 MB cap are rejected with 413. Split large payloads across multiple transmissions or enable gzip.',
   },
-  '5.1.7': {
+  '5.1.6': {
     text: 'The employer system is expected to respond using standard HTTP status codes in accordance with their conventional meanings. Supplier shall interpret responses as follows: 2xx (Success). Any 2xx response indicates the employer system has accepted responsibility for the transmitted data; supplier shall treat the transmission as delivered successfully. 3xx (Redirection). Supplier shall not automatically follow 3xx redirects for POST requests. An unexpected redirect shall be treated as a configuration issue to be logged and resolved with the employer. 4xx and 5xx (Client and server errors). Supplier shall apply the retry and abandonment rules defined in Clause 5.4.1. The employer system may provide a response body providing additional detail. Supplier shall not depend on the presence or structure of the response body to determine delivery success or failure; the HTTP status code is authoritative for that purpose.',
     guidance:
       'We return correct status codes, but how your client reads them is internal to your system and not observable from the receiving side: treating any 2xx as delivered, declining to follow a 3xx redirect on a POST, and trusting the status code over the response body are all decisions taken inside your platform.',
   },
-  '5.1.8': {
+  '5.1.7': {
     text: 'If employer system supports it, supplier may transmit binary Gzip-compressed request bodies with a corresponding HTTP Content-Encoding header (i.e., Content-Encoding: gzip). When transmitting compressed request bodies, supplier shall not further encode (e.g., Base64) the binary request body.',
     guidance: 'We decompress declared gzip bodies and detect illegal double-encoding.',
   },
-  '5.1.9': {
+  '5.1.8': {
     text: 'Supplier may include custom HTTP headers in their requests. The naming of custom headers can be any reasonable value that doesn’t conflict with the names of well-defined HTTP headers. Custom headers shall not carry information that is required by employers to correctly process the payload.',
     guidance:
       'Permissive — there is nothing to grade here. We tolerate any extra headers your stack sends and do not judge their names. Whether a custom header carries something the employer needs in order to process the payload is a property of your integration with that employer, not of a request we can inspect.',
   },
-  '5.1.10': {
+  '5.1.9': {
     text: 'Supplier shall not send duplicate data to employer system except under the following conditions: Data is retransmitted at the explicit request of the employer. Data is retransmitted following a delivery failure or an ambiguous delivery status. A system malfunction, outage, or recovery process necessitates re-sending data to ensure data integrity.',
     guidance: `We observe repeated transferId values but cannot judge whether a repeat was a justified retry. Tightened from ${CONTRACT_NAME}: not sending duplicates moves from “should” to “shall”. The three exception conditions are unchanged, and so is the limit on what a receiver can establish about a repeat.`,
   },
-  '5.1.11': {
+  '5.1.10': {
     text: 'Data should be sent to the employer within 24 hours of receiving it (or at an alternative minimum frequency otherwise specified by the employer). Note that delays in or disruptions to communications networks may result in variable latency, so the minimum specified frequency should be considered a “best effort” specification.',
     guidance: `New in DS01.3, with no counterpart in ${CONTRACT_NAME}. The clause sets an outer bound of 24 hours from the moment your platform receives the data, and that moment is unknown here, so the interval cannot be measured from the receiving side. We take it as attested. It does not displace clause 5.2.2's “within a few minutes”, which the draft keeps.`,
   },
-  '5.1.12': {
+  '5.1.11': {
     text: 'The supplier may define an application programming interface (API) where the employer or their designees can pull data, but this alone does not satisfy the requirement for remote communication service providers to send data to the URL provided by the employer or their designee. If the supplier implements a pull-based API, that API shall provide a method for employers to fetch data in a JSON format that is compliant with the JSON schema in Annex 4: Schema for Interoperable CCE Data Transmission.',
     guidance: `New in DS01.3, with no counterpart in ${CONTRACT_NAME}, and not graded. A pull API is optional, it does not discharge the duty to push, and an API served elsewhere in your platform leaves no trace in the traffic that arrives here. Everything this service grades is what you delivered to the endpoint.`,
   },

@@ -62,7 +62,7 @@ test('the accepted set is a parameter, so a narrowed registry narrows the lens',
 // ── clauseUnderLens ─────────────────────────────────────────────────────────
 
 test('a contract requirement folds onto its forward clause', () => {
-  assert.equal(clauseUnderLens('1.4'), '5.1.6');
+  assert.equal(clauseUnderLens('1.4'), '5.1.5');
   assert.equal(clauseUnderLens('3.1'), '5.3.3');
   assert.equal(clauseUnderLens('4.3'), '5.4.1', 'a merged clause takes all its members');
 });
@@ -112,7 +112,7 @@ test('under the contract lens a draft finding is counted nowhere', () => {
 
 test('under the draft lens a contract failure is counted on its forward clause', () => {
   const { counts } = foldUnderLens([f({ requirement: '1.4' })], DRAFT, CONTRACT);
-  assert.deepEqual(counts['5.1.6'], { pass: 0, fail: 1, info: 0 });
+  assert.deepEqual(counts['5.1.5'], { pass: 0, fail: 1, info: 0 });
   assert.equal(counts['1.4'], undefined, 'and not on the 2025 id it is stored under');
 });
 
@@ -165,8 +165,8 @@ test('the outdated modifier folds onto the same clause as the finding', () => {
     DRAFT,
     CONTRACT,
   );
-  assert.deepEqual(counts['5.1.10'], { pass: 0, fail: 0, info: 1 });
-  assert.deepEqual(outdated, { '5.1.10': 1 });
+  assert.deepEqual(counts['5.1.9'], { pass: 0, fail: 0, info: 1 });
+  assert.deepEqual(outdated, { '5.1.9': 1 });
 });
 
 test('an advisory is counted under neither package', () => {

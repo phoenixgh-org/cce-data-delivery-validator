@@ -529,13 +529,13 @@ never move a supplier's contractual result.
 What changes under `lens=ds013`:
 
 - `summary` is the DS01.3 matrix — 21 clauses with a 2025 equivalent plus the 6 the
-  draft adds — keyed by clause id (`5.1.6`) instead of requirement id (`1.4`). Each row
+  draft adds — keyed by clause id (`5.1.5`) instead of requirement id (`1.4`). Each row
   also carries `members` (the 2025 requirement ids it merges, in document order),
   `tightened` (the clause changes what conformance means, not just where the text
   lives), and `graded` (live counts feed the row). All three are **absent** under the
   contract lens.
 - Counts fold through the clause map (`docs/clause-mapping.md`). Transport and semantic
-  checks are graded once and shared, so a §1.4 failure is counted on clause 5.1.6.
+  checks are graded once and shared, so a §1.4 failure is counted on clause 5.1.5.
 - **§3.2 is the exception**: the draft's counterpart, 5.3.2, is genuinely re-run by the
   Annex 4 validator, so clause 5.3.2 reports what that run found and a 2025 schema
   failure is not carried onto it. A body can fail `cce-interop` and satisfy Annex 4.

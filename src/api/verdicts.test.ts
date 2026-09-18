@@ -87,7 +87,7 @@ test('a shadow failure never reaches the contract verdict', () => {
 
 test('a transport halt fails the shadow lineage through the clause map (tfnv.3)', () => {
   // The body never reached the schema stage, so no shadow finding exists — but
-  // §1.4 maps onto clause 5.1.6, and a failed clause is a failed clause however
+  // §1.4 maps onto clause 5.1.5, and a failed clause is a failed clause however
   // the halt was numbered. "Not graded here" would understate it.
   const t = tx([f({ requirement: '1.4', severity: 'fail', profile: CONTRACT })]);
   assert.equal(verdict(t, SHADOW, CONTRACT), 'fail');
@@ -177,7 +177,7 @@ test('the rule is symmetric: flipping the contract profile swaps the roles', () 
 // ── the re-tag rule ─────────────────────────────────────────────────────────
 
 test('a contract fail on a forward-mapped requirement fails the shadow too', () => {
-  // §1.6 → 5.1.8: a transport breach is graded ONCE and re-tagged, not re-run.
+  // §1.6 → 5.1.7: a transport breach is graded ONCE and re-tagged, not re-run.
   const t = tx([
     f({ requirement: '1.6', severity: 'fail', profile: CONTRACT, code: 'tx.double_encoded' }),
     shadowPass,
@@ -222,7 +222,7 @@ test('an advisory never fails either verdict', () => {
 // ── §1.8 duplicates (by1c.10) ───────────────────────────────────────────────
 
 test('a duplicate transferId fails BOTH profiles (by1c.10)', () => {
-  // DECIDED (by1c.2, D2): §1.8 stays a contract fail and DS01.3 5.1.10 — which
+  // DECIDED (by1c.2, D2): §1.8 stays a contract fail and DS01.3 5.1.9 — which
   // turns the "should not" into a "shall not" — is a pure re-tag. So a duplicate
   // is never a readiness reason: it is already a defect under the contract.
   const t = tx([

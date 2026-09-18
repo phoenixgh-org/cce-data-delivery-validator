@@ -1624,7 +1624,7 @@ test('GET …/transmissions → list rows carry the same verdicts (by1c.9)', { s
 //      the contract lens are the same body, asserted whole rather than field by
 //      field, so nothing can quietly join the default output.
 //   2. A CONTRACT FAILURE IS CARRIED FORWARD, ONCE. §1.4 is a transport breach
-//      graded once and shared, so it lands on clause 5.1.6.
+//      graded once and shared, so it lands on clause 5.1.5.
 //   3. §3.2 IS NOT CARRIED. The draft re-runs schema validation, so what the
 //      2025 schema decided is not evidence about Annex 4 and 5.3.2 reports only
 //      what the draft's own run found.
@@ -1658,7 +1658,7 @@ interface LensResp {
 async function seedLensSession(uuid: string): Promise<void> {
   const contractPass = { requirement: '3.2', severity: 'pass' as const, profile: '2025' as const };
 
-  // A — body over the wire cap: §1.4 fails, and 5.1.6 fails with it.
+  // A — body over the wire cap: §1.4 fails, and 5.1.5 fails with it.
   const halted = await insertTxAt(uuid, '2026-09-17T12:00:00.000Z', 'com.acme');
   await insertFinding(halted, {
     requirement: '1.4',
@@ -1767,8 +1767,8 @@ test(
       assert.equal(row.has('1.4'), false, 'no 2025 requirement id survives the projection');
 
       // (2) the transport halt is carried forward by the clause map.
-      assert.deepEqual(row.get('5.1.6')?.counts, { pass: 0, fail: 1, info: 0 });
-      assert.equal(row.get('5.1.6')?.status, 'fail');
+      assert.deepEqual(row.get('5.1.5')?.counts, { pass: 0, fail: 1, info: 0 });
+      assert.equal(row.get('5.1.5')?.status, 'fail');
 
       // (3) §3.2 is NOT carried: 5.3.2 reports the draft's own run — one pass
       // (the custom-object transmission) and two failures — and the contract
@@ -1795,7 +1795,7 @@ test(
 
       // rollup counts row statuses over the package now on the page.
       assert.equal(body.rollup.total, 27);
-      assert.ok(body.rollup.failing >= 3, '5.1.6, 5.3.5 and the mixed 5.3.2 all count as failing');
+      assert.ok(body.rollup.failing >= 3, '5.1.5, 5.3.5 and the mixed 5.3.2 all count as failing');
 
       // scoped: withFailures is the DRAFT verdict, and it disagrees with the
       // contract one — which is the whole point of the lens.
@@ -1812,7 +1812,7 @@ test(
 
       // Each signature names the row it belongs to under this lens.
       const rowOf = new Map(body.signatures.map((s) => [s.key, s.requirementUnderLens]));
-      assert.equal(rowOf.get('2025|1.4|tx.body_too_large'), '5.1.6');
+      assert.equal(rowOf.get('2025|1.4|tx.body_too_large'), '5.1.5');
       assert.equal(rowOf.get('2025|3.1|tx.missing_custom_schema'), '5.3.5');
       assert.equal(
         rowOf.get('2025|3.2|tx.unsupported_schema_version'),

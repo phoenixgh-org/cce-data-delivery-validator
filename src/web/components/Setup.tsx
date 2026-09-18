@@ -221,7 +221,7 @@ export function endpointMeta(
 }
 
 /**
- * The three §1.3 / DS01.3 clause 5.1.5 authentication methods, as the picker
+ * The three §1.3 / DS01.3 clause 5.1.4 authentication methods, as the picker
  * offers them. `label` is the segmented-control face, `blurb` the one-line
  * explanation under it, `name` the prose form used in the enabled-state summary
  * and the "switch method" button.

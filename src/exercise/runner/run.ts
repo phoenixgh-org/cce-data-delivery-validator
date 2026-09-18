@@ -320,7 +320,7 @@ function formatAdvisoryCopy(audit: CopyAudit): string[] {
  *
  * The failing rows are printed with BOTH numbers — the count the summary served
  * and the count the run's own findings fold onto the row — because the two
- * agreeing is the whole claim. A reader who sees `5.1.6  2 fail (folded 2)` can
+ * agreeing is the whole claim. A reader who sees `5.1.5  2 fail (folded 2)` can
  * check the page against the run without opening the dashboard, and a
  * disagreement reads as the mismatch it is rather than as one unexplained number.
  */

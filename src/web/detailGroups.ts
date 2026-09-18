@@ -67,7 +67,7 @@ export interface FindingRow extends RowIdentity {
    * The finding's STORED requirement id when the lens translated it, else null.
    * Findings are stored on 2025 numbering (bd memory
    * `requirement-numbering-2025-retained`) and translated at read time, so a row
-   * under the draft lens says §5.1.6 where the database says §1.4 — the pane
+   * under the draft lens says §5.1.5 where the database says §1.4 — the pane
    * names the other id rather than hiding the translation.
    */
   storedId: string | null;

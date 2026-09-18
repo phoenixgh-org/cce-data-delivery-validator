@@ -251,7 +251,7 @@ export interface TransmissionView {
  * module). Read back on {@link SessionMeta} for display AND sent on
  * {@link EnableAuthRequest} by the Setup panel's method picker.
  *
- * `bearer` is the DS01.3 clause 5.1.5 / RFC 6750 addition — `Authorization:
+ * `bearer` is the DS01.3 clause 5.1.4 / RFC 6750 addition — `Authorization:
  * Bearer <token>`. It is DISTINCT from `header`, whose token rides in a
  * configurable header (e.g. `X-CCE-Token`) with no scheme prefix.
  */

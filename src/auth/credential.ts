@@ -18,7 +18,7 @@
  *   - `basic`  method: `auth_header_name` = the Basic username; `auth_secret_hash`
  *     = KDF(generated password). Verify decodes `Authorization: Basic
  *     base64(user:pass)`, requires `user === auth_header_name` AND KDF(pass) match.
- *   - `bearer` method (DS01.3 clause 5.1.5 / RFC 6750, 5bs.4): `auth_header_name`
+ *   - `bearer` method (DS01.3 clause 5.1.4 / RFC 6750, 5bs.4): `auth_header_name`
  *     = the literal `Authorization` (the header is fixed by the scheme — there is
  *     nothing to configure, but the column stays populated so the ingest stage can
  *     name the expected header uniformly); `auth_secret_hash` = KDF(generated

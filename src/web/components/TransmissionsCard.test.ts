@@ -428,7 +428,7 @@ test('a contract failure still shows, DS01.3 findings notwithstanding', () => {
 });
 
 test('under the draft lens the cell counts that package’s failures', () => {
-  // §1.4 carries forward to 5.1.6 and still fails; the §3.2 result is not the
+  // §1.4 carries forward to 5.1.5 and still fails; the §3.2 result is not the
   // draft's to report; the DS01.3 failure is.
   const findings: FindingView[] = [
     { ...finding('fail'), requirement: '1.4', code: 'tx.too_large' },
@@ -497,7 +497,7 @@ test('the tone dot is unchanged under the contract lens, which is the default', 
 });
 
 test('the tone dot still reads mixed where the draft grades a pass and a fail', () => {
-  // §1.4 carries forward to 5.1.6 and passed there; the DS01.3 run failed 5.3.2.
+  // §1.4 carries forward to 5.1.5 and passed there; the DS01.3 run failed 5.3.2.
   const findings: FindingView[] = [
     { ...finding('pass'), requirement: '1.4' },
     shadowFinding('fail'),
@@ -621,7 +621,7 @@ test('a summary with no rationale behind it opens no empty expander', () => {
  *      fail here is a tooltip that named a package from a literal, or abbreviated
  *      it to fit.
  *   2. THE OTHER NUMBER IS NAMED FOR WHAT IT IS. A row under the draft lens shows
- *      §5.1.6 where the database holds §1.4, and a supplier reconciling against
+ *      §5.1.5 where the database holds §1.4, and a supplier reconciling against
  *      their own logs needs to know which package the second number belongs to —
  *      "§1.4" alone would read as a second, unexplained clause.
  */

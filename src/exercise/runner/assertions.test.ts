@@ -588,7 +588,7 @@ test('repeated occurrences collapse into one printable line and one violation', 
  * nothing in these fixtures touches.
  */
 function lensRows(fails: Record<string, number>): LensSummaryRow[] {
-  return ['5.1.6', '5.3.2', '5.4.1'].map((requirement) => ({
+  return ['5.1.5', '5.3.2', '5.4.1'].map((requirement) => ({
     requirement,
     counts: { pass: 0, fail: fails[requirement] ?? 0, info: 0 },
   }));
@@ -598,7 +598,7 @@ function verdicts(entries: Record<string, VerdictsByProfile>): VerdictsByTransmi
   return new Map(Object.entries(entries));
 }
 
-/** A §1.4 contract failure — the kind the clause map carries onto 5.1.6. */
+/** A §1.4 contract failure — the kind the clause map carries onto 5.1.5. */
 const OVERSIZE: ObservedFinding = { requirement: '1.4', severity: 'fail', outdated: false };
 
 /** A draft-lineage failure, already numbered in DS01.3. */
@@ -612,7 +612,7 @@ const ANNEX4: ObservedFinding = {
 test('a lens row agreeing with the folded findings and the verdicts is clean', () => {
   const audit = auditLensRows(
     'ds013',
-    lensRows({ '5.1.6': 1, '5.3.2': 1 }),
+    lensRows({ '5.1.5': 1, '5.3.2': 1 }),
     findings({ 'tx-1': [OVERSIZE], 'tx-2': [ANNEX4] }),
     verdicts({ 'tx-1': { ds013: 'fail' }, 'tx-2': { ds013: 'fail' } }),
   );
@@ -623,7 +623,7 @@ test('a lens row agreeing with the folded findings and the verdicts is clean', (
   assert.deepEqual(
     audit.failing.map((row) => [row.requirement, row.served, row.folded]),
     [
-      ['5.1.6', 1, 1],
+      ['5.1.5', 1, 1],
       ['5.3.2', 1, 1],
     ],
   );
@@ -635,13 +635,13 @@ test('a served count the findings do not support is a violation naming both numb
   // left comparing the report with a dashboard.
   const audit = auditLensRows(
     'ds013',
-    lensRows({ '5.1.6': 2 }),
+    lensRows({ '5.1.5': 2 }),
     findings({ 'tx-1': [OVERSIZE] }),
     verdicts({ 'tx-1': { ds013: 'fail' } }),
   );
 
   assert.equal(audit.violations.length, 1);
-  assert.match(audit.violations[0]!, /5\.1\.6: the ds013 summary reports 2 fail\(s\)/);
+  assert.match(audit.violations[0]!, /5\.1\.5: the ds013 summary reports 2 fail\(s\)/);
   assert.match(audit.violations[0]!, /fold 1 onto it/);
 });
 
@@ -670,18 +670,18 @@ test('evidence folding onto a clause the package does not serve is a violation',
   );
 
   assert.equal(audit.violations.length, 1);
-  assert.match(audit.violations[0]!, /5\.1\.6: 1 fail\(s\) fold onto a row the ds013 package/);
+  assert.match(audit.violations[0]!, /5\.1\.5: 1 fail\(s\) fold onto a row the ds013 package/);
 });
 
 test('a row failure the transmission verdict denies is a violation, and so is the converse', () => {
   const denied = auditLensRows(
     'ds013',
-    lensRows({ '5.1.6': 1 }),
+    lensRows({ '5.1.5': 1 }),
     findings({ 'tx-1': [OVERSIZE] }),
     verdicts({ 'tx-1': { ds013: 'pass' } }),
   );
   assert.equal(denied.violations.length, 1);
-  assert.match(denied.violations[0]!, /transmission tx-1 carries a 5\.1\.6 failure under ds013/);
+  assert.match(denied.violations[0]!, /transmission tx-1 carries a 5\.1\.5 failure under ds013/);
   assert.match(denied.violations[0]!, /verdict is pass/);
 
   // The other direction: a supplier is told the draft fails this transmission
@@ -713,7 +713,7 @@ test('an instance that serves no rows or no verdicts is a note, never a failure'
 
   const noVerdicts = auditLensRows(
     'ds013',
-    lensRows({ '5.1.6': 1 }),
+    lensRows({ '5.1.5': 1 }),
     findings({ 'tx-1': [OVERSIZE] }),
     verdicts({ 'tx-1': {} }),
   );

@@ -79,9 +79,9 @@ export interface Ds013MatrixRow {
  * - `5.1.1` employer data access rights — attestation; the rights themselves are
  *   contractual and invisible to a receiver.
  * - `5.1.2` transport of data — enforced; the endpoint is HTTPS-only.
- * - `5.1.11` transmission frequency — attestation; it mirrors §2.2, where the
+ * - `5.1.10` transmission frequency — attestation; it mirrors §2.2, where the
  *   remote system's receipt time is unknown to the service.
- * - `5.1.12` optional pull API — none; permissive, like §1.7.
+ * - `5.1.11` optional pull API — none; permissive, like §1.7.
  * - `5.3.1` general payload contents — attestation; the identification half is
  *   enforced under 5.3.2, and the completeness half mirrors §3.3.
  * - `5.3.5` custom data object schema — verified; it is already graded passively
@@ -93,8 +93,8 @@ export interface Ds013MatrixRow {
 const NEW_CLASS: Readonly<Record<string, ComplianceClass>> = {
   '5.1.1': 'attestation',
   '5.1.2': 'enforced',
-  '5.1.11': 'attestation',
-  '5.1.12': 'none',
+  '5.1.10': 'attestation',
+  '5.1.11': 'none',
   '5.3.1': 'attestation',
   '5.3.5': 'verified',
 };
@@ -118,7 +118,7 @@ export const NEW_FED_BY: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * DS01.3 document order: compare clause ids segment by segment, numerically, so
- * `5.1.9` sorts before `5.1.10` (a plain string sort would not).
+ * `5.1.8` sorts before `5.1.9` (a plain string sort would not).
  */
 function byClauseId(a: string, b: string): number {
   const left = a.split('.').map(Number);

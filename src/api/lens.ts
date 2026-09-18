@@ -16,7 +16,7 @@
  *
  *   - CONTRACT findings whose 2025 id the clause map carries forward onto that
  *     clause. Transport and semantic checks are graded once and shared between
- *     the lineages, so a §1.4 failure is a 5.1.6 failure. The exception is
+ *     the lineages, so a §1.4 failure is a 5.1.5 failure. The exception is
  *     {@link RE_RUN_UNDER_SHADOW}: §3.2 is genuinely re-run by the Annex 4
  *     validator, which writes its own findings, so re-tagging the 2025 schema
  *     result as well would report a defect the draft never measured.

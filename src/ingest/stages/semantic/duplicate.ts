@@ -26,13 +26,13 @@
  * we always emit exactly one §1.8 finding (pass when both are novel, fail when
  * any repeat is observed).
  *
- * UNDER DS01.3 (by1c.10, decision D2 of by1c.2). Clause 5.1.10 restates §1.8 as
+ * UNDER DS01.3 (by1c.10, decision D2 of by1c.2). Clause 5.1.9 restates §1.8 as
  * a "shall not" rather than a "should not" — the strongest form of the tightening
  * the shadow profile exists to preview. It changes nothing here. This check
  * already grades an observed repeat as a FAIL under the 2025 contract, which is
- * as severe as the shadow could make it, so 5.1.10 is a pure RE-TAG through
+ * as severe as the shadow could make it, so 5.1.9 is a pure RE-TAG through
  * `FORWARD` in src/api/clause-map.ts: the same single finding is attributed to
- * §1.8 on the contract surface and to 5.1.10 on the DS01.3 one, and the verdict
+ * §1.8 on the contract surface and to 5.1.9 on the DS01.3 one, and the verdict
  * engine (src/api/verdicts.ts) carries the contract failure forward so a
  * duplicate fails both profiles. The consequence worth stating: a duplicate can
  * never appear as a DS01.3 readiness reason, because readiness is folded over

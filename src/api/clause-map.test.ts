@@ -55,5 +55,5 @@ test('forwardClause returns null for an unknown id', () => {
 
 test('forwardClause returns the mapped clause', () => {
   assert.equal(forwardClause('3.2'), '5.3.2');
-  assert.equal(forwardClause('1.8'), '5.1.10');
+  assert.equal(forwardClause('1.8'), '5.1.9');
 });

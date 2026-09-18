@@ -477,7 +477,7 @@ test('every registered advisory has a fire case (axdd)', () => {
 
 const DS013: readonly Ds013MatrixRow[] = [
   {
-    clause: '5.1.6',
+    clause: '5.1.5',
     summary: 'payload size',
     classes: ['verified'],
     tightened: false,
@@ -493,7 +493,7 @@ const DS013: readonly Ds013MatrixRow[] = [
     graded: true,
   },
   {
-    clause: '5.1.12',
+    clause: '5.1.11',
     summary: 'optional pull API',
     classes: ['none'],
     tightened: false,
@@ -520,7 +520,7 @@ test('a DS01.3 clause is exercised when a case names it in shadowClauses', () =>
   );
   assert.deepEqual(
     report.ds013.notExercised.map((row) => row.clause),
-    ['5.1.6', '5.1.12'],
+    ['5.1.5', '5.1.11'],
   );
   assert.equal(report.ds013.rows.length, DS013.length);
 });
@@ -538,10 +538,10 @@ test('the DS01.3 join says whether an unexercised clause has anything to grade',
   // table from a clause the receiving side files no finding under at all — the
   // six DS01.3 clauses with no 2025 member.
   const report = computeCoverage([], MATRIX, [], DS013);
-  const informational = report.ds013.rows.find((row) => row.clause === '5.1.12')!;
+  const informational = report.ds013.rows.find((row) => row.clause === '5.1.11')!;
   assert.equal(informational.graded, false);
   assert.equal(informational.exercised, false);
-  assert.equal(report.ds013.rows.find((row) => row.clause === '5.1.6')!.graded, true);
+  assert.equal(report.ds013.rows.find((row) => row.clause === '5.1.5')!.graded, true);
 });
 
 test('the shipped case table names no DS01.3 clause the draft matrix lacks', () => {
