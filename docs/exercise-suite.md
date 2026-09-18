@@ -5,7 +5,12 @@
 A service that grades other people's conformance should be held to the same bar,
 and the only honest way to check the receiving side is to drive a deployed
 instance the way a supplier would. `npm run exercise` does that: it plays a table
-of 65 synthetic cases against a **running** validator and checks five things.
+of synthetic cases against a **running** validator and checks five things.
+
+Every case count in this document is read at the time of writing and is not
+maintained per case. The authority on how large the table is today is the
+runner's own summary line, `N case(s) · N passed · N failed`, which it prints on
+every run; the table held 69 cases when this was written.
 
 - **Requirements, both directions.** Every requirement the §7 matrix says we grade
   is exercised once in the passing direction and once in the failing one.
@@ -237,8 +242,8 @@ example `baseline: emsBaseline`. Until `emsBaseline` existed the table was rtm-o
 validated **nowhere** in this repo, live or in CI — while EMS manufacturers are the
 primary E006 audience and RTMD is the interop schema's deviation.
 
-Twenty-three cases declare it today — the advisory and readiness tables reach for the
-EMS branch too — and **five** of them target §3.2. Those five are filed in
+Twenty-four cases declared it at the time of writing — the advisory and readiness
+tables reach for the EMS branch too — and **five** of them target §3.2. Those five are filed in
 `cases/payload.ts` with the other schema-conformance cases; grouping is by requirement
 domain, never by payload type:
 
@@ -283,7 +288,8 @@ invalidity it claims is held by `cases.test.ts`'s real-Ajv check on the declared
 An advisory is an observation the service offers a supplier, not a requirement it
 grades — so the case model treats it as a first-class target while the coverage join
 refuses to count it as a requirement. Eighteen cases exercise the thirteen registered
-advisories today.
+advisories at the time of writing; the runner's advisory join prints how many are
+registered and how many are fired on every run.
 
 **Where they live.** In `cases/payload.ts`, beside the requirement cases. The grouping
 rule is unchanged: an advisory reads the body, so it belongs with the payload domain.
@@ -318,9 +324,9 @@ since planting a defect is a statement about the draft as well as about the advi
 
 **A silence case** is the other half of the catalogue's contract, and it is an ordinary
 pass-direction case carrying `absentFindings`: the payload is conformant traffic the
-advisory must NOT speak about. Thirteen cases declare an absence today. Most name a
-single advisory — the population its own header says it is silent on, such as solar
-records or an explained null — while the two baseline pass cases,
+advisory must NOT speak about. Fourteen cases declared an absence at the time of
+writing. Most name a single advisory — the population its own header says it is
+silent on, such as solar records or an explained null — while the two baseline pass cases,
 `3.2-pass-baseline` and `3.2-pass-ems-baseline` — and the EMS readiness pass case
 `readiness.ems_dual_pass` — declare the **whole** catalogue silent by mapping
 `ADVISORY_IDS` off the registry, so an advisory that starts firing on a clean payload
@@ -346,7 +352,7 @@ colocated tests — which **do** run in CI — check the half that needs no serv
 | Transport wrappers really produce the method/headers/bytes they claim                                                                                                                                                                                                                                                                                     | The §2.1 overlap (a timing fact — see below)                                                                                                 |
 | Table invariants: unique ids, distinct transferIds outside deliberate replays, distinct appliance identities outside cases that pin one, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload                                                    | The end-to-end pipeline, database and dashboard API                                                                                          |
 | The coverage join, that every gradeable requirement is claimed in both directions, that every registered advisory has a fire case, and that no claimed row is printed without the payload types it was exercised with                                                                                                                                     | The advisory copy a live instance actually served (`auditAdvisoryCopy` — see below)                                                          |
-| The draft verdict behind every shadow expectation: `cases/shadow.test.ts` puts each case carrying a `ds013` expectation — thirteen today, from the readiness module and the advisory table alike — through the Annex 4 draft validator and asserts the `pass`/`fail` the case declared                                                                    |                                                                                                                                              |
+| The draft verdict behind every shadow expectation: `cases/shadow.test.ts` puts each case carrying a `ds013` expectation — from the readiness module and the advisory table alike — through the Annex 4 draft validator and asserts the `pass`/`fail` the case declared                                                                                    |                                                                                                                                              |
 | The lens audit's own rules, against synthetic rows, findings and verdicts (`runner/assertions.test.ts`), and the DS01.3 half of the coverage join (`runner/coverage.test.ts`)                                                                                                                                                                             | That the DS01.3 summary rows a live instance serves agree with the findings and verdicts it serves beside them (`auditLensRows` — see below) |
 
 The live script and the CI-tested core import the **same** case definitions, so they
@@ -367,10 +373,11 @@ repository, the dashboard API and the browser — a path no pure test can walk. 
 runner holds the copy a live instance actually served to one session-level invariant
 (`auditAdvisoryCopy` in `runner/assertions.ts`): each advisory finding has a non-blank
 summary and a non-blank detail, and neither uses the defect vocabulary the category is
-closed to. The runner applies the bar through `violatesAdvisoryCopyBar`, the one shared
-helper the per-check copy tests, the runner and the dashboard surface-copy test all call,
-so no reader can grade copy by a rule of its own. The helper carries both halves of the
-bar: the phrases in `ADVISORY_COPY_EXEMPT_PHRASES` beside `advisory()` are removed from
+closed to. The runner applies the bar through the single entry point every reader
+reaches it by — `findAdvisoryCopyViolation`, the primitive that returns the offending
+word, or its boolean sugar `violatesAdvisoryCopyBar` — so no reader can grade copy by a
+rule of its own. The helper carries both halves of the bar: the phrases in
+`ADVISORY_COPY_EXEMPT_PHRASES` beside `advisory()` are removed from
 the copy before the word list is applied, rather than struck off that list, so a phrase
 that names a clause or a data object stays available to a rationale while the bare word
 stays banned. It is deliberately not an `ExpectedFinding` field: the copy is prose a
@@ -521,7 +528,7 @@ catalogue's contract, and the coverage join says nothing about it. That half is 
 expressible in the cases themselves: `absentFindings` lets a case declare which
 advisories its payload must NOT draw, and three cases — the two baseline pass cases and
 the EMS readiness pass case — declare the whole catalogue silent by reading
-`ADVISORY_IDS` off the registry. Read `fired 12` as "every advisory is reachable" and
+`ADVISORY_IDS` off the registry. Read the `fired` line as "every advisory is reachable" and
 the silence cases as the other half — neither line alone says "the catalogue behaves".
 
 ### Shadow cases, and the DS01.3 half of coverage
