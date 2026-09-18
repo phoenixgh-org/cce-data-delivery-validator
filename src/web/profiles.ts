@@ -21,8 +21,9 @@
  *
  * Pure and browser-safe: no DOM, no JSX, no backend import — which is also what
  * lets profiles.test.ts exercise it on the Node runner without the React shim.
- * The later web bites (by1c.12 verdict dots, by1c.13 readiness strip, by1c.14
- * detail groups) import this module rather than restating the words.
+ * The grading lens's surfaces (the header toggle, the lens banner, the verdict
+ * columns, the summary cards and the detail headings) import this module rather
+ * than restating the words.
  *
  * The words are shared with the server (by1c.32). src/profile-vocabulary.ts is
  * the definition; this module RE-DECLARES it because `tsconfig.web.json` sets
@@ -55,11 +56,12 @@ export const PROFILE_VOCABULARY: Record<Profile, ProfileWords> = {
 /**
  * The bare reader-facing name of each lineage — no role suffix, no date. The
  * contract marker and the draft date are composed on top of this so one name
- * serves the legend, the verdict columns and the tooltips alike.
+ * serves the header toggle, the verdict columns and the tooltips alike.
  *
  * A derived view of {@link PROFILE_VOCABULARY}'s short form rather than a third
- * list of names: the legend, the verdict columns and the tooltips keep reading
- * this, and the words they read come from the one vocabulary.
+ * list of names: the header toggle, the banner, the verdict columns and the
+ * detail headings keep reading this, and the words they read come from the one
+ * vocabulary.
  */
 export const PROFILE_NAME: Record<Profile, string> = Object.fromEntries(
   Object.entries(PROFILE_VOCABULARY).map(([profile, words]) => [profile, words.name]),
@@ -78,7 +80,7 @@ export function profileLabel(profile: Profile): string {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
- * A draft date as the legend shows it: `'2026-09-08'` → `"Sep 8"`.
+ * A draft date as a shadow label shows it: `'2026-09-08'` → `"Sep 8"`.
  *
  * The YYYY-MM-DD parts are read off the string directly and NOT handed to
  * `new Date(...)`: a date-only string parses as UTC midnight and then renders in
@@ -103,8 +105,8 @@ export function formatDraftDate(date: string): string {
  *
  * The same parse as {@link formatDraftDate}, and for the same reason — the date
  * is provenance and must read the same in every time zone. The two lengths are
- * separate because their sentences are: the legend sets the date beside a
- * version in a cramped strip, where the year is noise, while the banner makes it
+ * separate because their sentences are: a shadow label sets the date beside a
+ * version on one cramped line, where the year is noise, while the banner makes it
  * the end of a sentence that dates an unpublished proposal, where a bare
  * "Sep 8" leaves the reader to guess the year.
  *
@@ -165,59 +167,4 @@ export function shadowLegend(
 ): string | null {
   const parts = shadowLegendParts(shadow, profile);
   return parts === null ? null : `${parts.name} ${parts.detail}`;
-}
-
-/** The filter bar's grading legend, in the pieces the bar styles differently. */
-export interface GradingLegend {
-  /** `"UNICEF Q1 2025 (contract)"` — rendered bold. */
-  contract: string;
-  /** The shadow half, or null when the "· shadow:" half is omitted entirely. */
-  shadow: ShadowLegendParts | null;
-}
-
-/**
- * The legend that tells a supplier which lineage the matrix and pass rate grade
- * against: `Grading: UNICEF Q1 2025 (contract) · shadow: DS01.3 DRAFT Sep 8`.
- *
- * Read-only text, built from the contract constant and the session's shadow
- * facts — the lineage the shadow ran under and its vendored bytes.
- */
-export function gradingLegend(
-  shadowProfile: Profile | null,
-  shadow: ShadowProvenance | null,
-): GradingLegend {
-  return {
-    contract: profileLabel(CONTRACT_PROFILE),
-    shadow: shadowLegendParts(shadow, shadowProfile),
-  };
-}
-
-/**
- * The legend's tooltip (by1c.11). It says which lineage the numbers a supplier is
- * graded on come from, and where the shadow lineage's answers show up instead —
- * the shadow is previewed, never scored.
- *
- * Moved here from FilterBar.tsx when the one-line header retired that component
- * (vamh.1), so the whole legend family sits in one module for the grading lens
- * to retire together.
- *
- * The sentence reads exactly as by1c.11 specified it, but both lineage names are
- * composed from the vocabulary rather than written here (by1c.36). This was the
- * one user-facing string that named a lineage from a literal, and a literal is
- * wrong in a particular way on the day the contract moves: every other surface
- * would re-word itself off CONTRACT_PROFILE while this tooltip went on telling a
- * supplier the matrix grades against a lineage that is no longer their contract.
- *
- * The shadow sentence is omitted entirely when no shadow lineage is registered —
- * null is the hide signal for every shadow surface, and a tooltip that named
- * DS01.3 on a session with no shadow lineage would describe columns and strips
- * that are not on the page.
- */
-export function gradingLegendTitle(shadowProfile: Profile | null): string {
-  const graded = `The matrix and pass rate grade against the ${PROFILE_NAME[CONTRACT_PROFILE]} requirements.`;
-  if (shadowProfile === null) return graded;
-  return (
-    `${graded} ${PROFILE_NAME[shadowProfile]} is graded in the shadow and shown in the ` +
-    'readiness strip, the second verdict column and the transmission detail.'
-  );
 }

@@ -62,9 +62,10 @@
  * being claimed in BOTH directions; the DS01.3 join asks only whether any case
  * names the clause, because the draft is unpublished and a run against it is
  * preparation rather than grading. A clause nobody names is reported, never
- * failed: most of the 27 have no exercise today and several never will (the six
- * clauses with no 2025 member are informational rows the receiving side files no
- * finding under at all).
+ * failed: most of the 27 have no exercise today and several never will. A clause
+ * with no 2025 member is informational — the receiving side files no finding
+ * under it at all — UNLESS a finding code feeds it (`NEW_FED_BY` in
+ * src/api/matrix-ds013.ts), which today is 5.3.5 alone.
  *
  * FIRED is the only direction this join reports: at least one case expects
  * `{ requirement: <id>, severity: 'info' }` under the CONTRACT profile. An
@@ -167,9 +168,10 @@ export interface Ds013CoverageRow {
   /** Payload types those cases send, sorted and deduplicated. */
   readonly types: readonly string[];
   /**
-   * Whether the clause has a 2025 member and so live findings to fold onto it
-   * (`Ds013MatrixRow.graded`). Carried so an unexercised row can say whether it
-   * is a gap in the table or a clause nothing files a finding under.
+   * Whether live counts feed the clause (`Ds013MatrixRow.graded`): every clause
+   * carried forward from a 2025 member, plus any clause a finding code feeds
+   * (`NEW_FED_BY`, today 5.3.5 alone). Carried so an unexercised row can say
+   * whether it is a gap in the table or a clause nothing files a finding under.
    */
   readonly graded: boolean;
 }
@@ -525,7 +527,8 @@ export function formatCoverage(report: CoverageReport): string[] {
   // inside them: the draft is a second package, not a second column of the first,
   // and a clause with no exercise is reported rather than failed — the draft is
   // unpublished, and several of its clauses are informational rows no finding is
-  // ever filed under.
+  // ever filed under (a clause with no 2025 member is one of those unless a
+  // finding code feeds it, which today is 5.3.5 alone).
   const { ds013 } = report;
   lines.push(
     `DS01.3 rows — ${ds013.rows.length} clause(s): exercised ${ds013.exercised.length}, ` +

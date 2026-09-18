@@ -74,10 +74,14 @@ export const FORWARD: Readonly<Record<string, string>> = {
 export const TIGHTENED: ReadonlySet<string> = new Set(['1.8', '3.1', '3.2', '4.3']);
 
 /**
- * DS01.3 clauses with no 2025 equivalent (the reverse map). They are
- * INFORMATIONAL and not graded: nothing in the 2025 contract obliges a supplier
- * to satisfy them, and nothing here is emitted as a finding. They exist so the
- * shadow surfaces can say what DS01.3 adds beyond what we grade.
+ * DS01.3 clauses with no 2025 equivalent (the reverse map). Nothing in the 2025
+ * contract obliges a supplier to satisfy them, and nothing here is emitted as a
+ * finding under a DS01.3 clause id. They exist so the lens can say what DS01.3
+ * adds beyond what the contract package grades.
+ *
+ * Such a clause is INFORMATIONAL unless a finding code feeds it — `NEW_FED_BY` in
+ * ./matrix-ds013.js is the table that decides, and today it holds 5.3.5 alone,
+ * fed by the §3.1 custom-object check. The other five carry no counts.
  */
 export const NEW_IN_DS013: readonly string[] = [
   '5.1.1',

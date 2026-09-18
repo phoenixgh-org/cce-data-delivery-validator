@@ -23,8 +23,6 @@ import {
   PROFILE_VOCABULARY,
   formatDraftDate,
   formatDraftDateLong,
-  gradingLegend,
-  gradingLegendTitle,
   profileLabel,
   shadowLegend,
 } from './profiles.js';
@@ -119,60 +117,4 @@ test('no shadow lineage means no shadow label at all', () => {
   assert.equal(shadowLegend(null, null), null);
   assert.equal(shadowLegend(null, 'ds013'), null);
   assert.equal(shadowLegend(draftShadow, null), null);
-});
-
-test('the grading legend names the contract, and the shadow half only when there is one', () => {
-  const withShadow = gradingLegend('ds013', draftShadow);
-  assert.equal(withShadow.contract, profileLabel(CONTRACT_PROFILE));
-  assert.deepEqual(withShadow.shadow, { name: 'DS01.3 DRAFT', detail: 'Sep 8' });
-
-  const contractOnly = gradingLegend(null, null);
-  assert.equal(contractOnly.contract, profileLabel(CONTRACT_PROFILE));
-  assert.equal(contractOnly.shadow, null);
-});
-
-/**
- * The grading legend's tooltip (by1c.11, by1c.36), moved here with its function
- * when FilterBar was retired (vamh.1).
- *
- * Two claims are pinned, and they pull in opposite directions on purpose:
- *
- *   1. THE SENTENCE IS THE ONE by1c.11 SPECIFIED, word for word. It is the only
- *      place a supplier is told which lineage the matrix and the pass rate grade
- *      against, so it is quoted here as a literal — a reworded tooltip has to be
- *      a deliberate copy change, not a side effect of an edit elsewhere.
- *   2. THE LINEAGE NAMES ARE THE VOCABULARY'S. The same sentence is rebuilt from
- *      PROFILE_NAME and CONTRACT_PROFILE and must come out identical: on the day
- *      the contract moves, this tooltip has to move with every other surface
- *      rather than keep naming the lineage that used to be in force.
- *
- * A session with no shadow lineage gets the first sentence alone — the tooltip
- * must not describe a verdict column and a readiness strip that are not on the
- * page.
- */
-test('the tooltip reads exactly as by1c.11 specified it', () => {
-  assert.equal(
-    gradingLegendTitle('ds013'),
-    'The matrix and pass rate grade against the UNICEF Q1 2025 requirements. DS01.3 DRAFT is ' +
-      'graded in the shadow and shown in the readiness strip, the second verdict column and ' +
-      'the transmission detail.',
-  );
-});
-
-test('both lineage names come from the vocabulary, not from a literal', () => {
-  assert.equal(
-    gradingLegendTitle('ds013'),
-    `The matrix and pass rate grade against the ${PROFILE_NAME[CONTRACT_PROFILE]} requirements. ` +
-      `${PROFILE_NAME['ds013']} is graded in the shadow and shown in the readiness strip, the ` +
-      'second verdict column and the transmission detail.',
-  );
-});
-
-test('with no shadow lineage the tooltip names no shadow surfaces', () => {
-  const title = gradingLegendTitle(null);
-  assert.equal(
-    title,
-    `The matrix and pass rate grade against the ${PROFILE_NAME[CONTRACT_PROFILE]} requirements.`,
-  );
-  assert.ok(!title.includes(PROFILE_NAME['ds013']));
 });

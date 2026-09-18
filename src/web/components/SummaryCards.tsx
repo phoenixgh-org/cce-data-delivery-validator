@@ -35,8 +35,8 @@
  * package: the borders go plum with the rest of the page's cards, and each card
  * says which package its numbers belong to — the requirements eyebrow names the
  * package it is counting, and the transmissions sentence carries the one number
- * the retired readiness strip was for, how much of the traffic that conforms
- * today would also conform under the draft. The lens is a PROP: no component
+ * the readiness strip was built for before it was retired (tfnv.8), how much of
+ * the traffic that conforms today would also conform under the draft. The lens is a PROP: no component
  * reads the URL, and the page has exactly one owner of that state.
  */
 import type { ReactElement, ReactNode } from 'react';
@@ -215,10 +215,11 @@ export function SummaryCards({
                 {` report${unidentifiedReports === 1 ? '' : 's'} named no appliance`}
               </>
             )}
-            {/* The readiness number (tfnv.8 retires the strip that carried it):
-                of the traffic conforming to the contract today, how much would
-                also conform under the package being read. Only meaningful while
-                that package is not the contract one. */}
+            {/* The readiness number, and the only surface that carries it since
+                tfnv.8 deleted the readiness strip: of the traffic conforming to
+                the contract today, how much would also conform under the package
+                being read. Only meaningful while that package is not the
+                contract one. */}
             {draftLens && readiness !== null && (
               <>
                 {' · '}

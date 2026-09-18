@@ -251,9 +251,8 @@ const LIST_VISIBLE_ROWS = 10;
  * number that would drift if the row chrome changes: 10 × 34 = 340px.
  *
  * Height budget above the detail pane, re-measured against the shell that ships
- * (vamh.9). Two terms the earlier budget carried — a scorecard strip and a filter
- * bar — no longer render at all, and a third, the readiness strip, is no longer
- * mounted. What sits above the list today is:
+ * (vamh.9). Three terms the earlier budget carried — a scorecard strip, a filter
+ * bar and a readiness strip — no longer exist. What sits above the list today is:
  *   header ~48 + setup bar ~35 + summary-card row ~131              ≈ 214
  *   + body padding 16 + card header ~44 + verdict column header ~41 + list 340
  *                                                                   = 655
