@@ -219,6 +219,37 @@ function shortId(id: string): string {
 const mono: CSSProperties = { fontFamily: 'var(--mono)' };
 
 /**
+ * Width of the accent bar that ties the selected row to the detail pane (tast).
+ *
+ * ONE constant for two surfaces: the left bar on the selected {@link TxRow} and
+ * the left bar on {@link TxDetailHeader}. The tie is the whole point — the pane
+ * used to sit directly under the list behind a single divider, so a reader could
+ * take it as describing the last row rather than the selected one — and a tie
+ * made of two independent literals is one edit away from not being a tie.
+ *
+ * Every row carries a border of this width, transparent when unselected, so
+ * selecting a row changes a colour and never a layout (5bs.6). `--accent` is the
+ * page's existing accent fill, the same token ComplianceCard marks its selected
+ * clause with; nothing new is introduced here.
+ */
+const ACCENT_BAR_PX = 3;
+
+/**
+ * Gap, in px, between the scrolling list region and the docked detail panel
+ * (tast).
+ *
+ * It is what makes the detail read as its own panel rather than as a
+ * continuation of the list's last row. It replaces a 2px `--border-strong`
+ * divider, so the separation now comes from empty pane ground (`--surface-tx`
+ * shows through) plus the panel's own 1px top edge, not from a heavier line.
+ *
+ * It is also a term in the height budget on {@link LIST_MAX_HEIGHT_PX}: the
+ * margin sits outside the detail region's box and takes 14px from the column
+ * before the region's 120px min-height is measured.
+ */
+const DETAIL_GAP_PX = 14;
+
+/**
  * Estimated height of one TxRow, in px — the virtualizer's `estimateSize` AND
  * the basis of the list-region height cap below. Rows are not fixed-height (the
  * chrome wraps at narrow widths), so `measureElement` corrects the real heights;
@@ -233,8 +264,15 @@ const mono: CSSProperties = { fontFamily: 'var(--mono)' };
  */
 const ROW_ESTIMATE_PX = 34;
 
-/** How many rows the list region shows before it scrolls (5bs.6). */
-const LIST_VISIBLE_ROWS = 10;
+/**
+ * How many rows the list region shows before it scrolls (5bs.6).
+ *
+ * Nine, not the ten it was until tast. The detail pane grew a 14px gap above it
+ * and a sticky header band inside it, and at an 800px viewport with an active
+ * issue chip ten rows left the region under its own 120px min-height. The
+ * arithmetic is on {@link LIST_MAX_HEIGHT_PX}.
+ */
+const LIST_VISIBLE_ROWS = 9;
 
 /**
  * Height cap for the scrolling list region (5bs.6).
@@ -248,15 +286,16 @@ const LIST_VISIBLE_ROWS = 10;
  * master-detail redesign removed.
  *
  * So cap in rows, derived from ROW_ESTIMATE_PX rather than a hardcoded pixel
- * number that would drift if the row chrome changes: 10 × 34 = 340px.
+ * number that would drift if the row chrome changes: 9 × 34 = 306px.
  *
  * Height budget above the detail pane, re-measured against the shell that ships
- * (vamh.9). Three terms the earlier budget carried — a scorecard strip, a filter
- * bar and a readiness strip — no longer exist. What sits above the list today is:
+ * (tast; previously vamh.9). Three terms an earlier budget carried — a scorecard
+ * strip, a filter bar and a readiness strip — no longer exist. What sits above
+ * the detail region today is:
  *   header ~48 + setup bar ~35 + summary-card row ~131              ≈ 214
- *   + body padding 16 + card header ~44 + verdict column header ~41 + list 340
- *                                                                   = 655
- * so the docked detail starts at ~655px. Each term, measured off the styles that
+ *   + body padding 16 + card header ~44 + verdict column header ~41
+ *   + list 306 + detail gap 14                                      = 635
+ * so the docked detail starts at ~635px. Each term, measured off the styles that
  * produce it:
  *   - header: ReportHeader's 10px padding top and bottom + a 27px Seg control
  *     (11.5px label at line-height 1.5, 4px padding, 1px border) + a 1px bottom
@@ -282,15 +321,41 @@ const LIST_VISIBLE_ROWS = 10;
  *     columns into the row's own content (tfnv.1, VerdictDot.tsx:39-51), and
  *     nothing in the strip sets `whiteSpace: nowrap`. The term was 26px while
  *     each label still fit on one line.
+ *   - detail gap: {@link DETAIL_GAP_PX}, the margin that separates the list
+ *     region from the detail panel (tast). The panel's own 1px top edge is part
+ *     of the panel and not of this sum, the same way the 2px divider it replaces
+ *     was.
  *
- * At an 800px-tall viewport that leaves ~145px of the detail region visible, above
- * its own 120px min-height, and ~345px at 1000px. An active issue chip adds ~33px
- * above the list, which leaves ~112px — BELOW that min-height. In that one case
- * the budget does NOT clear the fold: the region's own minHeight of 120 wins, the
- * page grows to ~808px and scrolls by ~8px. Thin enough, either way, that anything
- * added above the list has to be measured rather than assumed. The list keeps its
- * own scrollbar and stays virtualized — this caps the region, it does not page the
- * data.
+ * One term sits outside the sum because it is conditional. The ACTIVE ISSUE CHIP,
+ * rendered only while a cross-filter is set, is ~38px: 7px padding top and bottom
+ * + the Clear button, which is the tallest thing in that row — an 11px label at
+ * the inherited line-height 1.5 (16.5px) + 2px padding top and bottom + a 1px
+ * border on each side = 22.5px — + a 1px bottom border. The earlier budget read
+ * this term as ~33px, which measured the 12px title span beside the button
+ * (18px) rather than the button itself.
+ *
+ * At an 800px-tall viewport the sum leaves ~165px for the detail region, above
+ * its own 120px min-height, and ~365px at 1000px. With the issue chip the budget
+ * is 635 + 38 = 673 and the region gets ~127px — still above the min-height, but
+ * with only ~7px of slack. That case is why LIST_VISIBLE_ROWS is 9 and not 10:
+ * ten rows put the budget at 669 + 38 = 707 and left the region ~93px, under the
+ * min-height, so the minHeight won and the page scrolled.
+ *
+ * CLEARING THE MIN-HEIGHT IS NOT THE SAME AS SHOWING THE DETAIL BODY. The first
+ * ~50px of the region is now the sticky header band ({@link TxDetailHeader}: 7px
+ * padding top and bottom + a 10px eyebrow at the inherited line-height 1.5 (15px)
+ * + a 13px identity line at the same multiplier (19.5px) + a 1px bottom border).
+ * So in the chip case ~77px of body is visible — the first row of the meta grid
+ * and little else, with the findings a scroll away. Thin enough, either way, that
+ * anything added above the list has to be measured rather than assumed.
+ *
+ * Every number above is the CONTRACT-lens stack. Under the DS01.3 draft lens the
+ * LensBanner adds a further ~32px between the setup bar and the summary cards
+ * (7px padding top and bottom + an 11.5px line at line-height 1.5 + a 1px bottom
+ * border), which no term here counts.
+ *
+ * The list keeps its own scrollbar and stays virtualized — this caps the region,
+ * it does not page the data.
  */
 const LIST_MAX_HEIGHT_PX = ROW_ESTIMATE_PX * LIST_VISIBLE_ROWS;
 
@@ -455,7 +520,10 @@ function TxRow({
         cursor: 'pointer',
         borderBottom: '1px solid var(--border)',
         background: selected ? 'var(--surface)' : 'transparent',
-        borderLeft: selected ? '2px solid var(--text)' : '2px solid transparent',
+        // The accent bar the detail header repeats (tast). Same width on every
+        // row, transparent when unselected, so selection recolours and never
+        // reflows (5bs.6).
+        borderLeft: `${ACCENT_BAR_PX}px solid ${selected ? 'var(--accent)' : 'transparent'}`,
       }}
     >
       <span
@@ -1819,6 +1887,60 @@ function RawPayload({
   );
 }
 
+/**
+ * The detail pane's header band (tast) — a label and the identity of the
+ * transmission the pane is describing.
+ *
+ * The pane used to open straight onto a small mono `t-` line, one divider below
+ * the last row of the list, so a reader could take it as describing the row
+ * immediately above rather than the selected one. Naming the panel and naming
+ * the transmission in the same band is what removes that ambiguity: the label
+ * says what you are looking at, the line under it says which transmission.
+ *
+ * Two things carry the tie back to the list. The identity line is the one the
+ * pane already showed (`t-` id, source, HTTP status, relative time), only lifted
+ * into the band, so nothing new has to be read. And the left bar repeats the
+ * selected row's accent at the same {@link ACCENT_BAR_PX} width.
+ *
+ * STICKY within the detail's scroll region (`top: 0`, the same pattern the
+ * compliance pane's group headers use). The pane scrolls a long payload past a
+ * fixed 120px-ish viewport, so without this the identity is the first thing
+ * gone and the reader is deep in JSON with nothing on screen saying whose it is.
+ * The band's background is the region's own `--detail`, opaque, so content
+ * passes under it rather than through it.
+ *
+ * `tx === null` is the empty state: the label and the bar's alignment stay, the
+ * identity line and the accent colour do not. There is no transmission to name,
+ * and colouring the bar would claim a tie to a selected row that does not exist.
+ */
+function TxDetailHeader({ tx }: { tx: TransmissionView | null }): ReactElement {
+  return (
+    <div
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 1,
+        background: 'var(--detail)',
+        borderBottom: '1px solid var(--border)',
+        borderLeft: `${ACCENT_BAR_PX}px solid ${tx === null ? 'transparent' : 'var(--accent)'}`,
+        // Left padding is short by the bar's width so the label and the identity
+        // line sit on the body's own 16px text edge below.
+        padding: `7px 16px 7px ${16 - ACCENT_BAR_PX}px`,
+      }}
+    >
+      <div style={eyebrow}>Transmission detail</div>
+      {tx !== null && (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ ...mono, fontWeight: 700, fontSize: 13 }}>t-{shortId(tx.id)}</span>
+          <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)' }}>
+            {tx.sourceLabel} · HTTP {tx.http_status ?? '—'} · {relativeAgo(tx.received_at)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TxDetail({
   tx,
   onSelectReq,
@@ -1888,22 +2010,11 @@ function TxDetail({
   }, [rawOpen]);
 
   return (
-    <div style={{ padding: '14px 16px 18px' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 8,
-          marginBottom: 10,
-          flexWrap: 'wrap',
-        }}
-      >
-        <span style={{ ...mono, fontWeight: 700, fontSize: 13 }}>t-{shortId(tx.id)}</span>
-        <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)' }}>
-          {tx.sourceLabel} · HTTP {tx.http_status ?? '—'} · {relativeAgo(tx.received_at)}
-        </span>
-      </div>
-
+    // The identity line that used to open this body now sits in the sticky
+    // TxDetailHeader band, which the pinned region renders above this (tast) —
+    // outside TxDetail so the band reaches the region's edges and the empty
+    // state gets the same label.
+    <div style={{ padding: '12px 16px 18px' }}>
       {/*
         Six value cells over three columns — two even rows (j1s, frk):
 
@@ -2367,16 +2478,24 @@ export function TransmissionsCard({
               })}
             </div>
           </div>
-          {/* Pinned detail region — selecting a row only swaps this; list never reflows. */}
+          {/* Pinned detail region — selecting a row only swaps this; list never reflows.
+              It is its own panel now (tast): DETAIL_GAP_PX of pane ground above it
+              and a 1px top edge, in place of the 2px divider that made it read as a
+              continuation of the list's last row. TxDetailHeader is rendered here
+              rather than inside TxDetail so the band reaches the region's edges —
+              which is what lets it stick at `top: 0` — and so the empty state below
+              carries the same label. */}
           <div
             style={{
               flex: TX_DETAIL_FLEX,
               minHeight: 120,
               overflowY: 'auto',
               background: 'var(--detail)',
-              borderTop: '2px solid var(--border-strong)',
+              marginTop: DETAIL_GAP_PX,
+              borderTop: '1px solid var(--border-strong)',
             }}
           >
+            <TxDetailHeader tx={selected} />
             {selected ? (
               <TxDetail
                 tx={selected}
@@ -2389,7 +2508,7 @@ export function TransmissionsCard({
             ) : (
               <div
                 style={{
-                  padding: '28px 16px',
+                  padding: '24px 16px',
                   textAlign: 'center',
                   fontSize: 12,
                   color: 'var(--text-faint)',

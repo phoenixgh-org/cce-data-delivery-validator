@@ -689,3 +689,94 @@ test('the reveal effect keys on the counter alone, so an unasked-for open does n
     /rootRef\.current\?\.scrollIntoView\(\{ block: 'nearest'[^}]*\}\);\n\s*\}, \[revealSeq\]\);/,
   );
 });
+
+/**
+ * THE DETAIL PANE IS ITS OWN PANEL (tast). The pane used to sit one 2px divider
+ * below the list and open on a bare mono `t-` line, which let a reader take it
+ * as describing the list's last row rather than the selected one. Four claims
+ * fix that, all of them styling a component renders rather than a value it
+ * returns — so, like the reveal wiring above, they are pinned against the source
+ * text. Nothing here can be held by the compiler and nothing here has a DOM to
+ * be held against.
+ *
+ *   1. THE GAP. A margin between the list region and the detail region, in place
+ *      of the divider. Also a term in the height budget, hence the arithmetic
+ *      pinned below.
+ *   2. THE LABELLED, STICKY BAND. `Transmission detail` plus the identity line,
+ *      sticking at `top: 0` so the identity survives a scroll deep into a long
+ *      payload.
+ *   3. ONE ACCENT, TWO SURFACES. The selected row's left bar and the band's left
+ *      bar must be the same width and the same token, or the tie they exist to
+ *      make is not a tie. The width comes from one constant; both read
+ *      `var(--accent)`.
+ *   4. THE EMPTY STATE STAYS SENSIBLE. With nothing selected the band keeps its
+ *      label and its alignment but names no transmission and takes no accent —
+ *      there is no selected row for the accent to point at.
+ */
+
+/** The body of a `function <name>(…) { … }` declaration, to its closing brace. */
+function functionBody(name: string): string {
+  const start = componentSource.indexOf(`\nfunction ${name}(`);
+  assert.notEqual(start, -1, `${name} not found — the pin below cannot hold`);
+  const end = componentSource.indexOf('\n}\n', start);
+  assert.notEqual(end, -1, `${name} has no recognisable end`);
+  return componentSource.slice(start, end);
+}
+
+test('the detail region is separated by a gap, not by the divider it replaces', () => {
+  assert.match(componentSource, /const DETAIL_GAP_PX = (1[2-6]);/);
+  assert.match(componentSource, /marginTop: DETAIL_GAP_PX,/);
+  // The 2px --border-strong divider is gone; what remains is the panel's edge.
+  assert.doesNotMatch(componentSource, /borderTop: '2px solid var\(--border-strong\)'/);
+});
+
+test('the detail header band is sticky, labelled, and names the transmission', () => {
+  const header = functionBody('TxDetailHeader');
+  assert.match(header, /position: 'sticky',\n\s*top: 0,/);
+  assert.match(header, />Transmission detail</);
+  // The identity line the pane already showed, lifted into the band whole.
+  assert.match(header, /t-\{shortId\(tx\.id\)\}/);
+  assert.match(header, /\{tx\.sourceLabel\} · HTTP \{tx\.http_status \?\? '—'\} · \{relativeAgo\(/);
+  // …and no longer duplicated in the body below it.
+  assert.doesNotMatch(functionBody('TxDetail'), /shortId\(tx\.id\)/);
+});
+
+test('the selected row and the detail header share one accent bar', () => {
+  assert.match(componentSource, /const ACCENT_BAR_PX = \d+;/);
+  // Both bars take their width from the constant, so neither can drift alone.
+  const bars = componentSource.match(/borderLeft: `\$\{ACCENT_BAR_PX\}px solid \$\{[^`]+`/g) ?? [];
+  assert.equal(bars.length, 2, bars.join('\n'));
+  for (const bar of bars) assert.match(bar, /var\(--accent\)/);
+  // The row's old marker was --text, which tied it to nothing.
+  assert.doesNotMatch(componentSource, /2px solid var\(--text\)/);
+});
+
+test('with nothing selected the band keeps its label but claims no transmission', () => {
+  const header = functionBody('TxDetailHeader');
+  assert.match(header, /tx === null \? 'transparent' : 'var\(--accent\)'/);
+  assert.match(header, /\{tx !== null && \(/);
+  // The pinned region renders the band for both states, so the empty body below
+  // it is labelled too.
+  assert.match(componentSource, /<TxDetailHeader tx=\{selected\} \/>\n\s*\{selected \? \(/);
+});
+
+test('the height-budget docblock does the arithmetic the constants actually make', () => {
+  const rows = Number(/const LIST_VISIBLE_ROWS = (\d+);/.exec(componentSource)?.[1]);
+  const rowPx = Number(/const ROW_ESTIMATE_PX = (\d+);/.exec(componentSource)?.[1]);
+  const gap = Number(/const DETAIL_GAP_PX = (\d+);/.exec(componentSource)?.[1]);
+  assert.ok(rows > 0 && rowPx > 0 && gap > 0);
+
+  // The docblock states the cap as a product and the budget as a sum ending in
+  // the list and the gap. Both have to be the sum the constants produce, or the
+  // fold conclusion drawn from them is about a layout that does not ship.
+  const product = new RegExp(
+    `if the row chrome changes: ${rows} × ${rowPx} = ${rows * rowPx}px\\.`,
+  );
+  assert.match(componentSource, product);
+  const sum = /\+ list (\d+) \+ detail gap (\d+)\s+= (\d+)/.exec(componentSource);
+  assert.ok(sum, 'the budget sum line is missing');
+  assert.equal(Number(sum[1]), rows * rowPx);
+  assert.equal(Number(sum[2]), gap);
+  // 214 above the pane + 16 body padding + 44 card header + 41 verdict header.
+  assert.equal(Number(sum[3]), 214 + 16 + 44 + 41 + rows * rowPx + gap);
+});
