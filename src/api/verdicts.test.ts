@@ -267,7 +267,7 @@ test('readiness counts contract-passing and dual-passing transmissions', () => {
   assert.equal(r.passingBoth, 2);
 });
 
-test('a transmission whose shadow never ran counts in neither number', () => {
+test('a transmission whose shadow verdict is null counts in passingContract and not in passingBoth', () => {
   const r = readiness([tx([contractPass]), tx([contractPass, shadowPass])], readinessOptions);
   assert.equal(r.passingContract, 2, 'it still passes the contract');
   assert.equal(r.passingBoth, 1, 'but nothing was measured under DS01.3');
