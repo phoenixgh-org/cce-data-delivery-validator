@@ -12,7 +12,12 @@
 -- One row per report-unit per transmission. A body carrying several reports yields
 -- several rows; a report that names no appliance (neither ASER nor AMID — the
 -- identity rule in src/identity/unit-key.ts) or whose records carry no parseable
--- ABST writes no row, because there is no window to compare. `abst_min`/`abst_max`
+-- ABST writes no row, because there is no window to compare. A delivery the service
+-- did not accept writes no row either: a 400 or a 413 leaves no parsed body to draw
+-- a window from, and a 422 parses first and is rejected by the schema stage
+-- afterwards, so the ingest route writes windows only for a body the schema stage
+-- accepted. `findPriorUnitWindows` filters on `schema_ok` besides, so a row an older
+-- build wrote for a rejected body can never become a prior. `abst_min`/`abst_max`
 -- are the window AS PARSED from the payload's own ABST strings, not a receipt time:
 -- they are supplier-reported instants, and a supplier clock that is wrong makes
 -- them wrong together. `record_count` counts only the records that parsed.
