@@ -15,10 +15,16 @@
  * failed` from three frames down.
  */
 
+import type { Verdict } from '../../api/verdicts.js';
 import type { Severity } from '../../db/repository.js';
 import type { Profile } from '../../schema-registry.js';
 import type { WireRequest } from '../transforms/transport.js';
-import type { ObservedFinding } from './assertions.js';
+import type {
+  LensSummaryRow,
+  ObservedFinding,
+  VerdictsByProfile,
+  VerdictsByTransmission,
+} from './assertions.js';
 
 /** Per-request timeout. Generous: the 1MB §1.4 body is the slowest thing sent. */
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -207,6 +213,35 @@ function asProfile(raw: unknown): Profile | undefined {
 interface ListedTransmission {
   id?: unknown;
   findings?: unknown;
+  verdicts?: unknown;
+}
+
+const VERDICTS = new Set<string>(['pass', 'fail']);
+
+/**
+ * The per-lineage verdicts one listed row carries (by1c.9), keyed by profile id.
+ *
+ * TOLERANT LIKE THE FINDING FIELDS. A key whose value is neither 'pass', 'fail'
+ * nor `null` is dropped, and a row with no `verdicts` object at all yields an
+ * empty record — which the lens audit reads as "this instance does not serve
+ * verdicts" rather than as a disagreement (./assertions.ts states the rule).
+ */
+function asVerdicts(raw: unknown): VerdictsByProfile {
+  if (typeof raw !== 'object' || raw === null) return {};
+  const out: VerdictsByProfile = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!(key in KNOWN_PROFILES)) continue;
+    if (value === null || VERDICTS.has(value as string)) out[key as Profile] = value as Verdict;
+  }
+  return out;
+}
+
+/** Everything one session read brings back about the rows the run wrote. */
+export interface SessionEvidence {
+  /** Findings keyed by the transmission id they were recorded against. */
+  readonly findings: Map<string, ObservedFinding[]>;
+  /** The per-lineage verdicts each of those transmissions carries (tfnv.10). */
+  readonly verdicts: VerdictsByTransmission;
 }
 
 /**
@@ -214,15 +249,21 @@ interface ListedTransmission {
  * and index the inlined findings by transmission id — the attribution key the
  * assertions pool a case's evidence on.
  *
+ * The per-lineage VERDICTS ride along from the same pages (tfnv.10). They are on
+ * the row already, so the lens audit costs no extra request; reading them in a
+ * second pass would also risk auditing a different set of rows than the findings
+ * came from.
+ *
  * The PAGINATED list is used rather than the session summary read: the summary
  * still ships the whole transmission array in one response, which is fine today
  * and stops being fine as 8qa.3–.5 grow the table.
  */
-export async function fetchFindingsByTransmission(
+export async function fetchSessionEvidence(
   baseUrl: string,
   uuid: string,
-): Promise<Map<string, ObservedFinding[]>> {
+): Promise<SessionEvidence> {
   const byTransmission = new Map<string, ObservedFinding[]>();
+  const verdicts = new Map<string, VerdictsByProfile>();
   let cursor: string | null = null;
 
   for (;;) {
@@ -240,6 +281,7 @@ export async function fetchFindingsByTransmission(
     const transmissions = Array.isArray(page.transmissions) ? page.transmissions : [];
     for (const raw of transmissions as ListedTransmission[]) {
       if (typeof raw.id !== 'string') continue;
+      verdicts.set(raw.id, asVerdicts(raw.verdicts));
       const findings = Array.isArray(raw.findings) ? raw.findings : [];
       byTransmission.set(
         raw.id,
@@ -256,6 +298,7 @@ export async function fetchFindingsByTransmission(
               outdated?: unknown;
               summary?: unknown;
               detail?: unknown;
+              code?: unknown;
             }) => ({
               requirement: f.requirement,
               severity: f.severity as Severity,
@@ -297,6 +340,13 @@ export async function fetchFindingsByTransmission(
               // to `''` here would erase that distinction at the boundary.
               summary: typeof f.summary === 'string' ? f.summary : undefined,
               detail: typeof f.detail === 'string' ? f.detail : undefined,
+              // The stable CHECK CODE (tfnv.10), carried for the lens audit
+              // alone: the DS01.3 fold routes a §3.1 finding onto clause 5.3.5
+              // or 5.3.3 by it. Normalized to `null` when the wire carried no
+              // string, which is the value the server's own fold sees for a
+              // finding that has no code — so the two sides agree by shape
+              // rather than by a second reading of the absent case.
+              code: typeof f.code === 'string' ? f.code : null,
             }),
           ),
       );
@@ -305,5 +355,63 @@ export async function fetchFindingsByTransmission(
     cursor = page.nextCursor;
   }
 
-  return byTransmission;
+  return { findings: byTransmission, verdicts };
+}
+
+interface ServedSummaryRow {
+  requirement?: unknown;
+  counts?: { pass?: unknown; fail?: unknown; info?: unknown };
+}
+
+/** A served count, or 0 — the shape the audit compares against its own fold. */
+function asCount(raw: unknown): number {
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+}
+
+/**
+ * Read the session summary under one requirement package and return its rows
+ * (tfnv.10): `GET /api/sessions/{uuid}?lens={lens}`.
+ *
+ * `null` means the target does not know this lens. That is the one read here
+ * that a 4xx does not make an operator problem: an instance older than the lens
+ * parameter answers HTTP 400 `unknown_lens`, and failing the run on it would say
+ * "this validator is broken" about a validator that simply predates the feature.
+ * The audit reports the null as a note (./assertions.ts). Any other non-200 is
+ * still an {@link ExerciseHttpError}, because it is not something a version
+ * difference explains.
+ */
+export async function fetchLensSummary(
+  baseUrl: string,
+  uuid: string,
+  lens: Profile,
+): Promise<LensSummaryRow[] | null> {
+  const url = `${baseUrl}/api/sessions/${uuid}?lens=${encodeURIComponent(lens)}`;
+  const response = await send(url, { method: 'GET' });
+  if (response.status === 400) return null;
+  if (response.status !== 200) {
+    throw new ExerciseHttpError(`GET ${url} returned HTTP ${response.status} (expected 200)`);
+  }
+  const body = (await readJson(response, 'the session summary')) as {
+    summary?: unknown;
+    lens?: unknown;
+  };
+  // An instance that echoes a different package than the one asked for is not
+  // reporting what this audit believes it is reporting, so the rows are refused
+  // rather than graded against the wrong fold.
+  if (typeof body.lens === 'string' && body.lens !== lens) {
+    throw new ExerciseHttpError(
+      `GET ${url} echoed lens '${body.lens}' — the summary rows are not the ${lens} package`,
+    );
+  }
+  const rows = Array.isArray(body.summary) ? (body.summary as ServedSummaryRow[]) : [];
+  return rows
+    .filter((row) => typeof row.requirement === 'string')
+    .map((row) => ({
+      requirement: row.requirement as string,
+      counts: {
+        pass: asCount(row.counts?.pass),
+        fail: asCount(row.counts?.fail),
+        info: asCount(row.counts?.info),
+      },
+    }));
 }

@@ -51,6 +51,21 @@
  * objecting. So the report carries a second section, joining the case table onto
  * {@link ADVISORY_IDS} — the registry's own list, which grows with the catalogue.
  *
+ * THE DS01.3 ROWS, the third join (tfnv.10). The two joins above are 2025-only by
+ * construction, so the draft package the grading lens renders had no coverage
+ * line at all: a clause every case ignores looked exactly like one nine cases
+ * exercise. Now the cases' `shadowClauses` are joined onto {@link DS013_MATRIX}
+ * — the same 27 rows the lens serves — and the report says which clauses the
+ * table exercises and which it does not.
+ *
+ * EXERCISED, not covered, and the word is chosen. The 2025 join grades a row on
+ * being claimed in BOTH directions; the DS01.3 join asks only whether any case
+ * names the clause, because the draft is unpublished and a run against it is
+ * preparation rather than grading. A clause nobody names is reported, never
+ * failed: most of the 27 have no exercise today and several never will (the six
+ * clauses with no 2025 member are informational rows the receiving side files no
+ * finding under at all).
+ *
  * FIRED is the only direction this join reports: at least one case expects
  * `{ requirement: <id>, severity: 'info' }` under the CONTRACT profile. An
  * advisory that stays silent on conformant traffic is the other half of the
@@ -66,6 +81,7 @@ import {
   type ComplianceClass,
   type MatrixRow,
 } from '../../api/compliance-matrix.js';
+import { DS013_MATRIX, type Ds013MatrixRow } from '../../api/matrix-ds013.js';
 import { ADVISORY_IDS, type AdvisoryId } from '../../ingest/stages/semantic/advisory.js';
 import { CONTRACT_PROFILE } from '../../schema-registry.js';
 import { payloadTypeOf, type ExerciseCase } from '../case.js';
@@ -139,6 +155,38 @@ export interface AdvisoryCoverage {
   readonly notExercised: readonly AdvisoryCoverageRow[];
 }
 
+/** One DS01.3 clause joined with the cases that name it in `shadowClauses`. */
+export interface Ds013CoverageRow {
+  /** The DS01.3 clause id, e.g. `5.3.2`. */
+  readonly clause: string;
+  readonly summary: string;
+  /** True when at least one case names this clause. */
+  readonly exercised: boolean;
+  /** Ids of the cases naming it, in table order. */
+  readonly cases: readonly string[];
+  /** Payload types those cases send, sorted and deduplicated. */
+  readonly types: readonly string[];
+  /**
+   * Whether the clause has a 2025 member and so live findings to fold onto it
+   * (`Ds013MatrixRow.graded`). Carried so an unexercised row can say whether it
+   * is a gap in the table or a clause nothing files a finding under.
+   */
+  readonly graded: boolean;
+}
+
+/** The DS01.3 half of the report: every clause of the draft package, in matrix order. */
+export interface Ds013Coverage {
+  readonly rows: readonly Ds013CoverageRow[];
+  readonly exercised: readonly Ds013CoverageRow[];
+  readonly notExercised: readonly Ds013CoverageRow[];
+  /**
+   * Clause ids the cases name that the DS01.3 matrix does not carry — the same
+   * rule as {@link CoverageReport.unknownClaims}, for the same reason: a claim
+   * nobody joins to is indistinguishable from no claim at all.
+   */
+  readonly unknownClaims: readonly string[];
+}
+
 /** The whole join. `rows` is every matrix row, in matrix order. */
 export interface CoverageReport {
   readonly rows: readonly CoverageRow[];
@@ -161,6 +209,8 @@ export interface CoverageReport {
   readonly unknownClaims: readonly string[];
   /** The advisory join (axdd) — see {@link AdvisoryCoverage}. */
   readonly advisories: AdvisoryCoverage;
+  /** The DS01.3 clause join (tfnv.10) — see {@link Ds013Coverage}. */
+  readonly ds013: Ds013Coverage;
 }
 
 function statusFor(gradeable: boolean, passCases: string[], failCases: string[]): CoverageStatus {
@@ -236,17 +286,77 @@ function computeAdvisories(
 }
 
 /**
+ * Join the case table onto the DS01.3 package (tfnv.10).
+ *
+ * THE CLAIM IS `shadowClauses`, which is the same rule the §7 join uses one
+ * lineage over: the clauses a case says it is ABOUT, not the clauses its
+ * expectations happen to reach. The two are not interchangeable here either — a
+ * DS01.3 fail folds a transport breach onto 5.1.x whatever the case was written
+ * for, so counting folded evidence would report most of the package as exercised
+ * by cases that never considered it.
+ *
+ * Nothing about this join changes `requirements`, which stays 2025 ids: the two
+ * packages are reported side by side, never merged.
+ */
+function computeDs013(
+  cases: readonly ExerciseCase[],
+  matrix: readonly Ds013MatrixRow[],
+): Ds013Coverage {
+  const claims = new Map<string, string[]>();
+  const claimTypes = new Map<string, string[]>();
+  for (const kase of cases) {
+    const clauses = kase.shadowClauses ?? [];
+    if (clauses.length === 0) continue;
+    // Asked once per claiming case: the type is a property of the case, and
+    // asking costs a baseline generation.
+    const type = payloadTypeOf(kase);
+    for (const clause of clauses) {
+      const caseIds = claims.get(clause);
+      if (caseIds) caseIds.push(kase.id);
+      else claims.set(clause, [kase.id]);
+      const types = claimTypes.get(clause);
+      if (types) types.push(type);
+      else claimTypes.set(clause, [type]);
+    }
+  }
+
+  const rows = matrix.map((row): Ds013CoverageRow => {
+    const caseIds = claims.get(row.clause) ?? [];
+    return {
+      clause: row.clause,
+      summary: row.summary,
+      exercised: caseIds.length > 0,
+      cases: caseIds,
+      types: sortedTypes(claimTypes.get(row.clause) ?? []),
+      graded: row.graded,
+    };
+  });
+
+  const known = new Set(matrix.map((row) => row.clause));
+  const unknownClaims = [...claims.keys()].filter((clause) => !known.has(clause)).sort();
+
+  return {
+    rows,
+    exercised: rows.filter((row) => row.exercised),
+    notExercised: rows.filter((row) => !row.exercised),
+    unknownClaims,
+  };
+}
+
+/**
  * Join the case table onto the §7 matrix and the advisory catalogue. PURE — no
  * I/O, no mutation of inputs.
  *
- * `matrix` and `advisoryIds` default to the real tables and are injectable ONLY
- * so the unit tests can pin the join's RULES against a small synthetic one; the
- * runner passes the real matrix explicitly and the real id list by omission.
+ * `matrix`, `advisoryIds` and `ds013Matrix` default to the real tables and are
+ * injectable ONLY so the unit tests can pin the join's RULES against small
+ * synthetic ones; the runner passes the real matrix explicitly and the other two
+ * by omission.
  */
 export function computeCoverage(
   cases: readonly ExerciseCase[],
   matrix: readonly MatrixRow[] = COMPLIANCE_MATRIX,
   advisoryIds: readonly AdvisoryId[] = ADVISORY_IDS,
+  ds013Matrix: readonly Ds013MatrixRow[] = DS013_MATRIX,
 ): CoverageReport {
   const passClaims = new Map<string, string[]>();
   const failClaims = new Map<string, string[]>();
@@ -308,6 +418,7 @@ export function computeCoverage(
     payloadTypes: sortedTypes(allTypes),
     unknownClaims,
     advisories: computeAdvisories(cases, advisoryIds),
+    ds013: computeDs013(cases, ds013Matrix),
   };
 }
 
@@ -334,6 +445,19 @@ function types(row: CoverageRow): string {
 
 function ids(rows: readonly CoverageRow[]): string {
   return rows.length === 0 ? '—' : rows.map((row) => `${row.requirement}${types(row)}`).join(' ');
+}
+
+/**
+ * The DS01.3 equivalent of {@link ids}: the clause id, annotated with the payload
+ * types its cases send. One direction like the advisory join, and for the same
+ * reason — a DS01.3 clause is not claimed in a direction, it is named or it is
+ * not. An unexercised clause gets no bracket; there is nothing to qualify.
+ */
+function ds013Ids(rows: readonly Ds013CoverageRow[]): string {
+  if (rows.length === 0) return '—';
+  return rows
+    .map((row) => `${row.clause}${row.types.length === 0 ? '' : `[${row.types.join(',')}]`}`)
+    .join(' ');
 }
 
 /**
@@ -396,5 +520,24 @@ export function formatCoverage(report: CoverageReport): string[] {
   );
   lines.push(`  fired                      ${advisoryIds(advisories.fired)}`);
   lines.push(`  NOT EXERCISED              ${advisoryIds(advisories.notExercised)}`);
+
+  // The DS01.3 section (tfnv.10). It sits beside the 2025 lines rather than
+  // inside them: the draft is a second package, not a second column of the first,
+  // and a clause with no exercise is reported rather than failed — the draft is
+  // unpublished, and several of its clauses are informational rows no finding is
+  // ever filed under.
+  const { ds013 } = report;
+  lines.push(
+    `DS01.3 rows — ${ds013.rows.length} clause(s): exercised ${ds013.exercised.length}, ` +
+      `not exercised ${ds013.notExercised.length}`,
+  );
+  lines.push(
+    '  a clause is exercised when a case names it in `shadowClauses` — ' + 'reported, never failed',
+  );
+  lines.push(`  exercised                  ${ds013Ids(ds013.exercised)}`);
+  lines.push(`  not exercised              ${ds013Ids(ds013.notExercised)}`);
+  if (ds013.unknownClaims.length > 0) {
+    lines.push(`  CLAIMED BUT NOT IN THE DS01.3 MATRIX  ${ds013.unknownClaims.join(' ')}`);
+  }
   return lines;
 }

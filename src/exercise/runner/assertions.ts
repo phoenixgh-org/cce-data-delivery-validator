@@ -32,6 +32,8 @@
  * session, and only ids keep the cases from reading each other's evidence.
  */
 
+import { foldUnderLens, type LensFinding } from '../../api/lens.js';
+import type { Verdict } from '../../api/verdicts.js';
 import type { Severity } from '../../db/repository.js';
 import {
   ADVISORY_COPY_BANNED_WORDS,
@@ -81,6 +83,16 @@ export interface ObservedFinding {
   readonly summary?: string;
   /** The rationale behind the advisory row's expander. Optional like {@link summary}. */
   readonly detail?: string;
+  /**
+   * The stable check code the finding carries, where it carries one (tfnv.10).
+   * NOT part of {@link findingKey} and absent from `ExpectedFinding`: a case
+   * matches on the requirement it exercises, not on the check that produced it.
+   *
+   * It is read for one thing only — {@link auditLensRows}, where the DS01.3 fold
+   * routes a §3.1 finding onto clause 5.3.5 or 5.3.3 by its code — so a finding
+   * served without it folds exactly as the server folds a finding with none.
+   */
+  readonly code?: string | null;
 }
 
 /**
@@ -471,4 +483,192 @@ export function auditAdvisoryCopy(findingsByTransmission: FindingsByTransmission
     warnings: distinct(warnings),
     notes,
   };
+}
+
+// ── the grading-lens audit (tfnv.10) ────────────────────────────────────────
+
+/**
+ * The per-lineage verdicts one transmission carries on the wire (by1c.9), keyed
+ * by profile id. A key is absent when the instance knows no such lineage — which
+ * is a fact about the target, not a defect, and {@link auditLensRows} reads it
+ * that way.
+ */
+export type VerdictsByProfile = Partial<Record<Profile, Verdict>>;
+
+/** Wire verdicts keyed by the transmission id they were reported against. */
+export type VerdictsByTransmission = ReadonlyMap<string, VerdictsByProfile>;
+
+/** One `summary` row as the session read serves it: the id, and its live counts. */
+export interface LensSummaryRow {
+  /** Requirement id under the contract lens, clause id under the draft lens. */
+  readonly requirement: string;
+  readonly counts: { readonly pass: number; readonly fail: number; readonly info: number };
+}
+
+/** One row's fail count as served, beside what the session's own findings say. */
+export interface LensRowAudit {
+  readonly requirement: string;
+  /** `counts.fail` as the row came off the wire. */
+  readonly served: number;
+  /** Fail findings the session's findings fold onto the row, recomputed here. */
+  readonly folded: number;
+  /** Transmission ids contributing at least one of them, in read order. */
+  readonly transmissions: readonly string[];
+}
+
+/** What {@link auditLensRows} found, in the shape {@link CopyAudit} established. */
+export interface LensAudit {
+  /** The package the rows were read under, or `null` when none was registered. */
+  readonly lens: Profile | null;
+  /** How many rows the read served, or 0 when it served none. */
+  readonly rows: number;
+  /** Rows carrying a failure on either side, in served order — the print list. */
+  readonly failing: readonly LensRowAudit[];
+  /** Disagreements. A non-empty list fails the run. */
+  readonly violations: readonly string[];
+  /** Facts about the target instance rather than about its numbers. */
+  readonly notes: readonly string[];
+}
+
+/** An observed finding as the read-time fold consumes it. */
+function asLensFinding(found: ObservedFinding): LensFinding {
+  return {
+    requirement: found.requirement,
+    severity: found.severity,
+    profile: profileOf(found),
+    outdated: found.outdated,
+    code: found.code ?? null,
+  };
+}
+
+/**
+ * Audit the SUMMARY ROWS a live instance served under one lens against the
+ * per-transmission evidence it served beside them (tfnv.10).
+ *
+ * WHY THIS IS A LIVE CHECK. The fold itself (src/api/lens.ts) and the verdict
+ * rule (src/api/verdicts.ts) are pure and unit-tested. What no pure test reaches
+ * is the path between them on a real instance: the scoping, the join onto the
+ * selected package's matrix, the serialization, and the fact that the numbers a
+ * supplier reads on one page are the same numbers the rows beneath them carry. A
+ * lens that dropped a clause, scoped the fold differently from the list, or
+ * counted a re-run §3.2 result onto 5.3.2 would show up here and nowhere else.
+ *
+ * THREE DISAGREEMENTS, all reported as violations:
+ *
+ *   1. A served row's `counts.fail` differs from the number of fail findings the
+ *      session's own findings fold onto it.
+ *   2. A fail folds onto a row the selected package does not serve — a clause
+ *      with evidence and no line on the page.
+ *   3. A transmission contributing a failure to a row whose verdict under this
+ *      lens is not 'fail', or a transmission whose verdict IS 'fail' with no row
+ *      of the package carrying it. Both directions matter: the first would grade
+ *      a row off traffic the page calls clean, the second would fail a supplier
+ *      with nothing to point at.
+ *
+ * TOLERANCE, asymmetric like {@link auditAdvisoryCopy}'s. The runner points at
+ * whatever instance the operator names. One that does not know the lens serves no
+ * rows (`served` is `null`, the read having been refused), and one that predates
+ * per-profile verdicts serves none for this lineage: each is reported as a note
+ * and grades nothing. An instance that serves SOME verdicts under the lens and
+ * not others is held to rule 3 in full — that is the regression this exists to
+ * catch, not an older target.
+ *
+ * Pure, like the rest of this module: it reads the same two maps ./client.ts
+ * brings back, so the rules are exercised in CI against synthetic rows.
+ */
+export function auditLensRows(
+  lens: Profile | null,
+  served: readonly LensSummaryRow[] | null,
+  findingsByTransmission: FindingsByTransmission,
+  verdictsByTransmission: VerdictsByTransmission,
+  contract: Profile = CONTRACT_PROFILE,
+): LensAudit {
+  const violations: string[] = [];
+  const notes: string[] = [];
+
+  // Two ways there is nothing to audit, and they are different facts: the
+  // registry holds no second package at all, or this target does not serve the
+  // one it holds. Neither is a disagreement, so both are notes.
+  if (lens === null) {
+    notes.push('no second requirement package is registered — no lens to audit');
+    return { lens, rows: 0, failing: [], violations, notes };
+  }
+
+  if (served === null) {
+    notes.push(`the ${lens} lens is not served by this instance — no rows to audit`);
+    return { lens, rows: 0, failing: [], violations, notes };
+  }
+
+  // Folded per transmission rather than over the whole pool, so a row's failure
+  // can be attributed back to the rows the verdicts are reported on.
+  const folded = new Map<string, { fails: number; transmissions: string[] }>();
+  for (const [id, findings] of findingsByTransmission) {
+    const { counts } = foldUnderLens(findings.map(asLensFinding), lens, contract);
+    for (const [row, tallied] of Object.entries(counts)) {
+      if (tallied.fail === 0) continue;
+      const bucket = folded.get(row) ?? { fails: 0, transmissions: [] };
+      bucket.fails += tallied.fail;
+      bucket.transmissions.push(id);
+      folded.set(row, bucket);
+    }
+  }
+
+  const failing: LensRowAudit[] = [];
+  const servedRows = new Set(served.map((row) => row.requirement));
+  for (const row of served) {
+    const here = folded.get(row.requirement);
+    const foldedFails = here?.fails ?? 0;
+    if (row.counts.fail !== foldedFails) {
+      violations.push(
+        `${row.requirement}: the ${lens} summary reports ${row.counts.fail} fail(s), ` +
+          `the session's findings fold ${foldedFails} onto it`,
+      );
+    }
+    if (row.counts.fail > 0 || foldedFails > 0) {
+      failing.push({
+        requirement: row.requirement,
+        served: row.counts.fail,
+        folded: foldedFails,
+        transmissions: here?.transmissions ?? [],
+      });
+    }
+  }
+
+  for (const [row, here] of folded) {
+    if (servedRows.has(row)) continue;
+    violations.push(
+      `${row}: ${here.fails} fail(s) fold onto a row the ${lens} package does not serve`,
+    );
+  }
+
+  // Rule 3, and the instance-fact branch in front of it: a target reporting no
+  // verdict at all under this lineage is older than per-profile verdicts, not
+  // wrong about them.
+  const gradesLens = [...verdictsByTransmission.values()].some((v) => lens in v);
+  if (verdictsByTransmission.size > 0 && !gradesLens) {
+    notes.push(
+      `no ${lens} verdict served by this instance — ${verdictsByTransmission.size} ` +
+        'transmission(s), none carrying one',
+    );
+  } else {
+    for (const [row, here] of folded) {
+      for (const id of new Set(here.transmissions)) {
+        const reported = verdictsByTransmission.get(id)?.[lens];
+        if (reported === 'fail') continue;
+        violations.push(
+          `transmission ${id} carries a ${row} failure under ${lens}, but its ${lens} ` +
+            `verdict is ${reported ?? 'null'}`,
+        );
+      }
+    }
+    const carried = new Set([...folded.values()].flatMap((here) => here.transmissions));
+    for (const [id, verdicts] of verdictsByTransmission) {
+      if (verdicts[lens] !== 'fail' || carried.has(id)) continue;
+      violations.push(
+        `transmission ${id} fails under ${lens}, but no row of that package carries its failure`,
+      );
+    }
+  }
+
+  return { lens, rows: served.length, failing, violations: distinct(violations), notes };
 }

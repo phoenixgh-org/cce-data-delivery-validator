@@ -20,14 +20,18 @@ import assert from 'node:assert/strict';
 import type { ExerciseCase } from '../case.js';
 import {
   auditAdvisoryCopy,
+  auditLensRows,
   judgeCase,
   missingFindings,
   poolCaseFindings,
   tally,
   unexpectedFindings,
   type FindingsByTransmission,
+  type LensSummaryRow,
   type ObservedFinding,
   type PostOutcome,
+  type VerdictsByProfile,
+  type VerdictsByTransmission,
 } from './assertions.js';
 
 function post(overrides: Partial<PostOutcome> = {}): PostOutcome {
@@ -574,4 +578,171 @@ test('repeated occurrences collapse into one printable line and one violation', 
   assert.equal(audit.observed, 2);
   assert.deepEqual(audit.lines, [{ requirement: 'adv.null_padding', summary: 'An invalid line.' }]);
   assert.equal(audit.violations.length, 1);
+});
+
+// ── the grading-lens audit (tfnv.10) ────────────────────────────────────────
+
+/**
+ * Fixture rows for the DS01.3 package, small enough to read: the clause §1.4
+ * folds onto, the clause the draft validator grades for itself, and a clause
+ * nothing in these fixtures touches.
+ */
+function lensRows(fails: Record<string, number>): LensSummaryRow[] {
+  return ['5.1.6', '5.3.2', '5.4.1'].map((requirement) => ({
+    requirement,
+    counts: { pass: 0, fail: fails[requirement] ?? 0, info: 0 },
+  }));
+}
+
+function verdicts(entries: Record<string, VerdictsByProfile>): VerdictsByTransmission {
+  return new Map(Object.entries(entries));
+}
+
+/** A §1.4 contract failure — the kind the clause map carries onto 5.1.6. */
+const OVERSIZE: ObservedFinding = { requirement: '1.4', severity: 'fail', outdated: false };
+
+/** A draft-lineage failure, already numbered in DS01.3. */
+const ANNEX4: ObservedFinding = {
+  requirement: '5.3.2',
+  severity: 'fail',
+  profile: 'ds013',
+  outdated: false,
+};
+
+test('a lens row agreeing with the folded findings and the verdicts is clean', () => {
+  const audit = auditLensRows(
+    'ds013',
+    lensRows({ '5.1.6': 1, '5.3.2': 1 }),
+    findings({ 'tx-1': [OVERSIZE], 'tx-2': [ANNEX4] }),
+    verdicts({ 'tx-1': { ds013: 'fail' }, 'tx-2': { ds013: 'fail' } }),
+  );
+
+  assert.deepEqual(audit.violations, []);
+  assert.deepEqual(audit.notes, []);
+  assert.equal(audit.rows, 3);
+  assert.deepEqual(
+    audit.failing.map((row) => [row.requirement, row.served, row.folded]),
+    [
+      ['5.1.6', 1, 1],
+      ['5.3.2', 1, 1],
+    ],
+  );
+});
+
+test('a served count the findings do not support is a violation naming both numbers', () => {
+  // The regression this exists for: the page adds up a clause differently from
+  // the evidence beneath it. Both numbers are in the line, so the reader is not
+  // left comparing the report with a dashboard.
+  const audit = auditLensRows(
+    'ds013',
+    lensRows({ '5.1.6': 2 }),
+    findings({ 'tx-1': [OVERSIZE] }),
+    verdicts({ 'tx-1': { ds013: 'fail' } }),
+  );
+
+  assert.equal(audit.violations.length, 1);
+  assert.match(audit.violations[0]!, /5\.1\.6: the ds013 summary reports 2 fail\(s\)/);
+  assert.match(audit.violations[0]!, /fold 1 onto it/);
+});
+
+test('§3.2 is not carried onto the clause the draft re-runs for itself', () => {
+  // The fold's own rule (src/api/lens.ts), asserted from the outside: a 2025
+  // schema failure must NOT appear on 5.3.2, because the Annex 4 validator grades
+  // that clause itself. A run whose only failure is §3.2 therefore expects an
+  // all-zero DS01.3 summary — and a verdict of 'pass' or null to match.
+  const audit = auditLensRows(
+    'ds013',
+    lensRows({}),
+    findings({ 'tx-1': [{ requirement: '3.2', severity: 'fail', outdated: false }] }),
+    verdicts({ 'tx-1': { ds013: 'pass' } }),
+  );
+
+  assert.deepEqual(audit.violations, []);
+  assert.deepEqual(audit.failing, []);
+});
+
+test('evidence folding onto a clause the package does not serve is a violation', () => {
+  const audit = auditLensRows(
+    'ds013',
+    [{ requirement: '5.3.2', counts: { pass: 0, fail: 0, info: 0 } }],
+    findings({ 'tx-1': [OVERSIZE] }),
+    verdicts({ 'tx-1': { ds013: 'fail' } }),
+  );
+
+  assert.equal(audit.violations.length, 1);
+  assert.match(audit.violations[0]!, /5\.1\.6: 1 fail\(s\) fold onto a row the ds013 package/);
+});
+
+test('a row failure the transmission verdict denies is a violation, and so is the converse', () => {
+  const denied = auditLensRows(
+    'ds013',
+    lensRows({ '5.1.6': 1 }),
+    findings({ 'tx-1': [OVERSIZE] }),
+    verdicts({ 'tx-1': { ds013: 'pass' } }),
+  );
+  assert.equal(denied.violations.length, 1);
+  assert.match(denied.violations[0]!, /transmission tx-1 carries a 5\.1\.6 failure under ds013/);
+  assert.match(denied.violations[0]!, /verdict is pass/);
+
+  // The other direction: a supplier is told the draft fails this transmission
+  // while no clause of the package carries the failure — a fail with nothing to
+  // open.
+  const unplaced = auditLensRows(
+    'ds013',
+    lensRows({}),
+    findings({ 'tx-1': [] }),
+    verdicts({ 'tx-1': { ds013: 'fail' } }),
+  );
+  assert.equal(unplaced.violations.length, 1);
+  assert.match(unplaced.violations[0]!, /transmission tx-1 fails under ds013, but no row/);
+});
+
+test('a null verdict is not a fail, so a clean draft run raises nothing', () => {
+  const audit = auditLensRows('ds013', lensRows({}), findings({ 'tx-1': [] }), verdicts({}));
+  assert.deepEqual(audit.violations, []);
+});
+
+test('an instance that serves no rows or no verdicts is a note, never a failure', () => {
+  // The same asymmetric tolerance the advisory audit has: a target older than the
+  // lens (HTTP 400, so `null` rows) and a target older than per-profile verdicts
+  // are facts about the target, not disagreements.
+  const noLens = auditLensRows('ds013', null, findings({ 'tx-1': [OVERSIZE] }), verdicts({}));
+  assert.deepEqual(noLens.violations, []);
+  assert.equal(noLens.rows, 0);
+  assert.match(noLens.notes[0]!, /ds013 lens is not served by this instance/);
+
+  const noVerdicts = auditLensRows(
+    'ds013',
+    lensRows({ '5.1.6': 1 }),
+    findings({ 'tx-1': [OVERSIZE] }),
+    verdicts({ 'tx-1': {} }),
+  );
+  assert.deepEqual(noVerdicts.violations, []);
+  assert.match(noVerdicts.notes[0]!, /no ds013 verdict served by this instance/);
+
+  const noPackage = auditLensRows(null, null, findings({}), verdicts({}));
+  assert.deepEqual(noPackage.violations, []);
+  assert.match(noPackage.notes[0]!, /no second requirement package is registered/);
+});
+
+test('the contract lens counts its own lineage and nothing else', () => {
+  // The audit is written over a lens parameter rather than over DS01.3, so the
+  // contract package is auditable by the same rules. Under it a draft finding has
+  // no row at all — which is the fold's identity case, and the reason the default
+  // dashboard response never moved when the lens landed.
+  const audit = auditLensRows(
+    '2025',
+    [
+      { requirement: '1.4', counts: { pass: 0, fail: 1, info: 0 } },
+      { requirement: '3.2', counts: { pass: 0, fail: 0, info: 0 } },
+    ],
+    findings({ 'tx-1': [OVERSIZE, ANNEX4] }),
+    verdicts({ 'tx-1': { '2025': 'fail', ds013: 'fail' } }),
+  );
+
+  assert.deepEqual(audit.violations, []);
+  assert.deepEqual(
+    audit.failing.map((row) => row.requirement),
+    ['1.4'],
+  );
 });

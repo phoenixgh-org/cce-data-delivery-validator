@@ -17,7 +17,12 @@ import assert from 'node:assert/strict';
 import { emsBaseline } from '../baseline.js';
 import type { ExerciseCase } from '../case.js';
 import { EXERCISE_CASES } from '../cases.js';
-import { auditAdvisoryCopy, judgeCase, type FindingsByTransmission } from './assertions.js';
+import {
+  auditAdvisoryCopy,
+  auditLensRows,
+  judgeCase,
+  type FindingsByTransmission,
+} from './assertions.js';
 import type { SessionHandle } from './client.js';
 import { formatRun, planPlayOrder, playCase, type PostPlayer } from './run.js';
 
@@ -208,6 +213,7 @@ test('the printed run shows the advisory copy the instance served', () => {
       session: SESSION,
       verdicts: [judgeCase(kase, outcomes, observed)],
       advisoryCopy: auditAdvisoryCopy(observed),
+      lens: auditLensRows('ds013', null, observed, new Map()),
     },
     [kase],
   );
@@ -218,4 +224,36 @@ test('the printed run shows the advisory copy the instance served', () => {
   assert.match(printed, /advisory copy\n {2}FAIL {2}adv\.blank_admin: summary is blank/);
   // The §3.2 pass is not advisory copy and never appears in the block.
   assert.doesNotMatch(printed, /advisories[^]*\n {2}3\.2/);
+});
+
+test('the printed run shows what the draft package made of the session', () => {
+  // The lens block (tfnv.10) prints both numbers per failing row — the count the
+  // summary served and the count the run's own findings fold onto it — so the
+  // operator can check the page against the run without opening the dashboard.
+  const kase = stub('lens-case');
+  const observed: FindingsByTransmission = new Map([
+    ['tx-1', [{ requirement: '1.4', severity: 'fail' as const, outdated: false }]],
+  ]);
+  const outcomes = [{ label: '#0', expectedStatus: 200, status: 200, transmissionId: 'tx-1' }];
+
+  const lines = formatRun(
+    'http://stub',
+    {
+      session: SESSION,
+      verdicts: [judgeCase(kase, outcomes, observed)],
+      advisoryCopy: auditAdvisoryCopy(observed),
+      lens: auditLensRows(
+        'ds013',
+        [{ requirement: '5.1.6', counts: { pass: 0, fail: 1, info: 0 } }],
+        observed,
+        new Map([['tx-1', { ds013: 'fail' as const }]]),
+      ),
+    },
+    [kase],
+  );
+  const printed = lines.join('\n');
+
+  assert.match(printed, /grading lens — ds013: 1 row\(s\) served, 1 carrying a failure/);
+  assert.match(printed, /5\.1\.6 {2}1 fail \(folded 1\) from 1 transmission\(s\)/);
+  assert.doesNotMatch(printed, /grading lens[^]*FAIL/);
 });

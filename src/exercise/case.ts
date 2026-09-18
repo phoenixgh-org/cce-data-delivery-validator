@@ -210,17 +210,19 @@ export interface ExerciseCase {
   readonly requirements: readonly string[];
   /**
    * DS01.3 clause ids this case exercises under the shadow lineage, e.g.
-   * '5.3.2' (by1c.15). INFORMATIONAL: nothing joins on it.
+   * '5.3.2' (by1c.15). It is the CLAIM the DS01.3 coverage join reads
+   * (./runner/coverage.ts, tfnv.10) — it was informational until that join
+   * existed, and the clause a case names is now printed as exercised.
    *
    * It is a separate field rather than more entries in `requirements` because
    * `requirements` is what the coverage report joins onto COMPLIANCE_MATRIX,
    * and that matrix is 2025-only by construction — a DS01.3 clause is not a row
    * there, so an id added to `requirements` would be reported as an unknown
-   * requirement rather than as coverage. Recording the clause on the case keeps
-   * the fact readable where the case is read, without inventing a second
-   * coverage report for a lineage that is not in force. What the case actually
-   * ASSERTS about the shadow run is its `expectedFindings` entries carrying
-   * `profile`; this field only says what the case is about.
+   * requirement rather than as coverage. Keeping the two fields apart is what
+   * lets each package be joined onto its own matrix and reported beside the
+   * other. What the case actually ASSERTS about the shadow run is its
+   * `expectedFindings` entries carrying `profile`; this field only says what the
+   * case is about.
    */
   readonly shadowClauses?: readonly string[];
   readonly direction: Direction;

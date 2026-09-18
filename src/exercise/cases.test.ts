@@ -493,11 +493,12 @@ test('a case cannot both expect and forbid the same (requirement, profile)', () 
 });
 
 test('a case naming shadowClauses really asserts something about the shadow run', () => {
-  // `shadowClauses` is informational — no consumer joins on it (../case.ts) —
-  // which is exactly why it can rot without anything noticing. A case that
+  // `shadowClauses` says what a case is ABOUT under the draft lineage; what it
+  // ASSERTS is its `expectedFindings` entries carrying a profile. A case that
   // records a clause but expects no finding under that lineage is claiming an
-  // exercise it does not perform, and the coverage report cannot catch it
-  // because the report is 2025-only by construction.
+  // exercise it does not perform, and the DS01.3 coverage join (runner/
+  // coverage.ts) would print that empty claim as exercise — it counts the claim,
+  // like every other coverage join, and cannot see that nothing backs it.
   const shadowCases = EXERCISE_CASES.filter((kase) => (kase.shadowClauses ?? []).length > 0);
   assert.ok(shadowCases.length > 0, 'the table still exercises the DS01.3 shadow run');
   for (const kase of shadowCases) {

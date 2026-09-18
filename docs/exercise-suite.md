@@ -1,11 +1,11 @@
 # The conformance exercise suite
 
-**Status:** contributor documentation. **Last updated:** 2026-09-16.
+**Status:** contributor documentation. **Last updated:** 2026-09-17.
 
 A service that grades other people's conformance should be held to the same bar,
 and the only honest way to check the receiving side is to drive a deployed
 instance the way a supplier would. `npm run exercise` does that: it plays a table
-of 65 synthetic cases against a **running** validator and checks four things.
+of 65 synthetic cases against a **running** validator and checks five things.
 
 - **Requirements, both directions.** Every requirement the §7 matrix says we grade
   is exercised once in the passing direction and once in the failing one.
@@ -15,6 +15,8 @@ of 65 synthetic cases against a **running** validator and checks four things.
   would make of a payload the contract in force accepts.
 - **The advisory copy.** The prose a supplier would actually read is audited
   run-wide for shape and vocabulary.
+- **The grading lens.** The DS01.3 summary rows the instance serves are checked
+  against the findings and verdicts it serves beside them.
 
 This document is its internals: the case model, the transform vocabulary, how
 coverage is computed, and how to add a case. The how-to-run lives in the
@@ -40,7 +42,7 @@ The code is `src/exercise/`:
 | `cases.ts`                                     | The index that concatenates them into `EXERCISE_CASES`.                                              |
 | `runner/client.ts`                             | The only module that opens a socket.                                                                 |
 | `runner/assertions.ts`                         | Pure grading of a case from statuses + findings.                                                     |
-| `runner/coverage.ts`                           | The join onto `COMPLIANCE_MATRIX`.                                                                   |
+| `runner/coverage.ts`                           | The joins onto `COMPLIANCE_MATRIX`, the advisory catalogue and the DS01.3 matrix.                    |
 | `runner/run.ts`                                | The CLI: resolve target, play, print, exit code, and --help.                                         |
 
 ## The case model: data, not code
@@ -317,14 +319,15 @@ The suite itself never runs in CI: it needs a server, so it has its own npm scri
 sits outside `npm test`'s glob. But the case table and transforms are pure, so the
 colocated tests — which **do** run in CI — check the half that needs no server:
 
-| Checked in CI (`npm test`)                                                                                                                                                                                                                                                                                                                                | Only checkable live (`npm run exercise`)                                            |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Every materialized payload really behaves as its case DECLARED: `invalid` rejected by the vendored Ajv, `unsupported-version` unresolvable in the registry, `valid` clean (`cases.test.ts`). Direction is not the test — most fail-direction cases carry a schema-valid payload whose defect lives above Ajv: transport, sequence, or §3.1/§3.4 semantics | The HTTP status each POST actually returns                                          |
-| A case expecting the §3.2 outdated grade names a registered version that really is older than current                                                                                                                                                                                                                                                     | That the finding the grader records is the one expected                             |
-| Transport wrappers really produce the method/headers/bytes they claim                                                                                                                                                                                                                                                                                     | The §2.1 overlap (a timing fact — see below)                                        |
-| Table invariants: unique ids, distinct transferIds outside deliberate replays, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload                                                                                                              | The end-to-end pipeline, database and dashboard API                                 |
-| The coverage join, that every gradeable requirement is claimed in both directions, that every registered advisory has a fire case, and that no claimed row is printed without the payload types it was exercised with                                                                                                                                     | The advisory copy a live instance actually served (`auditAdvisoryCopy` — see below) |
-| The draft verdict behind every shadow expectation: `cases/shadow.test.ts` puts each case carrying a `ds013` expectation — thirteen today, from the readiness module and the advisory table alike — through the Annex 4 draft validator and asserts the `pass`/`fail` the case declared                                                                    |                                                                                     |
+| Checked in CI (`npm test`)                                                                                                                                                                                                                                                                                                                                | Only checkable live (`npm run exercise`)                                                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Every materialized payload really behaves as its case DECLARED: `invalid` rejected by the vendored Ajv, `unsupported-version` unresolvable in the registry, `valid` clean (`cases.test.ts`). Direction is not the test — most fail-direction cases carry a schema-valid payload whose defect lives above Ajv: transport, sequence, or §3.1/§3.4 semantics | The HTTP status each POST actually returns                                                                                                   |
+| A case expecting the §3.2 outdated grade names a registered version that really is older than current                                                                                                                                                                                                                                                     | That the finding the grader records is the one expected                                                                                      |
+| Transport wrappers really produce the method/headers/bytes they claim                                                                                                                                                                                                                                                                                     | The §2.1 overlap (a timing fact — see below)                                                                                                 |
+| Table invariants: unique ids, distinct transferIds outside deliberate replays, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload                                                                                                              | The end-to-end pipeline, database and dashboard API                                                                                          |
+| The coverage join, that every gradeable requirement is claimed in both directions, that every registered advisory has a fire case, and that no claimed row is printed without the payload types it was exercised with                                                                                                                                     | The advisory copy a live instance actually served (`auditAdvisoryCopy` — see below)                                                          |
+| The draft verdict behind every shadow expectation: `cases/shadow.test.ts` puts each case carrying a `ds013` expectation — thirteen today, from the readiness module and the advisory table alike — through the Annex 4 draft validator and asserts the `pass`/`fail` the case declared                                                                    |                                                                                                                                              |
+| The lens audit's own rules, against synthetic rows, findings and verdicts (`runner/assertions.test.ts`), and the DS01.3 half of the coverage join (`runner/coverage.test.ts`)                                                                                                                                                                             | That the DS01.3 summary rows a live instance serves agree with the findings and verdicts it serves beside them (`auditLensRows` — see below) |
 
 The live script and the CI-tested core import the **same** case definitions, so they
 cannot drift apart.
@@ -355,6 +358,44 @@ softer than that: a summary over 90 characters is a warning, because the counts 
 summary carries grow with the payload, and a target that serves no summary on **any**
 advisory is reported as an instance fact rather than a failure. A target that serves
 some and not others is a violation, which is the regression the audit exists to catch.
+
+**The grading lens is audited against the evidence beneath it.** The dashboard can be
+switched from the UNICEF Q1 2025 requirements to the DS01.3 draft, and under that lens
+every count is folded at read time: a §1.4 failure is counted on clause 5.1.6, a §3.1
+custom-object finding on 5.3.5, and the Annex 4 validator's own findings on 5.3.2. The
+fold and the verdict rule are pure and unit-tested. What no pure test reaches is the
+path between them on a real instance — the scoping, the join onto the draft matrix, the
+serialization, and the fact that the numbers a supplier reads on one page are the
+numbers the rows beneath them carry. So once the table has been played the runner reads
+the session summary again under `?lens=ds013` and holds it to one invariant
+(`auditLensRows` in `runner/assertions.ts`):
+
+- each served row's `counts.fail` equals the number of fail findings the run's own
+  findings fold onto that clause;
+- no failure folds onto a clause the draft package does not serve;
+- every transmission contributing a failure to a row carries a `fail` verdict under that
+  lineage, and every transmission whose verdict is `fail` has a row carrying it.
+
+That last pair is the point of the pass. Without the first half a clause could be graded
+off traffic the page calls clean; without the second a supplier could be told the draft
+fails a transmission with no row to open. The block prints both numbers per failing row,
+so a run can be checked against the page without opening the dashboard:
+
+```
+grading lens — ds013: 27 row(s) served, 10 carrying a failure
+  5.1.3   2 fail (folded 2) from 2 transmission(s)
+  5.1.6   1 fail (folded 1) from 1 transmission(s)
+  5.3.2   199 fail (folded 199) from 49 transmission(s)
+```
+
+A disagreement fails the run on its own — exit 1 even with every case green — for the
+same reason an advisory served with no summary does: those numbers are part of what the
+service delivers. Two things are softer, and the tolerance is asymmetric in the same way
+the copy audit's is. A target that does not know the lens answers HTTP 400
+`unknown_lens`, and a target older than per-profile verdicts serves none for the draft
+lineage; each is reported as a fact about the instance and grades nothing, because
+failing there would say "this validator is broken" about one that simply predates the
+feature.
 
 ## Coverage is a mechanical join
 
@@ -460,7 +501,7 @@ the EMS readiness pass case — declare the whole catalogue silent by reading
 `ADVISORY_IDS` off the registry. Read `fired 12` as "every advisory is reachable" and
 the silence cases as the other half — neither line alone says "the catalogue behaves".
 
-### Shadow cases, and why coverage ignores them
+### Shadow cases, and the DS01.3 half of coverage
 
 A transmission whose declared `schemaVersion` resolves to a registered lineage is graded
 twice: once against the contract in force (`cce-interop`, profile `2025`) and once
@@ -476,15 +517,39 @@ Three fields carry that:
   lineages, so an expectation matched on `(requirement, severity)` alone could assert a
   contract pass and be satisfied by a draft one.
 - **`ExerciseCase.shadowClauses`** records the DS01.3 clauses a case exercises, e.g.
-  `['5.3.2']`. It is informational — nothing joins on it.
+  `['5.3.2']`. It is the claim the DS01.3 coverage join reads.
 - **`ExerciseCase.requirements`** stays 2025 ids, unchanged.
 
-Coverage ignores the 5.x clauses because `COMPLIANCE_MATRIX` is 2025-only by
-construction. A DS01.3 clause is not a row there, so an id added to `requirements` would
-be reported as an _unknown requirement_ rather than as coverage — and building a second
-matrix for a lineage that is not in force would print a coverage claim about a draft. So
-the clause is recorded on the case, where it is read, and what the case actually asserts
-about the shadow run is its `expectedFindings` entries carrying `profile`.
+The two kinds of id stay in separate fields because `COMPLIANCE_MATRIX` is 2025-only by
+construction: a DS01.3 clause is not a row there, so an id added to `requirements` would
+be reported as an _unknown requirement_ rather than as coverage. What the case actually
+asserts about the shadow run is still its `expectedFindings` entries carrying `profile`;
+`shadowClauses` says what the case is about.
+
+Each package is now joined onto its own matrix and the two are reported side by side. The
+DS01.3 join reads `shadowClauses` against the 27 clauses the grading lens serves, and
+says which of them the table exercises:
+
+```
+DS01.3 rows — 27 clause(s): exercised 1, not exercised 26
+  a clause is exercised when a case names it in `shadowClauses` — reported, never failed
+  exercised                  5.3.2[ems,rtm]
+  not exercised              5.1.1 5.1.2 5.1.3 5.1.5 5.1.6 5.1.7 5.1.8 …
+```
+
+**Exercised**, not covered, and the word is chosen. The 2025 join grades a row on being
+claimed in both directions; this one asks only whether any case names the clause, because
+the draft is unpublished and a run against it is preparation rather than grading. A
+clause with no exercise is therefore printed, never failed — several of the 27 are
+informational rows the receiving side files no finding under at all, and a CI failure
+demanding a case for each would be demanding an exercise that does not exist. What CI
+does pin is the mechanical half: a clause a case names that the draft matrix does not
+carry is reported as an unknown claim, exactly as a mistyped requirement id is.
+
+Caution: an exercised clause is not a graded one. The line counts claims, so a case that
+names a clause and asserts nothing under that lineage would read as exercise. What keeps
+the two together is `cases.test.ts`, which fails any case recording a clause it expects
+no finding on.
 
 A readiness case is **direction `pass`**. Direction describes the contract's point of
 view, which is the only view that grades: a payload the validator accepts with a §3.2

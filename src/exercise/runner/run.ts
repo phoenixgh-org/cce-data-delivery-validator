@@ -14,8 +14,8 @@
  *   EXERCISE_BASE_URL=https://host npm run exercise
  *
  * WHAT IT PRINTS is a verdict list, run counts, the advisory copy the instance
- * served, the coverage gaps, and the DASHBOARD URL of the session it just
- * filled. The dashboard is the detailed human-readable report (epic 8qa: "the
+ * served, the grading-lens audit, the coverage gaps, and the DASHBOARD URL of the
+ * session it just filled. The dashboard is the detailed human-readable report (epic 8qa: "the
  * main human-readable report is the validator UI itself"); this output is a
  * summary, not a second report.
  *
@@ -57,6 +57,7 @@
  */
 
 import { COMPLIANCE_MATRIX } from '../../api/compliance-matrix.js';
+import { CONTRACT_PROFILE, PROFILES, type Profile } from '../../schema-registry.js';
 import {
   isConcurrentDelivery,
   materializeCase,
@@ -67,18 +68,20 @@ import { EXERCISE_CASES } from '../cases.js';
 import type { TransportContext, WireRequest } from '../transforms/transport.js';
 import {
   auditAdvisoryCopy,
+  auditLensRows,
   judgeCase,
   tally,
   type CaseVerdict,
   type CopyAudit,
-  type FindingsByTransmission,
+  type LensAudit,
   type PostOutcome,
 } from './assertions.js';
 import {
   ExerciseHttpError,
   createExerciseSession,
   enableBearerAuth,
-  fetchFindingsByTransmission,
+  fetchLensSummary,
+  fetchSessionEvidence,
   normalizeBaseUrl,
   playPost,
   type IngestResult,
@@ -91,14 +94,15 @@ const DEFAULT_BASE_URL = 'http://localhost:3000';
 const USAGE = `Usage: npm run exercise [-- <base-url>]
 
 Plays the CCE conformance exercise suite against a RUNNING validator instance,
-then prints a per-case verdict, run counts, the requirement-coverage report and
-the dashboard URL of the session it created (that dashboard is the detailed
-report). Sends synthetic data only.
+then prints a per-case verdict, run counts, the grading-lens audit, the
+requirement-coverage report and the dashboard URL of the session it created (that
+dashboard is the detailed report). Sends synthetic data only.
 
   <base-url>   target origin (default ${DEFAULT_BASE_URL}, or $EXERCISE_BASE_URL)
 
-Exit codes: 0 all cases passed and the advisory copy is clean · 1 a case failed,
-or the advisory-copy audit found a violation · 2 could not run.`;
+Exit codes: 0 all cases passed, the advisory copy is clean and the lens agrees ·
+1 a case failed, or the advisory-copy or grading-lens audit found a violation ·
+2 could not run.`;
 
 /** Resolve the target origin: CLI argument, then env, then localhost. */
 export function resolveBaseUrl(argv: readonly string[], env: Record<string, string | undefined>) {
@@ -192,7 +196,26 @@ export interface RunResult {
    * one, carries a rationale, and says neither in defect vocabulary.
    */
   readonly advisoryCopy: CopyAudit;
+  /**
+   * The GRADING-LENS audit (tfnv.10) — also session-level, and for the same
+   * reason: the summary rows are a statement about the whole session, so no case
+   * can own them. It checks that the rows the instance serves under the draft
+   * package agree with the findings and verdicts it serves beside them.
+   */
+  readonly lens: LensAudit;
 }
+
+/**
+ * The package the lens audit reads under: the registered lineage that is not the
+ * contract — `ds013` today.
+ *
+ * Read off the LOCAL registry rather than off the target's `session.shadowProfile`,
+ * which would cost a second read before the one being audited. A target that does
+ * not know the package answers HTTP 400 and the audit says so as a note, so the
+ * two ways of being wrong about it both end in the same honest line rather than
+ * in a failed run.
+ */
+const SHADOW_LENS: Profile | undefined = PROFILES.find((profile) => profile !== CONTRACT_PROFILE);
 
 /**
  * Create a session, play the table, then read the findings back ONCE and judge
@@ -231,7 +254,15 @@ export async function runExercise(
     }
   }
 
-  const findings: FindingsByTransmission = await fetchFindingsByTransmission(baseUrl, session.uuid);
+  const evidence = await fetchSessionEvidence(baseUrl, session.uuid);
+  const { findings } = evidence;
+
+  // The summary the DRAFT LENS serves, read after the table has been played so
+  // the rows cover every transmission the run wrote. `undefined` for a registry
+  // with no shadow lineage: there is no second package to read under, which the
+  // audit reports the same way it reports a target that does not know the lens.
+  const lensRows =
+    SHADOW_LENS === undefined ? null : await fetchLensSummary(baseUrl, session.uuid, SHADOW_LENS);
 
   const verdicts = cases.map((kase) =>
     judgeCase(kase, outcomesByCase.get(kase.id) ?? [], findings),
@@ -239,7 +270,12 @@ export async function runExercise(
   // Audited over the SESSION's findings rather than over the verdicts: the copy
   // bar belongs to every advisory the instance served, including ones no case
   // named, and pooling per case would judge a shared advisory twice.
-  return { session, verdicts, advisoryCopy: auditAdvisoryCopy(findings) };
+  return {
+    session,
+    verdicts,
+    advisoryCopy: auditAdvisoryCopy(findings),
+    lens: auditLensRows(SHADOW_LENS ?? null, lensRows, findings, evidence.verdicts),
+  };
 }
 
 /**
@@ -277,6 +313,36 @@ function formatAdvisoryCopy(audit: CopyAudit): string[] {
   return lines;
 }
 
+/**
+ * The grading-lens block (tfnv.10): how many rows the draft package served, the
+ * rows carrying a failure, and whatever the audit has to say about them.
+ *
+ * The failing rows are printed with BOTH numbers — the count the summary served
+ * and the count the run's own findings fold onto the row — because the two
+ * agreeing is the whole claim. A reader who sees `5.1.6  2 fail (folded 2)` can
+ * check the page against the run without opening the dashboard, and a
+ * disagreement reads as the mismatch it is rather than as one unexplained number.
+ */
+function formatLensAudit(audit: LensAudit): string[] {
+  if (audit.lens === null && audit.notes.length === 0) return [];
+
+  const lines: string[] = [];
+  lines.push(
+    `grading lens — ${audit.lens ?? 'none'}: ${audit.rows} row(s) served, ` +
+      `${audit.failing.length} carrying a failure`,
+  );
+  const width = Math.max(1, ...audit.failing.map((row) => row.requirement.length));
+  for (const row of audit.failing) {
+    lines.push(
+      `  ${row.requirement.padEnd(width)}  ${row.served} fail (folded ${row.folded}) ` +
+        `from ${new Set(row.transmissions).size} transmission(s)`,
+    );
+  }
+  for (const violation of audit.violations) lines.push(`  FAIL  ${violation}`);
+  for (const note of audit.notes) lines.push(`  note  ${note}`);
+  return lines;
+}
+
 /** Render the run as printable lines. Pure, so the shape is easy to eyeball. */
 export function formatRun(
   baseUrl: string,
@@ -302,6 +368,11 @@ export function formatRun(
   if (advisoryLines.length > 0) {
     lines.push('');
     lines.push(...advisoryLines);
+  }
+  const lensLines = formatLensAudit(result.lens);
+  if (lensLines.length > 0) {
+    lines.push('');
+    lines.push(...lensLines);
   }
   lines.push('');
   lines.push(...formatCoverage(computeCoverage(cases, COMPLIANCE_MATRIX)));
@@ -348,9 +419,13 @@ export async function main(
   // An advisory-copy violation fails the run on its own, even with every case
   // green (y0w4). The copy is part of what the service delivers, and a run that
   // exited 0 while printing an advisory with no summary would be reporting the
-  // gap to nobody.
+  // gap to nobody. A lens disagreement fails it for the same reason (tfnv.10):
+  // the numbers a supplier reads under the draft package are part of what is
+  // delivered, and every case can pass while the page adds them up wrongly.
   const ok =
-    result.verdicts.every((verdict) => verdict.ok) && result.advisoryCopy.violations.length === 0;
+    result.verdicts.every((verdict) => verdict.ok) &&
+    result.advisoryCopy.violations.length === 0 &&
+    result.lens.violations.length === 0;
   return ok ? 0 : 1;
 }
 

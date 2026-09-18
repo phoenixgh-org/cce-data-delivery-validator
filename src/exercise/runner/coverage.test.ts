@@ -15,12 +15,19 @@
  * The ADVISORY join (axdd) is tested the same way, against a synthetic catalogue
  * for the rules and against ADVISORY_IDS + EXERCISE_CASES for the live fact:
  * every registered advisory has a case that fires it.
+ *
+ * The DS01.3 join (tfnv.10) follows the same pattern once more. Its live fact is
+ * weaker on purpose: a clause with no exercise is REPORTED, never failed, because
+ * the draft is unpublished and several of its clauses are informational rows no
+ * finding is filed under — so what is pinned is that the report prints both
+ * halves and that the table names no clause the draft matrix lacks.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX, type MatrixRow } from '../../api/compliance-matrix.js';
+import { DS013_MATRIX, type Ds013MatrixRow } from '../../api/matrix-ds013.js';
 import { ADVISORY_IDS, type AdvisoryId } from '../../ingest/stages/semantic/advisory.js';
 import { emsBaseline } from '../baseline.js';
 import type { ExerciseCase } from '../case.js';
@@ -463,5 +470,104 @@ test('every registered advisory has a fire case (axdd)', () => {
       text.includes(`${row.advisory}[${row.fireTypes.join(',')}]`),
       `${row.advisory} is printed without its payload types`,
     );
+  }
+});
+
+// ── the DS01.3 join (tfnv.10) ───────────────────────────────────────────────
+
+const DS013: readonly Ds013MatrixRow[] = [
+  {
+    clause: '5.1.6',
+    summary: 'payload size',
+    classes: ['verified'],
+    tightened: false,
+    members: ['1.4'],
+    graded: true,
+  },
+  {
+    clause: '5.3.2',
+    summary: 'validates against Annex 4',
+    classes: ['verified'],
+    tightened: true,
+    members: ['3.2'],
+    graded: true,
+  },
+  {
+    clause: '5.1.12',
+    summary: 'optional pull API',
+    classes: ['none'],
+    tightened: false,
+    members: [],
+    graded: false,
+  },
+];
+
+test('a DS01.3 clause is exercised when a case names it in shadowClauses', () => {
+  const report = computeCoverage(
+    [
+      kase({ id: 'a', shadowClauses: ['5.3.2'] }),
+      kase({ id: 'b', shadowClauses: ['5.3.2'], baseline: emsBaseline }),
+      kase({ id: 'c' }),
+    ],
+    MATRIX,
+    [],
+    DS013,
+  );
+
+  assert.deepEqual(
+    report.ds013.exercised.map((row) => [row.clause, row.cases, row.types]),
+    [['5.3.2', ['a', 'b'], ['ems', 'rtm']]],
+  );
+  assert.deepEqual(
+    report.ds013.notExercised.map((row) => row.clause),
+    ['5.1.6', '5.1.12'],
+  );
+  assert.equal(report.ds013.rows.length, DS013.length);
+});
+
+test('a clause a case names that the DS01.3 matrix lacks is reported, not dropped', () => {
+  // The same rule as `unknownClaims` on the 2025 side: a claim nobody joins to is
+  // indistinguishable from no claim at all, so a retired or mistyped clause id
+  // would otherwise vanish.
+  const report = computeCoverage([kase({ id: 'a', shadowClauses: ['5.9.9'] })], MATRIX, [], DS013);
+  assert.deepEqual(report.ds013.unknownClaims, ['5.9.9']);
+});
+
+test('the DS01.3 join says whether an unexercised clause has anything to grade', () => {
+  // `graded` travels with the row so the report can distinguish a gap in the case
+  // table from a clause the receiving side files no finding under at all — the
+  // six DS01.3 clauses with no 2025 member.
+  const report = computeCoverage([], MATRIX, [], DS013);
+  const informational = report.ds013.rows.find((row) => row.clause === '5.1.12')!;
+  assert.equal(informational.graded, false);
+  assert.equal(informational.exercised, false);
+  assert.equal(report.ds013.rows.find((row) => row.clause === '5.1.6')!.graded, true);
+});
+
+test('the shipped case table names no DS01.3 clause the draft matrix lacks', () => {
+  const report = computeCoverage(EXERCISE_CASES);
+  assert.deepEqual(report.ds013.unknownClaims, []);
+  assert.equal(report.ds013.rows.length, DS013_MATRIX.length);
+  assert.ok(
+    report.ds013.exercised.length > 0,
+    'the table still exercises at least one DS01.3 clause',
+  );
+});
+
+test('the printed report names the DS01.3 clauses it exercises and the ones it does not', () => {
+  // The gap this section exists to make visible: with the 2025 joins alone, a
+  // DS01.3 clause nothing exercises read exactly like one nine cases exercise.
+  const report = computeCoverage(EXERCISE_CASES);
+  const text = formatCoverage(report).join('\n');
+  assert.match(text, /DS01\.3 rows — \d+ clause\(s\): exercised \d+, not exercised \d+/);
+  for (const row of report.ds013.exercised) {
+    assert.ok(row.types.length > 0, `${row.clause} is exercised but names no payload type`);
+    assert.ok(
+      text.includes(`${row.clause}[${row.types.join(',')}]`),
+      `${row.clause} is printed without its payload types`,
+    );
+  }
+  for (const row of report.ds013.notExercised) {
+    assert.ok(text.includes(row.clause), `unexercised clause ${row.clause} is printed`);
   }
 });
