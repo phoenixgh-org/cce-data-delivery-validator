@@ -332,13 +332,13 @@ test('message: shadow fails echoed → a trailing sentence with the count, date 
   assert.equal(
     body.message,
     'Accepted (200): data recorded; 1 finding. ' +
-      `5 further findings under the DS01.3 draft of ${entry.draftDate} ` +
+      `5 further findings under the DS01.3 Annex 4 draft of ${entry.draftDate} ` +
       `(sha256 ${entry.sha256}) did not affect this status.`,
   );
   assert.equal(body.findings, 1, 'the shadow findings move no count');
 });
 
-test('message: a clean shadow run says so — "Also passes the DS01.3 draft…"', () => {
+test('message: a clean shadow run says so — "Also passes the DS01.3 Annex 4 draft…"', () => {
   const entry = entryOf('ds013');
   const body = buildResponseBody(
     200,
@@ -353,7 +353,7 @@ test('message: a clean shadow run says so — "Also passes the DS01.3 draft…"'
   assert.equal(
     body.message,
     'Accepted (200): data recorded; 1 finding. ' +
-      `Also passes the DS01.3 draft of ${entry.draftDate} (sha256 ${entry.sha256}).`,
+      `Also passes the DS01.3 Annex 4 draft of ${entry.draftDate} (sha256 ${entry.sha256}).`,
   );
 });
 
@@ -380,15 +380,16 @@ test('message: the sentence follows ctx.shadowProfile, so the roles can swap', (
   // lineage map of its own until the names moved to src/profile-vocabulary.ts,
   // where the dashboard's provenance line reads them too. Which of the two forms
   // the sentence takes is read off the ENTRY, not written at the call site (bd
-  // by1c.49). A PUBLISHED entry — `draftDate === undefined` — takes the
-  // `longName`, because a version number follows it: "the cce-interop 0.8.1
-  // schema" names the artifact family the published filename and `$id` use,
-  // where "the 2025 0.8.1 schema" would put two version-shaped tokens in a row.
-  // A draft takes the `name`, because a date follows instead: "the DS01.3 draft
-  // of 2026-09-08". The shadow entry here is published, so the assertion below
-  // pins "cce-interop". No message the service sends today changes — the
-  // ordinary shadow lineage is the ds013 draft, and it is named "DS01.3" either
-  // way.
+  // by1c.49). BOTH forms take the `longName` — the schema DOCUMENT the bytes
+  // come from, which is what a sentence ending in a sha256 is about: "the
+  // cce-interop 0.8.1 schema" names the artifact family the published filename
+  // and `$id` use, and "the DS01.3 Annex 4 draft of 2026-09-08" names the
+  // document the proposal lives in. What the entry decides is what follows the
+  // name: a version and "schema" for a published entry, a date for a draft. The
+  // `name` — the requirement package, "UNICEF Q1 2025" or "DS01.3 DRAFT" — is
+  // the dashboard's word for the lens and would shout "DRAFT" beside this
+  // sentence's own "draft of" (tfnv.1). The shadow entry here is published, so
+  // the assertion below pins "cce-interop".
   const entry = entryOf('2025');
   const body = buildResponseBody(
     200,
@@ -409,7 +410,7 @@ test('message: the sentence follows ctx.shadowProfile, so the roles can swap', (
     'Accepted (200): data recorded; 3 findings. ' +
       `Also passes the cce-interop ${entry.version} schema (sha256 ${entry.sha256}).`,
   );
-  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow here is the 2025 lineage');
+  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow here is the cce-interop lineage');
   assert.doesNotMatch(body.message, /draft/, 'published bytes are not called a draft');
 });
 

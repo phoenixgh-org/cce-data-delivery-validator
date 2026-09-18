@@ -353,22 +353,25 @@ function isContractFinding(f: Finding): boolean {
  * described the same way, and the shadow lineage is whichever one is not the
  * contract today.
  *
- * The lineage is named from the shared vocabulary (bd by1c.32), in the length
- * the sentence needs — which is the same branch that chooses "schema" over
- * "draft of" (bd by1c.49). A published entry takes the `longName`, because the
- * version sits right after it and "the cce-interop 0.8.1 schema" names the
- * artifact family the published filename and `$id` use, where "the 2025 0.8.1
- * schema" puts two version-shaped tokens in a row. A draft takes the `name`,
- * because a date follows instead: "the DS01.3 draft of …" reads better than the
- * provenance line's fuller "DS01.3 Annex 4". Both are read off the ENTRY's
- * `profile`, never written as a literal — which lineage is the shadow flips
- * with `CONTRACT_PROFILE`.
+ * The lineage is named from the shared vocabulary (bd by1c.32), and both branches
+ * take the `longName` — the schema DOCUMENT the bytes come from, which is what
+ * this sentence is about: it ends in the sha256 of the file that ran. "The
+ * cce-interop 0.8.1 schema" names the artifact family the published filename and
+ * `$id` use, and "the DS01.3 Annex 4 draft of 2026-09-08" names the document the
+ * proposal lives in. The `name` is the requirement PACKAGE a reader chooses
+ * between on the dashboard ("UNICEF Q1 2025", "DS01.3 DRAFT"); it was right here
+ * while the short name was "DS01.3", but since tfnv.1 it would put a shouted
+ * "DRAFT" next to this sentence's own "draft of". What still differs per branch
+ * is what follows the name — a version and "schema" for a published entry, a
+ * date for a draft (bd by1c.49). Draft-ness is read off the ENTRY, and so is the
+ * profile, never written as a literal — which lineage is the shadow flips with
+ * `CONTRACT_PROFILE`.
  */
 function describeShadowLineage(entry: RegistryEntry): string {
   const words = PROFILE_VOCABULARY[entry.profile];
   return entry.draftDate === undefined
     ? `the ${words.longName} ${entry.version} schema (sha256 ${entry.sha256})`
-    : `the ${words.name} draft of ${entry.draftDate} (sha256 ${entry.sha256})`;
+    : `the ${words.longName} draft of ${entry.draftDate} (sha256 ${entry.sha256})`;
 }
 
 /**

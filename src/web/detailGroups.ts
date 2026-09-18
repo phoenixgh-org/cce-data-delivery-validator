@@ -8,17 +8,17 @@
  * block cannot tell which findings grade the contract they are bound to and
  * which describe a proposal. So the pane now reads:
  *
- *   1. `Findings · 2025` — the findings that grade, i.e. the contract lineage's.
- *      A contract failure that is also a DS01.3 failure is marked in place with
- *      the shadow clause it re-tags to ("· also 5.1.3") and is NOT repeated
- *      below; one defect, one row.
- *   2. `Would also fail under DS01.3` — what the shadow run found on its own,
- *      rendered only when it found something.
+ *   1. `Findings · UNICEF Q1 2025` — the findings that grade, i.e. the contract
+ *      lineage's. A contract failure that is also a DS01.3 failure is marked in
+ *      place with the shadow clause it re-tags to ("· also 5.1.3") and is NOT
+ *      repeated below; one defect, one row.
+ *   2. `Would also fail under DS01.3 DRAFT` — what the shadow run found on its
+ *      own, rendered only when it found something.
  *   3. Advisories — unchanged, after both.
  *
- * Every lineage name comes from {@link PROFILE_NAME}; nothing here writes "2025"
- * or "DS01.3" as a literal, so the day the contract moves the words follow the
- * registry's flip point rather than this file.
+ * Every lineage name comes from {@link PROFILE_NAME}; nothing here writes
+ * "UNICEF Q1 2025" or "DS01.3 DRAFT" as a literal, so the day the contract moves
+ * the words follow the registry's flip point rather than this file.
  */
 import {
   CONTRACT_PROFILE,

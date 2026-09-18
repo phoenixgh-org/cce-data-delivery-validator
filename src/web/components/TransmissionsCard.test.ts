@@ -462,7 +462,7 @@ test('the shadow column appears only when a shadow lineage is registered', () =>
 test('a shadow signature prefixes the chip title with its lineage; a contract one does not', () => {
   assert.equal(
     chipTitle({ title: 'RTM logger identity missing', profile: 'ds013' }),
-    'DS01.3 · RTM logger identity missing',
+    'DS01.3 DRAFT · RTM logger identity missing',
   );
   assert.equal(
     chipTitle({ title: 'transferredAt has offset', profile: CONTRACT_PROFILE }),
@@ -477,7 +477,7 @@ test('a shadow signature prefixes the chip title with its lineage; a contract on
 /**
  * The SHADOW FAIL COUNT (by1c.38, by1c.39) — the number in the verdict tooltip's
  * parenthetical ("DS01.3: fail (5 findings)") and, since by1c.39, the number on
- * the detail pane's "Would also fail under DS01.3" header.
+ * the detail pane's "Would also fail under DS01.3 DRAFT" header.
  *
  * Three rules ride on it, none of them visible in its signature:
  *

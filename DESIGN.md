@@ -607,10 +607,22 @@ The server still computes and serves readiness (`docs/api.md`), so nothing has t
 be recomputed when that work lands.
 
 The vocabulary those surfaces use is deliberate and is centralized in
-[`profiles.ts`](src/web/profiles.ts). A lineage is never called old, new, current,
-or latest, because a supplier bound to a 2025 long-term agreement must not be told
-that the version their contract requires is stale. "Outdated" stays available, but
-only within a lineage (§7, §9.1), never across two.
+[`profiles.ts`](src/web/profiles.ts), which mirrors the server's
+[`profile-vocabulary.ts`](src/profile-vocabulary.ts). A lineage is never called
+old, new, current, or latest, because a supplier bound to a 2025 long-term
+agreement must not be told that the version their contract requires is stale.
+"Outdated" stays available, but only within a lineage (§7, §9.1), never across two.
+
+Each lineage carries two names, and they answer different questions. The
+requirement package a reader chooses between is named "UNICEF Q1 2025" and
+"DS01.3 DRAFT", on every surface that names a package: the verdict columns, the
+cross-filter chip prefix, the detail-group headings, and the grading lens the
+dashboard is moving to. "DRAFT" says what the DS01.3 bytes are — an unpublished
+proposal — not that they supersede anything. The schema document the bytes come
+from keeps its own name, "cce-interop" and "DS01.3 Annex 4", for the two
+provenance lines that tell a reader which artifact was loaded: the ingest
+response's trailing sentence and the setup bar's "also loaded, not graded
+against" line.
 
 ## 11. Retention and lifecycle
 

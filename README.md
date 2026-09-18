@@ -146,7 +146,7 @@ outcome without opening the dashboard (findings abridged here):
 {
   "transmissionId": "563af727-…",
   "status": 200,
-  "message": "Accepted (200): data recorded; 9 findings (2 info). Also passes the DS01.3 draft of 2026-09-08 (sha256 7e22de27…).",
+  "message": "Accepted (200): data recorded; 9 findings (2 info). Also passes the DS01.3 Annex 4 draft of 2026-09-08 (sha256 7e22de27…).",
   "findings": 9,
   "findingDetails": [
     {

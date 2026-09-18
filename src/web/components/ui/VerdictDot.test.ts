@@ -4,7 +4,7 @@
  *
  * What is pinned here is meaning the dots cannot carry on their own:
  *
- *   1. THE WORDS ARE THE VOCABULARY'S. "2025" and "DS01.3" come from
+ *   1. THE WORDS ARE THE VOCABULARY'S. "UNICEF Q1 2025" and "DS01.3 DRAFT" come from
  *      src/web/profiles.ts and the contract half is keyed off CONTRACT_PROFILE,
  *      so a lineage is never named by a literal at the call site (by1c.11).
  *   2. A NULL SHADOW VERDICT IS NOT A FAILURE. The shadow lineage not running on
@@ -37,7 +37,7 @@ test('the tooltip names both lineages, with the shadow fail count', () => {
       shadowProfile: 'ds013',
       findingsCount: 2,
     }),
-    '2025: pass · DS01.3: fail (2 findings)',
+    'UNICEF Q1 2025: pass · DS01.3 DRAFT: fail (2 findings)',
   );
   // One failure reads in the singular.
   assert.equal(
@@ -47,7 +47,7 @@ test('the tooltip names both lineages, with the shadow fail count', () => {
       shadowProfile: 'ds013',
       findingsCount: 1,
     }),
-    '2025: fail · DS01.3: fail (1 finding)',
+    'UNICEF Q1 2025: fail · DS01.3 DRAFT: fail (1 finding)',
   );
 });
 
@@ -59,12 +59,12 @@ test('a zero count drops the parenthetical rather than printing "(0 findings)"',
       shadowProfile: 'ds013',
       findingsCount: 0,
     }),
-    '2025: pass · DS01.3: fail',
+    'UNICEF Q1 2025: pass · DS01.3 DRAFT: fail',
   );
   // An omitted count behaves the same way.
   assert.equal(
     verdictPairTitle({ contract: 'pass', shadow: 'pass', shadowProfile: 'ds013' }),
-    '2025: pass · DS01.3: pass',
+    'UNICEF Q1 2025: pass · DS01.3 DRAFT: pass',
   );
 });
 
@@ -72,7 +72,7 @@ test('a shadow lineage that never ran reads as not graded, not as a fail', () =>
   // The contract half stays in front (by1c.37): the row is still drawing the
   // contract dot, so the tooltip has to name the dot that is on screen. In
   // practice the contract verdict is 'fail' whenever the shadow one is null.
-  const expected = '2025: fail · DS01.3: not graded (unknown schema version)';
+  const expected = 'UNICEF Q1 2025: fail · DS01.3 DRAFT: not graded (unknown schema version)';
   assert.equal(
     verdictPairTitle({ contract: 'fail', shadow: null, shadowProfile: 'ds013' }),
     expected,
@@ -88,7 +88,7 @@ test('a shadow lineage that never ran reads as not graded, not as a fail', () =>
 test('with no shadow lineage registered the tooltip is the contract half alone', () => {
   assert.equal(
     verdictPairTitle({ contract: 'fail', shadow: undefined, shadowProfile: null }),
-    '2025: fail',
+    'UNICEF Q1 2025: fail',
   );
 });
 

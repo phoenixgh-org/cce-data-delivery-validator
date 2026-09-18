@@ -26,7 +26,7 @@
  *  2. NO CONTRACT-PASSING TRAFFIC, NO STRIP. "0 of 0 would still pass" is a
  *     readiness claim about nothing; the strip stays out of the way until there
  *     is conformant traffic to be ready with.
- *  3. THE WORDS COME FROM src/web/profiles.ts. "DS01.3" is read from
+ *  3. THE WORDS COME FROM src/web/profiles.ts. "DS01.3 DRAFT" is read from
  *     PROFILE_NAME, never written as a literal here, and the strip never calls
  *     either lineage old, new, stale, current or latest (by1c.11): a supplier
  *     bound to a 2025 LTA is conformant, and this strip is a preview, not a
@@ -34,8 +34,8 @@
  *
  * A reason row is a cross-filter button carrying the shadow Signature straight
  * to the Dashboard's existing `onSelectSignature`, exactly as ComplianceCard's
- * SigRow does — the list filters, the chip picks up its "DS01.3 · " prefix from
- * the signature's own profile (by1c.12), and the docked detail follows. Hence
+ * SigRow does — the list filters, the chip picks up its "DS01.3 DRAFT · " prefix
+ * from the signature's own profile (by1c.12), and the docked detail follows. Hence
  * the active row wearing the same `--accent-weak` fill: it is the same selection.
  */
 import type { ReactElement, ReactNode } from 'react';

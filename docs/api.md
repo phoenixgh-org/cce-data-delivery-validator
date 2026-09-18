@@ -176,7 +176,7 @@ The same shape on success and on rejection, so a `4xx` is as self-explanatory as
 {
   "transmissionId": "5dc715af-4b18-44fe-9767-56c4cddd3aed",
   "status": 200,
-  "message": "Accepted (200): data recorded; 9 findings (2 info). 5 further findings under the DS01.3 draft of 2026-09-08 (sha256 7e22de27d46e2b6c4ad9f403c7de63ca1b9035c732be23aae7fbb42742324f05) did not affect this status.",
+  "message": "Accepted (200): data recorded; 9 findings (2 info). 5 further findings under the DS01.3 Annex 4 draft of 2026-09-08 (sha256 7e22de27d46e2b6c4ad9f403c7de63ca1b9035c732be23aae7fbb42742324f05) did not affect this status.",
   "findings": 9,
   "findingDetails": [
     {
@@ -233,11 +233,11 @@ teaching surface is for, but only the contract findings decide the status.
   supplier reads that they are DS01.3-ready rather than inferring it from an absence.
 - `message` gains a trailing sentence whenever a shadow run happened:
 
-| Shadow outcome  | Sentence appended to `message`                                                                    |
-| --------------- | ------------------------------------------------------------------------------------------------- |
-| findings echoed | `N further findings under the DS01.3 draft of {date} (sha256 {hash}) did not affect this status.` |
-| a clean pass    | `Also passes the DS01.3 draft of {date} (sha256 {hash}).`                                         |
-| no shadow run   | none                                                                                              |
+| Shadow outcome  | Sentence appended to `message`                                                                            |
+| --------------- | --------------------------------------------------------------------------------------------------------- |
+| findings echoed | `N further findings under the DS01.3 Annex 4 draft of {date} (sha256 {hash}) did not affect this status.` |
+| a clean pass    | `Also passes the DS01.3 Annex 4 draft of {date} (sha256 {hash}).`                                         |
+| no shadow run   | none                                                                                                      |
 
 The date and the full 64-char hash are read from the registry entry, in the same
 `(sha256 …)` form the §3.2 pass detail uses, so the sentence and the `shadow`

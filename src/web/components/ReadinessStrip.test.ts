@@ -83,7 +83,7 @@ test('no contract-passing transmissions hides the strip', () => {
 test('readiness still in flight is a skeleton, not a hide', () => {
   const copy = readinessCopy(undefined, 'ds013');
   assert.equal(copy.kind, 'skeleton');
-  assert.equal(copy.kind === 'skeleton' && copy.title, 'DS01.3 readiness');
+  assert.equal(copy.kind === 'skeleton' && copy.title, 'DS01.3 DRAFT readiness');
   assert.equal(copy.kind === 'skeleton' && copy.eyebrow, 'shadow-graded');
   // The placeholder is the height of a full, collapsed reason list, so nothing
   // shifts when the numbers arrive.
@@ -93,7 +93,7 @@ test('readiness still in flight is a skeleton, not a hide', () => {
 test('100% collapses to one line naming the count once', () => {
   assert.deepEqual(readinessCopy(readiness(212, 212, []), 'ds013'), {
     kind: 'collapsed',
-    line: 'DS01.3 readiness · all 212 passing tx would still pass',
+    line: 'DS01.3 DRAFT readiness · all 212 passing tx would still pass',
   });
 });
 
@@ -101,7 +101,7 @@ test('the header reads passingBoth of passingContract, numerator first', () => {
   const copy = readinessCopy(readiness(212, 141, FIVE), 'ds013');
   assert.equal(copy.kind, 'header');
   if (copy.kind !== 'header') return;
-  assert.equal(copy.title, 'DS01.3 readiness');
+  assert.equal(copy.title, 'DS01.3 DRAFT readiness');
   assert.equal(copy.eyebrow, 'shadow-graded');
   assert.equal(copy.count, 141);
   assert.equal(copy.rest, ' of 212 passing tx would still pass');

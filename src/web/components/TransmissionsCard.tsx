@@ -343,8 +343,8 @@ export function shadowFailCount(findings: FindingView[], shadowProfile: Profile 
 }
 
 /**
- * The cross-filter chip's title (by1c.12) — prefixed `DS01.3 · ` when the active
- * signature belongs to a lineage other than the contract in force.
+ * The cross-filter chip's title (by1c.12) — prefixed `DS01.3 DRAFT · ` when the
+ * active signature belongs to a lineage other than the contract in force.
  *
  * Without the prefix a shadow cross-filter is indistinguishable from a defect
  * against the obligations in force, which is the one confusion the shadow
@@ -2186,8 +2186,11 @@ export function TransmissionsCard({
         <>
           {/* Verdict column header (by1c.12) — the only column labels the list
               carries, sized and right-aligned to match the dot slot at the end of
-              each row. The DS01.3 column is absent when no shadow lineage is
-              registered, which is the same condition that drops the second dot. */}
+              each row. The shadow lineage's column is absent when none is
+              registered, which is the same condition that drops the second dot.
+              Each label wraps to two lines at VERDICT_COL_PX, which is what keeps
+              the full package names on screen without widening the columns into
+              the row's own content (tfnv.1). */}
           <div
             style={{
               display: 'flex',

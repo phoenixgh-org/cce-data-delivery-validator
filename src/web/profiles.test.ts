@@ -5,7 +5,8 @@
  * hold: a supplier bound to a 2025 LTA must never be told the version their
  * contract requires is stale, so "(contract)" follows `CONTRACT_PROFILE` rather
  * than living on the '2025' key, and no lineage is ever named "old", "new",
- * "current", "latest", "v1" or "v2".
+ * "current", "latest", "v1" or "v2". The names themselves are the lens's
+ * (tfnv.1): "UNICEF Q1 2025" and "DS01.3 DRAFT".
  *
  * Pure functions on the Node runner, like advisories.test.ts: profiles.ts pulls
  * in no JSX-bearing sibling, so this file needs neither the React shim nor the
@@ -92,11 +93,16 @@ test('an unrecognised draft date is shown as the server sent it', () => {
 });
 
 test('a draft shadow entry is named as a draft, dated', () => {
-  assert.equal(shadowLegend(draftShadow, 'ds013'), 'DS01.3 draft Sep 8');
+  // The name already carries DRAFT, so the legend does not say the word twice.
+  assert.equal(shadowLegend(draftShadow, 'ds013'), 'DS01.3 DRAFT Sep 8');
 });
 
-test('a published shadow entry is named by version, never called a draft', () => {
-  assert.equal(shadowLegend(publishedShadow, 'ds013'), 'DS01.3 0.9.0');
+test('a published shadow entry is named by version, with no draft marker added', () => {
+  // The marker the legend adds for itself is the word "draft" beside a date; a
+  // published entry is named by version and gets none. The name still reads
+  // "DS01.3 DRAFT" because that is what the vocabulary calls this lineage today —
+  // a lineage that published would be renamed there, not here.
+  assert.equal(shadowLegend(publishedShadow, 'ds013'), 'DS01.3 DRAFT 0.9.0');
 });
 
 test('no shadow lineage means no shadow label at all', () => {
@@ -108,7 +114,7 @@ test('no shadow lineage means no shadow label at all', () => {
 test('the grading legend names the contract, and the shadow half only when there is one', () => {
   const withShadow = gradingLegend('ds013', draftShadow);
   assert.equal(withShadow.contract, profileLabel(CONTRACT_PROFILE));
-  assert.deepEqual(withShadow.shadow, { name: 'DS01.3 draft', detail: 'Sep 8' });
+  assert.deepEqual(withShadow.shadow, { name: 'DS01.3 DRAFT', detail: 'Sep 8' });
 
   const contractOnly = gradingLegend(null, null);
   assert.equal(contractOnly.contract, profileLabel(CONTRACT_PROFILE));
@@ -137,9 +143,9 @@ test('the grading legend names the contract, and the shadow half only when there
 test('the tooltip reads exactly as by1c.11 specified it', () => {
   assert.equal(
     gradingLegendTitle('ds013'),
-    'The matrix and pass rate grade against the 2025 requirements. DS01.3 is graded in the ' +
-      'shadow and shown in the readiness strip, the second verdict column and the transmission ' +
-      'detail.',
+    'The matrix and pass rate grade against the UNICEF Q1 2025 requirements. DS01.3 DRAFT is ' +
+      'graded in the shadow and shown in the readiness strip, the second verdict column and ' +
+      'the transmission detail.',
   );
 });
 

@@ -36,8 +36,19 @@ const DOT_PX = 11;
  * It lives here, next to the pair that fills the columns, and the list header
  * imports it: the two used to declare the width separately and the dots drifted
  * out from under their labels (by1c.34).
+ *
+ * Sized for the label, not for the dot (tfnv.1). The lineage names became
+ * "UNICEF Q1 2025" and "DS01.3 DRAFT", neither of which fits a column that a
+ * transmission row can afford to give up: at the 10px mono eyebrow the header
+ * draws, the longer one runs about 92px, and two such columns would take a fifth
+ * of the transmissions pane away from the row's own content. So the header wraps
+ * instead, and this width is set to make the wrap land in the same place every
+ * time — wide enough for "Q1 2025" and "DS01.3" on one line, too narrow for
+ * "UNICEF Q1", which gives both labels exactly two lines. Shortening the names
+ * to fit was not an option: the words are the binding vocabulary
+ * (src/web/profiles.ts).
  */
-export const VERDICT_COL_PX = 50;
+export const VERDICT_COL_PX = 58;
 
 /**
  * The verdict columns a list shows, left to right (by1c.12): the contract
@@ -91,8 +102,9 @@ function findingsPhrase(count: number): string {
 }
 
 /**
- * One lineage's half of the pair tooltip — `2025: pass`, `DS01.3: fail (2
- * findings)`, or the not-graded wording when that lineage never ran.
+ * One lineage's half of the pair tooltip — `UNICEF Q1 2025: pass`, `DS01.3
+ * DRAFT: fail (2 findings)`, or the not-graded wording when that lineage never
+ * ran.
  *
  * A null verdict is NOT a soft fail (api.ts, `Verdict`): the lineage did not run
  * on this transmission, usually because `meta.schemaVersion` fell outside it, so
@@ -128,13 +140,15 @@ export interface VerdictPairInput {
 }
 
 /**
- * The pair's native tooltip: `2025: pass · DS01.3: fail (2 findings)`.
+ * The pair's native tooltip: `UNICEF Q1 2025: pass · DS01.3 DRAFT: fail (2
+ * findings)`.
  *
  * One narrower case: with no shadow lineage registered the tooltip is the
  * contract half alone.
  *
  * When the shadow lineage never ran on this transmission the tooltip keeps the
- * two-half shape — `2025: fail · DS01.3: not graded (unknown schema version)`
+ * two-half shape — `UNICEF Q1 2025: fail · DS01.3 DRAFT: not graded (unknown
+ * schema version)`
  * (by1c.37). The row is still drawing the CONTRACT dot at that moment (the
  * contract verdict is never null, src/api/verdicts.ts), so dropping the contract
  * half would leave the one dot on screen unnamed. The shadow half carries the

@@ -207,7 +207,7 @@ test('fixture valid → 200, no fail findings, accepted message', async () => {
   assert.equal(
     body.message,
     'Accepted (200): data recorded; 8 findings (1 info). ' +
-      `5 further findings under the DS01.3 draft of ${draft.draftDate} ` +
+      `5 further findings under the DS01.3 Annex 4 draft of ${draft.draftDate} ` +
       `(sha256 ${draft.sha256}) did not affect this status.`,
   );
   assert.match(draft.sha256, /^[0-9a-f]{64}$/, 'the hash is quoted in full, not shortened');
@@ -286,7 +286,8 @@ test('a dual-passing payload echoes the shadow PASS and says "Also passes…" (b
   assert.match(
     body.message,
     new RegExp(
-      `Also passes the DS01\\.3 draft of ${draft.draftDate} \\(sha256 ${draft.sha256}\\)\\.$`,
+      `Also passes the DS01\\.3 Annex 4 draft of ${draft.draftDate} ` +
+        `\\(sha256 ${draft.sha256}\\)\\.$`,
     ),
   );
 });
@@ -322,13 +323,14 @@ test('an unresolvable version → 422 with no shadow entries and no shadow sente
  * The name comes from the ONE vocabulary both surfaces now read (bd by1c.32):
  * pipeline.ts kept a lineage map of its own until the names moved to
  * src/profile-vocabulary.ts, which the dashboard's provenance line reads too.
- * Which of the two forms the sentence takes is read off the ENTRY (bd by1c.49).
- * A published entry takes the `longName`, because a version number follows it —
- * "the cce-interop 0.8.1 schema" — where a draft takes the `name`, because a
- * date follows instead: "the DS01.3 draft of 2026-09-08". The shadow entry here
- * is published, so the regex below requires the literal "cce-interop". The
- * ordinary case — a contract-lineage payload shadowed by ds013 — is unaffected:
- * that draft is named "DS01.3" either way.
+ * Which of the two forms the sentence takes is read off the ENTRY (bd by1c.49),
+ * but both forms name the schema DOCUMENT — the `longName` — because the
+ * sentence ends in the sha256 of the file that ran: "the cce-interop 0.8.1
+ * schema" for a published entry, "the DS01.3 Annex 4 draft of 2026-09-08" for a
+ * draft. The requirement package the dashboard's lens names ("UNICEF Q1 2025",
+ * "DS01.3 DRAFT") is a different noun and stays off the wire (tfnv.1). The
+ * shadow entry here is published, so the regex below requires the literal
+ * "cce-interop".
  */
 test('a ds013-primary payload names the 2025 lineage as its shadow', async () => {
   const payload = emsBaseline({ caseId: 'ds013-primary', index: 0 });
@@ -347,7 +349,7 @@ test('a ds013-primary payload names the 2025 lineage as its shadow', async () =>
         `\\(sha256 ${current.sha256}\\)\\.$`,
     ),
   );
-  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow here is the 2025 lineage');
+  assert.doesNotMatch(body.message, /DS01\.3/, 'the shadow here is the cce-interop lineage');
   assert.equal(
     body.findingDetails.filter((f) => f.profile === '2025' && f.requirement === '3.2').length,
     1,
@@ -428,7 +430,7 @@ test('a conformant payload raising an advisory tallies exactly as the baseline (
   // longer the LAST sentence: since by1c.27 the shadow lineage gets one of its
   // own after it, and this payload's mis-shaped date does fail the Annex 4 draft.
   assert.match(advised.message, /1 advisory, not graded and not counted above\. /);
-  assert.match(advised.message, /further findings under the DS01\.3 draft of .* status\.$/);
+  assert.match(advised.message, /further findings under the DS01\.3 Annex 4 draft of .* status\.$/);
 });
 
 test('fixture oversize → 413, 1.4 fail (size stage)', async () => {
@@ -597,7 +599,7 @@ test('full-flow: valid baseline → 200, persists a row', { skip }, async () => 
     assert.equal(
       body.message,
       'Accepted (200): data recorded; 9 findings (2 info). ' +
-        `5 further findings under the DS01.3 draft of ${draft.draftDate} ` +
+        `5 further findings under the DS01.3 Annex 4 draft of ${draft.draftDate} ` +
         `(sha256 ${draft.sha256}) did not affect this status.`,
     );
   } finally {
