@@ -94,9 +94,10 @@ const DEFAULT_BASE_URL = 'http://localhost:3000';
 const USAGE = `Usage: npm run exercise [-- <base-url>]
 
 Plays the CCE conformance exercise suite against a RUNNING validator instance,
-then prints a per-case verdict, run counts, the grading-lens audit, the
-requirement-coverage report and the dashboard URL of the session it created (that
-dashboard is the detailed report). Sends synthetic data only.
+then prints a per-case verdict, run counts, the advisory copy the instance served,
+the grading-lens audit, the coverage report — requirement coverage and the advisory
+join — and the dashboard URL of the session it created (that dashboard is the
+detailed report). Sends synthetic data only.
 
   <base-url>   target origin (default ${DEFAULT_BASE_URL}, or $EXERCISE_BASE_URL)
 

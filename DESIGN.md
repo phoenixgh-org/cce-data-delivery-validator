@@ -462,7 +462,7 @@ numbered DDL files are the chosen mechanism for evolving it, and there is no
 migration runner; the alternative was weighed and declined on September 15, 2026.
 Two properties make the manual route safe enough: every file added after the first
 cut (`50-session-auth-bearer`, `60-finding-profile`, `70-finding-profile-no-default`,
-`80-contract-profile-marker`) is idempotent and applies in a single command, and the
+`80-contract-profile-marker`, `90-finding-summary`) is idempotent and applies in a single command, and the
 flip-day guard fails closed when `service_marker` is absent
 ([`contract-marker.ts`](src/db/contract-marker.ts)), so a forgotten apply refuses to
 boot rather than running on. The operator procedure for an existing volume is

@@ -64,8 +64,11 @@ export const PROFILE_NAME: Record<Profile, string> = Object.fromEntries(
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /**
- * A draft date in the compact form a one-line label needs: `'2026-09-08'` →
- * `"Sep 8"`.
+ * A draft date in compact form: `'2026-09-08'` → `"Sep 8"`.
+ *
+ * It is kept as {@link formatDraftDateLong}'s parse rather than as a label in its
+ * own right: the one-line label it was written for no longer exists (tfnv.26), so
+ * the long form and this module's tests are its only callers.
  *
  * The YYYY-MM-DD parts are read off the string directly and NOT handed to
  * `new Date(...)`: a date-only string parses as UTC midnight and then renders in
@@ -89,11 +92,10 @@ export function formatDraftDate(date: string): string {
  * 2026"`.
  *
  * The same parse as {@link formatDraftDate}, and for the same reason — the date
- * is provenance and must read the same in every time zone. The two lengths are
- * separate because their sentences are: the compact form sets the date beside a
- * version on one cramped line, where the year is noise, while the banner makes it
- * the end of a sentence that dates an unpublished proposal, where a bare
- * "Sep 8" leaves the reader to guess the year.
+ * is provenance and must read the same in every time zone. The year is what
+ * separates the two: the banner ends a sentence that dates an unpublished
+ * proposal, where a bare "Sep 8" leaves the reader to guess which year, while the
+ * compact form drops it for a cramped line where it would be noise.
  *
  * Anything that is not a YYYY-MM-DD date comes back unchanged, as there too.
  */

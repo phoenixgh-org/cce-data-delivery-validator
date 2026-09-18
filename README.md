@@ -371,8 +371,8 @@ codes are `0` (every case passed), `1` (a case failed) and `2` (could not run �
 target was unreachable, or is not a validator).
 
 Each run **mints its own session** and prints a per-case verdict, run counts, the
-coverage report — requirement coverage, the advisory join and its per-advisory lines,
-and the advisory copy block — and that session's dashboard URL. The console output is
+advisory copy the instance served, the coverage report — requirement coverage and
+the advisory join — and that session's dashboard URL. The console output is
 a summary; **the dashboard is the detailed report**.
 
 Two caveats for the `run exercise` activity:

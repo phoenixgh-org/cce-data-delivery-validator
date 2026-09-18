@@ -10,9 +10,11 @@
  * against any obligation in force. Shape carries the verdict here: hollow passes,
  * filled fails.
  *
- * The words come from src/web/profiles.ts, never from a literal: a lineage's name
- * and its "(contract)" role live in one module so the day CONTRACT_PROFILE flips,
- * every tooltip follows (by1c.11).
+ * The words come from src/web/profiles.ts, never from a literal: `PROFILE_NAME`
+ * is where a lineage's name lives, and nothing here spells one out. Which lineage
+ * is "the contract" is a separate fact, derived at the call site from
+ * `CONTRACT_PROFILE` (src/web/api.ts) rather than written into the words, so the
+ * day that constant flips, every tooltip follows (by1c.11).
  */
 import type { CSSProperties, ReactElement } from 'react';
 import { CONTRACT_PROFILE, type Profile, type Verdict } from '../../api';
