@@ -648,10 +648,12 @@ published, gives the date of the bytes behind it, and offers the way back to UNI
 Q1 2025. The tint carries no other meaning anywhere on the page, so it alone answers
 which package is being read from any scroll position.
 
-Everything the lens reports is computed under the selected package on the server:
-the summary counts, the issue signatures, the list filters, and the findings list in
-the docked transmission detail, which is one list under one numbering rather than
-two. The transmissions list keeps a verdict dot per package, the selected one bold
+The summary counts, the issue signatures and the list filters are computed under
+the selected package on the server. The docked transmission detail renders one list
+under the selected package's numbering rather than two, translated in the browser
+from the 2025 ids the wire carries, with membership decided the same way;
+`src/web/clauseMap.test.ts` holds that translation equal to the server's fold.
+The transmissions list keeps a verdict dot per package, the selected one bold
 and the other dimmed, with a dashed "not graded here" dot where the draft never ran
 on that transmission. The row's tone dot reads the lens as well, so it agrees with
 the cells beside it.
@@ -754,9 +756,10 @@ The following items are deferred from v1:
   lens of §10 now reports each clause's status under the draft, so what a ledger
   would add is the clause-by-clause difference from UNICEF Q1 2025, not the DS01.3
   view itself. It is deferred until DS01.3 publishes, because a ledger of
-  differences is worth reading once the target is fixed. Publication itself needs no redesign: the two lineages are
-  symmetric, and `CONTRACT_PROFILE` in `src/schema-registry.ts` is the single flip
-  point that makes DS01.3 the contract and `cce-interop` the shadow.
+  differences is worth reading once the target is fixed. Publication itself
+  needs no redesign: the two lineages are symmetric, and `CONTRACT_PROFILE` in
+  `src/schema-registry.ts` is the single flip point that makes DS01.3 the
+  contract and `cce-interop` the shadow.
 - A production-endpoint mode for real data, which would need to address retention,
   PII, data sovereignty, and split-token authentication.
 - Standard-revision proposals for the next WHO-stewarded revision: make

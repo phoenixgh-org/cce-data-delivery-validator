@@ -266,6 +266,9 @@ has to apply by hand:
   the flip-day guard reads. Without it the service refuses to start, because a
   guard that cannot read the marker cannot tell whether the stored findings were
   written under the profile this build grades against.
+- `90-finding-summary.sql` — adds `finding.summary`, the one-line observation an
+  advisory carries. Without it, every ingest write fails and both finding reads
+  fail: the column the code inserts and selects does not exist.
 
 Apply them in order against a running database:
 
@@ -278,6 +281,8 @@ docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
   < db/initdb/70-finding-profile-no-default.sql
 docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
   < db/initdb/80-contract-profile-marker.sql
+docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
+  < db/initdb/90-finding-summary.sql
 ```
 
 Every one of these files is written to be idempotent — `DROP CONSTRAINT IF
@@ -285,7 +290,7 @@ EXISTS` before `ADD`, `ADD COLUMN IF NOT EXISTS`, a `DROP DEFAULT` that is a
 no-op when there is no default, `CREATE TABLE IF NOT EXISTS`, and `COMMENT ON`
 statements that simply overwrite. Re-applying one that is already in place
 changes nothing, so an operator who is unsure which files a volume has can run
-all four rather than investigate. Order still matters on a database that has
+all five rather than investigate. Order still matters on a database that has
 none of them: `70` drops a default that `60` creates.
 
 Discarding the volume (`docker compose down -v`) and letting initdb re-run is the
