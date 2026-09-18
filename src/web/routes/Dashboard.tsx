@@ -38,7 +38,6 @@ import {
 } from '../api';
 import { ComplianceCard } from '../components/ComplianceCard';
 import { DeleteModal } from '../components/DeleteModal';
-import { ReadinessStrip } from '../components/ReadinessStrip';
 import { ReportHeader, type WindowValue } from '../components/ReportHeader';
 import { Setup } from '../components/Setup';
 import { SummaryCards } from '../components/SummaryCards';
@@ -441,28 +440,6 @@ export function Dashboard() {
           two-pane body below so their edges land on the pane edges; everything
           they render comes from the SERVER rollup and scope totals. */}
       <SummaryCards rollup={rollup} scoped={state.data.scoped} />
-
-      {/* DS01.3 readiness strip (by1c.13) — how much of the scope's
-          contract-passing traffic would still pass under the shadow lineage, and
-          the shadow signatures standing in the way. It keeps its place directly
-          under the summary cards, now on the canvas rather than inside the
-          retired strip's bordered surface; it brings its own inset chrome and
-          hides itself when there is no shadow lineage, no readiness, or no
-          contract-passing traffic — hence the wrapper carrying the gutter and
-          nothing else, so a hidden strip leaves no empty band behind. NOT gated
-          on failuresOnly: readiness is computed over the scoped set alone, so
-          the list filter must not move these numbers. `readiness` is never
-          undefined here — the first-load phase renders a whole-page "Loading…"
-          above, so the strip's skeleton variant is prop-driven and covered by
-          its test rather than reached on load. */}
-      <div style={{ padding: '0 16px' }}>
-        <ReadinessStrip
-          readiness={state.data.readiness}
-          shadowProfile={session.shadowProfile}
-          activeSignatureKey={selectedSignature?.key ?? null}
-          onSelectSignature={onSelectSignature}
-        />
-      </div>
 
       {/* Two-pane body */}
       <div

@@ -4,7 +4,7 @@ Status: living document. The v1 scope is locked, and §3 records the decisions t
 are settled and are not reopened casually. Everything else describes the system as
 built and is updated as it ships.
 
-Last updated: September 15, 2026
+Last updated: September 18, 2026
 
 ## 1. Overview
 
@@ -564,12 +564,27 @@ cannot be read or compiled fail the process loudly rather than degrading silentl
 
 ## 10. Dashboard
 
-Each session's dashboard at `/d/{uuid}` has four sections:
+Each session's dashboard at `/d/{uuid}` is a single scrolling page. From the top:
 
-- Setup shows the ingest URL, copy-paste `curl` and header examples, the
-  synthetic-data-only notice, and the §1.3 authentication opt-in. The supplier
-  toggles it on, picks one of the three methods, and the service generates the
-  credential and shows a configuration snippet.
+- The header is one line: the report title on the left, and the scope controls —
+  the time window and the source — on the right. Everything below the header is
+  relative to that scope.
+- Endpoint and setup is a collapsed bar that expands into a panel. The bar carries
+  the ingest URL and the endpoint meta beside it: the schema version the endpoint
+  currently expects, whether §1.3 authentication is on, and the days left before
+  expiry. The panel adds copy-paste `curl` and header examples, the
+  synthetic-data-only notice, the full accepted-schema provenance line, and the
+  §1.3 authentication opt-in. The supplier toggles authentication on, picks one of
+  the three methods, and the service generates the credential and shows a
+  configuration snippet.
+- Two summary cards sit above the panes, one per column, each on the surface colour
+  of the pane it summarises. The requirements card carries the scope-relative
+  rollup — passing, with failures, untested — over "N of 27 verifiable from your
+  traffic". The transmissions card carries the scope totals — received, with
+  failures, distinct issues — over the count of distinct CCE units reported on,
+  with the reports that named no appliance disclosed inline beside it. Each card
+  counts one noun and says which, because the strip they replaced put requirement
+  counts and transmission counts in one band and named neither.
 - Compliance summary renders the §7 matrix as §7 describes. Each row drills down to
   the verbatim text of the 2025 requirement, with the service's own reading of it in
   a separate guidance field, so a supplier can always tell the two apart.
@@ -579,12 +594,17 @@ Each session's dashboard at `/d/{uuid}` has four sections:
   height-capped so the detail pane stays on screen.
 - Lifecycle shows the 7-day inactivity expiry clock.
 
-Shadow grading reaches three of those surfaces and no others. A grading legend in
-the filter bar names both lineages and says which one is the contract. The
-transmissions list carries a verdict dot per lineage, and the docked detail splits
-into the contract findings and a separate DS01.3 group. The scorecard carries a
-readiness strip: of the in-scope traffic that passes the contract, how much would
-also pass the shadow lineage, with the leading reasons offered as cross-filters.
+Shadow grading reaches two of those surfaces today. The transmissions list carries a
+verdict dot per lineage, and the docked detail splits into the contract findings and
+a separate DS01.3 group.
+
+Two further shadow surfaces are built but not mounted: the readiness strip — of the
+in-scope traffic that passes the contract, how much would also pass the shadow
+lineage, with the leading reasons offered as cross-filters — and the grading legend
+that named both lineages and said which one is the contract. Both are held pending
+the grading-lens redesign, which reconsiders how a second lineage is surfaced at all.
+The server still computes and serves readiness (`docs/api.md`), so nothing has to
+be recomputed when that work lands.
 
 The vocabulary those surfaces use is deliberate and is centralized in
 [`profiles.ts`](src/web/profiles.ts). A lineage is never called old, new, current,

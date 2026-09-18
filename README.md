@@ -77,11 +77,14 @@ shadow result at all: an unrecognized `schemaVersion`, a body that does not pars
 and a transport rejection before either are each answered under the 2025
 requirements alone. The shadow run never changes the HTTP response code and never touches the
 matrix above: those rows grade the 2025 requirements, which are the contract in
-force. What it produces instead is readiness: the dashboard shows how much of
-your passing traffic would also pass DS01.3, a verdict per transmission under each
-lineage, and the reasons the rest would not, while the ingest response names the
-lineage on every finding. Keeping the two apart is the point — a supplier under a
-2025 agreement should be able to see what is coming without being told that the
+force. What it produces instead is a preview: the transmissions list carries a
+verdict per transmission under each lineage, the docked detail keeps the DS01.3
+findings in a group of their own, and the ingest response names the lineage on
+every finding. The session read also serves a readiness figure — how much of the
+passing traffic would also pass DS01.3, and the reasons the rest would not — which
+the dashboard does not render at the moment, pending a redesign of how a second
+lineage is surfaced. Keeping the two lineages apart is the point — a supplier under
+a 2025 agreement should be able to see what is coming without being told that the
 version their contract requires is stale.
 
 ## Quick start

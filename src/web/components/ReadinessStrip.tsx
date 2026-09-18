@@ -2,9 +2,17 @@
  * ReadinessStrip (by1c.13) — how much of a supplier's ALREADY-CONFORMANT traffic
  * would survive the DS01.3 proposal, and what stands in the way.
  *
- * The scorecard's headline grades the contract in force. This strip sits under
- * it and answers a different question: of the transmissions that pass today, how
- * many would still pass if the draft became the contract. Everything it shows is
+ * NOT MOUNTED SINCE 2026-09-18 (vamh.5). The Dashboard stopped rendering it while
+ * the way shadow grading is surfaced is reworked; see the grading-lens epic
+ * cce-data-delivery-validator-tfnv, which decides whether this component returns
+ * as-is, changes shape, or goes. The component, its test, the server `readiness`
+ * field and the `shadow` provenance field all stay in place meanwhile — deleting
+ * now and restoring later is churn. The description below is of the strip as
+ * built, and still holds whenever it is mounted again.
+ *
+ * The summary cards grade the contract in force. This strip sits under them and
+ * answers a different question: of the transmissions that pass today, how many
+ * would still pass if the draft became the contract. Everything it shows is
  * read off `readiness` (src/api/verdicts.ts), which is folded over the
  * contract-PASSING transmissions in the current scope — so a transmission that
  * already fails the contract contributes no reason here, and `failuresOnly` in

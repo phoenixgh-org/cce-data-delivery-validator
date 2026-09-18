@@ -240,8 +240,8 @@ teaching surface is for, but only the contract findings decide the status.
 | no shadow run   | none                                                                                              |
 
 The date and the full 64-char hash are read from the registry entry, in the same
-`(sha256 …)` form the §3.2 pass detail uses, so the sentence and the dashboard legend
-name the same bytes. The lineage is described as the entry describes itself: an
+`(sha256 …)` form the §3.2 pass detail uses, so the sentence and the `shadow`
+provenance on the session read name the same bytes. The lineage is described as the entry describes itself: an
 unpublished proposal reads "draft of {date}", published bytes read
 "the cce-interop {version} schema", and a payload declaring the Annex 4 revision
 therefore names cce-interop as _its_ shadow.
@@ -430,7 +430,7 @@ Unrecognised values fall back to the defaults; this route never returns `400`.
   "rollup":    { "total": 27, "gradeable": 10, "passing": 7, "failing": 0, "untested": 3 },
   "signatures": [ /* distinct defects + advisories, most widespread first */ ],
   "sources":   [ { "source": "com.example", "sourceCode": "EXA", "sourceLabel": "com.example", "count": 1 } ],
-  "scoped":    { "scoped": 1, "withFailures": 0, "distinctIssues": 0 },
+  "scoped":    { "scoped": 1, "withFailures": 0, "distinctIssues": 0, "units": 1, "unidentifiedReports": 0 },
   "expiresAt": "2026-08-08T05:50:33.722Z",
   "shadow":    { "version": "1", "sha256": "7e22de27d46e2b6c…", "draftDate": "2026-09-08" },
   "readiness": { "passingContract": 1, "passingBoth": 0, "reasons": [ /* shadow-lineage signatures */ ] },
@@ -458,6 +458,33 @@ detail pane); `summary`, `rollup`, `signatures`, and `scoped` **are**.
 visible whichever one is selected. For large sessions, page the list through
 [`/transmissions`](#get-apisessionsuuidtransmissions--paginated-transmission-list)
 instead.
+
+### Scope totals
+
+`scoped` is the transmission-side readout for the selected scope. Three of its five
+fields count transmissions and findings; the other two count the equipment behind
+them.
+
+| Field                 | Type     | Meaning                                                                                                                                                              |
+| --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scoped`              | `number` | Transmissions in the scope.                                                                                                                                          |
+| `withFailures`        | `number` | Of those, the ones carrying at least one `fail` finding under the contract lineage.                                                                                  |
+| `distinctIssues`      | `number` | Distinct contract-lineage issue [signatures](#signature-object) in the scope. Advisories are not counted.                                                            |
+| `units`               | `number` | Distinct CCE units reported on in the scope, keyed on the manufacturer serial `ASER` where a report carries one and on the supplier's appliance id `AMID` otherwise. |
+| `unidentifiedReports` | `number` | Reports in the scope that carried neither `ASER` nor `AMID`, and so could be counted in no unit.                                                                     |
+
+`units` counts equipment that REPORTED in the scope, and is never fleet coverage
+(`DESIGN.md` §7). A refrigerator that sent nothing in the window cannot appear here,
+so the number is a floor on the equipment a supplier monitors, not a measure of how
+much of it is being monitored. The two identifier namespaces also never reconcile: a
+manufacturer serial and a supplier-internal id are different kinds of name, so the
+same appliance reported under each counts twice. `unidentifiedReports` is disclosed
+beside `units` for the same reason — those reports are in `scoped` but in no unit,
+and without the second number the two would look inconsistent.
+
+Both are computed off the stored request body, independently of grading: a
+schema-invalid transmission still reported on a unit, and an unparsed body
+contributes nothing because there is nothing to read.
 
 ### Which lineage graded what
 
@@ -662,6 +689,10 @@ and what stands in the way. It is `null` when no shadow lineage is registered.
   ]
 }
 ```
+
+The dashboard does not render readiness at the moment — the strip that showed it is
+unmounted pending a redesign of how a second lineage is surfaced (`DESIGN.md` §10) —
+but the field is served as described.
 
 Readiness is computed over `window` and `source` only. The list route's `failuresOnly`
 and `signatureKey` filters are deliberately not applied: readiness is a statement about

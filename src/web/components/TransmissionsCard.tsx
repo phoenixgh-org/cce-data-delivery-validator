@@ -210,21 +210,35 @@ const LIST_VISIBLE_ROWS = 10;
  * So cap in rows, derived from ROW_ESTIMATE_PX rather than a hardcoded pixel
  * number that would drift if the row chrome changes: 10 × 34 = 340px.
  *
- * Height budget above the detail pane, at 16px root padding:
- *   header ~66 + setup bar ~40 + scorecard ~62 + filter bar ~40  ≈ 208
+ * Height budget above the detail pane, re-measured against the shell that ships
+ * (vamh.9). Two terms the earlier budget carried — a scorecard strip and a filter
+ * bar — no longer render at all, and a third, the readiness strip, is no longer
+ * mounted. What sits above the list today is:
+ *   header ~48 + setup bar ~35 + summary-card row ~124              ≈ 207
  *   + body padding 16 + card header ~44 + verdict column header 26 + list 340
- *                                                                 = 634
- * so the docked detail starts at ~636px. The verdict column header (by1c.12) is
- * the strip of lineage labels rendered immediately above this region: 5px padding
- * top and bottom + a 10px eyebrow at the inherited line-height 1.5 (15px) + a 1px
- * bottom border = 26px.
+ *                                                                   = 633
+ * so the docked detail starts at ~635px. Each term, measured off the styles that
+ * produce it:
+ *   - header: ReportHeader's 10px padding top and bottom + a 27px Seg control
+ *     (11.5px label at line-height 1.5, 4px padding, 1px border) + a 1px bottom
+ *     border. The title is shorter than the control, so the control sets it.
+ *   - setup bar: Setup's collapsed row, 8px padding top and bottom + a 12px label
+ *     at line-height 1.5 (18px) + a 1px bottom border.
+ *   - summary-card row: SummaryCards' 16px row padding-top + a card of 11px/13px
+ *     padding, a 10px eyebrow (~12px), a 3px gap and an 11.5px sentence at
+ *     line-height 1.5 (17px), a 9px gap, and a figure of a 26px numeral at
+ *     line-height 1, a 2px gap and an 11px label (~13px), inside a 1px border.
+ *     The row has no bottom padding — the two-pane body's own 16px supplies it.
+ *   - verdict column header (by1c.12): the strip of lineage labels rendered
+ *     immediately above this region — 5px padding top and bottom + a 10px eyebrow
+ *     at the inherited line-height 1.5 (15px) + a 1px bottom border = 26px.
  *
- * That still clears the fold on an 800px-tall viewport (~164px of detail visible,
- * above its own 120px min-height) and comfortably so at 1000px (~364px). An
- * active issue chip adds ~33px, leaving ~131px — still inside the budget, but the
- * margin is now thin enough that the next strip added above the list has to be
- * measured rather than assumed. The list keeps its own scrollbar and stays
- * virtualized — this caps the region, it does not page the data.
+ * That clears the fold on an 800px-tall viewport (~165px of detail visible, above
+ * its own 120px min-height) and comfortably so at 1000px (~365px). An active issue
+ * chip adds ~33px, leaving ~132px — still inside the budget, but thin enough that
+ * anything added above the list has to be measured rather than assumed. The list
+ * keeps its own scrollbar and stays virtualized — this caps the region, it does
+ * not page the data.
  */
 const LIST_MAX_HEIGHT_PX = ROW_ESTIMATE_PX * LIST_VISIBLE_ROWS;
 
