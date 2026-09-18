@@ -42,12 +42,13 @@ import { readFileSync } from 'node:fs';
 import * as React from 'react';
 
 import { CONTRACT_PROFILE, SchemaRegistry, type SchemaProvenance } from '../../schema-registry.js';
+import { PROFILE_VOCABULARY } from '../profiles.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
 
 // Dynamic + awaited so the assignment above runs BEFORE Setup's graph evaluates
 // (static imports are all hoisted, which would defeat it).
-const { endpointMeta, sampleBody } = await import('./Setup.js');
+const { Setup, endpointMeta, sampleBody } = await import('./Setup.js');
 
 /** The live registry, exactly as the service loads it at boot. */
 const registry = SchemaRegistry.load();
@@ -384,4 +385,136 @@ test('with no contract version registered the segment says so rather than guessi
   assert.ok(shadowOnly.length > 0, 'the fixture keeps a shadow entry to be ignored');
   assert.equal(endpointMeta(shadowOnly, true, inDays(7)), 'no schema · auth on · 7d left');
   assert.equal(endpointMeta([], false, inDays(7)), 'no schema · auth off · 7d left');
+});
+
+/**
+ * The expanded panel's provenance line (vamh.7) — "Validating against official
+ * 0.8.0 (sha256 …), 0.8.1 (sha256 …) — our vendored copies, …".
+ *
+ * After vamh.2 pulled the collapsed bar's meta segment down to a single version,
+ * this line is the ONLY place the dashboard states the whole accepted contract
+ * set, and the only place either sha256 is shown. Two regressions in it would now
+ * be silent on every other surface: dropping a registered contract version, and
+ * folding the shadow lineage's draft into the set the line calls "official".
+ *
+ * So this is a PIN of the line as it renders today, not a proposal about how it
+ * should read. Both tests build the expected text from the served `schemas`
+ * fixture rather than from a literal version or hash, so re-pinning the draft or
+ * registering a further contract version moves the expectation with the registry
+ * instead of turning this red.
+ *
+ * ONE DEVIATION FROM ReportHeader.test.ts, deliberately: that file walks the
+ * element tree and calls function components directly, which works because
+ * `ReportHeader` uses no hooks. `Setup` opens with `useState`, so calling it as a
+ * plain function throws before it returns anything. `renderToStaticMarkup` is the
+ * smallest way past that — it is a published React API, react-dom is already a
+ * dependency, and it needs no DOM, so the repo still has no component-test
+ * harness and no jsdom.
+ */
+const { renderToStaticMarkup } = await import('react-dom/server');
+
+/**
+ * Setup composes the ingest URL it shows from `window.location.origin`. There is
+ * no DOM here and the origin is not what these tests grade, so a stub is enough.
+ */
+(globalThis as unknown as { window: { location: { origin: string } } }).window = {
+  location: { origin: 'https://validator.example' },
+};
+
+/**
+ * The panel's visible copy, expanded, for a given served schema set.
+ *
+ * Tags are stripped rather than parsed: React escapes `<` and `>` inside text, so
+ * nothing but a real tag can match. Entities are deliberately NOT decoded — the
+ * only ones rendered sit in the curl snippet and the "Endpoint & setup" label,
+ * and the provenance sentences carry no character that React escapes.
+ */
+function panelCopy(schemas: SchemaProvenance[]): string {
+  const props: Parameters<typeof Setup>[0] = {
+    session: {
+      uuid: '00000000-0000-4000-8000-000000000000',
+      created_at: new Date().toISOString(),
+      last_post_at: null,
+      auth_enabled: false,
+      auth_method: null,
+      contractProfile: CONTRACT_PROFILE,
+      shadowProfile: null,
+    },
+    ingestUrl: '/i/00000000-0000-4000-8000-000000000000',
+    schemas,
+    expiresAt: inDays(7),
+    onAuthChange: () => undefined,
+    open: true,
+  };
+  return renderToStaticMarkup(React.createElement(Setup, props)).replace(/<[^>]*>/g, '');
+}
+
+/** What the panel abbreviates a sha256 to; Setup keeps `shortSha` private. */
+function short(sha256: string): string {
+  return `${sha256.slice(0, 8)}…`;
+}
+
+test('the provenance line lists every contract version, in order, with its short sha', () => {
+  const schemas = panelSchemas();
+  const contract = schemas.filter((s) => s.profile === CONTRACT_PROFILE);
+  assert.ok(contract.length > 1, 'the registry vendors more than one contract version');
+
+  const listed = contract.map((s) => `${s.version} (sha256 ${short(s.sha256)})`).join(', ');
+  assert.ok(
+    panelCopy(schemas).includes(
+      `Validating against official ${listed} — our vendored copies, byte-identical to the` +
+        ' bytes published upstream, and the whole registered set.',
+    ),
+    `the provenance line no longer reads as the accepted set: expected ${listed}`,
+  );
+});
+
+test('a single registered contract version reads in the singular', () => {
+  // Same line, the other branch: one vendored copy, and the version is the only
+  // one registered rather than a set.
+  const current = registry.currentVersion();
+  const schemas = panelSchemas().filter(
+    (s) => s.profile !== CONTRACT_PROFILE || s.version === current,
+  );
+  const only = schemas.find((s) => s.profile === CONTRACT_PROFILE);
+  assert.ok(only !== undefined, 'the fixture keeps exactly one contract entry');
+
+  assert.ok(
+    panelCopy(schemas).includes(
+      `Validating against official ${only.version} (sha256 ${short(only.sha256)}) — our vendored` +
+        ' copy, byte-identical to the bytes published upstream, and the only registered version.',
+    ),
+  );
+});
+
+/**
+ * The line right above calls its versions "official", so naming the shadow
+ * lineage there would make that word false — the draft is not what a transmission
+ * is graded against. It gets its own sentence, and appears nowhere else in the
+ * panel: the short sha is counted across the WHOLE copy, because an appearance
+ * inside the official list is exactly the regression this guards.
+ */
+test('the shadow draft appears only in its own "Also loaded" sentence', () => {
+  const schemas = panelSchemas();
+  const shadow = schemas.find((s) => s.profile !== CONTRACT_PROFILE);
+  assert.ok(shadow !== undefined, 'a shadow lineage is registered');
+  assert.notEqual(shadow.draftDate, undefined, 'the shadow entry is an unpublished draft');
+
+  const copy = panelCopy(schemas);
+  const sentence =
+    `Also loaded, not graded against: ${PROFILE_VOCABULARY[shadow.profile].longName} revision` +
+    ` ${shadow.version} (sha256 ${short(shadow.sha256)}) — an unpublished DRAFT dated` +
+    ` ${shadow.draftDate}, pinned by hash so you can see which revision is loaded.`;
+  assert.ok(copy.includes(sentence), `expected the panel to carry: ${sentence}`);
+
+  assert.equal(
+    copy.split(short(shadow.sha256)).length - 1,
+    1,
+    'the shadow hash must appear once, in its own sentence — never in the "official" list',
+  );
+  assert.equal(
+    copy.split(PROFILE_VOCABULARY[shadow.profile].longName).length - 1,
+    1,
+    'the shadow lineage must be named once, in its own sentence',
+  );
 });
