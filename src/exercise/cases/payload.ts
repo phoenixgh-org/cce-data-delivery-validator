@@ -26,6 +26,7 @@ import {
   addSolarPowerToMainsRecord,
   appendSecondReport,
   blankAdminObject,
+  blankExplanationNullTemperature,
   blankAdminObjects,
   blankApplianceMonitoringId,
   declareCustomDataSchema,
@@ -286,11 +287,15 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
   //
   // The pair below is the rule in both directions, and together they turn a
   // header comment into a measured fact of the live instance: a null temperature
-  // with nothing to explain it is a §3.2 SCHEMA failure on EMS, not an advisory
-  // gap — which is precisely why `adv.unexplained_null_temp` is RTMD-only
-  // (src/ingest/stages/semantic/unexplained-null-temp.ts). Before these cases the
-  // two EMS §3.2 fail cases covered the power `oneOf` and the version-strings
-  // `oneOf` only, and nothing anywhere pinned this one.
+  // with NOTHING at all to explain it is a §3.2 SCHEMA failure on EMS, not an
+  // advisory gap. That is where `adv.unexplained_null_temp` stops on this branch
+  // (src/ingest/stages/semantic/unexplained-null-temp.ts) — not at the branch
+  // itself. `minLength: 1` counts characters rather than content, so a LERR of
+  // blank space validates and the advisory's EMS arm covers that one shape;
+  // `adv.unexplained_null_temp-fail-ems-blank-logger-error-code` below is that
+  // case. Before these cases the two EMS §3.2 fail cases covered the power
+  // `oneOf` and the version-strings `oneOf` only, and nothing anywhere pinned
+  // this one.
   {
     id: '3.2-fail-ems-null-tvc-without-lerr',
     title: 'An EMS record with a null TVC and no error code beside it is rejected 422',
@@ -326,11 +331,12 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     // quarter of the twelve that check requires before it will call a column
     // padded, so the lone null here is not read as padding.
     //
-    // `adv.unexplained_null_temp` IS DECLARED SILENT (496w). That advisory is
-    // RTMD-only by construction — on the ems branch the schema itself demands the
-    // explanation, so there is no gap for it to cover — and this payload is where
-    // that claim is measured: a null TVC, on the branch the check skips, drawing
-    // nothing.
+    // `adv.unexplained_null_temp` IS DECLARED SILENT (496w). The advisory's EMS
+    // arm reads only whether the logger error code is BLANK SPACE (xwgr); `E12`
+    // is a real code, so a null TVC explained by one draws nothing. This payload
+    // is where that boundary is measured from the explained side, and
+    // `adv.unexplained_null_temp-fail-ems-blank-logger-error-code` measures it
+    // from the other.
     posts: [{ transforms: [explainedNullTemperature()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
     absentFindings: [{ requirement: 'adv.unexplained_null_temp' }],
@@ -827,9 +833,10 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
   // A null reading with nothing beside it to account for it (agj.2). This one
   // takes the DEFAULT (rtm) baseline rather than declaring emsBaseline, and that
   // is the case rather than a convenience: ems-record's allOf requires a
-  // minLength-1 LERR beside a null TVC in both registered versions, so the EMS
-  // form of this payload is a §3.2 rejection and never reaches stage 8. The rtm
-  // branch has no such conditional, which is the gap the advisory covers.
+  // minLength-1 LERR beside a null TVC in both registered versions, so THIS form
+  // of the payload is a §3.2 rejection on EMS and never reaches stage 8. The rtm
+  // branch has no such conditional, which is the gap this case covers; the EMS
+  // arm's narrower gap has a case of its own two entries below.
   {
     id: 'adv.unexplained_null_temp-fail-null-temperature-no-error-code',
     title: 'A vaccine compartment temperature sent as null with no error code beside it',
@@ -866,6 +873,36 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     posts: [{ transforms: [nullTemperatureWithErrorCode()], expectedStatus: 200 }],
     expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
     absentFindings: [{ requirement: 'adv.unexplained_null_temp' }],
+  },
+
+  // THE EMS ARM (xwgr), and the only advisory case in the table that exists
+  // because of what a schema keyword does NOT say. `ems-record`'s abnormal
+  // branch asks for a LERR string of `minLength` 1 beside a null TVC, and
+  // `minLength` counts CHARACTERS rather than content — so three spaces satisfy
+  // the explanation requirement in form while explaining nothing. The record
+  // validates, reaches stage 8, and the advisory observes it.
+  //
+  // The case declares emsBaseline: the conditional it turns on lives on
+  // `ems-record`, and there is no rtm analogue. The three shapes either side of
+  // it — an absent, `null`, or empty-string LERR — are §3.2 rejections and are
+  // covered by `3.2-fail-ems-null-tvc-without-lerr` above, which is what keeps
+  // the arm's boundary a measured fact of the live instance rather than a claim
+  // in a module header.
+  {
+    id: 'adv.unexplained_null_temp-fail-ems-blank-logger-error-code',
+    title: 'A null vaccine compartment temperature with a logger error code of blank space',
+    requirements: [],
+    direction: 'fail',
+    baseline: emsBaseline,
+    fault: {
+      layer: 'payload',
+      note:
+        'TVC set to null on the first EMS record with LERR set to three spaces — legal because ' +
+        'ems-record’s abnormal branch asks only for a LERR string of minLength 1, which blank ' +
+        'space satisfies',
+    },
+    posts: [{ transforms: [blankExplanationNullTemperature()], expectedStatus: 200 }],
+    expectedFindings: [{ requirement: 'adv.unexplained_null_temp', severity: 'info' }],
   },
 
   // An identifier that is present, non-blank, and too short to address a national

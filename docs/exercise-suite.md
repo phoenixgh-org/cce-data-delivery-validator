@@ -249,10 +249,15 @@ strings) — and they produce the multi-branch Ajv error set no rtm case can: a 
 `required`/`maximum` errors the rtm cases trigger.
 
 The TVC/LERR conditional is worth naming on its own. It is the schema rule that lets a
-null temperature stand when an error code explains it, and it is why
-`adv.unexplained_null_temp` is designed for RTMD payloads only: on the EMS branch the
-schema already rejects the unexplained case, so an advisory there would restate a §3.2
-fail rather than add anything.
+null temperature stand when an error code explains it, and it is where
+`adv.unexplained_null_temp` stops on the EMS branch: an absent, `null`, or empty-string
+`LERR` beside a null `TVC` is already a §3.2 fail, so an advisory there would restate it
+rather than add anything. The rule has one opening, and the advisory's EMS arm is
+exactly that opening — `minLength: 1` counts characters rather than content, so a `LERR`
+of blank space validates and explains nothing. The advisory case
+`adv.unexplained_null_temp-fail-ems-blank-logger-error-code` is that opening exercised;
+the RTMD arm keeps a case of its own, since `rtmd-record` carries no such conditional at
+all.
 
 The two ORIGINAL mutators — `addSolarPowerToMainsRecord` and
 `duplicateVersionStringsIntoRecords` — **throw** when handed a payload without the mains
@@ -269,7 +274,7 @@ invalidity it claims is held by `cases.test.ts`'s real-Ajv check on the declared
 
 An advisory is an observation the service offers a supplier, not a requirement it
 grades — so the case model treats it as a first-class target while the coverage join
-refuses to count it as a requirement. Sixteen cases exercise the twelve registered
+refuses to count it as a requirement. Seventeen cases exercise the twelve registered
 advisories today.
 
 **Where they live.** In `cases/payload.ts`, beside the requirement cases. The grouping

@@ -1180,9 +1180,9 @@ export function nullPaddedSeries(count = 12, reportIndex = 0): PayloadTransform 
  * on the same baseline leaves `LERR` at the baseline's `null` and matches NEITHER
  * branch, so Ajv rejects it and the transmission earns a §3.2 fail and a 422.
  * Together the two make a header comment into a measured fact of the live
- * instance: on EMS the schema itself demands the explanation, which is why
- * `adv.unexplained_null_temp` is RTMD-only ({@link unexplainedNullTemperature}
- * takes the rtm baseline for exactly this reason).
+ * instance: on EMS the schema itself demands the explanation, which is why the
+ * EMS arm of `adv.unexplained_null_temp` is confined to the one shape the
+ * `minLength` lets through ({@link blankExplanationNullTemperature}).
  *
  * `adv.null_padding` stays silent on the result: the EMS baseline is 3 records,
  * a quarter of the 12 that check requires before it will call a column padded.
@@ -1197,6 +1197,47 @@ export function explainedNullTemperature(recordIndex = 0, reportIndex = 0): Payl
     apply: (payload) => {
       setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/TVC`, null);
       setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/LERR`, 'E12');
+      return payload;
+    },
+  });
+}
+
+/**
+ * Null the vaccine compartment temperature on one EMS record and put a LERR of
+ * BLANK SPACE beside it — the one null-temperature shape `ems-record` accepts
+ * without accounting for anything, and the whole surface of the EMS arm of
+ * `adv.unexplained_null_temp` (xwgr).
+ *
+ * Schema-VALID by design, and the validity is the case. The ABNORMAL branch of
+ * the TVC/LERR `oneOf` asks for a `LERR` string of `minLength` 1, and
+ * `minLength` counts CHARACTERS rather than content, so `"   "` satisfies it in
+ * both registered `cce-interop` versions and in the Annex 4 draft (measured
+ * 2026-09-18). The record validates, reaches stage 8, and leaves the receiving
+ * country holding a reading it cannot name — which is what the advisory
+ * observes. ../cases.test.ts runs the materialized payload through the real
+ * validator, so this declaration is checked rather than asserted.
+ *
+ * THE SIBLING IS {@link explainedNullTemperature}, which writes `"E12"` on the
+ * same record and earns silence from the advisory: the arm asks only whether the
+ * code is blank space, never what the code means. The three shapes either side
+ * of this one — an absent, `null`, or empty-string `LERR` — are §3.2 rejections
+ * on this branch and belong to `setInvalidValue`, not here.
+ *
+ * `adv.null_padding` stays silent on the result: the EMS baseline is 3 records,
+ * a quarter of the 12 that check requires before it will call a column padded.
+ *
+ * EMS-only by construction, exactly as its sibling is: a case using this
+ * declares `emsBaseline`.
+ */
+export function blankExplanationNullTemperature(
+  recordIndex = 0,
+  reportIndex = 0,
+): PayloadTransform {
+  return payloadTransform({
+    name: `blankExplanationNullTemperature(${reportIndex}: records/${recordIndex} TVC=null, LERR="   ")`,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/TVC`, null);
+      setAtPointer(payload, `/data/${reportIndex}/records/${recordIndex}/LERR`, '   ');
       return payload;
     },
   });

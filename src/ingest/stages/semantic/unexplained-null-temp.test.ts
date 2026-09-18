@@ -1,6 +1,7 @@
 /**
- * `adv.unexplained_null_temp` — the advisory for an `rtmd-report` record whose
- * TVC arrived as null with no error code beside it (agj.2).
+ * `adv.unexplained_null_temp` — the advisory for a record whose TVC arrived as
+ * null with nothing beside it that accounts for the gap (agj.2 for the RTMD arm,
+ * xwgr for the EMS one).
  *
  * Acceptance, as for every advisory: it fires on a payload that is fully schema-
  * AND requirement-conformant, and moves NO requirement's pass/fail status. Both
@@ -9,14 +10,19 @@
  * zero fail findings, and the §7 summary is computed with and without the
  * advisory findings and compared.
  *
- * THE BRANCH EXCLUSION is the point of several cases below. On `ems-record` the
- * schema itself requires a `minLength`-1 LERR beside a null TVC, in BOTH
- * registered versions, so the EMS case is a §3.2 failure and never this
- * advisory's. The tests pin that the schema really does reject it and that the
- * check stays silent there even when driven directly.
+ * THE EMS BRANCH'S BOUNDARY is the point of several cases below, and it is drawn
+ * by Ajv rather than by opinion. `ems-record` requires a `minLength`-1 LERR
+ * beside a null TVC in both registered versions, so an absent, `null`, or
+ * empty-string LERR is a §3.2 failure and never this advisory's — the tests run
+ * each of those through the real registry and pin the rejection. A LERR of blank
+ * space satisfies `minLength: 1`, validates, and reaches stage 8; that one case,
+ * and only that one, is what the EMS arm observes. The BEMD/EERR pair is
+ * measured here too, because the contract lineage ties nothing to a null BEMD and
+ * so has no gap of this shape for the arm to widen into.
  *
  * The copy assertions are acceptance, not polish: the category's wording rule
- * (observe, never conclude) is held here the way null-identity.test.ts holds it.
+ * (observe, never conclude) is held here the way null-identity.test.ts holds it,
+ * and both arms' approved strings are pinned verbatim.
  */
 
 import { test } from 'node:test';
@@ -147,6 +153,22 @@ function emsPayload(reading: Record<string, unknown> = {}): Record<string, unkno
   };
 }
 
+/**
+ * An EMS transmission whose FIRST record alone carries the override, leaving the
+ * other two at the baseline. `emsPayload` applies its override to all three, so
+ * this is how a case renders the singular form of the EMS arm's copy.
+ */
+function emsPayloadFirstRecord(reading: Record<string, unknown>): Record<string, unknown> {
+  const payload = emsPayload();
+  const report = (payload.data as Record<string, unknown>[])[0]!;
+  const records = report.records as Record<string, unknown>[];
+  records[0] = { ...records[0], ...reading };
+  return payload;
+}
+
+/** The EMS case: one record whose TVC is null and whose LERR is blank space (xwgr). */
+const EMS_BLANK_LERR = emsPayloadFirstRecord({ TVC: null, LERR: '   ' });
+
 /** The case: one rtm record whose TVC is null and whose EERR is null, with no LERR. */
 const RTM_UNEXPLAINED = rtmPayload([rtmRecord('0330', { TVC: null, EERR: null })]);
 
@@ -260,12 +282,12 @@ test('RTMD: it fires through the real §6 body stages on a 200 with zero fail fi
   assert.equal(raised[0]?.pointer, '/data/0/records/0', 'points at the first offending record');
 });
 
-// ── the EMS branch belongs to the schema, not to this check (agj.2) ──────────
+// ── the EMS branch: the schema keeps all of it but the blank-space case ──────
 
-test('EMS: the schema itself rejects a null TVC with a null LERR, in BOTH registered versions', () => {
-  // This is WHY there is no EMS arm. ems-record's allOf carries a oneOf whose
-  // abnormal case requires TVC null AND LERR a minLength-1 string, so stage 7
-  // halts 422 and stage 8 never runs on the EMS form of this case.
+test('EMS: the schema itself rejects a null TVC with a null or empty LERR, in BOTH registered versions', () => {
+  // This is the boundary the EMS arm stops at. ems-record's allOf carries a
+  // oneOf whose abnormal case requires TVC null AND LERR a minLength-1 string,
+  // so stage 7 halts 422 and stage 8 never runs on these three shapes.
   for (const version of ['0.8.0', '0.8.1']) {
     const entry = registry.get(version);
     assert.ok(entry, `${version} is registered`);
@@ -287,12 +309,94 @@ test('EMS: the schema itself rejects a null TVC with a null LERR, in BOTH regist
   }
 });
 
-test('EMS: the check returns nothing even when driven directly on that payload', () => {
-  // Belt and braces on the branch gate: an EMS payload cannot reach stage 8 in
-  // production, and if it somehow did, the check would still say nothing rather
-  // than duplicate Ajv with an info finding.
-  assert.deepEqual(checkOnly(emsPayload({ TVC: null, LERR: null })), []);
-  assert.deepEqual(checkOnly(emsPayload({ TVC: null, LERR: null, EERR: null })), []);
+test('EMS: the check stays silent on every shape the schema already rejects', () => {
+  // Belt and braces on the boundary: those payloads cannot reach stage 8 in
+  // production, and if one somehow did, the check would still say nothing rather
+  // than duplicate Ajv with an info finding on a payload already failing.
+  assert.deepEqual(advisories(checkOnly(emsPayloadFirstRecord({ TVC: null, LERR: null }))), []);
+  assert.deepEqual(advisories(checkOnly(emsPayloadFirstRecord({ TVC: null, LERR: '' }))), []);
+  const absent = emsPayloadFirstRecord({ TVC: null });
+  delete ((absent.data as Record<string, unknown>[])[0]!.records as Record<string, unknown>[])[0]!
+    .LERR;
+  assert.deepEqual(advisories(checkOnly(absent)), []);
+});
+
+test('EMS: a blank-space LERR beside a null TVC really is schema-conformant (xwgr)', () => {
+  // minLength counts CHARACTERS, not content — which is the whole reason the EMS
+  // arm exists. Measured against both registered cce-interop versions and the
+  // DS01.3 Annex 4 draft, which keeps the same rule.
+  for (const version of ['0.8.0', '0.8.1', '1']) {
+    const entry = registry.get(version);
+    assert.ok(entry, `${version} is registered`);
+    for (const lerr of ['   ', '\t\n']) {
+      const payload = emsPayloadFirstRecord({ TVC: null, LERR: lerr });
+      (payload.meta as Record<string, unknown>).schemaVersion = version;
+      assert.equal(
+        entry.validate(payload),
+        true,
+        `${version}: LERR ${JSON.stringify(lerr)} satisfies minLength 1: ${JSON.stringify(
+          entry.validate.errors,
+        )}`,
+      );
+    }
+  }
+});
+
+test('EMS: it fires through the real §6 body stages on a 200 with zero fail findings', async () => {
+  const ctx = makeCtx(EMS_BLANK_LERR);
+  const result = await runPipeline(ctx, bodyStages());
+
+  assert.equal(result.status, 200);
+  assert.equal(
+    contractFails(ctx, result.findings).length,
+    0,
+    `expected no contract-profile fail findings, got ${JSON.stringify(contractFails(ctx, result.findings))}`,
+  );
+
+  const raised = advisories(result.findings);
+  assert.equal(raised.length, 1, 'one finding per transmission');
+  assert.equal(raised[0]?.severity, 'info');
+  assert.equal(raised[0]?.code, 'adv.unexplained_null_temp');
+  assert.ok(!raised[0]?.outdated);
+  assert.equal(raised[0]?.pointer, '/data/0/records/0', 'points at the first offending record');
+});
+
+test('EMS: a populated LERR beside the null reading is the schema’s own explanation', () => {
+  assert.deepEqual(advisories(checkOnly(emsPayloadFirstRecord({ TVC: null, LERR: 'L1' }))), []);
+});
+
+test('EMS: a blank LERR beside a NUMERIC reading is not this advisory’s case', () => {
+  // The arm is about a reading that did not arrive. A blank logger error code on
+  // a record whose temperature is present says nothing about a missing reading.
+  assert.deepEqual(advisories(checkOnly(emsPayloadFirstRecord({ LERR: '   ' }))), []);
+});
+
+test('EMS: EERR is not consulted — the schema’s rule names LERR specifically', () => {
+  // A null TVC explained by an EERR alone is a §3.2 failure on this branch, so
+  // the arm never reads EERR. Pinned because the rtm arm reads both codes.
+  const payload = emsPayloadFirstRecord({ TVC: null, LERR: 'L1', EERR: '   ' });
+  assert.deepEqual(advisories(checkOnly(payload)), []);
+});
+
+test('EMS: a blank EERR beside a null BEMD is NOT this gap, measured on 0.8.1 (xwgr)', () => {
+  // The measurement that bounds the arm. The cce-interop lineage's ems-record
+  // ties nothing to a null BEMD, so a null, empty, or blank-space EERR all
+  // validate beside one — there is no explanation requirement for blank space to
+  // satisfy in form only, and therefore no gap of this shape. An arm over BEMD
+  // would be a different observation and would need its own approved copy.
+  const entry = registry.get('0.8.1');
+  assert.ok(entry, '0.8.1 is registered');
+  for (const eerr of [null, '', '   ']) {
+    const payload = emsPayloadFirstRecord({ BEMD: null, EERR: eerr });
+    assert.equal(
+      entry.validate(payload),
+      true,
+      `a null BEMD validates beside EERR ${JSON.stringify(eerr)}: ${JSON.stringify(
+        entry.validate.errors,
+      )}`,
+    );
+    assert.deepEqual(advisories(checkOnly(payload)), [], 'and the check says nothing about it');
+  }
 });
 
 // ── what "unexplained" means ─────────────────────────────────────────────────
@@ -488,4 +592,76 @@ test('the observation stands alone per transmission', () => {
   const summary = summaryOf(RTM_UNEXPLAINED);
   assert.match(summary, /^1 of 1 record carries TVC as null/);
   assert.doesNotMatch(summary, /this session|every transmission/i);
+});
+
+// ── the EMS arm's approved copy, pinned verbatim (xwgr, approved 2026-09-18) ──
+
+/** The rationale half of the EMS detail, identical on both the singular and plural forms. */
+const EMS_RATIONALE =
+  'The schema accepts any one-character string as an error code, so this passes validation, ' +
+  'but blank space explains nothing about why the reading is missing. A null reading with a ' +
+  'real code names a sensor or logger condition; a null with blank space is indistinguishable ' +
+  'from an unexplained gap.';
+
+test('EMS: the approved observation carries no numbers and the detail names the record', () => {
+  assert.equal(
+    summaryOf(EMS_BLANK_LERR),
+    'A temperature reading is null and the logger error code beside it is blank space.',
+  );
+  assert.equal(
+    detailOf(EMS_BLANK_LERR),
+    `Record 0 carries TVC null with LERR set to whitespace only. ${EMS_RATIONALE}`,
+  );
+});
+
+test('EMS: more than one offending record pluralises the way the rtm arm does', () => {
+  // emsPayload applies its override to all three records, so this is the plural
+  // form: the approved sentences stand and only the record reference changes.
+  const payload = emsPayload({ TVC: null, LERR: '   ' });
+  assert.equal(
+    summaryOf(payload),
+    'A temperature reading is null and the logger error code beside it is blank space.',
+    'the observation is static on this arm',
+  );
+  assert.equal(
+    detailOf(payload),
+    `3 of 3 records carry TVC null with LERR set to whitespace only. ${EMS_RATIONALE}`,
+  );
+});
+
+test('PIN: the §7 summary is identical with and without the EMS advisory', async () => {
+  const ctx = makeCtx(EMS_BLANK_LERR);
+  const result = await runPipeline(ctx, bodyStages());
+  assert.equal(advisories(result.findings).length, 1, 'the advisory really is present');
+
+  const withAdvisory = computeComplianceSummary(countsOf(result.findings));
+  const without = computeComplianceSummary(
+    countsOf(result.findings.filter((f) => !isAdvisoryId(f.requirement))),
+  );
+
+  assert.deepEqual(withAdvisory, without, 'the advisory moved a §7 row');
+  assert.equal(
+    withAdvisory.filter((r) => r.status === 'fail' || r.status === 'mixed').length,
+    0,
+    'and the supplier is still carrying no failed requirement',
+  );
+});
+
+test('EMS: the copy carries no defect vocabulary and concludes nothing about the device', () => {
+  // The same rule the rtm copy is held to, with one deliberate difference: the
+  // approved rationale names what a REAL code would do ("names a sensor or
+  // logger condition"), which is a statement about error codes rather than a
+  // claim that this device's sensor failed. "validation" is the schema's own
+  // word for what the payload passed, not a verdict on the supplier.
+  const defectWords =
+    /\b(warn|warning|issue|issues|defect|defects|fail|fails|failed|failing|failure|violation|violates|problem|wrong|incorrect|bad|non-?compliant|must)\b/i;
+  for (const copy of [summaryOf(EMS_BLANK_LERR), detailOf(EMS_BLANK_LERR)]) {
+    assert.doesNotMatch(copy, defectWords, `copy reads as a defect: ${copy}`);
+    assert.doesNotMatch(copy, /data quality|practice note|observation about/i, 'no renaming');
+  }
+  assert.doesNotMatch(
+    `${summaryOf(EMS_BLANK_LERR)} ${detailOf(EMS_BLANK_LERR)}`,
+    /broke|broken|fault|faulty|suppress/i,
+    'the copy concludes nothing about the device',
+  );
 });
