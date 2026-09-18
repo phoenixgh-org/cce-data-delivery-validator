@@ -414,10 +414,11 @@ export interface SessionResponse {
   /** ISO timestamp string when the session expires (DESIGN §11). */
   expiresAt: string;
   /**
-   * The shadow lineage's current bytes, or null when none is registered (the
-   * same condition as `session.shadowProfile === null`). The legend renders its
-   * label from THIS — version, hash, and `draftDate` when the entry is an
-   * unpublished proposal — never from a literal of its own (3cq, by1c.22).
+   * The shadow lineage's current bytes — version, hash, and `draftDate` when the
+   * entry is an unpublished proposal — or null when none is registered (the same
+   * condition as `session.shadowProfile === null`). The lens banner is the one
+   * reader in the browser today: it dates its sentence from `draftDate` here,
+   * never from a literal of its own (3cq, by1c.22).
    */
   shadow: ShadowProvenance | null;
   /**

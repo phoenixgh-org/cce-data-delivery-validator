@@ -121,7 +121,7 @@ interface Grading {
  *
  * `draftDate` is OPTIONAL and comes off the registry entry, never a literal here
  * (epic by1c item 3): a published shadow schema has no draft date to report, and
- * the legend's "draft <date>" label is licensed by the field's presence alone.
+ * the lens banner's dated sentence is licensed by the field's presence alone.
  */
 interface ShadowProvenance {
   version: string;
@@ -657,9 +657,9 @@ export function registerSessionsApi(app: FastifyInstance): void {
         // The shadow lineage's current bytes — version, the hash computed over
         // the vendored file at boot, and the draft date when the entry is an
         // unpublished proposal. Service-global like `schemas` (the shadow entry
-        // is in that list too), surfaced separately so the legend can name the
-        // shadow without re-deriving "the newest entry that is not the contract".
-        // Null whenever `session.shadowProfile` is.
+        // is in that list too), surfaced separately so the lens banner can date
+        // its sentence from this field without re-deriving "the newest entry that
+        // is not the contract". Null whenever `session.shadowProfile` is.
         shadow: grading.shadow,
         // How much of the contract-conformant traffic in scope would also pass
         // the shadow lineage, and what stands in the way (by1c.9). Null when

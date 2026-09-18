@@ -3,8 +3,7 @@
  *
  * What is pinned here is the handoff's BINDING vocabulary, which no type can
  * hold: a supplier bound to a 2025 LTA must never be told the version their
- * contract requires is stale, so "(contract)" follows `CONTRACT_PROFILE` rather
- * than living on the '2025' key, and no lineage is ever named "old", "new",
+ * contract requires is stale, so no lineage is ever named "old", "new",
  * "current", "latest", "v1" or "v2". The names themselves are the lens's
  * (tfnv.1): "UNICEF Q1 2025" and "DS01.3 DRAFT".
  *
@@ -17,25 +16,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { PROFILE_VOCABULARY as SERVER_VOCABULARY } from '../profile-vocabulary.js';
-import { CONTRACT_PROFILE, type Profile, type ShadowProvenance } from './api.js';
+import type { Profile } from './api.js';
 import {
   PROFILE_NAME,
   PROFILE_VOCABULARY,
   formatDraftDate,
   formatDraftDateLong,
-  profileLabel,
-  shadowLegend,
 } from './profiles.js';
-
-/** The DS01.3 shadow entry as the session read serves it — an unpublished draft. */
-const draftShadow: ShadowProvenance = {
-  version: '1',
-  sha256: 'a'.repeat(64),
-  draftDate: '2026-09-08',
-};
-
-/** A published shadow entry: version and hash alone, no date to call it a draft. */
-const publishedShadow: ShadowProvenance = { version: '0.9.0', sha256: 'b'.repeat(64) };
 
 /** Every registered lineage, read off the vocabulary rather than listed by hand. */
 const ALL_PROFILES = Object.keys(PROFILE_NAME) as Profile[];
@@ -57,20 +44,14 @@ test("PROFILE_NAME is the vocabulary's short form, not a third list of names", (
   }
 });
 
-test('the "(contract)" suffix follows CONTRACT_PROFILE, not the "2025" key', () => {
-  assert.equal(profileLabel(CONTRACT_PROFILE), `${PROFILE_NAME[CONTRACT_PROFILE]} (contract)`);
-  for (const profile of ALL_PROFILES) {
-    if (profile === CONTRACT_PROFILE) continue;
-    assert.equal(profileLabel(profile), PROFILE_NAME[profile]);
-  }
-});
-
-test('no lineage label uses a forbidden relative word', () => {
+test('no lineage name uses a forbidden relative word', () => {
+  // The rule binds the vocabulary itself, so it is asserted over the names every
+  // surface composes from rather than over one surface's label.
   const forbidden = ['old', 'new', 'current', 'latest', 'v1', 'v2'];
-  const labels = ALL_PROFILES.map(profileLabel).concat(
-    shadowLegend(draftShadow, 'ds013') ?? '',
-    shadowLegend(publishedShadow, 'ds013') ?? '',
-  );
+  const labels = ALL_PROFILES.flatMap((profile) => [
+    PROFILE_VOCABULARY[profile].name,
+    PROFILE_VOCABULARY[profile].longName,
+  ]);
   for (const label of labels) {
     const words = label.toLowerCase().split(/[^a-z0-9.]+/);
     for (const word of forbidden) {
@@ -98,23 +79,4 @@ test('the long form carries the year, and passes an unrecognised date through', 
   assert.equal(formatDraftDateLong('2026-01-01'), 'Jan 1, 2026');
   assert.equal(formatDraftDateLong('2026-13-08'), '2026-13-08');
   assert.equal(formatDraftDateLong(''), '');
-});
-
-test('a draft shadow entry is named as a draft, dated', () => {
-  // The name already carries DRAFT, so the legend does not say the word twice.
-  assert.equal(shadowLegend(draftShadow, 'ds013'), 'DS01.3 DRAFT Sep 8');
-});
-
-test('a published shadow entry is named by version, with no draft marker added', () => {
-  // The marker the legend adds for itself is the word "draft" beside a date; a
-  // published entry is named by version and gets none. The name still reads
-  // "DS01.3 DRAFT" because that is what the vocabulary calls this lineage today —
-  // a lineage that published would be renamed there, not here.
-  assert.equal(shadowLegend(publishedShadow, 'ds013'), 'DS01.3 DRAFT 0.9.0');
-});
-
-test('no shadow lineage means no shadow label at all', () => {
-  assert.equal(shadowLegend(null, null), null);
-  assert.equal(shadowLegend(null, 'ds013'), null);
-  assert.equal(shadowLegend(draftShadow, null), null);
 });

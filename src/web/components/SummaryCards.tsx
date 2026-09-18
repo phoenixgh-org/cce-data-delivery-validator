@@ -36,8 +36,9 @@
  * says which package its numbers belong to — the requirements eyebrow names the
  * package it is counting, and the transmissions sentence carries the one number
  * the readiness strip was built for before it was retired (tfnv.8), how much of
- * the traffic that conforms today would also conform under the draft. The lens is a PROP: no component
- * reads the URL, and the page has exactly one owner of that state.
+ * the traffic that conforms today would also conform under the draft. The lens is
+ * a PROP: no component reads the URL, and the page has exactly one owner of that
+ * state.
  */
 import type { ReactElement, ReactNode } from 'react';
 

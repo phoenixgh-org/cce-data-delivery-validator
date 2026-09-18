@@ -45,9 +45,11 @@ export interface LensBannerProps {
  * `"DS01.3"`.
  *
  * The banner's sentence supplies the word "draft" itself ("the DS01.3 preview
- * draft"), so a name that already carries the marker would say it twice — the
- * same double-word shadowLegendParts avoids from the other direction. A lineage
- * whose name says nothing about draft-ness passes through unchanged.
+ * draft"), so a name that already carries the marker would say it twice (tfnv.1):
+ * the vocabulary names this lineage "DS01.3 DRAFT", and "the DS01.3 DRAFT preview
+ * draft" reads as a stutter. A lineage whose name says nothing about draft-ness
+ * passes through unchanged, because the draft-ness is a fact about the bytes
+ * rather than about the name.
  */
 function packageNoun(profile: Profile): string {
   return PROFILE_NAME[profile].replace(/\s+draft$/i, '');
