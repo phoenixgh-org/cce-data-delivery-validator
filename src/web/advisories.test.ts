@@ -43,7 +43,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { advisoryCopyBannedWordsWith } from '../ingest/stages/semantic/advisory-finding.js';
+import {
+  advisoryCopyBannedWordsWith,
+  violatesAdvisoryCopyBar,
+} from '../ingest/stages/semantic/advisory-finding.js';
 import { CONTRACT_PROFILE, isAdvisory, type FindingView } from './api.js';
 import { ADVISORY_COPY, advisoryLabel, splitFindings } from './advisories.js';
 
@@ -140,9 +143,15 @@ test('the surface copy carries no defect vocabulary', () => {
   // copy describes the category and recommends nothing, so a recommendation
   // here would read as a verdict. Composing keeps the stricter bar without a
   // second copy of the words — one added to the shared list lands here too.
+  // Applied through the shared helper (agj.28) rather than matched directly, so
+  // the exempt phrases are removed from the copy the way a live run removes
+  // them: the surface copy is held to the stricter list, not to a different rule.
   const defectWords = advisoryCopyBannedWordsWith('should');
   for (const text of COPY) {
-    assert.doesNotMatch(text, defectWords, `surface copy must not read as a defect: ${text}`);
+    assert.ok(
+      !violatesAdvisoryCopyBar(text, defectWords),
+      `surface copy must not read as a defect: ${text}`,
+    );
   }
 });
 

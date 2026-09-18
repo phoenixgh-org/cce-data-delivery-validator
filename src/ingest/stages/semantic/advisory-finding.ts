@@ -104,10 +104,14 @@ export function advisory(input: AdvisoryInput): Finding {
  * ingest time reads it — the bar is an assertion about prose a human wrote, not a
  * filter applied to it.
  *
- * Both readers reach it through {@link violatesAdvisoryCopyBar}, which is the
- * single entry point: this constant is only half the bar, and a reader that
- * applies it on its own — without removing {@link ADVISORY_COPY_EXEMPT_PHRASES}
- * first — is enforcing a different rule from the one a live run enforces.
+ * Both readers reach it through {@link findAdvisoryCopyViolation} and its
+ * boolean sugar {@link violatesAdvisoryCopyBar}, which are the single entry
+ * point: the finder is the primitive — it strips the exempt phrases and returns
+ * the offending word, for a caller that wants to name it — and the boolean is
+ * that result reduced to a verdict. This constant is only half the bar, and a
+ * reader that applies it on its own — without removing
+ * {@link ADVISORY_COPY_EXEMPT_PHRASES} first — is enforcing a different rule
+ * from the one a live run enforces.
  *
  * No `g` flag on purpose: a global regular expression carries `lastIndex` between
  * calls, and a shared one would then answer differently depending on who tested
@@ -162,8 +166,8 @@ export function advisoryCopyBannedWordsWith(...extraWords: [string, ...string[]]
 }
 
 /**
- * Whether a piece of advisory copy breaks the wording bar: the one place the two
- * halves of the bar are combined.
+ * The first word in a piece of advisory copy that breaks the wording bar, or
+ * `null` if none does: the one place the two halves of the bar are combined.
  *
  * The bar is {@link ADVISORY_COPY_BANNED_WORDS} applied to the copy with
  * {@link ADVISORY_COPY_EXEMPT_PHRASES} removed first, and a reader that keeps
@@ -171,17 +175,36 @@ export function advisoryCopyBannedWordsWith(...extraWords: [string, ...string[]]
  * have happened: a per-check test spelled out its own shortened word list and
  * never stripped the exempt phrases, so the EMS arm of
  * `adv.unexplained_null_temp` passed its unit test and then failed the live
- * audit (agj.25). Route every reader through here instead.
+ * audit (agj.25). Route every reader through here, or through
+ * {@link violatesAdvisoryCopyBar}, instead.
+ *
+ * The word is returned rather than only the verdict so a caller can name it in
+ * a failure message, which is what kept one copy test on the raw constant
+ * (agj.28). It is the match as it appears in the stripped copy, so a reader
+ * reporting it should treat it as the word that offended, not as an offset into
+ * the original string.
  *
  * `bar` defaults to the shared word list. A reader holding its own copy to a
  * stricter one passes the result of {@link advisoryCopyBannedWordsWith}, so the
  * exempt phrases are handled identically whichever list is in force.
  */
+export function findAdvisoryCopyViolation(
+  copy: string,
+  bar: RegExp = ADVISORY_COPY_BANNED_WORDS,
+): string | null {
+  let bare = copy;
+  for (const phrase of ADVISORY_COPY_EXEMPT_PHRASES) bare = bare.split(phrase).join(' ');
+  return bar.exec(bare)?.[0] ?? null;
+}
+
+/**
+ * Whether a piece of advisory copy breaks the wording bar — sugar over
+ * {@link findAdvisoryCopyViolation} for the readers that want a verdict and not
+ * the word. Both take the same optional `bar`.
+ */
 export function violatesAdvisoryCopyBar(
   copy: string,
   bar: RegExp = ADVISORY_COPY_BANNED_WORDS,
 ): boolean {
-  let bare = copy;
-  for (const phrase of ADVISORY_COPY_EXEMPT_PHRASES) bare = bare.split(phrase).join(' ');
-  return bar.test(bare);
+  return findAdvisoryCopyViolation(copy, bar) !== null;
 }

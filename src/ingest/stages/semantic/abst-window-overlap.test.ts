@@ -36,7 +36,7 @@ import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
 import { ABST_WINDOW_OVERLAP_ID, abstWindowOverlapCheck } from './abst-window-overlap.js';
-import { ADVISORY_COPY_BANNED_WORDS } from './advisory-finding.js';
+import { findAdvisoryCopyViolation } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
@@ -326,8 +326,11 @@ test('the copy observes and never concludes', async () => {
     ['summary', finding?.summary ?? ''],
     ['detail', finding?.detail ?? ''],
   ] as const) {
-    const banned = ADVISORY_COPY_BANNED_WORDS.exec(copy);
-    assert.equal(banned, null, `${label} uses the verdict word "${banned?.[0]}"`);
+    // The bar is applied through its one helper (agj.28), so the exempt phrases
+    // come out of the copy first the way a live run removes them; the finder
+    // hands back the offending word so the message can still name it.
+    const banned = findAdvisoryCopyViolation(copy);
+    assert.equal(banned, null, `${label} uses the verdict word "${banned}"`);
   }
   assert.ok(
     !/duplicat/i.test(`${finding?.summary} ${finding?.detail}`),
