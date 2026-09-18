@@ -395,11 +395,11 @@ function distinct(lines: readonly string[]): string[] {
  *
  * Every advisory finding in the session is held to three things: `summary` is a
  * non-blank string, `detail` is a non-blank string, and neither reads as a
- * defect ({@link ADVISORY_COPY_BANNED_WORDS}, with the clause-1.8 exemption
- * applied first). That is the same bar the per-check copy tests hold each
- * check's own prose to; what this adds is the rest of the path — repository
- * INSERT, SELECT, `toFindingView`, the dashboard API — which no pure test can
- * reach without a running instance.
+ * defect ({@link ADVISORY_COPY_BANNED_WORDS}, with the phrases in
+ * {@link ADVISORY_COPY_EXEMPT_PHRASES} removed first). That is the same bar the
+ * per-check copy tests hold each check's own prose to; what this adds is the
+ * rest of the path — repository INSERT, SELECT, `toFindingView`, the dashboard
+ * API — which no pure test can reach without a running instance.
  *
  * TOLERANCE, and why it is asymmetric. The runner points at whatever instance
  * the operator names, which may predate the `summary` column. If NO observed

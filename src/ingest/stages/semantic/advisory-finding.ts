@@ -115,12 +115,23 @@ export const ADVISORY_COPY_BANNED_WORDS =
  * Phrases removed from a piece of copy BEFORE {@link ADVISORY_COPY_BANNED_WORDS}
  * is applied to it, rather than words struck off the bar.
  *
- * One entry today: "a delivery failure" (agj.17, 2026-09-15) names the
+ * The first entry: "a delivery failure" (agj.17, 2026-09-15) names the
  * circumstance requirements clause 1.8 allows a retransmission after. It is a
  * statement about that clause, not a verdict on the payload in hand, so the
  * approved rationale may carry it while "failure" stays banned everywhere else.
+ *
+ * "error code" / "error codes" (xwgr, 2026-09-18) sit on the same footing. They
+ * name the LERR data object, which the schema itself titles "Logger Error
+ * Codes" — the field the copy is reading, not a judgement on what it holds. The
+ * approved copy for the EMS arm of `adv.unexplained_null_temp` observes that a
+ * temperature reading is null and "the logger error code beside it is blank
+ * space"; naming the object is the observation. "error" on its own stays banned.
  */
-export const ADVISORY_COPY_EXEMPT_PHRASES: readonly string[] = ['a delivery failure'];
+export const ADVISORY_COPY_EXEMPT_PHRASES: readonly string[] = [
+  'a delivery failure',
+  'error codes',
+  'error code',
+];
 
 /**
  * {@link ADVISORY_COPY_BANNED_WORDS} widened with extra words, for a reader that

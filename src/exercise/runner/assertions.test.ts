@@ -517,6 +517,35 @@ test('the clause-1.8 phrase is exempt, so the approved rationale passes', () => 
   assert.equal(unexempt.violations.length, 1);
 });
 
+test('"error code" is exempt, so the approved EMS whitespace-LERR copy passes', () => {
+  // "error code" names the LERR data object — the schema's own title for it is
+  // "Logger Error Codes" — rather than grading the payload (xwgr). The approved
+  // summary and detail are pinned verbatim in
+  // src/ingest/stages/semantic/unexplained-null-temp.test.ts; what this holds is
+  // that the LIVE audit agrees with them.
+  const approved = auditAdvisoryCopy(
+    advisoryFindings([
+      {
+        summary:
+          'A temperature reading is null and the logger error code beside it is blank space.',
+        detail:
+          'Record 0 carries TVC null with LERR set to whitespace only. The schema accepts any ' +
+          'one-character string as an error code, so this passes validation, but blank space ' +
+          'explains nothing about why the reading is missing. A null reading with a real code ' +
+          'names a sensor or logger condition; a null with blank space is indistinguishable ' +
+          'from an unexplained gap.',
+      },
+    ]),
+  );
+  assert.deepEqual(approved.violations, []);
+
+  // The exemption is the phrase, not the word: "error" outside it still trips.
+  const unexempt = auditAdvisoryCopy(
+    advisoryFindings([{ detail: 'The logger reported an error beside the null reading.' }]),
+  );
+  assert.equal(unexempt.violations.length, 1);
+});
+
 test('no summary anywhere is an instance fact, not a run failure', () => {
   // The runner points at whatever instance the operator names, and one older
   // than the `summary` column serves findings without it. Reported, never failed
