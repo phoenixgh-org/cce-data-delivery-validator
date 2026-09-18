@@ -567,7 +567,11 @@ Adding a version is a policy act rather than maintenance. A new version arrives 
 new vendored file plus a registry entry; a published schema file is never edited in
 place. The single exception is the Annex 4 draft (§9.1), whose bytes are re-pinned
 in place when the proposal is revised, because an unpublished proposal has no
-published artifact for the hash to be checked against.
+published artifact for the hash to be checked against. Re-pinning those bytes is
+not the whole act: the dashboard also quotes the draft's clause text, so
+re-transcribe `src/web/components/ds013Reference.ts` when the clause text
+changed, and update the draft revision its header names. A drill-down that quotes
+a superseded draft under the current one's date reads as the settled text.
 
 Upstream 0.8.2 is the first version to define `meta.customDataSchema`. Its own
 `$comment` there states that the conditional is deliberately not enforced by the

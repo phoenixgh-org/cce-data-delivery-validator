@@ -22,6 +22,7 @@ import { PROFILE_NAME } from '../profiles';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
 import { CLASS_META } from './ui/statusMaps';
+import { DS013_REFERENCE, DS013_REFERENCE_SOURCE } from './ds013Reference';
 import { getRequirementReference } from './requirementReference';
 import { ADVISORY_COPY } from '../advisories';
 // Pane width shared with the summary card above it (src/web/layout.ts, vamh.8).
@@ -449,6 +450,10 @@ function ReqRow({
   const ref = getRequirementReference(row.requirement);
   const text = ref?.text ?? row.summary;
   const guidance = ref?.guidance;
+  // tfnv.9: the DS01.3 text is quoted from an unpublished draft, so it carries
+  // its provenance wherever it is shown. The test is the table it came out of,
+  // not the id's shape: the two key spaces are disjoint, so membership is exact.
+  const fromDraft = ref !== undefined && row.requirement in DS013_REFERENCE;
 
   const rowStyle: CSSProperties = {
     display: 'flex',
@@ -537,6 +542,11 @@ function ReqRow({
           }}
         >
           <div style={{ fontSize: 12.5, lineHeight: 1.65, maxWidth: 640 }}>{text}</div>
+          {fromDraft && (
+            <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-faint)', maxWidth: 640 }}>
+              {`Quoted from the DS01.3 preview draft, revision ${DS013_REFERENCE_SOURCE.revision} — not yet published.`}
+            </div>
+          )}
           {guidance && (
             <div
               style={{

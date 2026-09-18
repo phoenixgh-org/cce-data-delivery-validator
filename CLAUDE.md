@@ -55,8 +55,10 @@ silently "correcting" them** — reconciliation is a spec decision.
 **One exception, for drafts only.** The DS01.3 Annex 4 proposal is unpublished, so
 there is no published artifact for a hash to be checked against. Its vendored file
 MAY therefore be replaced in place when the proposal is revised: swap the bytes,
-update the registry entry's draft date, and update the hash asserted in the
-registry test, keeping the key. Every published `cce-interop` file stays immutable.
+update the registry entry's draft date, update the hash asserted in the registry
+test, keeping the key, and re-transcribe `src/web/components/ds013Reference.ts`
+when the clause text changed — it quotes the draft the dashboard grades against.
+Every published `cce-interop` file stays immutable.
 
 ```bash
 curl -sL https://docs.2to8.cc/cce-data-interop/schemas/cce-interop-0.8.1.json | sha256sum

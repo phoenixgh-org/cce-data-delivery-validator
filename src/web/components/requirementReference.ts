@@ -31,6 +31,8 @@
  * the guidance note (handled by the caller).
  */
 
+import { DS013_REFERENCE } from './ds013Reference';
+
 export interface RequirementReference {
   /** Spec language (verbatim from the requirements doc). */
   text: string;
@@ -166,7 +168,17 @@ export const REQUIREMENT_REFERENCE: Record<string, RequirementReference> = {
   },
 };
 
-/** Look up the static reference for a bare requirement id, or `undefined`. */
+/**
+ * Look up the static reference for a requirement id, or `undefined`.
+ *
+ * The 2025 table is consulted first and the DS01.3 table (`ds013Reference.ts`)
+ * second, so one lookup serves both lenses and the caller needs no lens
+ * parameter: under the DS01.3 lens the server already serves `5.x.y` clause ids,
+ * and under the contract lens it serves 2025 ids. The two key spaces are
+ * disjoint — every DS01.3 key is `5.x.y`, no 2025 key is — so the order of the
+ * two lookups cannot change an answer; `requirementReference.test.ts` asserts
+ * the disjointness rather than trusting it.
+ */
 export function getRequirementReference(id: string): RequirementReference | undefined {
-  return REQUIREMENT_REFERENCE[id];
+  return REQUIREMENT_REFERENCE[id] ?? DS013_REFERENCE[id];
 }
