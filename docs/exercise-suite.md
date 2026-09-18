@@ -1,6 +1,6 @@
 # The conformance exercise suite
 
-**Status:** contributor documentation. **Last updated:** 2026-09-17.
+**Status:** contributor documentation. **Last updated:** 2026-09-18.
 
 A service that grades other people's conformance should be held to the same bar,
 and the only honest way to check the receiving side is to drive a deployed
@@ -203,20 +203,28 @@ source of truth for "a transmission that reaches the §6 happy-path 200"; the EM
 generator is hand-built beside it, because that fixture module is the §6 conditional-
 failure set and its one valid payload is `rtm`.
 
-The contract is three clauses, owed by **every** generator and asserted generically
+The contract is four clauses, owed by **every** generator and asserted generically
 over `BASELINE_GENERATORS` so a generator added later is held to them without a new
 test: the payload is **schema-valid** against the version it names, **freshly owned**
-on every call, and carries a **distinct `meta.transferId` per (caseId, index)**. That
-last one is an obligation rather than a quirk of the fixture generator (bd b8r): the
-runner plays the whole table against ONE session and §1.8 is session-scoped, so a
-generator holding `transferId` constant — the obvious shape for one seeded from
+on every call, carries a **distinct `meta.transferId` per (caseId, index)**, and names
+a **distinct appliance per (caseId, index)**. The last two are obligations rather than
+quirks of the fixture generator (bd b8r, agj.24): the runner plays the whole table
+against ONE session, and both §1.8 and `adv.abst_window_overlap` are session-scoped —
+§1.8 per transferId, the advisory per appliance. A generator holding either value
+constant — the obvious shape for one seeded from
 https://github.com/phoenixgh-org/ems-data-simulator/ output — would make every
-non-replay case record a §1.8 fail
-from table ordering alone. All three shipped generators stamp `<caseId>#<index>`; a
-case that _wants_ a duplicate pins the id itself with `setTransferId` on every POST rather
-than trusting two baseline calls to return identical bytes.
+non-replay case record a §1.8 fail, or every case after the first record the window
+observation, from table ordering alone.
 
-Cases must not lean on more than those three clauses.
+All three shipped generators stamp `<caseId>#<index>` as the transferId and
+`appliance:<caseId>#<index>` as the identity, on whichever key their branch names the
+appliance with: `AMID` on `rtm`, `ASER` on `ems` (`src/identity/unit-key.ts` decides
+which). A case that _wants_ a duplicate pins the id itself with `setTransferId` on every
+POST rather than trusting two baseline calls to return identical bytes, and a case that
+wants two POSTs to be about one appliance pins that with `setApplianceMonitoringId`
+(rtm) or `setApplianceSerial` (ems).
+
+Cases must not lean on more than those four clauses.
 
 ### Both branches of the schema: the EMS cases
 
@@ -336,7 +344,7 @@ colocated tests — which **do** run in CI — check the half that needs no serv
 | Every materialized payload really behaves as its case DECLARED: `invalid` rejected by the vendored Ajv, `unsupported-version` unresolvable in the registry, `valid` clean (`cases.test.ts`). Direction is not the test — most fail-direction cases carry a schema-valid payload whose defect lives above Ajv: transport, sequence, or §3.1/§3.4 semantics | The HTTP status each POST actually returns                                                                                                   |
 | A case expecting the §3.2 outdated grade names a registered version that really is older than current                                                                                                                                                                                                                                                     | That the finding the grader records is the one expected                                                                                      |
 | Transport wrappers really produce the method/headers/bytes they claim                                                                                                                                                                                                                                                                                     | The §2.1 overlap (a timing fact — see below)                                                                                                 |
-| Table invariants: unique ids, distinct transferIds outside deliberate replays, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload                                                                                                              | The end-to-end pipeline, database and dashboard API                                                                                          |
+| Table invariants: unique ids, distinct transferIds outside deliberate replays, distinct appliance identities outside cases that pin one, §1.3 cases declare their setup, §2.1 fail cases declare concurrent delivery, and a case declaring the EMS baseline really materializes an `ems`-typed payload                                                    | The end-to-end pipeline, database and dashboard API                                                                                          |
 | The coverage join, that every gradeable requirement is claimed in both directions, that every registered advisory has a fire case, and that no claimed row is printed without the payload types it was exercised with                                                                                                                                     | The advisory copy a live instance actually served (`auditAdvisoryCopy` — see below)                                                          |
 | The draft verdict behind every shadow expectation: `cases/shadow.test.ts` puts each case carrying a `ds013` expectation — thirteen today, from the readiness module and the advisory table alike — through the Annex 4 draft validator and asserts the `pass`/`fail` the case declared                                                                    |                                                                                                                                              |
 | The lens audit's own rules, against synthetic rows, findings and verdicts (`runner/assertions.test.ts`), and the DS01.3 half of the coverage join (`runner/coverage.test.ts`)                                                                                                                                                                             | That the DS01.3 summary rows a live instance serves agree with the findings and verdicts it serves beside them (`auditLensRows` — see below) |
@@ -616,7 +624,8 @@ skipping the older version.
    genuinely new, and declare its `targets` and `schemaOutcome` when you do — CI checks
    the latter against real Ajv.
 5. Run `npm test`. The table invariants in `cases.test.ts` will object if the case
-   collides with another's transferId, expects a fail finding in the pass direction,
+   collides with another's transferId or another's appliance identity, expects a fail
+   finding in the pass direction,
    reaches for a credential without `setup: 'auth-enabled'`, or names a requirement the
    matrix does not carry.
 6. Then run it for real against a live instance — the status and finding halves are only

@@ -1549,10 +1549,13 @@ export function appendSecondReport(reportIndex = 0): PayloadTransform {
  * the same reason: `adv.abst_window_overlap` compares a delivery against the
  * earlier deliveries in the session that named the SAME appliance
  * (src/identity/unit-key.ts), and the runner plays the whole table against one
- * session. A case that leaned on the baseline's own `appliance-1` would be
- * making a statement about every other rtm case's traffic as well as its own.
- * A case-owned identity keeps the observation — and the SILENCE its counterpart
- * case asserts — a fact about the two POSTs the case actually sent.
+ * session. The baseline generators stamp a DISTINCT identity per POST (contract
+ * clause 4 in ../baseline.ts), so the two POSTs of a case name two appliances
+ * until the case says otherwise — and a generator that held one appliance
+ * constant would make the case a statement about every other rtm case's traffic
+ * as well as its own. A case-owned identity keeps the observation — and the
+ * SILENCE its counterpart case asserts — a fact about the two POSTs the case
+ * actually sent.
  *
  * THE VALUE STAYS WELL PAST FOUR CHARACTERS, so `adv.short_identifier` says
  * nothing about it, and non-blank, so `adv.null_identity` does not either.
@@ -1562,6 +1565,33 @@ export function setApplianceMonitoringId(value: string, reportIndex = 0): Payloa
     name: `setApplianceMonitoringId(${reportIndex}: AMID="${value}")`,
     apply: (payload) => {
       setAtPointer(payload, `/data/${reportIndex}/AMID`, value);
+      return payload;
+    },
+  });
+}
+
+/**
+ * Pin `ASER` — the appliance identity an `ems-report` keys on — to a fixed value:
+ * the ems counterpart of {@link setApplianceMonitoringId}, and needed for exactly
+ * the same reason on the other branch of the root `transferType` conditional.
+ *
+ * `ems-report` carries no `AMID` at all, so an EMS case that wants its two POSTs
+ * to be about one appliance has to say so here; `src/identity/unit-key.ts` reads
+ * the manufacturer serial on that branch and the supplier-platform id on the rtm
+ * one. The baseline generators stamp a DISTINCT identity per POST (contract
+ * clause 4 in ../baseline.ts), so without a pin the two POSTs of a case name two
+ * appliances and nothing compares them.
+ *
+ * THE VALUE STAYS WELL PAST FOUR CHARACTERS, so `adv.short_identifier` says
+ * nothing about it, and non-blank, so `adv.null_identity` does not either. The
+ * shared `$defs` type `ASER` `["string","null"]`, so a string is schema-valid on
+ * both branches.
+ */
+export function setApplianceSerial(value: string, reportIndex = 0): PayloadTransform {
+  return payloadTransform({
+    name: `setApplianceSerial(${reportIndex}: ASER="${value}")`,
+    apply: (payload) => {
+      setAtPointer(payload, `/data/${reportIndex}/ASER`, value);
       return payload;
     },
   });

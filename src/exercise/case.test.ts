@@ -12,6 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gunzipSync } from 'node:zlib';
 
+import { unitKey } from '../identity/unit-key.js';
 import { JSON_UTF8, validTransmission } from '../ingest/fixtures/transmissions.js';
 import { SchemaRegistry } from '../schema-registry.js';
 import {
@@ -78,21 +79,32 @@ function only(transforms: ExerciseCase['posts'][number]['transforms']) {
 
 // ── baseline ────────────────────────────────────────────────────────────────
 
-test('the fixture baseline reproduces the valid ingest fixture but for its transferId', () => {
+test('the fixture baseline reproduces the valid ingest fixture but for its transferId and appliance identity', () => {
   const payload = fixtureBaseline({ caseId: 'x', index: 0 });
   const fixture = JSON.parse(JSON.stringify(validTransmission)) as typeof payload;
   assert.notEqual(payload.meta.transferId, fixture.meta.transferId);
+  assert.notEqual(payload.data[0]!.AMID, fixture.data[0]!.AMID);
   payload.meta.transferId = fixture.meta.transferId;
-  assert.deepEqual(payload, fixture, 'nothing but the transferId differs from the fixture');
+  payload.data[0]!.AMID = fixture.data[0]!.AMID;
+  assert.deepEqual(
+    payload,
+    fixture,
+    'nothing but the transferId and the appliance identity differs from the fixture',
+  );
 });
 
-test('the fixture baseline derives a distinct transferId per case and POST', () => {
+test('the fixture baseline derives a distinct transferId and appliance identity per case and POST', () => {
   // The §1.8 duplicate check is session-scoped and the runner plays the whole
   // table against ONE session, so two POSTs that are not deliberate replays must
-  // never arrive carrying the same transferId (5xi).
+  // never arrive carrying the same transferId (5xi). `adv.abst_window_overlap` is
+  // session-scoped per APPLIANCE in the same way, so the identity is derived from
+  // the same request (agj.24).
   assert.equal(fixtureBaseline({ caseId: 'alpha', index: 0 }).meta.transferId, 'alpha#0');
   assert.equal(fixtureBaseline({ caseId: 'alpha', index: 1 }).meta.transferId, 'alpha#1');
   assert.equal(fixtureBaseline({ caseId: 'beta', index: 0 }).meta.transferId, 'beta#0');
+  assert.equal(fixtureBaseline({ caseId: 'alpha', index: 0 }).data[0]!.AMID, 'appliance:alpha#0');
+  assert.equal(fixtureBaseline({ caseId: 'alpha', index: 1 }).data[0]!.AMID, 'appliance:alpha#1');
+  assert.equal(emsBaseline({ caseId: 'alpha', index: 0 }).data[0]!.ASER, 'appliance:alpha#0');
 });
 
 test('the fixture baseline hands out an independent copy each call', () => {
@@ -289,6 +301,72 @@ test('contract 3, across generators: two generators never claim the same transfe
         `${name}: transferId "${id}" is already claimed by ${String(prior)}`,
       );
       seen.set(id, key);
+    }
+  }
+});
+
+test('contract 4: every registered generator gives each (caseId, index) a distinct appliance identity', () => {
+  // `adv.abst_window_overlap` compares a delivery against the earlier deliveries
+  // in the session that named the same appliance, and the runner plays the whole
+  // table against ONE session — so a generator holding the appliance constant
+  // makes every case after the first record the advisory from table ordering
+  // alone (agj.24), exactly as a constant transferId does for §1.8.
+  for (const [name, generate] of REGISTERED) {
+    const keys = CONTRACT_REQUESTS.map((request) => {
+      const report = generate(request).data[0];
+      assert.ok(report !== undefined, `${name}: the payload must carry a data report`);
+      const key = unitKey(report);
+      assert.notEqual(key, null, `${name}: the payload names no appliance (AMID/ASER)`);
+      return key as string;
+    });
+    assert.equal(
+      new Set(keys).size,
+      keys.length,
+      `${name}: distinct (caseId, index) requests produced a repeated appliance identity ` +
+        `(${keys.join(', ')})`,
+    );
+  }
+});
+
+test('contract 4: the stamped identity raises no advisory of its own', () => {
+  // The baselines are what every pass-direction case is built on, so an identity
+  // the identity advisories speak to would put an observation in all of them:
+  // `adv.short_identifier` reads anything under four characters
+  // (src/ingest/stages/semantic/short-identifier.ts) and `adv.null_identity`
+  // anything blank or null.
+  for (const [name, generate] of REGISTERED) {
+    for (const request of CONTRACT_REQUESTS) {
+      const report = generate(request).data[0] as Record<string, unknown>;
+      for (const key of ['AMID', 'ASER'] as const) {
+        if (!(key in report)) continue;
+        const value = report[key];
+        assert.equal(typeof value, 'string', `${name}: ${key} is not a string`);
+        assert.ok(
+          (value as string).trim().length >= 4,
+          `${name}: ${key} "${String(value)}" is blank or under four characters`,
+        );
+      }
+    }
+  }
+});
+
+test('contract 4, across generators: two generators never claim the same appliance identity', () => {
+  // The cross-generator half, on the same terms as contract 3: the same request
+  // SHOULD yield the same identity — that is the shared scheme — and the
+  // collision that matters is one identity serving two requests. The rtm and ems
+  // branches key on different properties, so their unit keys differ even where
+  // the stamped string does (src/identity/unit-key.ts).
+  const seen = new Map<string, string>();
+  for (const [name, generate] of REGISTERED) {
+    for (const request of CONTRACT_REQUESTS) {
+      const key = unitKey(generate(request).data[0] as Record<string, unknown>) as string;
+      const where = `${request.caseId}#${request.index}`;
+      const prior = seen.get(key);
+      assert.ok(
+        prior === undefined || prior === where,
+        `${name}: appliance identity "${key}" is already claimed by ${String(prior)}`,
+      );
+      seen.set(key, where);
     }
   }
 });

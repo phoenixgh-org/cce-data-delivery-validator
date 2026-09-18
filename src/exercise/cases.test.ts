@@ -25,7 +25,8 @@
  *
  * The table-wide invariants also cover SESSION HYGIENE: the runner plays every
  * case against a single session, so the cases must not collide with each other
- * there (today: the transferId a POST carries, which §1.8 grades session-wide).
+ * there — the transferId a POST carries, which §1.8 grades session-wide, and the
+ * appliance it reports on, which `adv.abst_window_overlap` grades the same way.
  *
  * They also hold the three DECLARATIVE CAPABILITIES honest — `setup:
  * 'auth-enabled'`, `delivery: 'concurrent'` and `baseline` — by checking that a
@@ -39,6 +40,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX } from '../api/compliance-matrix.js';
+import { unitKey } from '../identity/unit-key.js';
+import { ABST_WINDOW_OVERLAP_ID } from '../ingest/stages/semantic/abst-window-overlap.js';
 import { ADVISORY_IDS, isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
 import { CONTRACT_PROFILE, SchemaRegistry } from '../schema-registry.js';
 import { BASELINE_GENERATORS, DEFAULT_BASELINE, emsBaseline } from './baseline.js';
@@ -179,6 +182,95 @@ test('a deliberate-replay case really does repeat its transferId across POSTs', 
     assert.ok(
       new Set(ids).size < ids.length,
       `${kase.id}: expects a §1.8 fail but its POSTs carry distinct transferIds (${ids.join(', ')})`,
+    );
+  }
+});
+
+/**
+ * Whether a POST PINS the appliance it reports on, rather than taking the
+ * identity the baseline generator stamped per POST (../baseline.ts, contract
+ * clause 4). Read off the applied transform names, the same way the materialized
+ * POST reports everything else it did.
+ */
+function pinsApplianceIdentity(post: { appliedTransforms: readonly string[] }): boolean {
+  return post.appliedTransforms.some(
+    (name) =>
+      name.startsWith('setApplianceMonitoringId(') || name.startsWith('setApplianceSerial('),
+  );
+}
+
+/**
+ * The appliance identities one POST names — one per report that names an
+ * appliance, read through the service's own {@link unitKey}, so the invariant
+ * below measures what the ingest side will actually compare rather than a
+ * property name. A report naming no appliance yields nothing: there is nothing
+ * for a later delivery to be matched against.
+ */
+function unitKeysOf(post: { payload: { data: Record<string, unknown>[] } }): string[] {
+  const keys: string[] = [];
+  for (const report of post.payload.data) {
+    if (typeof report !== 'object' || report === null || Array.isArray(report)) continue;
+    const key = unitKey(report);
+    if (key !== null) keys.push(key);
+  }
+  return keys;
+}
+
+test('no two POSTs in the table share an appliance identity unless the case pins one', () => {
+  // The appliance counterpart of the transferId invariant above, and the same
+  // hazard one heuristic over (agj.24): `adv.abst_window_overlap` compares a
+  // delivery against the earlier deliveries in the session that named the SAME
+  // appliance, and the runner plays the whole table against ONE session. An
+  // identity shared by unrelated cases would record the advisory from table
+  // ordering alone — on pass-direction cases and on cases declaring the whole
+  // advisory catalogue silent.
+  //
+  // A case that WANTS two POSTs to be about one appliance says so with
+  // `setApplianceMonitoringId` / `setApplianceSerial`, and is exempt WITHIN
+  // ITSELF only: its pinned identity is still recorded, so a collision between
+  // that value and any other case's still fails here rather than surfacing live
+  // as an unexplained observation.
+  const seen = new Map<string, string>();
+  for (const kase of EXERCISE_CASES) {
+    const withinCase = new Set<string>();
+    for (const post of materialize(kase)) {
+      const where = `${kase.id}[${post.label}]`;
+      const pinned = pinsApplianceIdentity(post);
+      for (const key of unitKeysOf(post)) {
+        if (pinned && withinCase.has(key)) continue;
+        const prior = seen.get(key);
+        assert.equal(
+          prior,
+          undefined,
+          `${where}: appliance identity "${key}" already reported on by ${prior}`,
+        );
+        seen.set(key, where);
+        withinCase.add(key);
+      }
+    }
+  }
+});
+
+test('a case about one appliance across two POSTs really does pin the identity', () => {
+  // The other half, and the mirror of the deliberate-replay tripwire: a case that
+  // expects `adv.abst_window_overlap` — or declares it absent over two POSTs —
+  // is making a claim about ONE appliance, which the generators do not hand it.
+  // A case that lost its pin would send two appliances and quietly assert
+  // nothing.
+  const aboutOneAppliance = EXERCISE_CASES.filter(
+    (kase) =>
+      kase.posts.length > 1 &&
+      [...kase.expectedFindings, ...(kase.absentFindings ?? [])].some(
+        (f) => f.requirement === ABST_WINDOW_OVERLAP_ID,
+      ),
+  );
+  assert.ok(aboutOneAppliance.length > 0, 'the table still carries a window-overlap case');
+  for (const kase of aboutOneAppliance) {
+    const keys = materialize(kase).map((post) => unitKeysOf(post).join(','));
+    assert.equal(
+      new Set(keys).size,
+      1,
+      `${kase.id}: speaks about one appliance but its POSTs name several (${keys.join(' | ')})`,
     );
   }
 });

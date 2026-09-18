@@ -247,7 +247,9 @@ test('blankAdminObject empties the named object and nothing else', () => {
   // objects, and a case that blanked several could not say which one it is about.
   assert.equal(report.AMOD, 'FRIDGE-100');
   assert.equal(report.LMOD, 'Logger_Model');
-  assert.equal(report.ASER, 'A-SerialNum');
+  // ASER is the appliance identity the generator stamps per POST (../baseline.ts,
+  // contract clause 4), so it is read from the payload rather than pinned here.
+  assert.equal(report.ASER, ems().data[0]!.ASER);
 });
 
 test('blankAdminObject refuses a key the report does not carry', () => {
@@ -270,9 +272,10 @@ test('appendSecondReport produces a second report with its own identity', () => 
   const [first, second] = payload.data as Record<string, unknown>[];
 
   // Each identifier the ems branch carries is suffixed, so nothing in the batch
-  // names the same equipment twice.
-  assert.equal(first!.ASER, 'A-SerialNum');
-  assert.equal(second!.ASER, 'A-SerialNum-2');
+  // names the same equipment twice. ASER arrives from the generator, which stamps
+  // the appliance identity per POST (../baseline.ts, contract clause 4).
+  assert.equal(first!.ASER, ems().data[0]!.ASER);
+  assert.equal(second!.ASER, `${String(ems().data[0]!.ASER)}-2`);
   assert.equal(second!.ESER, 'EMD-SerialNum-2');
   assert.equal(second!.LSER, 'log4567890asdf-2');
 
@@ -318,7 +321,8 @@ test('appendSecondReport suffixes the rtm sensor ids too', () => {
   const payload = appendSecondReport().apply(DEFAULT_BASELINE({ caseId: 'rtm', index: 0 }));
   const sensors = payload.data[1]!.DLST as Record<string, Record<string, unknown>>;
   assert.equal(sensors.TVC!.SID, 'sensor-1-2');
-  assert.equal(payload.data[1]!.AMID, 'appliance-1-2');
+  // AMID is the rtm appliance identity, stamped per POST by the generator.
+  assert.equal(payload.data[1]!.AMID, 'appliance:rtm#0-2');
   // And the source keeps its own.
   assert.equal(
     (payload.data[0]!.DLST as Record<string, Record<string, unknown>>).TVC!.SID,

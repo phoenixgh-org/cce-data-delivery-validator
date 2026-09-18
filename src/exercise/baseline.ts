@@ -15,13 +15,14 @@
  *
  * A generator receives the case id and the ordinal of the POST it is producing
  * within that case, so a stateful/randomizing generator can vary payload content
- * per POST. Deriving a distinct `meta.transferId` from them is not a quirk of any
- * one generator but an OBLIGATION every generator owes — see the contract on
- * {@link BaselineGenerator}. What a case must NOT rely on is the SHAPE of that
- * id, nor on the rest of the payload being identical from call to call: a case
- * that needs two POSTs to look alike says so with `setTransferId`, which is how
- * sequence cases stay generator-agnostic (see the note on that transform in
- * ./transforms/payload.ts).
+ * per POST. Deriving a distinct `meta.transferId` and a distinct APPLIANCE
+ * IDENTITY from them is not a quirk of any one generator but an OBLIGATION every
+ * generator owes — see the contract on {@link BaselineGenerator}. What a case
+ * must NOT rely on is the SHAPE of either value, nor on the rest of the payload
+ * being identical from call to call: a case that needs two POSTs to look alike
+ * says so with `setTransferId` or `setApplianceMonitoringId` /
+ * `setApplianceSerial`, which is how sequence cases stay generator-agnostic (see
+ * the notes on those transforms in ./transforms/payload.ts).
  *
  * Two generators ship today — {@link fixtureBaseline} (rtm) and
  * {@link emsBaseline} — and {@link BASELINE_GENERATORS} lists them, so the
@@ -81,6 +82,19 @@ export interface BaselineRequest {
  *     anywhere else: `materializePost` does not touch the payload a generator
  *     returns, and a case that wants a repeat pins it with `setTransferId`
  *     (which runs after the generator and overwrites whatever it produced).
+ *  4. A DISTINCT APPLIANCE IDENTITY PER (caseId, index) — `AMID` on the rtm
+ *     branch, `ASER` on the ems one (src/identity/unit-key.ts decides which key
+ *     names the appliance). The same argument as clause 3, one heuristic over:
+ *     `adv.abst_window_overlap` compares a delivery against the earlier
+ *     deliveries in the session that named the SAME appliance, and the runner
+ *     plays the whole table against one session. A generator holding the
+ *     appliance constant — the obvious shape for one seeded from a fixture —
+ *     would make every rtm case after the first record the advisory from table
+ *     ordering alone, exactly as a constant transferId does for §1.8 (agj.24).
+ *
+ *     A case that WANTS two POSTs to be about one appliance pins the identity
+ *     itself with `setApplianceMonitoringId` (rtm) or `setApplianceSerial`
+ *     (ems), which run after the generator, the way `setTransferId` does.
  */
 export type BaselineGenerator = (request: BaselineRequest) => TransmissionPayload;
 
@@ -96,13 +110,35 @@ function transferIdFor(request: BaselineRequest): string {
 }
 
 /**
+ * The per-POST appliance identity every generator is obliged to stamp (contract
+ * clause 4 on {@link BaselineGenerator}), on whichever key its branch names the
+ * appliance with: `AMID` on rtm, `ASER` on ems.
+ *
+ * ONE SCHEME FOR BOTH GENERATORS, for the same reason `transferIdFor` is shared:
+ * case ids are unique table-wide, so `<caseId>#<index>` is too, and the
+ * whole-table invariant in ./cases.test.ts holds across a session that mixes
+ * branches. The `appliance:` prefix is there to make the value readable in a
+ * finding's detail line, not to carry meaning — `unitKey` adds its own `amid:` /
+ * `aser:` prefix on top (src/identity/unit-key.ts), so an rtm POST and an ems
+ * POST of one case are two units even when they stamp the same string.
+ *
+ * THE VALUE STAYS WELL PAST FOUR CHARACTERS, so `adv.short_identifier` says
+ * nothing about it, and non-blank, so `adv.null_identity` does not either — the
+ * baselines are the payload every pass-direction case is built on, and an
+ * identity that raised an advisory of its own would put one in every case.
+ */
+function identityFor(request: BaselineRequest): string {
+  return `appliance:${request.caseId}#${request.index}`;
+}
+
+/**
  * The baseline seeded from `src/ingest/fixtures/transmissions.ts` — the valid
  * RTM transmission on the current schema version. Deterministic: the same
  * request always yields the same payload, and every call yields a fresh object.
  *
- * The one field NOT taken from the fixture is `meta.transferId`, which is
- * stamped `<caseId>#<index>` from the request. The fixture's constant
- * `T-baseline` is fine for a lone POST but poison for a table: the runner plays
+ * The two fields NOT taken from the fixture are `meta.transferId` and the
+ * appliance identity `AMID`, both stamped from the request. The fixture's
+ * constant `T-baseline` is fine for a lone POST but poison for a table: the runner plays
  * the WHOLE table against ONE session, and the §1.8 check flags a repeat when a
  * prior transmission in that session carries an equal transferId OR equal
  * content bytes (src/ingest/stages/semantic/duplicate.ts). A shared id would
@@ -111,12 +147,19 @@ function transferIdFor(request: BaselineRequest): string {
  * points at (5xi). Deriving the id per POST also makes the serialized bytes
  * distinct, so the content-replay flavour of the same check cannot trip either.
  *
+ * `AMID` is stamped for the same reason one heuristic over: it is the appliance
+ * `adv.abst_window_overlap` keys a delivery on, and the fixture's `appliance-1`
+ * would make every rtm case in the table a second delivery for the appliance the
+ * case before it reported on (agj.24).
+ *
  * Cases that WANT a duplicate pin the id themselves on every POST with
- * `setTransferId`, which runs after this and overwrites it.
+ * `setTransferId`, and cases that want one appliance across two POSTs pin it
+ * with `setApplianceMonitoringId`; both run after this and overwrite it.
  */
 export const fixtureBaseline: BaselineGenerator = (request) => {
   const payload = cloneValid();
   payload.meta.transferId = transferIdFor(request);
+  payload.data[0]!.AMID = identityFor(request);
   return payload;
 };
 
@@ -140,6 +183,7 @@ export const fixtureBaseline: BaselineGenerator = (request) => {
 export const dualPassBaseline: BaselineGenerator = (request) => {
   const payload = cloneDualPass();
   payload.meta.transferId = transferIdFor(request);
+  payload.data[0]!.AMID = identityFor(request);
   return payload;
 };
 
@@ -261,7 +305,9 @@ const emsTransmission = {
 /**
  * The EMS-branch baseline (1m8) — the same deal as {@link fixtureBaseline} on
  * the other side of the root `transferType` conditional: deterministic, a fresh
- * deep copy per call, and `meta.transferId` stamped per POST.
+ * deep copy per call, and `meta.transferId` stamped per POST. The appliance
+ * identity is stamped on `ASER` rather than `AMID`, because `ems-report` carries
+ * no `AMID` and keys on the manufacturer serial (src/identity/unit-key.ts).
  *
  * It exists because the schema's ems branch was exercised NOWHERE — the case
  * table was rtm-only, so `ems-report`, `ems-record` and their `oneOf`s had never
@@ -276,6 +322,7 @@ export const emsBaseline: BaselineGenerator = (request) => {
   // inherits the `as const` deep-readonly shape — cast via `unknown` (TS2352).
   const payload = structuredClone(emsTransmission) as unknown as TransmissionPayload;
   payload.meta.transferId = transferIdFor(request);
+  payload.data[0]!.ASER = identityFor(request);
   return payload;
 };
 
