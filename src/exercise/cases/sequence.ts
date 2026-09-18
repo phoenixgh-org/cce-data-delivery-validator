@@ -28,10 +28,11 @@
  * relate — one delivery's ABST window against the windows earlier deliveries in
  * the session recorded for the same appliance — so it is a sequence heuristic
  * that happens to be an advisory, and it needs the multi-POST shape this file
- * owns. Both of its cases PIN the appliance identity with
- * `setApplianceMonitoringId`, so what each asserts is a fact about its own two
- * POSTs rather than about every other rtm case the runner played into the same
- * session.
+ * owns. One case expects it to fire; two more (the exact retransmission and the
+ * corrected re-send after a rejection) declare its silence. Every one of them
+ * PINS the appliance identity with `setApplianceMonitoringId`, so what each
+ * asserts is a fact about its own two POSTs rather than about every other rtm
+ * case the runner played into the same session.
  *
  * §3.4 IS GRADED WITHIN ONE PAYLOAD, so its two cases are single-POST despite
  * living in the sequence table: the interval check reads `records[].ABST` of the
@@ -48,6 +49,7 @@ import {
   readingWindow,
   regularCadence,
   setApplianceMonitoringId,
+  setInvalidValue,
   setTransferId,
 } from '../transforms/payload.js';
 
@@ -217,6 +219,55 @@ export const SEQUENCE_CASES: readonly ExerciseCase[] = [
       { requirement: '1.8', severity: 'pass' },
       { requirement: '1.8', severity: 'fail' },
     ],
+    absentFindings: [{ requirement: ABST_WINDOW_OVERLAP_ID }],
+  },
+  {
+    id: '3.2-fail-rejected-delivery-then-corrected-resend',
+    title:
+      'A §3.2 rejection followed by the corrected re-send of the same period draws no window observation',
+    requirements: ['3.2'],
+    direction: 'fail',
+    fault: {
+      layer: 'payload',
+      note: 'the first POST carries a TVC of 999, far above the Annex-1 maximum, and is rejected 422',
+    },
+    // THE RECOVERY SEQUENCE (agj.26), and the third half of the advisory's
+    // contract. Requirements §5 obliges a supplier to re-send after a delivery
+    // the receiving side did not accept, and §1.8 grades a repeated transferId a
+    // fail, so a corrected re-send carries a NEW transferId and — being
+    // corrected — new bytes. Neither §1.8 exclusion in `findPriorUnitWindows`
+    // therefore applies to it, and the case above cannot stand in for this one.
+    //
+    // What keeps the observation quiet is the WRITE side: a body the schema
+    // stage rejected leaves no window behind, so a delivery the service never
+    // accepted is not one the next delivery is compared against
+    // (src/ingest/route.ts, and the read filters on `schema_ok` besides).
+    //
+    // Both POSTs pin the same appliance and the same reading window, so the two
+    // windows are identical and would intersect exactly if the rejected body had
+    // been recorded — which is what makes the silence below measurable.
+    posts: [
+      {
+        label: 'rejected',
+        transforms: [
+          setApplianceMonitoringId('exercise-corrected-resend-appliance'),
+          readingWindow(0, 4),
+          setTransferId('exercise-adv-overlap-rejected'),
+          setInvalidValue('/data/0/records/0/TVC', 999),
+        ],
+        expectedStatus: 422,
+      },
+      {
+        label: 'corrected',
+        transforms: [
+          setApplianceMonitoringId('exercise-corrected-resend-appliance'),
+          readingWindow(0, 4),
+          setTransferId('exercise-adv-overlap-corrected'),
+        ],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [{ requirement: '3.2', severity: 'fail' }],
     absentFindings: [{ requirement: ABST_WINDOW_OVERLAP_ID }],
   },
 

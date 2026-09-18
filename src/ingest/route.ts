@@ -227,10 +227,25 @@ async function persistTransmission(
     // transaction carries the whole record of the POST. It is written whether or
     // not `adv.abst_window_overlap` fired: the rows are what the NEXT delivery
     // for the same appliance is compared against, not evidence for this one.
-    // `computeUnitWindows` returns nothing for an unparsed body, so the halts
-    // that persist a row without one (400/413/422) write no windows and need no
-    // branch here.
-    await insertUnitWindows(tx.id, ctx.sessionUuid, computeUnitWindows(ctx.parsedBody), client);
+    //
+    // ONLY FOR A BODY THE SCHEMA ACCEPTED (agj.26). A delivery the service
+    // rejected is not a delivery the next one is compared against, and DESIGN.md
+    // §7.1 already confines an advisory to schema-conformant bodies — the
+    // semantic stage honours that when it READS (stages/semantic.ts runs the
+    // advisories only when `parseOk && schemaOk`), and this guard honours it when
+    // we WRITE. The halts that persist a row without an accepted body divide in
+    // two, which is why `ctx.parsedBody` on its own is not the test:
+    //
+    //   - 400 (the parse failed) and 413 (halted before the parse stage) leave
+    //     `ctx.parsedBody` null, so there are no windows to write either way;
+    //   - 422 PARSES FIRST and is rejected afterwards (stages/parse.ts sets the
+    //     body, stages/schema.ts then halts on it), so its windows are real and
+    //     would be written without this branch. A supplier who corrects a
+    //     rejected body and re-sends the same period would then be observed
+    //     overlapping a delivery we never accepted.
+    if (ctx.schemaOk === true) {
+      await insertUnitWindows(tx.id, ctx.sessionUuid, computeUnitWindows(ctx.parsedBody), client);
+    }
 
     await client.query('COMMIT');
     return tx.id;

@@ -368,11 +368,13 @@ test(
       sessionUuid: session.uuid,
       transferId: 'T-1',
       contentHash: hashA,
+      schemaOk: true,
     });
     const second = await insertTransmission({
       sessionUuid: session.uuid,
       transferId: 'T-2',
       contentHash: hashB,
+      schemaOk: true,
     });
 
     await insertUnitWindows(first.id, session.uuid, [
@@ -428,7 +430,7 @@ test(
 
     // Another session's windows are invisible even under the same unit key.
     const other = await createSession();
-    const otherTx = await insertTransmission({ sessionUuid: other.uuid });
+    const otherTx = await insertTransmission({ sessionUuid: other.uuid, schemaOk: true });
     await insertUnitWindows(otherTx.id, other.uuid, [
       {
         unitKey: 'aser:sn-1',
@@ -461,13 +463,15 @@ test('findPriorUnitWindows excludes same-hash and same-transferId priors', { ski
     sessionUuid: session.uuid,
     transferId: 'T-1',
     contentHash: hash,
+    schemaOk: true,
   });
   const novel = await insertTransmission({
     sessionUuid: session.uuid,
     transferId: 'T-9',
     contentHash: createHash('sha256').update('other-bytes').digest(),
+    schemaOk: true,
   });
-  const anonymous = await insertTransmission({ sessionUuid: session.uuid });
+  const anonymous = await insertTransmission({ sessionUuid: session.uuid, schemaOk: true });
 
   const window = {
     unitKey: 'aser:sn-1',
@@ -507,6 +511,44 @@ test('findPriorUnitWindows excludes same-hash and same-transferId priors', { ski
 
   await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
 });
+
+/**
+ * The third exclusion, and the one no caller can switch off: a window whose
+ * transmission the schema stage rejected is never a prior (agj.26). The ingest
+ * route stopped writing those rows, so this is the belt beside that brace —
+ * rows left by an older build, or by any future path that persists a window for
+ * a body the service did not accept, still stay out of the comparison.
+ */
+test(
+  'findPriorUnitWindows never returns a window from a rejected delivery (agj.26)',
+  { skip },
+  async () => {
+    const session = await createSession();
+    const window = {
+      unitKey: 'aser:sn-1',
+      abstMin: at('2026-09-01T00:00:00Z'),
+      abstMax: at('2026-09-01T06:00:00Z'),
+      recordCount: 24,
+    };
+
+    // One accepted delivery, one the schema stage rejected, and one that never
+    // reached the schema stage at all (`schema_ok` NULL — a 400 or a 413).
+    const accepted = await insertTransmission({ sessionUuid: session.uuid, schemaOk: true });
+    const rejected = await insertTransmission({ sessionUuid: session.uuid, schemaOk: false });
+    const ungraded = await insertTransmission({ sessionUuid: session.uuid });
+    for (const tx of [accepted, rejected, ungraded]) {
+      await insertUnitWindows(tx.id, session.uuid, [window]);
+    }
+
+    assert.deepEqual(
+      (await findPriorUnitWindows(session.uuid, ['aser:sn-1'], {})).map((r) => r.transmission_id),
+      [accepted.id],
+      'only the delivery the schema accepted is a prior',
+    );
+
+    await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+  },
+);
 
 test('unit windows cascade-delete with their transmission (§11 retention)', { skip }, async () => {
   const session = await createSession();

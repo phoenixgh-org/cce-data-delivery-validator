@@ -18,10 +18,18 @@
  * It is not a repeat-delivery verdict. §1.8 already grades an exact content
  * replay and a re-used `transferId` (./duplicate.ts), and requirements §5
  * REQUIRES a supplier to re-send after a delivery the receiving side did not
- * accept. Both of those are excluded in SQL by
- * {@link findPriorUnitWindows} — the lookup drops any prior sharing this
- * transmission's content hash or its `transferId` — so this check never sees a
- * repeat §1.8 has already spoken about, and the copy says so.
+ * accept. Neither reaches this check, though by two different routes (agj.26):
+ *
+ *   - AN EXACT REPLAY, AND A RE-SEND UNDER THE SAME `transferId`, are excluded
+ *     in SQL by {@link findPriorUnitWindows} — the lookup drops any prior
+ *     sharing this transmission's content hash or its `transferId` — so this
+ *     check never sees a repeat §1.8 has already spoken about, and the copy
+ *     says so.
+ *   - A DELIVERY THE SERVICE REJECTED leaves no window to be compared against
+ *     in the first place: route.ts writes windows only for a body the schema
+ *     stage accepted, and the lookup filters on `schema_ok` besides. That is
+ *     the case the SQL exclusions above could not have covered — a corrected
+ *     re-send carries a new `transferId` and, being corrected, new bytes.
  *
  * ── WHAT IT READS, AND FROM WHERE ───────────────────────────────────────────
  * The only advisory with a read path. Every other check in the catalogue is a

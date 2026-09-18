@@ -218,6 +218,89 @@ test(
   },
 );
 
+/**
+ * A schema-valid 0.8.1 RTM body for one appliance, carrying one timestamped
+ * record — enough for `computeUnitWindows` to derive a window from it. `tvc` is
+ * the only dial: 3.2 validates, while 999 sits far above the Annex-1 maximum of
+ * 60 and the schema stage rejects the body 422 with the record, its `ABST` and
+ * the appliance id all still in place.
+ */
+function rtmBody(amid: string, tvc: number): Buffer {
+  return Buffer.from(
+    JSON.stringify({
+      meta: {
+        schemaVersion: '0.8.1',
+        transferType: 'rtm',
+        transferId: `T-${amid}`,
+        transferSrc: 'com.example',
+        transferredAt: '2024-01-15T04:05:54Z',
+      },
+      data: [
+        {
+          AMID: amid,
+          CID: 'US',
+          EDOP: '2021-06-01',
+          EMFR: 'EMD_Name',
+          EMOD: 'EMD-ModelNo',
+          EPQS: 'E006/999',
+          ESER: 'EMD-SerialNum',
+          EMSV: 'v01.02.123',
+          DLST: { TVC: { SID: 'sensor-1', SMFR: 'SensMfr', SMOD: 'SensMod' } },
+          records: [{ ABST: '20200115T040554Z', ALRM: 'HEAT', BEMD: 14.3, EERR: 'none', TVC: tvc }],
+        },
+      ],
+    }),
+  );
+}
+
+test('a rejected body leaves no unit window behind (agj.26)', { skip }, async () => {
+  const app = makeApp();
+  await app.ready();
+  let sessionUuid: string | undefined;
+  try {
+    const session = await createSession();
+    sessionUuid = session.uuid;
+
+    const post = async (body: Buffer) =>
+      app.inject({
+        method: 'POST',
+        url: `/i/${session.uuid}`,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        payload: body,
+      });
+    const windowCount = async (transmissionId: string): Promise<string | undefined> =>
+      (
+        await getPool().query<{ n: string }>(
+          'SELECT count(*) AS n FROM transmission_unit_window WHERE transmission_id = $1',
+          [transmissionId],
+        )
+      ).rows[0]?.n;
+
+    // A 422 PARSES FIRST: the body reaches persistence with `ctx.parsedBody`
+    // set, so the window is there to be written and only the `schemaOk` guard
+    // stops it. The transmission itself is still recorded — the request reached
+    // the body stages — which is what makes the count below meaningful.
+    const rejected = await post(rtmBody('route-test-rejected', 999));
+    assert.equal(rejected.statusCode, 422, 'a reading above the Annex-1 maximum is rejected');
+    const rejectedId = (rejected.json() as { transmissionId: string | null }).transmissionId;
+    assert.ok(rejectedId, 'the rejected delivery is still persisted');
+    assert.equal(await windowCount(rejectedId), '0', 'a delivery we rejected records no window');
+
+    // The control, and the reason the assertion above is not vacuous: the same
+    // fixture with a valid reading does leave one.
+    const accepted = await post(rtmBody('route-test-accepted', 3.2));
+    assert.equal(accepted.statusCode, 200);
+    const acceptedId = (accepted.json() as { transmissionId: string | null }).transmissionId;
+    assert.ok(acceptedId);
+    assert.equal(await windowCount(acceptedId), '1', 'an accepted delivery records its window');
+  } finally {
+    if (sessionUuid) {
+      await getPool().query('DELETE FROM session WHERE uuid = $1', [sessionUuid]);
+    }
+    await app.close();
+  }
+});
+
 test.after(async () => {
   await closePool().catch(() => {});
 });

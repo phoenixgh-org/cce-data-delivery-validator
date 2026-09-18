@@ -489,7 +489,16 @@ export interface PriorUnitWindow {
  *   - `excludeTransferId` — a re-send under the same transfer id, graded by the
  *     same §1.8 check whether or not the bytes changed.
  *
- * Both comparisons are `IS DISTINCT FROM`, so a prior whose column is NULL is
+ * A third exclusion is UNCONDITIONAL, not an option: a prior whose transmission
+ * is not `schema_ok` never counts (agj.26). A body the service rejected is not a
+ * delivery the next one is compared against, so `src/ingest/route.ts` no longer
+ * writes windows for one — and this filter is the belt beside that brace. Rows
+ * written before the guard existed, and any future path that persists a window
+ * for a rejected body, must never become priors; `IS TRUE` also drops the rows
+ * whose `schema_ok` is NULL, which is every halt that never reached the schema
+ * stage at all.
+ *
+ * Both optional comparisons are `IS DISTINCT FROM`, so a prior whose column is NULL is
  * KEPT: a transmission that carried no transfer id is not a re-send of one that
  * did. A null/absent option applies no exclusion at all.
  *
@@ -513,6 +522,7 @@ export async function findPriorUnitWindows(
      JOIN transmission t ON t.id = w.transmission_id
      WHERE w.session_uuid = $1
        AND w.unit_key = ANY($2::text[])
+       AND t.schema_ok IS TRUE
        AND ($3::bytea IS NULL OR t.content_hash IS DISTINCT FROM $3)
        AND ($4::text IS NULL OR t.transfer_id IS DISTINCT FROM $4)
      ORDER BY t.received_at DESC`,
