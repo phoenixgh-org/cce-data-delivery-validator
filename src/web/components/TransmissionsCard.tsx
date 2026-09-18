@@ -27,19 +27,16 @@ import type { FindingView, Profile, Severity, Signature, TransmissionView } from
 import type { DisplayStatus } from '../api';
 import { CONTRACT_PROFILE, isAdvisory } from '../api';
 import { ADVISORY_COPY, advisoryLabel, splitFindings } from '../advisories';
-import {
-  detailGroupCopy,
-  groupDetailFindings,
-  shadowRowText,
-  type ShadowRow,
-} from '../detailGroups';
+import { clauseUnderLens, failCountUnderLens } from '../clauseMap';
+import { detailGroupCopy, detailRows, type ClauseRow, type FindingRow } from '../detailGroups';
 // Pane width shared with the summary card above it, and the detail region's own
 // share of this card's height (src/web/layout.ts, vamh.8).
 import { TRANSMISSIONS_PANE_FLEX, TX_DETAIL_FLEX } from '../layout';
 import { PROFILE_NAME } from '../profiles';
 import { Icon } from './ui/Icon';
 import { StatusPill } from './ui/StatusPill';
-import { VERDICT_COL_PX, VerdictPair, verdictColumns } from './ui/VerdictDot';
+import { Tag } from './ui/Tag';
+import { VERDICT_COL_PX, VerdictPair, verdictColumnTone, verdictColumns } from './ui/VerdictDot';
 
 // The verdict columns are declared beside the dots that fill them (by1c.34) and
 // re-exported here, where the list header and its colocated test read them.
@@ -94,13 +91,17 @@ export interface TransmissionsCardProps {
   /** Cross-filter the list by a signature — the shadow rows' click (by1c.14). */
   onSelectSignature: (sig: Signature) => void;
   /**
-   * Whether a non-contract requirement package is selected (tfnv.5). The card's
-   * border takes the lens tint with the rest of the page's cards; the list and
-   * the docked detail are unchanged here — reading them under the lens is
-   * tfnv.7. A boolean rather than the package itself because chrome is all this
-   * card does with the lens today.
+   * The requirement package the reader has selected (tfnv.7), as
+   * ComplianceCard and SummaryCards take it. The whole card is read under it:
+   * the emphasised verdict column, the row's findings count, and the ids the
+   * docked detail numbers its findings in. It changes nothing about what ingest
+   * graded — {@link TransmissionsCardProps.shadowProfile} still decides which
+   * COLUMNS exist, because the columns are the registry's lineages and the lens
+   * only says which one is active.
    */
-  draftLens?: boolean;
+  lens?: Profile;
+  /** The package in force, as the session serves it. */
+  contractProfile?: Profile;
 }
 
 /** Row status-dot tone derived from a transmission's findings (not HTTP). */
@@ -315,16 +316,24 @@ export interface FindingsCell {
  * instead. A transmission carrying advisories and nothing else therefore reads
  * "No findings" here, which is true of the graded ones.
  *
- * SHADOW FINDINGS ARE EXCLUDED TOO (by1c.8), by the same argument one step over:
- * this is the row's CONTRACT verdict cell, and a DS01.3 shadow failure is not a
- * verdict against the obligations in force. It gets its own column in by1c.12,
- * which replaces this cell; the filter is applied here so nothing leaks in the
- * meantime.
+ * IT READS THE SELECTED PACKAGE (tfnv.7). The cell used to be the contract
+ * lineage's alone, because a DS01.3 failure was not a verdict against anything in
+ * force and had no column of its own. Under the grading lens the reader has
+ * chosen which package the page reports on, so the cell counts what the docked
+ * detail would list under that package: the same findings, translated through
+ * {@link failCountUnderLens}. Under the contract lens that is the contract
+ * lineage exactly as before.
  */
-export function findingsCell(findings: FindingView[]): FindingsCell {
-  const graded = contractFindings(findings).filter((f) => !isAdvisory(f));
+export function findingsCell(
+  findings: FindingView[],
+  lens: Profile = CONTRACT_PROFILE,
+  contractProfile: Profile = CONTRACT_PROFILE,
+): FindingsCell {
+  const graded = findings.filter(
+    (f) => !isAdvisory(f) && clauseUnderLens(f, lens, contractProfile) !== null,
+  );
   const findingCount = graded.length;
-  const failCount = graded.filter((f) => f.severity === 'fail').length;
+  const failCount = failCountUnderLens(graded, lens, contractProfile);
   const plural = (n: number): string => (n === 1 ? 'finding' : 'findings');
 
   if (failCount === 0) {
@@ -341,38 +350,51 @@ export function findingsCell(findings: FindingView[]): FindingsCell {
 }
 
 /**
- * How many findings the SHADOW lineage failed this transmission on — the count
- * in the verdict pair's tooltip parenthetical AND the count on the detail pane's
- * "Would also fail under DS01.3 DRAFT" header, which is the same question asked
- * twice and must not come back with two numbers (by1c.39).
+ * The cross-filter chip's title — the signature's own title, and nothing else.
  *
- * Advisories are excluded for the reason {@link findingsCell} gives: an advisory
- * is not a verdict and must never inflate a number a supplier has to explain.
- * Zero when no shadow lineage is registered, and zero when one is but never ran
- * on this transmission — in neither case is there a shadow failure to report.
+ * It used to be prefixed `DS01.3 DRAFT · ` for a signature of any lineage but
+ * the contract (by1c.12), so that a shadow cross-filter could not be read as a
+ * defect against the obligations in force. The grading lens retires the prefix
+ * (tfnv.7): signatures are grouped by package on the server, the page names the
+ * selected package in its header, its banner and its column, and a prefix here
+ * would say a third time what the chip's own list already says.
  */
-export function shadowFailCount(findings: FindingView[], shadowProfile: Profile | null): number {
-  if (shadowProfile === null) return 0;
-  return findings.filter(
-    (f) => f.profile === shadowProfile && f.severity === 'fail' && !isAdvisory(f),
-  ).length;
+export function chipTitle(sig: Pick<Signature, 'title'>): string {
+  return sig.title;
 }
 
 /**
- * The cross-filter chip's title (by1c.12) — prefixed `DS01.3 DRAFT · ` when the
- * active signature belongs to a lineage other than the contract in force.
+ * The tooltip on a clause row's cross-filter button — the question the row exists
+ * to answer: which other transmissions carry this same issue?
  *
- * Without the prefix a shadow cross-filter is indistinguishable from a defect
- * against the obligations in force, which is the one confusion the shadow
- * surfaces exist to prevent. The test is "not the contract profile" rather than
- * "is ds013", so a third lineage names itself correctly; an advisory signature
- * carries NO profile (api.ts, `Signature.profile`) and grades against no
- * lineage, so it takes no prefix.
+ * It named the lineage until tfnv.7 ("Filter the list by this DS01.3 DRAFT
+ * issue"), which is the same duplication {@link chipTitle} dropped: the lens
+ * already says which package the list is read under.
  */
-export function chipTitle(sig: Pick<Signature, 'title' | 'profile'>): string {
-  const { profile } = sig;
-  if (profile === null || profile === CONTRACT_PROFILE) return sig.title;
-  return `${PROFILE_NAME[profile]} · ${sig.title}`;
+const CROSS_FILTER_HINT = 'Filter the list by this issue';
+
+/**
+ * The tooltip on a row whose id the lens TRANSLATED: `§1.4 under UNICEF Q1 2025`.
+ *
+ * Findings are stored on 2025 numbering and translated at read time (bd memory
+ * `requirement-numbering-2025-retained`), so a supplier reading §5.1.6 here and
+ * §1.4 in their own logs needs the two connected. Naming the package the other
+ * number belongs to is what connects them; the name comes from the vocabulary.
+ */
+export function translatedIdTitle(storedId: string, contractProfile: Profile): string {
+  return `§${storedId} under ${PROFILE_NAME[contractProfile]}`;
+}
+
+/**
+ * The tooltip on a TIGHTENED tag — what the word claims, in a sentence.
+ *
+ * The tag marks a clause whose conformance CHANGED, not one that merely moved:
+ * "should" became "shall", or a field was narrowed. A supplier who reads the tag
+ * as "renumbered" would take the row as informational, which is the one reading
+ * it exists to prevent.
+ */
+export function tightenedHint(lens: Profile): string {
+  return `${PROFILE_NAME[lens]} tightens what this clause requires — not a renumbering`;
 }
 
 function TxRow({
@@ -380,15 +402,20 @@ function TxRow({
   selected,
   onSelect,
   shadowProfile,
+  lens,
+  contractProfile,
 }: {
   tx: TransmissionView;
   selected: boolean;
   onSelect: () => void;
   shadowProfile: Profile | null;
+  /** The selected requirement package: the findings cell and the dots read it. */
+  lens: Profile;
+  contractProfile: Profile;
 }): ReactElement {
   const tone = dotTone(tx.findings);
   const outdated = tx.findings.some((f) => f.outdated);
-  const findings = findingsCell(tx.findings);
+  const findings = findingsCell(tx.findings, lens, contractProfile);
   const reports = reportCount(tx.body);
   const reportsTitle = reportCountTitle(reports, tx.parse_ok);
 
@@ -492,7 +519,16 @@ function TxRow({
           contract={tx.verdicts[CONTRACT_PROFILE]}
           shadow={shadowProfile === null ? null : (tx.verdicts[shadowProfile] ?? null)}
           shadowProfile={shadowProfile}
-          findingsCount={shadowFailCount(tx.findings, shadowProfile)}
+          // The tooltip's parenthetical counts the failures under the lineage the
+          // half names, which is the same question the row's cell asks of the
+          // SELECTED package — one function, asked twice (tfnv.7).
+          findingsCount={
+            shadowProfile === null
+              ? 0
+              : failCountUnderLens(tx.findings, shadowProfile, contractProfile)
+          }
+          lens={lens}
+          contractProfile={contractProfile}
         />
       </span>
     </div>
@@ -510,7 +546,7 @@ const eyebrow: CSSProperties = {
  * The `pointer: …` line under a finding, an advisory or a shadow row — a button
  * that opens the raw-payload inspector at that JSON Pointer when one is
  * locatable, and plain text when it is not. Shared by {@link FindingItem},
- * {@link AdvisoryItem} and {@link ShadowFindingRow} so the drill-down cannot work
+ * {@link AdvisoryItem} and {@link ClauseFindingRow} so the drill-down cannot work
  * in one and quietly rot in the others (by1c.40).
  *
  * Two pointers, because what a row SHOWS and what it OPENS are not always the
@@ -688,57 +724,33 @@ export function advisoryLine(finding: Pick<FindingView, 'summary' | 'detail'>): 
 }
 
 /**
- * The "· also 5.1.3" mark on a contract finding that fails under the shadow
- * lineage too (by1c.14) — the clause it re-tags to, plus the words for its
- * tooltip, which the caller builds so no lineage is named from a literal here.
- */
-export interface AlsoFails {
-  clause: string;
-  hint: string;
-}
-
-/**
- * The tooltip on a "· also 5.1.3" mark (tfnv.12).
+ * One graded finding in the docked detail, numbered in the SELECTED package's
+ * ids (tfnv.7).
  *
- * The clause number needs the word "clause" in front of it, because the lineage
- * name ends in a shouted word: "Also fails under DS01.3 DRAFT 5.1.3" runs the
- * package name straight into a number and reads as one identifier. Naming the
- * number for what it is separates them.
- *
- * Exported so a test can pin the sentence: the name is composed from the profile
- * vocabulary, never written here, so a rename moves the tooltip and the pin
- * together (by1c.36).
+ * The id is the row's cross-link: clicking it opens that requirement in the
+ * compliance card, in whichever package is selected. Where the lens translated
+ * the id, the stored 2025 one rides in the button's tooltip
+ * ({@link translatedIdTitle}) rather than beside it — the row shows ONE number,
+ * which is the whole point of the lens, and the other is there for a supplier
+ * reconciling against their own logs.
  */
-export function alsoFailsHint(shadowProfile: Profile, clause: string): string {
-  return `Also fails ${PROFILE_NAME[shadowProfile]} clause ${clause}`;
-}
-
-/**
- * The tooltip on a shadow finding's cross-filter button (tfnv.12) — the question
- * the row exists to answer: which other transmissions carry this same issue?
- *
- * Empty when no shadow lineage is registered, which is the case where no shadow
- * row renders at all. Exported, and composed from the vocabulary, for the reason
- * {@link alsoFailsHint} gives.
- */
-export function shadowRowHint(shadowProfile: Profile | null): string {
-  if (shadowProfile === null) return '';
-  return `Filter the list by this ${PROFILE_NAME[shadowProfile]} issue`;
-}
-
 function FindingItem({
-  finding,
-  alsoFails,
+  row,
+  contractProfile,
+  tightenedTitle,
   onSelectReq,
   onLocate,
 }: {
-  finding: FindingView;
-  /** The shadow clause this finding also fails under, or null (by1c.14). */
-  alsoFails?: AlsoFails | null;
+  row: FindingRow;
+  /** Names the package a translated id came from, in the id's tooltip. */
+  contractProfile: Profile;
+  /** The TIGHTENED tag's tooltip, built once per detail by {@link tightenedHint}. */
+  tightenedTitle: string;
   onSelectReq: (req: string) => void;
   /** Open the raw-payload inspector at this finding's JSON Pointer (5bs.3). */
   onLocate?: (pointer: string) => void;
 }): ReactElement {
+  const { finding } = row;
   return (
     <div
       style={{
@@ -762,7 +774,10 @@ function FindingItem({
         <StatusPill status={SEVERITY_TO_STATUS[finding.severity]} />
         <button
           type="button"
-          onClick={() => onSelectReq(finding.requirement)}
+          title={
+            row.storedId === null ? undefined : translatedIdTitle(row.storedId, contractProfile)
+          }
+          onClick={() => onSelectReq(row.id)}
           style={{
             ...mono,
             fontSize: 11,
@@ -774,16 +789,9 @@ function FindingItem({
             textDecoration: 'underline',
           }}
         >
-          §{finding.requirement}
+          §{row.id}
         </button>
-        {alsoFails != null && (
-          <span
-            title={alsoFails.hint}
-            style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)' }}
-          >
-            · also {alsoFails.clause}
-          </span>
-        )}
+        {row.tightened && <Tag label="tightened" title={tightenedTitle} />}
         {finding.outdated && (
           <span
             style={{
@@ -810,38 +818,45 @@ function FindingItem({
 }
 
 /**
- * One row of the "Would also fail under DS01.3 DRAFT" group (by1c.14).
+ * One row of the docked detail that the SELECTED package's own validator wrote
+ * (by1c.14, tfnv.7) — a schema failure, phrased for reading rather than graded
+ * twice.
  *
- * Two affordances, both of which a shadow failure had before this group existed
- * and by1c.40 restored: the row's text is a button on the same `?signatureKey=`
- * cross-filter the compliance signatures use — "which other transmissions would
- * this affect?", the question a supplier reads this group to answer — and the
- * `pointer:` line beneath it opens the raw-payload inspector where the defect is.
+ * Three affordances, all of them siblings inside the row's div, because nesting a
+ * button in a button is invalid and swallows the inner click:
  *
- * The shape is {@link FindingItem}'s for the same reason: the container is a
- * div, and the cross-filter button and the PointerLine button are SIBLINGS
- * inside it. Making the whole row one button, with the pointer line nested,
- * would nest a button in a button — invalid, and the inner click is swallowed.
+ *   - the ID, which opens that requirement in the compliance card, exactly as a
+ *     {@link FindingItem}'s id does. It is new here (tfnv.7): the row used to
+ *     offer only the cross-filter, which is the navigational asymmetry the lens
+ *     exists to remove;
+ *   - the row's TEXT, on the same `?signatureKey=` cross-filter the compliance
+ *     signatures use — "which other transmissions would this affect?", a question
+ *     the id cannot answer;
+ *   - the `pointer:` line, which opens the raw-payload inspector where the defect
+ *     is (by1c.40).
  *
- * The row is quieter than a FindingItem on purpose: nothing here grades the
- * contract in force, and a row that looked like a verdict would say otherwise.
+ * The row is quieter than a FindingItem on purpose: several findings collapse
+ * into one of these, so it carries no severity pill — every one of them is a
+ * failure — and no detail of its own beyond what the signature titles.
  */
-function ShadowFindingRow({
+function ClauseFindingRow({
   row,
-  hint,
+  tightenedTitle,
+  onSelectReq,
   onSelectSignature,
   onLocate,
 }: {
-  row: ShadowRow;
-  /** Tooltip for the clickable row — built by the caller, which knows the lineage. */
-  hint: string;
+  row: ClauseRow;
+  /** The TIGHTENED tag's tooltip, built once per detail by {@link tightenedHint}. */
+  tightenedTitle: string;
+  /** Open this clause in the compliance card — the row's id (tfnv.7). */
+  onSelectReq: (req: string) => void;
   onSelectSignature: (sig: Signature) => void;
   /** Open the raw-payload inspector at this row's JSON Pointer (5bs.3). */
   onLocate?: (pointer: string) => void;
 }): ReactElement {
   const body = (
     <>
-      <span style={{ ...mono, fontSize: 11, color: 'var(--text-muted)' }}>{row.req}</span>
       {row.title !== '' && <span style={{ color: 'var(--text)' }}>{row.title}</span>}
       {row.detail !== null && row.detail !== '' && (
         <>
@@ -870,31 +885,56 @@ function ShadowFindingRow({
   const sig = row.sig;
   return (
     <div style={shell}>
-      {/* A finding of a transmission in scope always folded into one of the
-          session's signatures — the server rolls them from these same findings —
-          so the no-signature branch is unreachable in practice. It renders the
-          text without a button rather than nothing, so a lookup that somehow
-          misses costs the cross-filter, not the row. */}
-      {sig === null ? (
-        <div style={line}>{body}</div>
-      ) : (
+      <div style={line}>
         <button
           type="button"
-          title={hint}
-          onClick={() => onSelectSignature(sig)}
+          onClick={() => onSelectReq(row.id)}
           style={{
-            ...line,
-            font: 'inherit',
-            color: 'inherit',
+            ...mono,
+            fontSize: 11,
+            color: 'var(--accent-text)',
             background: 'none',
             border: 'none',
             padding: 0,
             cursor: 'pointer',
+            textDecoration: 'underline',
           }}
         >
-          {body}
+          §{row.id}
         </button>
-      )}
+        {row.tightened && <Tag label="tightened" title={tightenedTitle} />}
+        {/* A finding of a transmission in scope always folded into one of the
+            session's signatures — the server rolls them from these same findings —
+            so the no-signature branch is unreachable in practice. It renders the
+            text without a button rather than nothing, so a lookup that somehow
+            misses costs the cross-filter, not the row. */}
+        {sig === null ? (
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+            {body}
+          </span>
+        ) : (
+          <button
+            type="button"
+            title={CROSS_FILTER_HINT}
+            onClick={() => onSelectSignature(sig)}
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 6,
+              flexWrap: 'wrap',
+              textAlign: 'left',
+              font: 'inherit',
+              color: 'inherit',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+            }}
+          >
+            {body}
+          </button>
+        )}
+      </div>
       <PointerLine pointer={row.pointer} locatable={row.locate} onLocate={onLocate} />
     </div>
   );
@@ -1752,17 +1792,19 @@ function RawPayload({
 function TxDetail({
   tx,
   onSelectReq,
-  shadowProfile,
+  lens,
+  contractProfile,
   signatures,
   onSelectSignature,
 }: {
   tx: TransmissionView;
   onSelectReq: (req: string) => void;
-  /** The shadow lineage, or null — the hide signal for the whole shadow group. */
-  shadowProfile: Profile | null;
-  /** The session's signatures: the title and cross-filter target of a shadow row. */
+  /** The selected requirement package: the list is its findings, in its ids. */
+  lens: Profile;
+  contractProfile: Profile;
+  /** The session's signatures: the title and cross-filter target of a clause row. */
   signatures: readonly Signature[];
-  /** Cross-filter the list by a signature (the shadow rows' click). */
+  /** Cross-filter the list by a signature (a clause row's click). */
   onSelectSignature: (sig: Signature) => void;
 }): ReactElement {
   const inventory = deriveInventory(tx.body);
@@ -1773,16 +1815,12 @@ function TxDetail({
   // as this transmission's grades. The split is explicit rather than relying on
   // advisories sorting to the tail of tx.findings, which is incidental.
   const { verdicts, advisories } = splitFindings(tx.findings);
-  // The graded findings split by lineage (by1c.14): the contract's grade the
-  // transmission, the shadow's say what a DS01.3 run would have made of it. With
-  // no shadow lineage the second group is empty and the first is the whole list,
-  // so the pane reads exactly as it did before.
-  const { contract, shadow } = groupDetailFindings(verdicts, shadowProfile, {
-    signatures,
-    body: tx.body,
-  });
-  const copy = detailGroupCopy(shadowProfile, contract.length);
-  const rowHint = shadowRowHint(shadowProfile);
+  // ONE findings list, under the selected package (tfnv.7): the findings that
+  // package grades, numbered in its ids. Under the contract lens that is the
+  // contract lineage under its own ids — what the pane rendered before the lens.
+  const rows = detailRows(verdicts, lens, contractProfile, { signatures, body: tx.body });
+  const copy = detailGroupCopy(lens, rows.length);
+  const tightenedTitle = tightenedHint(lens);
 
   // Raw-payload inspector state. Open/closed PERSISTS across row selections (so
   // payloads can be compared row to row); the pending scroll target does not.
@@ -1940,73 +1978,33 @@ function TxDetail({
           marginBottom: 7,
         }}
       >
-        <span style={eyebrow}>{copy.contractHeading}</span>
-        {copy.contractNote !== null && <span style={eyebrow}>{copy.contractNote}</span>}
+        <span style={eyebrow}>{copy.heading}</span>
+        <span style={eyebrow}>{copy.note}</span>
       </div>
-      {contract.length > 0 && (
+      {rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {contract.map((row, i) => (
-            <FindingItem
-              key={i}
-              finding={row.finding}
-              alsoFails={
-                row.alsoFails === null || shadowProfile === null
-                  ? null
-                  : {
-                      clause: row.alsoFails,
-                      hint: alsoFailsHint(shadowProfile, row.alsoFails),
-                    }
-              }
-              onSelectReq={onSelectReq}
-              onLocate={onLocate}
-            />
-          ))}
-        </div>
-      )}
-      {/* With a shadow lineage the empty case is stated on the header's right
-          ("none — passes"), so only the no-shadow pane keeps the sentence. */}
-      {contract.length === 0 && shadowProfile === null && (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-          No findings for this transmission.
-        </div>
-      )}
-
-      {/* "Would also fail under DS01.3 DRAFT" (by1c.14) — rendered ONLY when the
-          shadow run failed on its own. A contract failure that re-tags forward is marked
-          in place above instead, so nothing appears twice.
-
-          The count is the number of shadow FAILURES, which is the number the
-          row's verdict tooltip shows for the same transmission — one question,
-          one answer (by1c.39). It is deliberately not the number of rows: rows
-          collapse several missing properties at one path into one line, so a
-          count of rows would read as a second, smaller total sitting directly
-          under the first. */}
-      {shadow.length > 0 && copy.shadowHeading !== null && (
-        <>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between',
-              gap: 10,
-              margin: '13px 0 7px',
-            }}
-          >
-            <span style={eyebrow}>{copy.shadowHeading}</span>
-            <span style={eyebrow}>{shadowFailCount(tx.findings, shadowProfile)}</span>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {shadow.map((row) => (
-              <ShadowFindingRow
-                key={`${row.key}|${shadowRowText(row)}`}
+          {rows.map((row, i) =>
+            row.kind === 'finding' ? (
+              <FindingItem
+                key={i}
                 row={row}
-                hint={rowHint}
+                contractProfile={contractProfile}
+                tightenedTitle={tightenedTitle}
+                onSelectReq={onSelectReq}
+                onLocate={onLocate}
+              />
+            ) : (
+              <ClauseFindingRow
+                key={i}
+                row={row}
+                tightenedTitle={tightenedTitle}
+                onSelectReq={onSelectReq}
                 onSelectSignature={onSelectSignature}
                 onLocate={onLocate}
               />
-            ))}
-          </div>
-        </>
+            ),
+          )}
+        </div>
       )}
 
       {/* Advisories (pwd/bva) — a separate block with its own heading, below the
@@ -2076,8 +2074,13 @@ export function TransmissionsCard({
   shadowProfile,
   signatures,
   onSelectSignature,
-  draftLens = false,
+  lens = CONTRACT_PROFILE,
+  contractProfile = CONTRACT_PROFILE,
 }: TransmissionsCardProps): ReactElement {
+  // A non-contract package is selected: the card's border takes the lens tint
+  // with the rest of the page's cards (tfnv.5). One derivation, from the two
+  // props the rest of the card reads.
+  const draftLens = lens !== contractProfile;
   // Default to the newest (first) transmission when nothing is selected or the
   // selection no longer exists. The API returns newest-first, so [0] is newest.
   // Dashboard owns selection reconciliation; we only resolve the row to dock.
@@ -2245,14 +2248,28 @@ export function TransmissionsCard({
             }}
           >
             <span style={{ flex: 1 }} />
-            {verdictColumns(shadowProfile).map((profile) => (
-              <span
-                key={profile}
-                style={{ ...eyebrow, ...mono, width: VERDICT_COL_PX, textAlign: 'right' }}
-              >
-                {PROFILE_NAME[profile]}
-              </span>
-            ))}
+            {verdictColumns(shadowProfile).map((profile) => {
+              // The selected package's label is the emphasised one (tfnv.7) — in
+              // the lens tint when that package is the draft — and the other is
+              // kept legible but quiet. The dots below follow the same tone.
+              const tone = verdictColumnTone(profile, lens, contractProfile);
+              return (
+                <span
+                  key={profile}
+                  style={{
+                    ...eyebrow,
+                    ...mono,
+                    width: VERDICT_COL_PX,
+                    textAlign: 'right',
+                    color: tone.color,
+                    fontWeight: tone.fontWeight,
+                    opacity: tone.opacity,
+                  }}
+                >
+                  {PROFILE_NAME[profile]}
+                </span>
+              );
+            })}
           </div>
 
           {/* Scrolling list region — API returns newest-first; no re-sort.
@@ -2303,6 +2320,8 @@ export function TransmissionsCard({
                       selected={selected !== null && selected.id === t.id}
                       onSelect={() => onSelectTx(t.id)}
                       shadowProfile={shadowProfile}
+                      lens={lens}
+                      contractProfile={contractProfile}
                     />
                   </div>
                 );
@@ -2323,7 +2342,8 @@ export function TransmissionsCard({
               <TxDetail
                 tx={selected}
                 onSelectReq={onSelectReq}
-                shadowProfile={shadowProfile}
+                lens={lens}
+                contractProfile={contractProfile}
                 signatures={signatures}
                 onSelectSignature={onSelectSignature}
               />

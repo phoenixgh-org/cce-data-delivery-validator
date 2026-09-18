@@ -24,10 +24,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as React from 'react';
 
+import { CONTRACT_PROFILE } from '../../api';
+import { PROFILE_NAME } from '../../profiles';
+
 (globalThis as unknown as { React: typeof React }).React = React;
 
-const { VerdictPair, verdictPairTitle, verdictColumns, VERDICT_COL_PX } =
-  await import('./VerdictDot.js');
+const {
+  VerdictPair,
+  verdictPairTitle,
+  verdictColumns,
+  verdictColumnTone,
+  ungradedTitle,
+  VERDICT_COL_PX,
+} = await import('./VerdictDot.js');
 
 test('the tooltip names both lineages, with the shadow fail count', () => {
   assert.equal(
@@ -90,6 +99,106 @@ test('with no shadow lineage registered the tooltip is the contract half alone',
     verdictPairTitle({ contract: 'fail', shadow: undefined, shadowProfile: null }),
     'UNICEF Q1 2025: fail',
   );
+});
+
+/**
+ * THE SELECTED PACKAGE IS THE EMPHASISED ONE (tfnv.7).
+ *
+ * Both columns stay — every row is graded under both packages and the comparison
+ * is the point — but the reader has selected one, and the row has to say which
+ * without saying the other is absent. Three claims:
+ *
+ *   1. THE ACTIVE COLUMN TAKES THE LENS TINT. Plum when the selected package is
+ *      the draft (the tint reserved for the lens across the page), ink when it is
+ *      the contract; the other column is faint at 55 %, legible and quiet.
+ *   2. A NULL VERDICT UNDER THE SELECTED PACKAGE DRAWS A DASHED DOT. An empty
+ *      cell in the column the reader is scanning reads as an oversight; the dash
+ *      says the package measured nothing here.
+ *   3. IN THE OTHER COLUMN A NULL STILL DRAWS NOTHING, as it always has — an
+ *      absent dot claims nothing, and the pair tooltip carries the words.
+ */
+test('the selected package’s column is emphasised and the other dimmed', () => {
+  const draftActive = verdictColumnTone('ds013', 'ds013', CONTRACT_PROFILE);
+  assert.equal(draftActive.active, true);
+  assert.equal(draftActive.color, 'var(--draft)');
+  assert.equal(draftActive.fontWeight, 700);
+  assert.equal(draftActive.opacity, 1);
+
+  const contractActive = verdictColumnTone(CONTRACT_PROFILE, CONTRACT_PROFILE, CONTRACT_PROFILE);
+  assert.equal(contractActive.color, 'var(--text)');
+  assert.equal(contractActive.fontWeight, 700);
+
+  const inactive = verdictColumnTone(CONTRACT_PROFILE, 'ds013', CONTRACT_PROFILE);
+  assert.equal(inactive.active, false);
+  assert.equal(inactive.color, 'var(--text-faint)');
+  assert.equal(inactive.opacity, 0.55);
+});
+
+test('the dashed dot names the package that graded this transmission nowhere', () => {
+  // The words come from the vocabulary, so a rename moves the title and this pin
+  // together rather than breaking it.
+  assert.equal(ungradedTitle('ds013'), `not graded under ${PROFILE_NAME.ds013}`);
+  assert.equal(
+    ungradedTitle(CONTRACT_PROFILE),
+    `not graded under ${PROFILE_NAME[CONTRACT_PROFILE]}`,
+  );
+});
+
+/** The dot each column of a pair draws, or null when the cell is empty. */
+function dotsOf(props: Parameters<typeof VerdictPair>[0]): ({
+  state: string;
+  title?: string;
+  style?: { opacity?: number };
+} | null)[] {
+  const el = VerdictPair(props) as unknown as { props: { children: unknown[] } };
+  return el.props.children.map((cellNode) => {
+    const cell = cellNode as { props: { children: unknown } };
+    const kids = (
+      Array.isArray(cell.props.children) ? cell.props.children : [cell.props.children]
+    ).filter(
+      (c): c is { props: { state: string; title?: string; style?: { opacity?: number } } } =>
+        typeof c === 'object' && c !== null && 'props' in c,
+    );
+    return kids[0]?.props ?? null;
+  });
+}
+
+test('a null verdict under the selected package draws the dashed dot, titled', () => {
+  const [contractCell, draftCell] = dotsOf({
+    contract: 'fail',
+    shadow: null,
+    shadowProfile: 'ds013',
+    lens: 'ds013',
+  });
+  assert.equal(draftCell?.state, 'ungraded');
+  assert.equal(draftCell?.title, ungradedTitle('ds013'));
+  // The other column keeps its dot, dimmed.
+  assert.equal(contractCell?.state, 'fail');
+  assert.equal(contractCell?.style?.opacity, 0.55);
+});
+
+test('a null verdict in the column that is not selected still draws nothing', () => {
+  const [contractCell, draftCell] = dotsOf({
+    contract: 'fail',
+    shadow: null,
+    shadowProfile: 'ds013',
+    lens: CONTRACT_PROFILE,
+  });
+  assert.equal(draftCell, null);
+  assert.equal(contractCell?.state, 'fail');
+  assert.equal(contractCell?.style?.opacity, 1);
+});
+
+test('the default lens is the contract package: today’s row, unchanged', () => {
+  const [contractCell, draftCell] = dotsOf({
+    contract: 'pass',
+    shadow: 'fail',
+    shadowProfile: 'ds013',
+  });
+  assert.equal(contractCell?.state, 'pass');
+  assert.equal(contractCell?.style?.opacity, 1);
+  assert.equal(draftCell?.state, 'fail');
+  assert.equal(draftCell?.style?.opacity, 0.55);
 });
 
 /**

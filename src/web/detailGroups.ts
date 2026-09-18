@@ -1,22 +1,37 @@
 /**
- * The docked detail's finding groups (by1c.14) — the grouping, the copy and the
- * row phrasing, with no markup, so every rule below is testable on the Node
- * runner.
+ * The docked detail's findings list (by1c.14, tfnv.7) — the translation, the
+ * copy and the row phrasing, with no markup, so every rule below is testable on
+ * the Node runner.
  *
- * WHY: since by1c.6 a transmission carries findings from two lineages, and the
- * detail pane listed them in one undifferentiated block. A supplier reading that
- * block cannot tell which findings grade the contract they are bound to and
- * which describe a proposal. So the pane now reads:
+ * WHY THIS SHAPE. A transmission is graded twice — against the contract in force
+ * and, where its `meta.schemaVersion` reaches the other validator, against the
+ * DS01.3 draft — and the pane used to SPLIT those two sets: the contract's
+ * findings first, then a "Would also fail under DS01.3 DRAFT" group, with a
+ * "· also 5.1.3" suffix marking the contract failures that carried forward. That
+ * asked a supplier to hold two numbering systems at once and gave a DS01.3
+ * requirement no row to open.
  *
- *   1. `Findings · UNICEF Q1 2025` — the findings that grade, i.e. the contract
- *      lineage's. A contract failure that is also a DS01.3 failure is marked in
- *      place with the shadow clause it re-tags to ("· also 5.1.3") and is NOT
- *      repeated below; one defect, one row.
- *   2. `Would also fail under DS01.3 DRAFT` — what the shadow run found on its
- *      own, rendered only when it found something.
- *   3. Advisories — unchanged, after both.
+ * The grading lens replaces it (epic tfnv). The reader selects ONE requirement
+ * package, and this pane lists that package's findings in that package's
+ * numbering:
  *
- * Every lineage name comes from {@link PROFILE_NAME}; nothing here writes
+ *   - Which findings: every non-advisory finding the lens shows somewhere, i.e.
+ *     whose {@link clauseUnderLens} is non-null. Under the contract lens that is
+ *     exactly the contract lineage, as it always was; under the draft lens it is
+ *     the DS01.3 findings plus the contract findings the clause map carries
+ *     forward — §3.2 excepted, since Annex 4 re-runs that clause and files its
+ *     own result.
+ *   - Under which id: the lens's. A translated row keeps its stored 2025 id in
+ *     {@link FindingRow.storedId} so the pane can name where the number came from.
+ *
+ * TWO ROW SHAPES, one list. A FAILURE of the lens's own lineage keeps the
+ * phrasing the shadow group had — the `required` collapse, the generalized
+ * pointer, the title off the matching signature, the bespoke `transferredAt`
+ * line — because that phrasing exists to make a schema run readable and it is
+ * still a schema run. Everything else is a {@link FindingRow}: the finding as the
+ * pane has always rendered it, with its severity pill and its own detail.
+ *
+ * Every package name comes from {@link PROFILE_NAME}; nothing here writes
  * "UNICEF Q1 2025" or "DS01.3 DRAFT" as a literal, so the day the contract moves
  * the words follow the registry's flip point rather than this file.
  */
@@ -27,70 +42,67 @@ import {
   type Profile,
   type Signature,
 } from './api';
-import { FORWARD } from './clauseMap';
+import { clauseUnderLens, tightenedUnderLens } from './clauseMap';
 import { PROFILE_NAME } from './profiles';
 import { findingSignatureKey, generalizePath } from './signatureKey';
-
-/**
- * The 2025 ids that are NOT re-tagged forward into the shadow verdict — mirror
- * `RE_RUN_UNDER_SHADOW` in src/api/verdicts.ts:85, whose `verdict()` rule
- * (src/api/verdicts.ts:155) is what this suffix reports on.
- *
- * Only §3.2 qualifies: transport and semantic checks are emitted once under 2025
- * numbering and re-tagged for the shadow profile, so a 2025 failure on one of
- * them is a DS01.3 failure too. §3.2's counterpart (5.3.2) is genuinely re-run by
- * the shadow validator, which writes its own `ds013` findings — marking a 2025
- * schema failure "also 5.3.2" would claim a result the shadow run did not
- * produce.
- */
-const RE_RUN_UNDER_SHADOW: ReadonlySet<string> = new Set(['3.2']);
 
 /** Title of the collapsed `required` row — the defect is the payload's shape. */
 const SCHEMA_ROW_TITLE = 'schema';
 
-/**
- * The DS01.3 clause a contract finding ALSO fails under, or null.
- *
- * Null for everything that is not a graded contract failure, for §3.2 (see
- * {@link RE_RUN_UNDER_SHADOW}), for a requirement outside the clause map, and
- * for every session with no shadow lineage — where the whole shadow vocabulary
- * is hidden and the detail pane reads exactly as it did before this bite.
- *
- * Null too when the shadow lineage never ran on this transmission (by1c.41): a
- * transport halt files its §1.3 or §1.6 failure and halts the pipeline before the
- * schema stage, so no shadow finding is ever written and this pane has no shadow
- * run to point at.
- *
- * That gate no longer matches the list row exactly. Since tfnv.3, `verdict()`
- * (src/api/verdicts.ts:155) consults forward-mapped contract failures before it
- * answers null, so the same transport halt now shows a DS01.3 fail dot while the
- * detail pane leaves its finding unsuffixed. The suffix is deliberately left as
- * it is: it names a clause the SHADOW RUN reached, and the grading lens retires
- * the suffix altogether in favour of one findings list per lineage.
- */
-export function alsoFailsClause(
-  f: FindingView,
-  shadowProfile: Profile | null,
-  shadowRan: boolean,
-): string | null {
-  if (shadowProfile === null) return null;
-  if (!shadowRan) return null;
-  if (f.profile !== CONTRACT_PROFILE) return null;
-  if (f.severity !== 'fail') return null;
-  if (isAdvisory(f)) return null;
-  if (RE_RUN_UNDER_SHADOW.has(f.requirement)) return null;
-  return FORWARD[f.requirement] ?? null;
+/** What both row shapes carry: where the lens files the row, and how it is tagged. */
+interface RowIdentity {
+  /** The clause id under the selected lens — what the row shows and links to. */
+  id: string;
+  /**
+   * Whether the lens's clause TIGHTENED what conformance means. False under the
+   * contract lens, which is the package a tightening would be measured against.
+   */
+  tightened: boolean;
 }
 
-/** One row of group 1: a contract finding, plus the clause it also fails under. */
-export interface ContractRow {
+/** A finding rendered as the pane has always rendered one: pill, id, detail. */
+export interface FindingRow extends RowIdentity {
+  kind: 'finding';
+  /**
+   * The finding's STORED requirement id when the lens translated it, else null.
+   * Findings are stored on 2025 numbering (bd memory
+   * `requirement-numbering-2025-retained`) and translated at read time, so a row
+   * under the draft lens says §5.1.6 where the database says §1.4 — the pane
+   * names the other id rather than hiding the translation.
+   */
+  storedId: string | null;
   finding: FindingView;
-  /** The DS01.3 clause for the "· also 5.1.3" suffix, or null for no suffix. */
-  alsoFails: string | null;
 }
 
 /**
- * The JSON Pointer a shadow row shows, and the one its `pointer:` button opens
+ * A FAILURE of the lens's own lineage, phrased for reading rather than for
+ * grading. Rendered as `{id} {title} — {detail}`, the dash omitted when
+ * {@link ClauseRow.dash} is false (the bespoke `transferredAt` phrasing reads as
+ * one clause, not as a label and a value).
+ */
+export interface ClauseRow extends RowIdentity {
+  kind: 'clause';
+  /** Signature key of the folded defect — the cross-filter the row's button sets. */
+  key: string;
+  /** Body-face label; empty when no signature matched and the detail carries the row. */
+  title: string;
+  /** Monospace tail, or null. */
+  detail: string | null;
+  /** Whether an em dash separates title from detail. */
+  dash: boolean;
+  /** The pointer shown under the row, or null — see {@link RowPointer}. */
+  pointer: string | null;
+  /** The concrete path the raw-payload inspector opens at, or null. */
+  locate: string | null;
+  /** The signature this row cross-filters to, or null when none matched. */
+  sig: Signature | null;
+}
+
+/** One row of the docked detail's single findings list. */
+export type DetailRow = FindingRow | ClauseRow;
+
+/**
+ * The JSON Pointer a clause row shows, and the one its `pointer:` button opens
  * the raw-payload inspector at (by1c.40).
  *
  * Two values, because a collapsed row folds several findings at different record
@@ -101,57 +113,25 @@ export interface ContractRow {
  * generalized path matches no `data-path` and the click would do nothing.
  *
  * A row that folds nothing shows and opens the same pointer, exactly as a
- * FindingItem does. `pointer` null renders no line at all, again like a
- * FindingItem.
+ * finding row does. `pointer` null renders no line at all, again the same.
  */
-export interface ShadowRowPointer {
+export interface RowPointer {
   /** The pointer as text under the row, generalized for a collapsed row. */
   pointer: string | null;
   /** The concrete path the inspector scrolls to, or null when there is none. */
   locate: string | null;
 }
 
-/** {@link ShadowRowPointer} for one finding — `collapses` is the `required` fold. */
-export function shadowRowPointer(f: FindingView, collapses: boolean): ShadowRowPointer {
+/** {@link RowPointer} for one finding — `collapses` is the `required` fold. */
+export function rowPointer(f: FindingView, collapses: boolean): RowPointer {
   const own = f.instancePath ?? f.pointer;
   if (own === null || own === '') return { pointer: f.pointer, locate: null };
   return { pointer: collapses ? generalizePath(own) : own, locate: own };
 }
 
-/**
- * One row of group 2 — a shadow-lineage failure, phrased for reading rather than
- * for grading. Rendered as `{req} {title} — {detail}`, the dash omitted when
- * {@link ShadowRow.dash} is false (the bespoke `transferredAt` phrasing reads as
- * one clause, not as a label and a value).
- */
-export interface ShadowRow {
-  /** Signature key of the folded defect — the cross-filter the row's button sets. */
-  key: string;
-  /** The DS01.3 clause id the finding was filed under (5.3.2 / 5.3.3). */
-  req: string;
-  /** Body-face label; empty when no signature matched and the detail carries the row. */
-  title: string;
-  /** Monospace tail, or null. */
-  detail: string | null;
-  /** Whether an em dash separates title from detail. */
-  dash: boolean;
-  /** The pointer shown under the row, or null — see {@link ShadowRowPointer}. */
-  pointer: string | null;
-  /** The concrete path the raw-payload inspector opens at, or null. */
-  locate: string | null;
-  /** The signature this row cross-filters to, or null when none matched. */
-  sig: Signature | null;
-}
-
-/** Both groups of the docked detail, in render order. */
-export interface DetailGroups {
-  contract: ContractRow[];
-  shadow: ShadowRow[];
-}
-
-/** What {@link groupDetailFindings} needs beyond the findings themselves. */
-export interface DetailGroupContext {
-  /** The session's signatures — the title and click target of a shadow row. */
+/** What {@link detailRows} needs beyond the findings themselves. */
+export interface DetailRowContext {
+  /** The session's signatures — the title and click target of a clause row. */
   signatures?: readonly Signature[];
   /** The transmission's parsed body — the source of the `transferredAt` offset. */
   body?: unknown;
@@ -179,7 +159,7 @@ export function transferredAtPhrase(body: unknown): string | null {
 
 /** A built row plus what {@link collapseRequired} needs to fold it. */
 export interface RowSource {
-  row: ShadowRow;
+  row: ClauseRow;
   /** The `required`-collapse bucket, or null when the row does not collapse. */
   bucket: string | null;
   /** The missing property name this row contributed, when it collapses. */
@@ -198,8 +178,8 @@ export interface RowSource {
  * answered the same way, and switching form at two would read as two kinds of
  * defect.
  */
-export function collapseRequired(sources: readonly RowSource[]): ShadowRow[] {
-  const out: ShadowRow[] = [];
+export function collapseRequired(sources: readonly RowSource[]): ClauseRow[] {
+  const out: ClauseRow[] = [];
   const at = new Map<string, number>();
   const names = new Map<string, string[]>();
   for (const src of sources) {
@@ -226,106 +206,109 @@ export function collapseRequired(sources: readonly RowSource[]): ShadowRow[] {
 }
 
 /**
- * Split a transmission's graded findings into the two groups the detail pane
- * renders. Advisories are not the caller's to pass (TxDetail splits them off
- * first) and are dropped here as well, so neither group can ever show one.
+ * The docked detail's findings list under the selected package.
  *
- * With no shadow lineage the second group is empty and no suffix is computed:
- * the pane then renders exactly what it rendered before this bite.
+ * Advisories are not the caller's to pass (TxDetail splits them off first) and
+ * are dropped here as well, so no row can ever be one.
+ *
+ * ORDER: the findings the lens translates, in the order the transmission carries
+ * them, then the lens lineage's own failures. Under the contract lens the second
+ * set is empty and the list is exactly what the pane rendered before the lens —
+ * the same rows, the same ids, without the "· also" suffix.
  */
-export function groupDetailFindings(
+export function detailRows(
   findings: readonly FindingView[],
-  shadowProfile: Profile | null,
-  ctx: DetailGroupContext = {},
-): DetailGroups {
+  lens: Profile,
+  contractProfile: Profile = CONTRACT_PROFILE,
+  ctx: DetailRowContext = {},
+): DetailRow[] {
   const graded = findings.filter((f) => !isAdvisory(f));
-  // Whether the shadow validator ran on this transmission at all — the presence
-  // of ANY finding of that lineage, which is the second test `verdict()` makes
-  // at src/api/verdicts.ts:171. A clean shadow run still writes one `pass` finding,
-  // so a lineage that ran is always detectable; nothing here infers it from the
-  // session's `shadowProfile`, which only says a shadow lineage is registered.
-  const shadowRan = shadowProfile !== null && findings.some((f) => f.profile === shadowProfile);
-  const contract: ContractRow[] = graded
-    .filter((f) => f.profile === CONTRACT_PROFILE)
-    .map((f) => ({ finding: f, alsoFails: alsoFailsClause(f, shadowProfile, shadowRan) }));
+  const draftLens = lens !== contractProfile;
+  /** A failure of the lens's OWN lineage: the rows that keep the schema phrasing. */
+  const phrased = (f: FindingView): boolean =>
+    draftLens && f.profile === lens && f.severity === 'fail';
 
-  if (shadowProfile === null) return { contract, shadow: [] };
+  const rows: DetailRow[] = [];
+  for (const f of graded) {
+    if (phrased(f)) continue;
+    const id = clauseUnderLens(f, lens, contractProfile);
+    if (id === null) continue;
+    rows.push({
+      kind: 'finding',
+      id,
+      storedId: id === f.requirement ? null : f.requirement,
+      tightened: draftLens && tightenedUnderLens(id),
+      finding: f,
+    });
+  }
 
   const signatures = ctx.signatures ?? [];
   const offset = transferredAtPhrase(ctx.body);
-  const sources: RowSource[] = graded
-    .filter((f) => f.profile === shadowProfile && f.severity === 'fail')
-    .map((f) => {
-      const key = findingSignatureKey(f);
-      // A finding of a transmission in scope always folded into one of the
-      // session's signatures — the server rolls them from these same findings —
-      // so the null branch is unreachable in practice. It is handled rather than
-      // asserted: a row with no button still tells the supplier what failed,
-      // where a thrown lookup would blank the whole detail pane.
-      const sig = signatures.find((s) => s.key === key) ?? null;
-      const bespoke =
-        f.keyword === 'pattern' && f.instancePath === '/meta/transferredAt' && offset !== null;
-      const collapses = !bespoke && f.keyword === 'required';
-      const { pointer, locate } = shadowRowPointer(f, collapses);
-      const base = { key, req: f.requirement, pointer, locate, sig };
-      const row: ShadowRow = bespoke
-        ? { ...base, title: 'transferredAt', detail: offset, dash: false }
-        : sig === null
-          ? { ...base, title: '', detail: f.detail, dash: false }
-          : { ...base, title: sig.title, detail: f.detail, dash: true };
-      return {
-        row,
-        bucket: collapses ? `${f.requirement}|${generalizePath(f.instancePath)}` : null,
-        param: f.param,
-      };
-    });
+  const sources: RowSource[] = graded.filter(phrased).map((f) => {
+    const key = findingSignatureKey(f);
+    // A finding of a transmission in scope always folded into one of the
+    // session's signatures — the server rolls them from these same findings —
+    // so the null branch is unreachable in practice. It is handled rather than
+    // asserted: a row with no button still tells the supplier what failed,
+    // where a thrown lookup would blank the whole detail pane.
+    const sig = signatures.find((s) => s.key === key) ?? null;
+    const bespoke =
+      f.keyword === 'pattern' && f.instancePath === '/meta/transferredAt' && offset !== null;
+    const collapses = !bespoke && f.keyword === 'required';
+    const { pointer, locate } = rowPointer(f, collapses);
+    const base = {
+      kind: 'clause' as const,
+      id: f.requirement,
+      tightened: tightenedUnderLens(f.requirement),
+      key,
+      pointer,
+      locate,
+      sig,
+    };
+    const row: ClauseRow = bespoke
+      ? { ...base, title: 'transferredAt', detail: offset, dash: false }
+      : sig === null
+        ? { ...base, title: '', detail: f.detail, dash: false }
+        : { ...base, title: sig.title, detail: f.detail, dash: true };
+    return {
+      row,
+      bucket: collapses ? `${f.requirement}|${generalizePath(f.instancePath)}` : null,
+      param: f.param,
+    };
+  });
 
-  return { contract, shadow: collapseRequired(sources) };
+  return [...rows, ...collapseRequired(sources)];
 }
 
-/** A shadow row as one line of text — the form the tests pin. */
-export function shadowRowText(row: ShadowRow): string {
-  const head = row.title === '' ? row.req : `${row.req} ${row.title}`;
+/** A clause row as one line of text — the form the tests pin. */
+export function clauseRowText(row: ClauseRow): string {
+  const head = row.title === '' ? row.id : `${row.id} ${row.title}`;
   if (row.detail === null || row.detail === '') return head;
   return row.dash ? `${head} — ${row.detail}` : `${head} ${row.detail}`;
 }
 
-/** The two group headers, each with whatever sits on its right. */
+/** The findings list's heading and whatever sits on its right. */
 export interface DetailGroupCopy {
-  /** Group 1's heading. */
-  contractHeading: string;
-  /** Group 1's right-hand note, or null when there is none. */
-  contractNote: string | null;
-  /** Group 2's heading, or null when there is no shadow lineage. */
-  shadowHeading: string | null;
+  /** The eyebrow above the list. */
+  heading: string;
+  /** The right-hand note: the § hint, or the empty case stated. */
+  note: string;
 }
 
 /** The hint that has always sat in the findings eyebrow. */
 const REQ_HINT = 'click § to open the requirement';
 
 /**
- * The group headers.
+ * The list's copy.
  *
- * With no shadow lineage there is one group and nothing to distinguish it from,
- * so the eyebrow stays the single line it has always been. With a shadow lineage
- * the heading names the lineage that grades — the point of the split — and the
- * hint moves to the right, where "none — passes" replaces it when the contract
- * found nothing to report.
+ * The heading names the package the list is numbered in, because that is the
+ * question a reader of two packages has: not "are these findings" but "findings
+ * against what". The hint sits on the right, where "none — passes" replaces it
+ * when the selected package found nothing to report.
  */
-export function detailGroupCopy(
-  shadowProfile: Profile | null,
-  contractCount: number,
-): DetailGroupCopy {
-  if (shadowProfile === null) {
-    return {
-      contractHeading: `Findings · ${REQ_HINT}`,
-      contractNote: null,
-      shadowHeading: null,
-    };
-  }
+export function detailGroupCopy(lens: Profile, rowCount: number): DetailGroupCopy {
   return {
-    contractHeading: `Findings · ${PROFILE_NAME[CONTRACT_PROFILE]}`,
-    contractNote: contractCount === 0 ? 'none — passes' : REQ_HINT,
-    shadowHeading: `Would also fail under ${PROFILE_NAME[shadowProfile]}`,
+    heading: `Findings · ${PROFILE_NAME[lens]}`,
+    note: rowCount === 0 ? 'none — passes' : REQ_HINT,
   };
 }

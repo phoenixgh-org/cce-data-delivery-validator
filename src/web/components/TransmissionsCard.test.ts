@@ -40,7 +40,6 @@ import * as React from 'react';
 
 import { CONTRACT_PROFILE } from '../api';
 import type { FindingView, Severity } from '../api';
-import { groupDetailFindings } from '../detailGroups.js';
 import { PROFILE_NAME } from '../profiles.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
@@ -58,12 +57,11 @@ const {
   flaggedPointers,
   signatureEyebrow,
   verdictColumns,
-  shadowFailCount,
   chipTitle,
   rawPayloadSummary,
   advisoryLine,
-  alsoFailsHint,
-  shadowRowHint,
+  translatedIdTitle,
+  tightenedHint,
 } = await import('./TransmissionsCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
@@ -396,15 +394,20 @@ test('advisories never join the fail count or its denominator', () => {
 });
 
 /**
- * DS01.3 SHADOW FINDINGS in the row's verdict cell (by1c.8).
+ * THE CELL ANSWERS FOR THE SELECTED PACKAGE (by1c.8, tfnv.7).
  *
- * The cell answers one question — did this transmission fail the contract in
- * force? — so the second lineage's verdict has to be invisible to it. A payload
- * that conforms to cce-interop 0.8.1 and misses Annex 4's logger-identity
- * properties is the canonical case: five shadow failures, and an unqualified OK
- * here until by1c.12 gives DS01.3 its own column.
+ * Under the default lens it answers the question it always did — did this
+ * transmission fail the contract in force? — so the other package's findings are
+ * invisible to it. A payload that conforms to cce-interop 0.8.1 and misses Annex
+ * 4's logger-identity properties is the canonical case: five DS01.3 failures, and
+ * an unqualified OK here.
+ *
+ * Under the draft lens the same cell answers for DS01.3, and the three ways the
+ * two packages differ all show up in one number: a §3.2 failure drops out (Annex
+ * 4 re-runs that clause and files its own), a DS01.3 failure joins, and a
+ * transport failure stays, carried forward by the clause map.
  */
-test('DS01.3 shadow findings reach neither the fail count nor the total', () => {
+test('DS01.3 findings reach neither the fail count nor the total under the default lens', () => {
   const cell = findingsCell([
     finding('pass'),
     finding('pass'),
@@ -416,10 +419,49 @@ test('DS01.3 shadow findings reach neither the fail count nor the total', () => 
   assert.equal(cell.title, '2 findings, none failed');
 });
 
-test('a contract failure still shows, shadow findings notwithstanding', () => {
+test('a contract failure still shows, DS01.3 findings notwithstanding', () => {
   const cell = findingsCell([finding('fail'), finding('pass'), shadowFinding('fail')]);
   assert.equal(cell.text, '1f');
   assert.equal(cell.title, '1 of 2 findings failed');
+});
+
+test('under the draft lens the cell counts that package’s failures', () => {
+  // §1.4 carries forward to 5.1.6 and still fails; the §3.2 result is not the
+  // draft's to report; the DS01.3 failure is.
+  const findings: FindingView[] = [
+    { ...finding('fail'), requirement: '1.4', code: 'tx.too_large' },
+    { ...finding('fail'), requirement: '3.2', keyword: 'type' },
+    shadowFinding('fail'),
+    { ...shadowFinding('pass'), requirement: '5.3.3' },
+  ];
+  const draft = findingsCell(findings, 'ds013', CONTRACT_PROFILE);
+  assert.equal(draft.text, '2f');
+  assert.equal(draft.title, '2 of 3 findings failed');
+
+  // The same transmission under the contract package: both contract failures,
+  // neither DS01.3 finding.
+  const contract = findingsCell(findings, CONTRACT_PROFILE, CONTRACT_PROFILE);
+  assert.equal(contract.text, '2f');
+  assert.equal(contract.title, '2 of 2 findings failed');
+});
+
+test('a transmission that only fails §3.2 reads OK under the draft lens', () => {
+  // Not a claim that the payload satisfies Annex 4 — the DS01.3 run files its own
+  // findings, and this transmission carries none, so the draft found nothing to
+  // report on it. Counting the 2025 schema result here would report a defect the
+  // draft never measured.
+  const cell = findingsCell(
+    [{ ...finding('fail'), requirement: '3.2', keyword: 'type' }],
+    'ds013',
+    CONTRACT_PROFILE,
+  );
+  assert.equal(cell.text, 'OK');
+  assert.equal(cell.title, 'No findings');
+});
+
+test('advisories are counted nowhere under either lens', () => {
+  const findings = [finding('pass'), advisoryFinding('adv.null_padding')];
+  assert.equal(findingsCell(findings, 'ds013', CONTRACT_PROFILE).title, '1 finding, none failed');
 });
 
 test('the inspector highlights finding pointers but never an advisory’s', () => {
@@ -456,16 +498,20 @@ test('the shadow column appears only when a shadow lineage is registered', () =>
 });
 
 /**
- * The cross-filter chip's title (by1c.12). A shadow cross-filter must announce
- * the lineage it came from, or it reads as a defect against obligations that are
- * not in force. The rule tests "not the contract profile" rather than naming
- * ds013, and an advisory — which grades against no lineage at all — takes no
- * prefix.
+ * The cross-filter chip's title (by1c.12, tfnv.7). It used to be prefixed with
+ * the package name for a signature of any lineage but the contract, so that a
+ * cross-filter from the shadow surfaces could not be read as a defect against the
+ * obligations in force. The grading lens retires the prefix: the page names the
+ * selected package in its header, its banner and its verdict column, and the
+ * signature list a chip comes from is grouped by package on the server.
+ *
+ * What this pins is that no package name is composed here at all — including for
+ * a signature of the other lineage, which is the case the prefix existed for.
  */
-test('a shadow signature prefixes the chip title with its lineage; a contract one does not', () => {
+test('the chip shows the signature title alone, naming no package', () => {
   assert.equal(
     chipTitle({ title: 'RTM logger identity missing', profile: 'ds013' }),
-    'DS01.3 DRAFT · RTM logger identity missing',
+    'RTM logger identity missing',
   );
   assert.equal(
     chipTitle({ title: 'transferredAt has offset', profile: CONTRACT_PROFILE }),
@@ -475,75 +521,9 @@ test('a shadow signature prefixes the chip title with its lineage; a contract on
     chipTitle({ title: 'Null padding observed', profile: null }),
     'Null padding observed',
   );
-});
-
-/**
- * The SHADOW FAIL COUNT (by1c.38, by1c.39) — the number in the verdict tooltip's
- * parenthetical ("DS01.3: fail (5 findings)") and, since by1c.39, the number on
- * the detail pane's "Would also fail under DS01.3 DRAFT" header.
- *
- * Three rules ride on it, none of them visible in its signature:
- *
- *   1. it counts the SHADOW lineage's failures, never the row's total — a
- *      contract failure is a different lineage's verdict and belongs to the
- *      other dot;
- *   2. advisories are excluded, the rule `findingsCell` follows for the same
- *      reason: an advisory is not a verdict and must never inflate a number a
- *      supplier has to explain;
- *   3. it is zero when the shadow never ran, and zero when no shadow lineage is
- *      registered at all — in neither case is there a failure to report.
- */
-test('the count is the shadow lineage’s failures, not the transmission’s', () => {
-  const findings = [
-    finding('fail'),
-    finding('fail'),
-    shadowFinding('fail'),
-    shadowFinding('fail'),
-    shadowFinding('pass'),
-  ];
-  assert.equal(shadowFailCount(findings, 'ds013'), 2);
-});
-
-test('advisories never join the shadow fail count', () => {
-  const advisory: FindingView = {
-    ...finding('info'),
-    requirement: 'adv.null_padding',
-    code: 'adv.null_padding',
-    profile: 'ds013',
-  };
-  assert.equal(shadowFailCount([shadowFinding('fail'), advisory], 'ds013'), 1);
-});
-
-test('a transmission the shadow never graded counts zero, and so does no shadow lineage', () => {
-  assert.equal(shadowFailCount([finding('fail'), finding('pass')], 'ds013'), 0);
-  assert.equal(shadowFailCount([shadowFinding('fail'), shadowFinding('fail')], null), 0);
-});
-
-/**
- * ONE TRANSMISSION, ONE NUMBER (by1c.39). The detail pane's group header used to
- * show the number of rows, which is the count AFTER several missing properties at
- * one path collapse into a single line — so the list row said "(5 findings)" and
- * the header immediately below it said "1". The header shows the raw fail count
- * now; the collapse still governs what the rows look like, not what they total.
- */
-test('the DS01.3 group header shows the same count as the row’s tooltip', () => {
-  const missing = (index: number, param: string): FindingView => ({
-    ...shadowFinding('fail'),
-    keyword: 'required',
-    instancePath: `/data/${index}`,
-    param,
-    detail: `schema violation at /data/${index}: must have required property '${param}'`,
-  });
-  const findings = [
-    missing(0, 'LSER'),
-    missing(0, 'LMOD'),
-    missing(0, 'LMFR'),
-    missing(0, 'LTYP'),
-    missing(0, 'LID'),
-  ];
-  const { shadow } = groupDetailFindings(findings, 'ds013');
-  assert.equal(shadow.length, 1, 'five omissions at one path are one row');
-  assert.equal(shadowFailCount(findings, 'ds013'), 5);
+  for (const name of Object.values(PROFILE_NAME)) {
+    assert.doesNotMatch(chipTitle({ title: 'RTM logger identity missing' }), new RegExp(name));
+  }
 });
 
 /**
@@ -589,32 +569,30 @@ test('a summary with no rationale behind it opens no empty expander', () => {
 });
 
 /**
- * THE TWO SHADOW TOOLTIPS (tfnv.12). Both title attributes compose a lineage
- * name, both are invisible until a pointer rests on the element, and neither was
- * pinned — so a rename could have reworded them with nothing to notice.
- *
- * Two claims, in this order of importance:
+ * THE TWO TOOLTIPS THE DETAIL ROWS CARRY (tfnv.12, tfnv.7). Both compose a
+ * package name, both are invisible until a pointer rests on the element, and
+ * neither is derivable — so a rename could reword them with nothing to notice.
  *
  *   1. THE NAME COMES FROM THE VOCABULARY. The expectations are built from
- *      `PROFILE_NAME`, never from the words themselves, so renaming a lineage in
- *      src/web/profiles.ts moves the tooltip and this pin together rather than
- *      breaking it. What would fail here is a tooltip that named a lineage from a
- *      literal, or abbreviated the name to fit.
- *   2. "CLAUSE" SITS BETWEEN THE NAME AND THE NUMBER. The name ends in a shouted
- *      word, so "… DS01.3 DRAFT 5.1.3" reads as one identifier; the word names
- *      the number for what it is. That is a wording decision, not a derivable
- *      fact, which is exactly the kind this file exists to hold.
+ *      `PROFILE_NAME`, never from the words themselves, so renaming a package in
+ *      src/web/profiles.ts moves the tooltip and this pin together. What would
+ *      fail here is a tooltip that named a package from a literal, or abbreviated
+ *      it to fit.
+ *   2. THE OTHER NUMBER IS NAMED FOR WHAT IT IS. A row under the draft lens shows
+ *      §5.1.6 where the database holds §1.4, and a supplier reconciling against
+ *      their own logs needs to know which package the second number belongs to —
+ *      "§1.4" alone would read as a second, unexplained clause.
  */
-test('the shadow row’s cross-filter tooltip names the lineage, and is empty without one', () => {
-  assert.equal(shadowRowHint('ds013'), `Filter the list by this ${PROFILE_NAME.ds013} issue`);
-  // No shadow lineage means no shadow row to hint at.
-  assert.equal(shadowRowHint(null), '');
+test('a translated id names the package its stored number belongs to', () => {
+  assert.equal(
+    translatedIdTitle('1.4', CONTRACT_PROFILE),
+    `§1.4 under ${PROFILE_NAME[CONTRACT_PROFILE]}`,
+  );
+  assert.ok(translatedIdTitle('1.4', CONTRACT_PROFILE).startsWith('§1.4 under '));
 });
 
-test('the “also” mark’s tooltip puts the word clause between the lineage and the number', () => {
-  assert.equal(alsoFailsHint('ds013', '5.1.3'), `Also fails ${PROFILE_NAME.ds013} clause 5.1.3`);
-  assert.ok(
-    alsoFailsHint('ds013', '5.1.3').includes(`${PROFILE_NAME.ds013} clause 5.1.3`),
-    'the clause number must not sit directly against the lineage name',
-  );
+test('the TIGHTENED tag’s tooltip says the clause changed, not that it moved', () => {
+  const hint = tightenedHint('ds013');
+  assert.ok(hint.startsWith(`${PROFILE_NAME.ds013} tightens`), hint);
+  assert.match(hint, /not a renumbering/);
 });

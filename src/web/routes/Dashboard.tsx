@@ -633,9 +633,11 @@ export function Dashboard() {
           // array and the same handler the compliance column uses.
           signatures={state.data.signatures}
           onSelectSignature={onSelectSignature}
-          // Chrome only in this bite; the list and detail under the lens are
-          // tfnv.7.
-          draftLens={draftLens}
+          // The grading lens (tfnv.7): the card reads the list, the verdict
+          // columns and the docked detail under the selected package, and takes
+          // the lens tint from the same pair. What ingest graded is unchanged.
+          lens={lens}
+          contractProfile={session.contractProfile}
         />
       </div>
 

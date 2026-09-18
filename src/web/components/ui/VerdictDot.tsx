@@ -19,13 +19,20 @@ import { CONTRACT_PROFILE, type Profile, type Verdict } from '../../api';
 import { PROFILE_NAME } from '../../profiles';
 
 /**
- * A dot's rendered state. `na` is "this lineage does not apply here" — reserved
- * for the matrix (e.g. an Attachment 2 clause under DS01.3) and NOT rendered in
- * list rows in this bite; a `null` verdict — the body reached neither validator
- * under this package and nothing forward-mapped failed — is dropped from the
- * pair instead, since an absent dot claims nothing.
+ * A dot's rendered state.
+ *
+ * `na` is "this lineage does not apply here" — reserved for the matrix (e.g. an
+ * Attachment 2 clause under DS01.3) and not rendered in list rows.
+ *
+ * `ungraded` is a NULL verdict under the package the reader has selected (tfnv.7):
+ * the body reached neither validator under it and nothing carried forward, so
+ * there is no grade to show. It draws a DASHED hollow dot rather than nothing,
+ * because the selected package's column is the one the reader is scanning and an
+ * empty cell there reads as an oversight. In the column that is NOT selected a
+ * null verdict still renders nothing: an absent dot claims nothing, and the pair
+ * tooltip carries the words either way.
  */
-export type VerdictDotState = 'pass' | 'fail' | 'na';
+export type VerdictDotState = 'pass' | 'fail' | 'na' | 'ungraded';
 
 /** Diameter of one dot, in px. Small enough to sit inside the row's line box. */
 const DOT_PX = 11;
@@ -74,7 +81,9 @@ export interface VerdictDotProps {
 
 /**
  * One 11px verdict dot: hollow with an ink border for a pass, filled ink for a
- * fail, and hollow with a hatched fill and a fog border for not-applicable.
+ * fail, hollow with a hatched fill and a fog border for not-applicable, and
+ * hollow with a DASHED fog border for a package that graded this transmission
+ * nowhere.
  */
 export function VerdictDot({ state, title, style }: VerdictDotProps): ReactElement {
   const hatch = 'repeating-linear-gradient(45deg, var(--text-faint) 0 1px, transparent 1px 3px)';
@@ -89,7 +98,9 @@ export function VerdictDot({ state, title, style }: VerdictDotProps): ReactEleme
         height: DOT_PX,
         borderRadius: 999,
         boxSizing: 'border-box',
-        border: `1.5px solid ${state === 'na' ? 'var(--text-faint)' : 'var(--text)'}`,
+        border: `1.5px ${state === 'ungraded' ? 'dashed' : 'solid'} ${
+          state === 'na' || state === 'ungraded' ? 'var(--text-faint)' : 'var(--text)'
+        }`,
         background: state === 'fail' ? 'var(--text)' : state === 'na' ? hatch : 'transparent',
         ...style,
       }}
@@ -122,6 +133,43 @@ function verdictHalf(profile: Profile, verdict: Verdict | undefined, count?: num
   return `${name}: ${verdict}`;
 }
 
+/**
+ * The title on a dashed dot: `not graded under DS01.3 DRAFT` (tfnv.7).
+ *
+ * The dot is drawn only in the SELECTED package's column, so naming that package
+ * is what makes the dash mean something — "nothing was measured here", not "this
+ * transmission is untested". The words come from the vocabulary, never from a
+ * literal.
+ */
+export function ungradedTitle(lens: Profile): string {
+  return `not graded under ${PROFILE_NAME[lens]}`;
+}
+
+/**
+ * How emphatic one verdict column is: the selected package's column is the one
+ * the reader is scanning, and the other is kept legible but quiet (tfnv.7).
+ *
+ * The active column takes the lens tint when the selected package is not the
+ * contract — the plum reserved for the lens across the page — and full ink
+ * otherwise. The inactive column keeps its label and its dots, at 55 % of full
+ * opacity: both packages still grade every row, and dropping the other column
+ * would cost the comparison the two dots exist for.
+ */
+export function verdictColumnTone(
+  profile: Profile,
+  lens: Profile,
+  contractProfile: Profile = CONTRACT_PROFILE,
+): { active: boolean; color: string; fontWeight: number; opacity: number } {
+  const active = profile === lens;
+  if (!active) return { active, color: 'var(--text-faint)', fontWeight: 400, opacity: 0.55 };
+  return {
+    active,
+    color: lens === contractProfile ? 'var(--text)' : 'var(--draft)',
+    fontWeight: 700,
+    opacity: 1,
+  };
+}
+
 export interface VerdictPairInput {
   /** The contract lineage's verdict — `tx.verdicts[CONTRACT_PROFILE]`. */
   contract: Verdict | undefined;
@@ -138,6 +186,14 @@ export interface VerdictPairInput {
    * parenthetical. Omitted from the text when zero.
    */
   findingsCount?: number;
+  /**
+   * The requirement package the reader has selected (tfnv.7). Its column is the
+   * emphasised one, and a null verdict under it draws the dashed dot. Defaults to
+   * the contract package, which is the default view.
+   */
+  lens?: Profile;
+  /** The package in force, as the session serves it. */
+  contractProfile?: Profile;
 }
 
 /**
@@ -173,44 +229,58 @@ export function verdictPairTitle({
  *
  * The pair is a grid of {@link VERDICT_COL_PX}-wide cells that matches the list
  * header's columns, and each dot is right-aligned in its own cell — so the
- * contract dot sits under the contract label and the shadow dot under the shadow
+ * contract dot sits under the contract label and the draft dot under the draft
  * one. Packing the two dots together at a fixed gap instead put both of them
  * under the second label (by1c.34), which told a supplier the wrong lineage had
  * failed.
  *
- * A dot is rendered on the verdict VALUE, not on whether the lineage ran: only
- * `pass` and `fail` draw one, so no shadow lineage registered, or a `null` shadow
- * verdict (the body reached neither validator under this package and nothing
- * forward-mapped failed), leaves its cell EMPTY rather than shifting the other
- * dot. A shadow whose validator never ran but which inherits a forward-mapped
+ * WHAT A CELL DRAWS (tfnv.7). `pass` and `fail` always draw their dot; the
+ * SELECTED package's column draws it at full strength and the other at
+ * {@link verdictColumnTone}'s 55 %. A null verdict — the body reached neither
+ * validator under that package and nothing carried forward — draws the dashed
+ * `ungraded` dot in the selected column, and nothing at all in the other, where
+ * an absent dot claims nothing and the pair tooltip still carries the words.
+ *
+ * A package whose validator never ran but which inherits a carried-forward
  * contract failure reads `fail`, and so draws a filled dot. The hatched `na` dot
  * is not used here (see {@link VerdictDotState}).
  */
 export function VerdictPair(props: VerdictPairInput): ReactElement {
-  const { contract, shadow, shadowProfile } = props;
-  const columns = verdictColumns(shadowProfile).length;
+  const {
+    contract,
+    shadow,
+    shadowProfile,
+    lens = CONTRACT_PROFILE,
+    contractProfile = CONTRACT_PROFILE,
+  } = props;
+  const columns = verdictColumns(shadowProfile);
   const cell: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'flex-end',
   };
+  const verdictOf = (profile: Profile): Verdict | undefined =>
+    profile === CONTRACT_PROFILE ? contract : shadow;
   return (
     <span
       title={verdictPairTitle(props)}
       style={{
         display: 'inline-grid',
-        gridTemplateColumns: `repeat(${columns}, ${VERDICT_COL_PX}px)`,
+        gridTemplateColumns: `repeat(${columns.length}, ${VERDICT_COL_PX}px)`,
         alignItems: 'center',
       }}
     >
-      <span style={cell}>
-        {(contract === 'pass' || contract === 'fail') && <VerdictDot state={contract} />}
-      </span>
-      {shadowProfile !== null && (
-        <span style={cell}>
-          {(shadow === 'pass' || shadow === 'fail') && <VerdictDot state={shadow} />}
-        </span>
-      )}
+      {columns.map((profile) => {
+        const verdict = verdictOf(profile);
+        const tone = verdictColumnTone(profile, lens, contractProfile);
+        const graded = verdict === 'pass' || verdict === 'fail';
+        return (
+          <span key={profile} style={cell}>
+            {graded && <VerdictDot state={verdict} style={{ opacity: tone.opacity }} />}
+            {!graded && tone.active && <VerdictDot state="ungraded" title={ungradedTitle(lens)} />}
+          </span>
+        );
+      })}
     </span>
   );
 }
