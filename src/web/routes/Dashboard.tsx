@@ -16,29 +16,32 @@
  * The Danger-zone trigger flips deleteModalOpen, opening the DeleteModal (108.8);
  * its typed-confirm runs deleteSessionData + a refetch, which drops back to the
  * empty state via the auto-collapse effect.
+ *
+ * The header is one line now (vamh.1): ReportHeader carries the title and the two
+ * scope controls, which used to sit in a FilterBar strip below the scorecard. That
+ * component is gone, along with the header's endpoint sentence, the pass-rate
+ * sparkline and the "live · updated just now" dot. The scope state and the `load`
+ * callback did not move — only where the controls are rendered.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import {
-  CONTRACT_PROFILE,
   deleteSessionData,
   getSession,
   listTransmissions,
   type ComplianceClass,
   type ListTransmissionsResponse,
-  type SchemaProvenance,
   type SessionResponse,
   type Signature,
   type TransmissionView,
 } from '../api';
 import { ComplianceCard } from '../components/ComplianceCard';
 import { DeleteModal } from '../components/DeleteModal';
-import { FilterBar, type WindowValue } from '../components/FilterBar';
 import { ReadinessStrip } from '../components/ReadinessStrip';
+import { ReportHeader, type WindowValue } from '../components/ReportHeader';
 import { Setup } from '../components/Setup';
 import { TransmissionsCard } from '../components/TransmissionsCard';
-import { Sparkline } from '../components/ui/Sparkline';
 
 type State =
   | { phase: 'loading' }
@@ -53,38 +56,6 @@ type State =
  * replacement; polling is the no-backend-change baseline.
  */
 const POLL_INTERVAL_MS = 5000;
-
-/**
- * The header's schema segment, derived from the server's provenance list rather
- * than a literal (zlo), so it cannot contradict the Setup panel's line one
- * scroll below when a second version is registered. Empty/multi are handled the
- * way Setup handles them: never name a version the service did not report, and
- * list the whole registered set when there is more than one.
- *
- * CONTRACT PROFILE ONLY. The registered set now spans two lineages, and the
- * header states what transmissions are GRADED against — a shadow revision listed
- * here would read as a third contract version ("schema 0.8.0, 0.8.1, 1") and say
- * something the service does not do. The shadow entry is named in full, and
- * labelled a draft, in the Setup panel's provenance line instead.
- */
-function schemaLabel(schemas: SchemaProvenance[]): string {
-  const contract = schemas.filter((s) => s.profile === CONTRACT_PROFILE);
-  if (contract.length === 0) return 'no schema';
-  return `schema ${contract.map((s) => s.version).join(', ')}`;
-}
-
-const MS_PER_DAY = 86_400_000;
-
-/** Whole days remaining until `expiresAt`; ceil so a sub-day remainder reads as 1. */
-function daysLeft(expiresAt: string): number {
-  return Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / MS_PER_DAY));
-}
-
-/** Shorten a uuid for display: `8f3c1d2a…3d10` (first 8 · ellipsis · last 4). */
-function shortUuid(uuid: string): string {
-  if (uuid.length <= 13) return uuid;
-  return `${uuid.slice(0, 8)}…${uuid.slice(-4)}`;
-}
 
 /** Per-verifiability-class collapse map for the non-gradeable groups. */
 type CollapsedGroups = Partial<Record<ComplianceClass, boolean>>;
@@ -423,11 +394,9 @@ export function Dashboard() {
     );
   }
 
-  const { session, expiresAt, schemas, shadow } = state.data;
+  const { session, schemas } = state.data;
   const ingestUrl = `/i/${session.uuid}`;
   const hasData = txCount > 0;
-  const short = shortUuid(session.uuid);
-  const days = daysLeft(expiresAt);
 
   return (
     <main
@@ -438,34 +407,15 @@ export function Dashboard() {
         background: 'var(--canvas)',
       }}
     >
-      {/* Header (folds in Lifecycle's "Nd left") */}
-      <header
-        style={{
-          padding: '14px 24px',
-          background: 'var(--surface)',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 700 }}>Delivery compliance report</span>
-          <span style={{ flex: 1 }} />
-          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--text-faint)' }}>
-            {schemaLabel(schemas)} · auth {session.auth_enabled ? 'on' : 'off'} · {days}d left
-          </span>
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-          Endpoint <span style={{ fontFamily: 'var(--mono)' }}>{short}</span>
-          {hasData ? (
-            <>
-              {' '}
-              · {rollup.passing} passing, {rollup.failing} with failures across {rollup.gradeable}{' '}
-              verifiable requirements.
-            </>
-          ) : (
-            <> · awaiting your first transmission.</>
-          )}
-        </div>
-      </header>
+      {/* Header (vamh.1) — one line: the title left, the window and source
+          controls at the right end. Presentational; the scope state stays here. */}
+      <ReportHeader
+        window={window}
+        source={source}
+        sources={state.data.sources}
+        onWindowChange={setWindow}
+        onSourceChange={setSource}
+      />
 
       {/* Setup — controlled collapsed bar + expanded panel (108.7). The
           auto-collapse rule below flips setupOpen; the Danger-zone trigger
@@ -526,45 +476,6 @@ export function Dashboard() {
             requirements are verifiable from your traffic. The rest are self-attested or need active
             testing.
           </span>
-          {/* Pass-rate trend (4h4.10). Eyebrow + Sparkline (168×34) fed the server
-            `trend` buckets over the current scope; the --pass area + --fail spike
-            ticks render INSIDE Sparkline. The window label reads "full history"
-            for the unscoped All view, else "last {window}". */}
-          <div
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
-          >
-            <span
-              style={{
-                fontSize: 9.5,
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                color: 'var(--text-faint)',
-              }}
-            >
-              Pass rate · {window === 'all' ? 'full history' : `last ${window}`}
-            </span>
-            <Sparkline buckets={state.data.trend} width={168} height={34} />
-          </div>
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 11,
-              color: 'var(--text-faint)',
-            }}
-          >
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: 999,
-                background: hasData ? 'var(--pass)' : 'var(--neutral)',
-                display: 'inline-block',
-              }}
-            />
-            {hasData ? 'live · updated just now' : 'no data yet'}
-          </span>
         </div>
 
         {/* DS01.3 readiness strip (by1c.13) — how much of the scope's
@@ -583,21 +494,6 @@ export function Dashboard() {
           onSelectSignature={onSelectSignature}
         />
       </div>
-
-      {/* Scoped filter strip (4h4.8) — sits between the scorecard and the panes;
-          drives the server-computed scope. Presentational: Dashboard owns the
-          window/source state and feeds it the summary read's sources + scope
-          totals. */}
-      <FilterBar
-        window={window}
-        source={source}
-        sources={state.data.sources}
-        scoped={state.data.scoped}
-        onWindowChange={setWindow}
-        onSourceChange={setSource}
-        shadowProfile={session.shadowProfile}
-        shadow={shadow}
-      />
 
       {/* Two-pane body */}
       <div

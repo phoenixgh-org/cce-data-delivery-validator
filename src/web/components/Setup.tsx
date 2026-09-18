@@ -276,9 +276,10 @@ function CopyField({
 }
 
 /**
- * Method picker — a small segmented control matching FilterBar's `Seg` (the
- * house style for a short exclusive choice). Radio semantics are spelled out for
- * assistive tech since these are `<button>`s, not `<input type="radio">`.
+ * Method picker — a small segmented control matching the header's `Seg`
+ * (ReportHeader.tsx), the house style for a short exclusive choice. Radio
+ * semantics are spelled out for assistive tech since these are `<button>`s, not
+ * `<input type="radio">`.
  */
 function MethodPicker({
   value,
