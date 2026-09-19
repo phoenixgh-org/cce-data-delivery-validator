@@ -62,6 +62,7 @@ const {
   chipTitle,
   rawPayloadSummary,
   advisoryLine,
+  AdvisoryItem,
   translatedIdTitle,
   tightenedHint,
 } = await import('./TransmissionsCard.js');
@@ -569,45 +570,86 @@ test('the chip shows the signature title alone, naming no package', () => {
 });
 
 /**
- * WHAT AN ADVISORY ROW SHOWS (agj.17). Advisory prose is two pieces — `summary`
- * is the one-line observation with its numbers, `detail` the rationale — and the
- * row shows the observation with the rationale behind a "why" expander.
+ * WHAT AN ADVISORY ROW SHOWS (agj.17, synm). The row is the OBSERVATION —
+ * `summary`, this payload's own numbers — and nothing else in prose: the
+ * rationale is static per advisory id, so it belongs on the advisory's row in
+ * the compliance column rather than behind a per-transmission expander that
+ * would repeat the same paragraph on every row that carried the id.
  *
  * The claim worth pinning is the FALLBACK, because it is invisible in the happy
  * path and it is what keeps two cohorts of stored findings readable: a finding
  * written before `summary` existed and still inside the retention window, and a
  * check whose copy has not been converted yet. Either one carries `detail` alone
- * and must render exactly as it did before the split — as the line, with nothing
- * behind an expander that would open on empty.
+ * and must still render a line rather than an empty row.
  */
-test('an advisory carrying a summary shows it, with the rationale behind the expander', () => {
-  const { line, expandable } = advisoryLine({
-    summary: '3 of 12 reports carry no appliance serial number.',
-    detail: 'ASER is the appliance serial number, as assigned by the manufacturer.',
-  });
-  assert.equal(line, '3 of 12 reports carry no appliance serial number.');
-  assert.equal(expandable, true);
+test('an advisory carrying a summary shows the observation, not the rationale', () => {
+  assert.equal(
+    advisoryLine({
+      summary: '3 of 12 reports carry no appliance serial number.',
+      detail: 'ASER is the appliance serial number, as assigned by the manufacturer.',
+    }),
+    '3 of 12 reports carry no appliance serial number.',
+  );
+  // A summary with nothing behind it is still the line.
+  assert.equal(
+    advisoryLine({ summary: '7 gaps exceed the 900 s period.', detail: null }),
+    '7 gaps exceed the 900 s period.',
+  );
 });
 
-test('an advisory with no summary shows its detail on the row and offers no expander', () => {
-  // A finding stored before the column existed, or a check not yet converted.
-  const stored = advisoryLine({ summary: null, detail: 'Across the 48 records, TAMB is null.' });
-  assert.equal(stored.line, 'Across the 48 records, TAMB is null.');
-  assert.equal(stored.expandable, false);
-
+test('an advisory with no summary falls back to its detail as the line', () => {
+  // A finding stored before the summary existed, or a check not yet converted.
+  assert.equal(
+    advisoryLine({ summary: null, detail: 'Across the 48 records, TAMB is null.' }),
+    'Across the 48 records, TAMB is null.',
+  );
   // Blank is the same case as absent: a summary of spaces is not a line to show.
-  const blank = advisoryLine({ summary: '   ', detail: 'Across the 48 records, TAMB is null.' });
-  assert.equal(blank.line, 'Across the 48 records, TAMB is null.');
-  assert.equal(blank.expandable, false);
+  assert.equal(
+    advisoryLine({ summary: '   ', detail: 'Across the 48 records, TAMB is null.' }),
+    'Across the 48 records, TAMB is null.',
+  );
+  // Nothing either way renders no line at all.
+  assert.equal(advisoryLine({ summary: null, detail: null }), null);
 });
 
-test('a summary with no rationale behind it opens no empty expander', () => {
-  const { line, expandable } = advisoryLine({
-    summary: '7 gaps exceed the 900 s period.',
-    detail: null,
+/** Every element of one type in a returned tree, in render order. */
+function elementsOfType(node: unknown, type: unknown): React.ReactElement[] {
+  const found: React.ReactElement[] = [];
+  const walk = (n: unknown): void => {
+    if (Array.isArray(n)) {
+      n.forEach(walk);
+      return;
+    }
+    if (!React.isValidElement(n)) return;
+    if (n.type === type) found.push(n);
+    walk((n.props as { children?: unknown }).children);
+  };
+  walk(node);
+  return found;
+}
+
+/**
+ * THE ADVISORY TITLE IS A CROSS-LINK (synm), on the same `onSelectReq` a
+ * finding's § id uses. It has to be that callback and not a second mechanism:
+ * the compliance card keys its open row off the value, so an advisory row opens
+ * and scrolls exactly as a requirement row does — and the value it is handed is
+ * the `adv.*` id, which is what the row is keyed by and cannot collide with a
+ * clause id.
+ *
+ * AdvisoryItem is hook-free, so it is CALLED as a plain function and its tree
+ * walked, the Setup.test.ts pattern.
+ */
+test('the advisory title opens that advisory in the compliance column', () => {
+  const opened: string[] = [];
+  const tree = AdvisoryItem({
+    finding: advisoryFinding('adv.blank_admin'),
+    onSelectReq: (req: string) => opened.push(req),
   });
-  assert.equal(line, '7 gaps exceed the 900 s period.');
-  assert.equal(expandable, false);
+
+  const controls = elementsOfType(tree, 'button');
+  assert.equal(controls.length, 1, 'the title is the only control (the "why" expander is gone)');
+  (controls[0]?.props as { onClick: () => void }).onClick();
+  assert.deepEqual(opened, ['adv.blank_admin']);
 });
 
 /**

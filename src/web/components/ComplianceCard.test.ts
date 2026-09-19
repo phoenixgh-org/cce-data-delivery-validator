@@ -82,6 +82,7 @@ import { CLASS_META } from './ui/statusMaps.js';
 (globalThis as unknown as { React: typeof React }).React = React;
 
 const {
+  AdvisoryRow,
   AdvisorySection,
   ComplianceCard,
   NOT_FED_NOTE,
@@ -129,8 +130,8 @@ function adv(id: string, over: Partial<Signature> = {}): Signature {
   });
 }
 
-/** Every SigRow element in a returned tree, in render order. */
-function sigRows(node: unknown): React.ReactElement[] {
+/** Every element of one component type in a returned tree, in render order. */
+function elementsOfType(node: unknown, type: unknown): React.ReactElement[] {
   const found: React.ReactElement[] = [];
   const walk = (n: unknown): void => {
     if (Array.isArray(n)) {
@@ -138,11 +139,21 @@ function sigRows(node: unknown): React.ReactElement[] {
       return;
     }
     if (!React.isValidElement(n)) return;
-    if (n.type === SigRow) found.push(n);
+    if (n.type === type) found.push(n);
     walk((n.props as { children?: unknown }).children);
   };
   walk(node);
   return found;
+}
+
+/** Every SigRow element in a returned tree — the REQUIREMENT rows' issue rows. */
+function sigRows(node: unknown): React.ReactElement[] {
+  return elementsOfType(node, SigRow);
+}
+
+/** Every advisory row in a returned tree, in render order. */
+function advisoryRows(node: unknown): React.ReactElement[] {
+  return elementsOfType(node, AdvisoryRow);
 }
 
 /** The section's props, defaulted so each test states only what it varies. */
@@ -159,8 +170,24 @@ function section(
   });
 }
 
+/** One advisory row's markup, rendered on its own. */
+function advisoryRowMarkup(
+  sig: Signature,
+  over: Partial<Parameters<typeof AdvisoryRow>[0]> = {},
+): string {
+  return renderToStaticMarkup(
+    React.createElement(AdvisoryRow, {
+      sig,
+      expanded: true,
+      onToggle: () => {},
+      active: false,
+      ...over,
+    } as Parameters<typeof AdvisoryRow>[0]),
+  );
+}
+
 test('the section renders one row per advisory, most-observed first', () => {
-  const rows = sigRows(
+  const rows = advisoryRows(
     section([
       sig(),
       adv('adv.null_padding', { count: 2 }),
@@ -173,6 +200,9 @@ test('the section renders one row per advisory, most-observed first', () => {
     rows.map((r) => (r.props as { sig: Signature }).sig.key),
     ['adv|adv.date_format', 'adv|adv.null_padding'],
   );
+  // And nothing renders through the requirement column's issue row any more
+  // (synm): an advisory is an expandable row of its own, not a bare button.
+  assert.deepEqual(sigRows(section([adv('adv.null_padding')])), []);
 });
 
 test('ties order by key, so the section does not reshuffle between polls', () => {
@@ -193,17 +223,21 @@ test('ties order by key, so the section does not reshuffle between polls', () =>
   );
 });
 
-test('picking an advisory row hands the signature straight to onSelectSignature', () => {
+test('the "Matching transmissions" button hands the signature straight to onSelectSignature', () => {
   const picked: Signature[] = [];
   const advisory = adv('adv.null_identity');
-  const rows = sigRows(
-    section([sig(), advisory], { onSelectSignature: (s: Signature) => picked.push(s) }),
-  );
-
-  const row = rows[0];
-  assert.ok(row);
-  const props = row.props as { sig: Signature; onPick: (s: Signature) => void };
-  props.onPick(props.sig);
+  // AdvisoryRow is hook-free, so the expanded row can be CALLED and its one
+  // control found in the returned tree — the click itself, not its plumbing.
+  const tree = AdvisoryRow({
+    sig: advisory,
+    expanded: true,
+    onToggle: () => {},
+    active: false,
+    onSelectSignature: (s: Signature) => picked.push(s),
+  });
+  const controls = elementsOfType(tree, 'button');
+  assert.equal(controls.length, 1, 'exactly one control in the expanded row');
+  (controls[0]?.props as { onClick: () => void }).onClick();
 
   // The whole Signature, unchanged — the Dashboard sets ?signatureKey= from its
   // `key` and touches nothing else. In particular no failuresOnly: an
@@ -213,7 +247,7 @@ test('picking an advisory row hands the signature straight to onSelectSignature'
 });
 
 test('the active row is the one whose key matches the cross-filter', () => {
-  const rows = sigRows(
+  const rows = advisoryRows(
     section([adv('adv.null_padding', { count: 2 }), adv('adv.date_format', { count: 9 })], {
       activeSignatureKey: 'adv|adv.null_padding',
     }),
@@ -223,6 +257,64 @@ test('the active row is the one whose key matches the cross-filter', () => {
     rows.map((r) => (r.props as { active: boolean }).active),
     [false, true],
   );
+});
+
+/**
+ * THE ROW IS A REQUIREMENT ROW'S SHAPE WITHOUT ITS VERDICT (synm).
+ *
+ * The shape is what a supplier reads first, so the two claims worth pinning are
+ * the ones a glance at the component cannot settle: that the row aligns with the
+ * requirement rows above it (the empty 42px id slot is what does that — an
+ * advisory is a clause of nothing and has no id to print), and that borrowing
+ * the shape brought none of the verdict with it.
+ */
+test('the collapsed row carries the label, the tx count and a neutral advisory tag', () => {
+  const markup = advisoryRowMarkup(adv('adv.blank_admin', { txCount: 4 }), { expanded: false });
+
+  assert.ok(markup.includes('data-req="adv.blank_admin"'), 'keyed by the advisory id');
+  assert.ok(markup.includes('Blank admin'), 'the derived label, not the raw id');
+  assert.ok(markup.includes('4 tx'), 'the transmission count');
+  assert.ok(markup.includes('advisory'), 'the neutral tag');
+  assert.ok(markup.includes('width:42px'), 'the empty id slot keeps the column width');
+});
+
+test('no verdict reaches the row: no pill, no pass/fail tally, no status colour', () => {
+  const markup = advisoryRowMarkup(adv('adv.blank_admin', { txCount: 4, count: 9 }));
+
+  for (const tone of ['--fail', '--pass', '--mixed']) {
+    assert.ok(!markup.includes(tone), `${tone} must not reach an advisory row`);
+  }
+  // The StatusPill's words, and the requirement row's f/p/o tally.
+  for (const word of ['untested', 'pass', 'fail', '9f', '4p']) {
+    assert.ok(!markup.includes(word), `"${word}" must not reach an advisory row`);
+  }
+});
+
+test('the expanded row shows the SERVED rationale and labels its control "Matching transmissions"', () => {
+  const rationale = 'For an `ems-report` it reads 15 objects; `ASER` names the appliance.';
+  const markup = advisoryRowMarkup(adv('adv.blank_admin', { rationale, txCount: 4 }));
+
+  // The rationale, with its backticked identifiers as inline code rather than
+  // the ticks a supplier would otherwise read as prose.
+  assert.ok(markup.includes('<code'), 'backticked identifiers render as inline code');
+  assert.ok(!markup.includes('`'), 'no backtick survives into the page');
+  assert.ok(markup.includes('ems-report') && markup.includes('ASER'));
+  assert.ok(markup.includes('15 objects'), 'the rest of the sentence is intact');
+
+  assert.ok(markup.includes('Matching transmissions'));
+  // NEVER the requirement block's label: that one names defects to fix, and an
+  // advisory has none.
+  assert.ok(!markup.includes('Distinct issues'));
+  assert.ok(markup.includes('1 src'), 'the source count rides on the control');
+});
+
+test('an advisory the catalogue does not cover still renders its row', () => {
+  // `rationale` is absent for an id the server's catalogue has no entry for; the
+  // row is still the way into the cross-filter, so it must not collapse to
+  // nothing.
+  const markup = advisoryRowMarkup(adv('adv.not_in_catalogue', { txCount: 2 }));
+  assert.ok(markup.includes('Not in catalogue'));
+  assert.ok(markup.includes('Matching transmissions'));
 });
 
 test('a requirement never groups an advisory, sentinel or not', () => {
@@ -261,7 +353,30 @@ test('no advisories renders no section at all — not an empty one', () => {
   assert.equal(section([sig(), sig({ key: '2025|1.5|tx.missing_charset', req: '1.5' })]), null);
   // Collapsed is a different thing from absent: the header still renders.
   assert.notEqual(section([adv('adv.null_padding')], { collapsed: true }), null);
-  assert.deepEqual(sigRows(section([adv('adv.null_padding')], { collapsed: true })), []);
+  assert.deepEqual(advisoryRows(section([adv('adv.null_padding')], { collapsed: true })), []);
+});
+
+test('the open row is the one the shared expandedReq names, keyed by advisory id', () => {
+  // The same state a requirement row uses, so the transmission detail's
+  // cross-link opens an advisory through `onSelectReq` and needs no second
+  // mechanism. `adv.*` ids cannot collide with clause ids.
+  const toggled: (string | null)[] = [];
+  const rows = advisoryRows(
+    section([adv('adv.null_padding', { count: 2 }), adv('adv.date_format', { count: 9 })], {
+      expandedReq: 'adv.null_padding',
+      onToggleReq: (req: string | null) => toggled.push(req),
+    }),
+  );
+
+  assert.deepEqual(
+    rows.map((r) => (r.props as { expanded: boolean }).expanded),
+    [false, true],
+  );
+
+  // Toggling the closed row opens it; toggling the open one closes it.
+  (rows[0]?.props as { onToggle: () => void }).onToggle();
+  (rows[1]?.props as { onToggle: () => void }).onToggle();
+  assert.deepEqual(toggled, ['adv.date_format', null]);
 });
 
 /* ------------------------------------------------------------------ *

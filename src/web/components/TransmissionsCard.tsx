@@ -27,6 +27,7 @@ import type { FindingView, Profile, Severity, Signature, TransmissionView } from
 import type { DisplayStatus } from '../api';
 import { CONTRACT_PROFILE, isAdvisory } from '../api';
 import { ADVISORY_COPY, advisoryLabel, splitFindings } from '../advisories';
+import { inlineCode } from './ui/inlineCode';
 import { clauseUnderLens, failCountUnderLens } from '../clauseMap';
 import { detailGroupCopy, detailRows, type ClauseRow, type FindingRow } from '../detailGroups';
 // Pane width shared with the summary card above it, and the detail region's own
@@ -715,15 +716,21 @@ function PointerLine({
  * The prose is two pieces since agj.17 — the observation on the row, the
  * rationale behind the expander. {@link advisoryLine} decides which, and why.
  */
-function AdvisoryItem({
+export function AdvisoryItem({
   finding,
+  onSelectReq,
   onLocate,
 }: {
   finding: FindingView;
+  /**
+   * Open this advisory's row in the compliance column (synm) — the same callback
+   * a finding's § id uses, which is what makes the title a cross-link rather
+   * than a second navigation mechanism. The row is keyed by the `adv.*` id.
+   */
+  onSelectReq: (req: string) => void;
   onLocate?: (pointer: string) => void;
 }): ReactElement {
-  const { line, expandable } = advisoryLine(finding);
-  const [open, setOpen] = useState(false);
+  const line = advisoryLine(finding);
   return (
     <div
       style={{
@@ -745,43 +752,29 @@ function AdvisoryItem({
           marginBottom: line ? 3 : 0,
         }}
       >
-        <span style={{ fontWeight: 600, color: 'var(--text)' }}>
+        <button
+          type="button"
+          title="Open this advisory in the compliance summary"
+          onClick={() => onSelectReq(finding.requirement)}
+          style={{
+            fontWeight: 600,
+            fontSize: 'inherit',
+            fontFamily: 'inherit',
+            color: 'var(--accent-text)',
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            textDecoration: 'underline',
+          }}
+        >
           {advisoryLabel(finding.requirement)}
-        </span>
+        </button>
         <span style={{ ...mono, fontSize: 10.5, color: 'var(--text-faint)' }}>
           {finding.requirement}
         </span>
       </div>
-      {line && (
-        <div style={{ color: 'var(--text-muted)' }}>
-          {line}
-          {expandable && (
-            <>
-              {' '}
-              <button
-                type="button"
-                onClick={() => setOpen((v) => !v)}
-                aria-expanded={open}
-                title={open ? 'Hide the rationale' : 'Why this is worth a look'}
-                style={{
-                  fontSize: 11,
-                  color: 'var(--accent-text)',
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  textDecoration: 'underline',
-                }}
-              >
-                {open ? 'hide' : 'why'}
-              </button>
-            </>
-          )}
-        </div>
-      )}
-      {expandable && open && (
-        <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>{finding.detail}</div>
-      )}
+      {line && <div style={{ color: 'var(--text-muted)' }}>{inlineCode(line)}</div>}
       <PointerLine
         pointer={finding.pointer}
         locatable={finding.instancePath ?? finding.pointer}
@@ -808,16 +801,9 @@ function AdvisoryItem({
  * looked like before this split. The fallback is not a transitional hack to be
  * removed; it is also what a graded finding routed here would need.
  */
-export function advisoryLine(finding: Pick<FindingView, 'summary' | 'detail'>): {
-  /** The text on the row: the observation, or the rationale when there is none. */
-  line: string | null;
-  /** True when `detail` is held back behind the expander rather than shown. */
-  expandable: boolean;
-} {
+export function advisoryLine(finding: Pick<FindingView, 'summary' | 'detail'>): string | null {
   const summary = typeof finding.summary === 'string' ? finding.summary.trim() : '';
-  if (summary === '') return { line: finding.detail, expandable: false };
-  const detail = typeof finding.detail === 'string' ? finding.detail.trim() : '';
-  return { line: summary, expandable: detail !== '' };
+  return summary === '' ? finding.detail : summary;
 }
 
 /**
@@ -2167,7 +2153,7 @@ function TxDetail({
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {advisories.map((f, i) => (
-              <AdvisoryItem key={i} finding={f} onLocate={onLocate} />
+              <AdvisoryItem key={i} finding={f} onSelectReq={onSelectReq} onLocate={onLocate} />
             ))}
           </div>
         </>

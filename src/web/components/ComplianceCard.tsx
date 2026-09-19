@@ -28,14 +28,16 @@
 import type { CSSProperties, ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import type { ComplianceClass, ComplianceRow, Profile, Signature, TransmissionView } from '../api';
-import { CONTRACT_PROFILE } from '../api';
+import { ADVISORY_PREFIX, CONTRACT_PROFILE } from '../api';
 import { PROFILE_NAME } from '../profiles';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
+import { Tag } from './ui/Tag';
+import { inlineCode } from './ui/inlineCode';
 import { CLASS_META } from './ui/statusMaps';
 import { DS013_REFERENCE, DS013_REFERENCE_SOURCE } from './ds013Reference';
 import { getRequirementReference } from './requirementReference';
-import { ADVISORY_COPY } from '../advisories';
+import { ADVISORY_COPY, advisoryIdFromKey, advisoryLabel } from '../advisories';
 // Pane width shared with the summary card above it (src/web/layout.ts, vamh.8).
 import { REQUIREMENTS_PANE_FLEX } from '../layout';
 
@@ -753,8 +755,161 @@ function ReqRow({
 }
 
 /* ------------------------------------------------------------------ *
- * Advisories — the bottom section of the column (agj.16).
+ * Advisories — the bottom section of the column (agj.16, synm).
  * ------------------------------------------------------------------ */
+
+/**
+ * ONE ADVISORY, as an expandable row in the shape of a {@link ReqRow} (synm).
+ *
+ * WHY THE SAME SHAPE. An advisory used to render as a bare {@link SigRow} — a
+ * cross-filter button with no way into what the observation is about — while a
+ * requirement a few pixels above it collapsed and expanded. That difference was
+ * an accident of how the two arrived in the column, and it left the rationale
+ * reachable only from a transmission that happened to carry the advisory. So the
+ * row sits on the same column grid: the 42px id slot (empty — an advisory is not
+ * a clause of anything and has no id to print there), the title, the count slot,
+ * the verdict slot.
+ *
+ * WHAT THE SHAPE DOES NOT BRING WITH IT. No StatusPill, no pass/fail tally and
+ * no status colour: an advisory is raised against a payload that broke no rule
+ * (DESIGN §7.1), so there is no verdict to render and `sigTone`'s accent rule
+ * governs every coloured thing here. The verdict slot carries a neutral
+ * "advisory" tag in the accent rather than a pill, which says what the row is
+ * without saying how it did. The count is transmissions observed, and it feeds
+ * nothing — not the conformance rollup, not the scorecard, not the
+ * distinct-issues headline.
+ *
+ * THE EXPANDED BLOCK is the rationale, then ONE control. "Matching
+ * transmissions", never "Distinct issues": the label on a requirement's block
+ * names defects to fix, and an advisory has none. The control is the cross-filter
+ * the retired SigRow was — it hands the whole Signature to `onSelectSignature`
+ * and sets nothing else, `failuresOnly` least of all, because an advisory-only
+ * transmission has zero failures and would vanish from the filter this click
+ * just set.
+ *
+ * The rationale is the SERVED one (`Signature.rationale`) and the browser holds
+ * no copy of it; {@link inlineCode} renders its backticked identifiers, which is
+ * a rendering concern rather than a reason to reword the copy.
+ */
+export function AdvisoryRow({
+  sig,
+  expanded,
+  onToggle,
+  active,
+  onSelectSignature,
+}: {
+  sig: Signature;
+  expanded: boolean;
+  onToggle: () => void;
+  /** True when this advisory's key is the active cross-filter. */
+  active: boolean;
+  onSelectSignature?: (sig: Signature) => void;
+}): ReactElement {
+  const id = advisoryIdFromKey(sig.key);
+  const tone = sigTone(sig);
+
+  return (
+    <div data-req={id}>
+      <div
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 13,
+          padding: '9px 16px',
+          cursor: 'pointer',
+          borderBottom: '1px solid var(--border)',
+          background: expanded ? 'var(--detail)' : 'transparent',
+          transition: prefersReducedMotion ? undefined : 'background 120ms ease',
+        }}
+      >
+        {/* The id slot, empty and the same width, so advisory titles line up with
+            requirement titles rather than starting 42px to their left. */}
+        <span style={{ width: 42, flexShrink: 0 }} />
+        <span style={{ flex: 1, fontSize: 13 }}>{advisoryLabel(id)}</span>
+        <span
+          style={{
+            fontFamily: mono,
+            fontSize: 11,
+            color: tone,
+            width: 58,
+            textAlign: 'right',
+            flexShrink: 0,
+          }}
+        >
+          {sig.txCount} tx
+        </span>
+        <span style={{ width: 88, textAlign: 'right', flexShrink: 0 }}>
+          <Tag label="advisory" color={tone} background="var(--accent-weak)" />
+        </span>
+      </div>
+      {expanded && (
+        <div
+          style={{
+            background: 'var(--detail)',
+            borderBottom: '1px solid var(--border)',
+            padding: '12px 16px 15px 60px',
+          }}
+        >
+          {sig.rationale !== undefined && sig.rationale !== '' && (
+            <div style={{ fontSize: 12.5, lineHeight: 1.65, maxWidth: 640 }}>
+              {inlineCode(sig.rationale)}
+            </div>
+          )}
+          <div style={{ marginTop: 12 }}>
+            <div
+              style={{
+                fontSize: 10,
+                textTransform: 'uppercase',
+                letterSpacing: '.05em',
+                color: 'var(--text-faint)',
+                marginBottom: 7,
+              }}
+            >
+              Matching transmissions
+            </div>
+            <button
+              onClick={() => onSelectSignature?.(sig)}
+              title="View these transmissions"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 10,
+                textAlign: 'left',
+                padding: '7px 11px',
+                borderRadius: 6,
+                cursor: 'pointer',
+                border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                background: active ? 'var(--accent-weak)' : 'var(--surface)',
+              }}
+            >
+              <span style={{ fontFamily: mono, fontSize: 11.5, color: tone }}>
+                {sig.txCount} tx
+              </span>
+              <span style={{ fontFamily: mono, fontSize: 10.5, color: 'var(--text-faint)' }}>
+                {sig.sourceCount} src
+              </span>
+              <Icon
+                name="arrowRight"
+                size={13}
+                style={{ color: active ? 'var(--accent-text)' : 'var(--text-faint)' }}
+              />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * The Advisories section: the last thing in the compliance column, BELOW
@@ -796,6 +951,8 @@ export function AdvisorySection({
   onToggle,
   activeSignatureKey,
   onSelectSignature,
+  expandedReq = null,
+  onToggleReq,
 }: {
   /** ALL in-scope signatures; the advisory half is selected here. */
   signatures: readonly Signature[];
@@ -803,11 +960,18 @@ export function AdvisorySection({
   onToggle: () => void;
   activeSignatureKey: string | null;
   onSelectSignature?: (sig: Signature) => void;
+  /**
+   * Which row is open, shared with the requirement rows (synm). An advisory row
+   * is keyed by its `adv.*` id, which cannot collide with a clause id, so the
+   * transmission detail's cross-link opens one through the same `onSelectReq`
+   * plumbing a finding's § id uses.
+   */
+  expandedReq?: string | null;
+  /** Toggle the open row — the parent's `onToggleReq`. */
+  onToggleReq?: (req: string | null) => void;
 }): ReactElement | null {
   const sigs = advisorySignatures(signatures);
   if (sigs.length === 0) return null;
-
-  const max = Math.max(...sigs.map((s) => s.count));
 
   return (
     <div
@@ -866,10 +1030,11 @@ export function AdvisorySection({
         </span>
       </div>
       {!collapsed && (
-        <div style={{ padding: '11px 16px 15px' }}>
+        <>
           <p
             style={{
-              margin: '0 0 10px',
+              margin: 0,
+              padding: '11px 16px 12px',
               fontSize: 11.5,
               lineHeight: 1.55,
               color: 'var(--text-muted)',
@@ -878,18 +1043,20 @@ export function AdvisorySection({
           >
             {ADVISORY_COPY.blurb}
           </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 540 }}>
-            {sigs.map((s) => (
-              <SigRow
+          {sigs.map((s) => {
+            const id = advisoryIdFromKey(s.key);
+            return (
+              <AdvisoryRow
                 key={s.key}
                 sig={s}
-                max={max}
+                expanded={expandedReq === id}
+                onToggle={() => onToggleReq?.(expandedReq === id ? null : id)}
                 active={s.key === activeSignatureKey}
-                onPick={(sig) => onSelectSignature?.(sig)}
+                onSelectSignature={onSelectSignature}
               />
-            ))}
-          </div>
-        </div>
+            );
+          })}
+        </>
       )}
     </div>
   );
@@ -954,6 +1121,19 @@ export function ComplianceCard({
   }, [expandedReq, summary]);
 
   /*
+   * The same reveal for an ADVISORY target (synm). The effect above looks the id
+   * up in `summary`, which holds requirements only, so an `adv.*` id falls
+   * straight through it — and the Advisories section keeps its collapse state
+   * here rather than in `collapsedGroups`. Without this, a cross-link from the
+   * transmission detail into a collapsed section would dead-end exactly as a
+   * cross-link into a collapsed group used to.
+   */
+  useEffect(() => {
+    if (expandedReq === null || !expandedReq.startsWith(ADVISORY_PREFIX)) return;
+    if (advisoriesCollapsed) setAdvisoriesCollapsed(false);
+  }, [expandedReq]);
+
+  /*
    * Scroll the target row into view — SEPARATE from the reveal effect above so it
    * runs AFTER the un-collapse/un-filter setters have re-rendered the row into the
    * DOM. Keyed on `expandedReq` plus the current `showNonGradeable`/`collapsedGroups`
@@ -975,7 +1155,10 @@ export function ComplianceCard({
     });
 
     return () => cancelAnimationFrame(raf);
-  }, [expandedReq, showNonGradeable, collapsedGroups]);
+    // `advisoriesCollapsed` is in the deps for the same reason the group state is
+    // (synm): an advisory row only mounts once the section is open, so the scroll
+    // has to fire again after the reveal above un-collapses it.
+  }, [expandedReq, showNonGradeable, collapsedGroups, advisoriesCollapsed]);
 
   return (
     <div
@@ -1131,6 +1314,8 @@ export function ComplianceCard({
           onToggle={() => setAdvisoriesCollapsed((v) => !v)}
           activeSignatureKey={activeSignatureKey}
           onSelectSignature={onSelectSignature}
+          expandedReq={expandedReq}
+          onToggleReq={onToggleReq}
         />
       </div>
     </div>

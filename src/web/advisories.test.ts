@@ -48,7 +48,8 @@ import {
   violatesAdvisoryCopyBar,
 } from '../ingest/stages/semantic/advisory-finding.js';
 import { CONTRACT_PROFILE, isAdvisory, type FindingView } from './api.js';
-import { ADVISORY_COPY, advisoryLabel, splitFindings } from './advisories.js';
+import { ADVISORY_COPY, advisoryIdFromKey, advisoryLabel, splitFindings } from './advisories.js';
+import { findingSignatureKey } from './signatureKey.js';
 
 /** A §7 verdict finding — the kind that DOES carry a grade. */
 function finding(over: Partial<FindingView> = {}): FindingView {
@@ -113,6 +114,33 @@ test('advisoryLabel humanizes an id and leaves an unknown shape alone', () => {
   // rendered as an empty label.
   assert.equal(advisoryLabel('3.2'), '3.2');
   assert.equal(advisoryLabel('adv.'), 'adv.');
+});
+
+/**
+ * THE ROW'S ID COMES BACK OUT OF THE KEY (synm). The compliance column's
+ * advisory row is keyed by the `adv.*` id — it is the `data-req` the
+ * transmission detail's cross-link scrolls to, and what {@link advisoryLabel}
+ * derives the row's words from — but the rolled signature carries only the key
+ * (`req` is the '' sentinel). So this has to be the exact inverse of the key
+ * construction, which is why the expectation is built by round-tripping the
+ * browser's own `findingSignatureKey` rather than by typing `adv|` here.
+ */
+test('advisoryIdFromKey inverts the signature key, and passes anything else through', () => {
+  for (const id of ['adv.null_padding', 'adv.blank_admin', 'adv.abst_window_overlap']) {
+    const key = findingSignatureKey({
+      requirement: id,
+      code: id,
+      detail: null,
+      keyword: null,
+      instancePath: null,
+      param: null,
+      profile: CONTRACT_PROFILE,
+    });
+    assert.equal(advisoryIdFromKey(key), id);
+  }
+
+  // A requirement signature's key carries no advisory id to strip.
+  assert.equal(advisoryIdFromKey('2025|3.2|required|/data|CID'), '2025|3.2|required|/data|CID');
 });
 
 /** Every user-facing string the surface renders, for the copy assertions below. */

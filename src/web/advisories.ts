@@ -44,6 +44,7 @@
  */
 
 import { ADVISORY_PREFIX, isAdvisory, type FindingView } from './api';
+import { ADVISORY_KEY_PREFIX } from './signatureKey';
 
 /**
  * Human label for an advisory id: `adv.null_padding` → `Null padding`.
@@ -60,6 +61,26 @@ export function advisoryLabel(id: string): string {
   const words = id.slice(ADVISORY_PREFIX.length).replaceAll('_', ' ').replaceAll('.', ' ').trim();
   if (words === '') return id;
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The `adv.*` id inside an advisory signature key (synm): `adv|adv.blank_admin`
+ * → `adv.blank_admin`.
+ *
+ * The id is what the compliance column's advisory row needs and the only field
+ * the rolled signature does not carry on its own — `req` is the '' sentinel and
+ * `title` is already the humanized label. The key's shape is the server's
+ * ({@link ADVISORY_KEY_PREFIX}, mirrored in ./signatureKey.ts), so this is the
+ * inverse of that construction rather than a second convention.
+ *
+ * The row uses the id for two things a plain title cannot do: it is the
+ * `data-req` value the cross-link from the transmission detail scrolls to, and
+ * it is what {@link advisoryLabel} derives the row's words from. A key that does
+ * not carry the prefix is returned verbatim, the same forgiving shape as
+ * `advisoryLabel`.
+ */
+export function advisoryIdFromKey(key: string): string {
+  return key.startsWith(ADVISORY_KEY_PREFIX) ? key.slice(ADVISORY_KEY_PREFIX.length) : key;
 }
 
 /**
