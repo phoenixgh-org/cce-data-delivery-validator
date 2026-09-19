@@ -114,6 +114,19 @@ import { parseAbst } from './interval.js';
  */
 export const TIME_NOT_INCREASING_ID = 'adv.time_not_increasing' as const;
 
+/**
+ * THE RATIONALE, static per advisory id. This module is its single owner:
+ * ./advisory.ts collects it into `ADVISORY_RATIONALES`, the API serves it on the
+ * advisory signature, and the browser holds no copy of its own. It carries no
+ * numbers and no branch variant, so the compliance column's advisory row can
+ * show it with no payload in front of it.
+ */
+export const TIME_NOT_INCREASING_RATIONALE =
+  "E006 reads a report's records as a time series with ABST strictly increasing down " +
+  'the array, and the receiving country stores them in the order sent. Sorting records ' +
+  'oldest-first before assembling the array ensures that the order in the payload ' +
+  'reflects the order of the physical readings.';
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -227,11 +240,7 @@ export const timeOrderCheck: SemanticCheck = (ctx: PipelineContext): Finding[] =
       summary:
         `${found.length} ${recordNoun} ${carry} an ABST no later than the one before; the ` +
         `widest step back is ${widestPhrase}.`,
-      detail:
-        "E006 reads a report's records as a time series with ABST strictly increasing down " +
-        'the array, and the receiving country stores them in the order sent. Sorting records ' +
-        'oldest-first before assembling the array ensures that the order in the payload ' +
-        'reflects the order of the physical readings.',
+      detail: TIME_NOT_INCREASING_RATIONALE,
     }),
   ];
 };

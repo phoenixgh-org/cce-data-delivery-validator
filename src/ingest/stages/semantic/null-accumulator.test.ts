@@ -34,7 +34,7 @@ import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
 import { violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
-import { nullAccumulatorCheck } from './null-accumulator.js';
+import { NULL_ACCUMULATOR_RATIONALE, nullAccumulatorCheck } from './null-accumulator.js';
 import { nullPaddingCheck } from './null-padding.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
@@ -465,17 +465,18 @@ test('the copy observes rather than concludes, and offers the mechanism as a sug
   assert.match(copy, /should be an explicit 0/);
   // What the RECEIVING side cannot do is the only thing we can speak to.
   assert.match(copy, /unable to distinguish a period in which the compressor did not run/);
-  // The compressor controller is named as what the numeric records SUGGEST, not
-  // as a cause established from the payload.
-  assert.match(copy, /which suggests the null appears when the compressor controller goes/);
+  // The compressor controller is named as what the numeric records elsewhere in
+  // a report point at, not as a cause established from this payload.
+  assert.match(copy, /the null appears when the compressor controller goes offline/);
+  assert.match(copy, /Where the same objects arrive as numbers in the other records of a report/);
 });
 
-test('the sentence reads as English with one accumulator named and with two (c4c4)', () => {
-  // Pinned VERBATIM in both forms, observation and rationale. Both are assembled
-  // from per-number fragments, so a fragment that is right in one form can be
-  // broken in the other and the suite would not notice: "with nothing beside it
-  // is to account for the null" and "both are accumulators" beside three named
-  // objects both shipped and were read by suppliers.
+test('the observation reads as English with one accumulator named and with two (c4c4)', () => {
+  // Pinned VERBATIM in both forms. The observation is assembled from per-number
+  // fragments, so a fragment that is right in one form can be broken in the
+  // other and the suite would not notice: "with nothing beside it is to account
+  // for the null" and "both are accumulators" beside three named objects both
+  // shipped and were read by suppliers.
   assert.equal(
     summaryOf(OUTAGE),
     '1 of 3 records carries CMPR as null in a period whose SVA is 0, with LERR and EERR blank.',
@@ -486,38 +487,34 @@ test('the sentence reads as English with one accumulator named and with two (c4c
       'EERR blank.',
   );
 
-  // The rationale carries no counts, but its third sentence names the
-  // accumulators this finding was raised on, and the verb agrees with the list.
-  assert.match(
-    detailOf(OUTAGE),
-    /CMPR arrives as a number in the other records of this report/,
-    detailOf(OUTAGE),
-  );
-  assert.match(
-    detailOf(OUTAGE_BOTH),
-    /CMPR and CMPR2 arrive as numbers in the other records of this report/,
-    detailOf(OUTAGE_BOTH),
-  );
-
   // No pronoun+copula splice survives in either form.
-  for (const copy of [detailOf(OUTAGE), detailOf(OUTAGE_BOTH)]) {
+  for (const copy of [summaryOf(OUTAGE), summaryOf(OUTAGE_BOTH)]) {
     assert.doesNotMatch(copy, /beside (it is|they are)\b/, `pronoun+copula splice: ${copy}`);
     assert.doesNotMatch(copy, /\bboth are accumulators\b/, copy);
   }
 });
 
-test('it names what arrived, then why an explicit 0 is what the country can add up', () => {
+test('the rationale is static per id, and names no accumulator the scan found (synm)', () => {
+  // Its third sentence used to substitute in whichever of CMPR/CMPR2 the scan
+  // found, with the verb agreeing with the list. The compliance column now shows
+  // a single expandable row per advisory id with no payload in front of it, so
+  // the approved copy states that sentence in general terms; the observation
+  // above still names this transmission's accumulators.
+  assert.equal(detailOf(OUTAGE), NULL_ACCUMULATOR_RATIONALE);
+  assert.equal(detailOf(OUTAGE_BOTH), NULL_ACCUMULATOR_RATIONALE);
+  assert.doesNotMatch(NULL_ACCUMULATOR_RATIONALE, /CMPR/, 'no accumulator is interpolated');
+});
+
+test('it says why an explicit 0 is what the country can add up', () => {
   assert.equal(
-    detailOf(OUTAGE),
+    NULL_ACCUMULATOR_RATIONALE,
     'With no supplied electricity the compressor could not have run, so the ' +
-      "period's total should be an explicit 0 that the receiving country can add up. A " +
-      'null value here leaves the country unable to distinguish a period in which the ' +
-      'compressor did not run from a period in which the compressor runtime could not be ' +
-      'measured. ' +
-      'CMPR arrives as a number in the other records of this report, which suggests the null ' +
-      'appears when the compressor controller goes offline during a power outage, and a ' +
-      'logger that already knows no power was supplied can report a runtime of 0 rather ' +
-      'than null.',
+      "period's total should be an explicit 0 that the receiving country can add up. A null " +
+      'value here leaves the country unable to distinguish a period in which the compressor ' +
+      'did not run from a period in which the compressor runtime could not be measured. Where ' +
+      'the same objects arrive as numbers in the other records of a report, the null appears ' +
+      'when the compressor controller goes offline during a power outage, and a logger that ' +
+      'already knows no power was supplied can report a runtime of 0 rather than null.',
   );
 });
 

@@ -38,7 +38,7 @@ import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
 import { advisoryCopyBannedWordsWith, violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
-import { nullIdentityCheck } from './null-identity.js';
+import { NULL_IDENTITY_RATIONALE, nullIdentityCheck } from './null-identity.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
 
@@ -284,18 +284,32 @@ test('RTMD: it fires through the real §6 body stages on a 200 with zero fail fi
 
 // ── one identifier per branch (2km, 38p) ─────────────────────────────────────
 
-test('EMS: the observation names the count and how ASER arrived; the rationale is the why', () => {
-  // The approved agj.17 copy, split: summary is the one-line observation shown
-  // on the advisory row, detail the rationale behind its expander.
+test('EMS: the observation names the count and how ASER arrived', () => {
+  // The summary is the one-line observation shown on the advisory row; the
+  // rationale behind the expander is static per id and pinned below.
   assert.equal(
     summaryOf(EMS_UNIDENTIFIED),
     '1 of 1 report carries no appliance serial number — ASER is null.',
   );
+});
+
+test('the rationale is ONE static text for both branches, pinned verbatim (synm)', () => {
+  // Approved 2026-09-18, replacing the per-branch paragraphs. The compliance
+  // column shows a single expandable row per advisory id with no payload in
+  // front of it, so a branch-dependent text would render whichever branch
+  // happened to arrive last. The approved copy names ASER and AMID in turn.
+  assert.equal(detailOf(EMS_UNIDENTIFIED), NULL_IDENTITY_RATIONALE);
+  assert.equal(detailOf(RTM_UNIDENTIFIED), NULL_IDENTITY_RATIONALE);
   assert.equal(
-    detailOf(EMS_UNIDENTIFIED),
-    'ASER is the appliance serial number, as assigned by the manufacturer. No other ID is an ' +
-      'adequate substitute. Without this attribute, the receiving country cannot tie the ' +
-      'records to the appliance.',
+    NULL_IDENTITY_RATIONALE,
+    "This advisory looks at the one identifier that ties a report's records to an appliance, " +
+      'and that identifier differs by report type. For an `ems-report` it is `ASER`, the ' +
+      'appliance serial number as assigned by the manufacturer; no other ID is an adequate ' +
+      'substitute. For an `rtmd-report` it is `AMID`, the identifier under which the ' +
+      "supplier's platform holds the appliance. The schema requires `AMID` as a non-null " +
+      'string, so a blank is the only empty form that passes, and neither `ASER` nor `AID` ' +
+      'stands in for it on a retrofitted logger. Without this identifier, the receiving ' +
+      'country cannot tie the records to an appliance.',
   );
 });
 
@@ -368,20 +382,13 @@ test('EMS: AMID is never reported as missing on a branch that never defined it',
   assert.doesNotMatch(copy, /AMID is null|AMID is empty|AMID was not sent/);
 });
 
-test('RTMD: the observation names AMID, and the rationale is the branch’s own', () => {
+test('RTMD: the observation names AMID and nothing wider', () => {
   // NOT "no appliance identifier" (67tf). This advisory reads AMID alone, and
   // fires while ASER and AID may be populated — see the RTMD case below — so the
   // claim is scoped to the supplier's own platform handle and nothing wider.
   assert.equal(
     summaryOf(RTM_UNIDENTIFIED),
     '1 of 1 report carries no supplier-platform appliance identifier — AMID is empty.',
-  );
-  assert.equal(
-    detailOf(RTM_UNIDENTIFIED),
-    "AMID is the identifier under which the supplier's platform holds the appliance. The " +
-      'schema requires it as a non-null string, so a blank is the only form that passes, and ' +
-      'neither ASER nor AID stands in for it on a retrofitted logger. Without this attribute, ' +
-      "the receiving country cannot tie the records to an appliance in the supplier's platform.",
   );
 });
 

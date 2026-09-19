@@ -153,6 +153,22 @@ import { MIN_RECORDS } from './null-padding.js';
 export const CMPR_MINUTES_ID = 'adv.cmpr_minutes' as const;
 
 /**
+ * THE RATIONALE, static per advisory id. This module is its single owner:
+ * ./advisory.ts collects it into `ADVISORY_RATIONALES`, the API serves it on the
+ * advisory signature, and the browser holds no copy of its own. It carries no
+ * numbers and no branch variant, so the compliance column's advisory row can
+ * show it with no payload in front of it.
+ */
+export const CMPR_MINUTES_RATIONALE =
+  'In DS01.2 Annex 2, the unit for CMPR was incorrectly recorded as minutes (i.e., ' +
+  'within a 15 minute period). However, Annex 1 is authoritative on units and records ' +
+  'CMPR in seconds. When this discrepancy was detected, the cce-interop JSON schema was ' +
+  'corrected at 0.8.0, with the CMPR value capped at 900 (i.e., the total seconds in 15 ' +
+  'minutes); the published Annex 2 has not been corrected and still reads minutes. ' +
+  'Loggers recording minute values will validate against the schema because 0–15 sits ' +
+  'inside 0–900, but minute values do not match the unit Annex 1 prescribes.';
+
+/**
  * The superseded `maximum` on CMPR/CMPR2, in minutes — the ceiling a feed built
  * against 0.7.2 or the DS01.2 Annex 2 schema was held to by its own validator.
  */
@@ -279,14 +295,7 @@ export const cmprMinutesCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
       id: CMPR_MINUTES_ID,
       pointer: saturationPointer ?? tripped[0]!.firstPointer,
       summary: `All ${values} ${named} values are ${MINUTES_CEILING} or below${saturationClause}`,
-      detail:
-        'In DS01.2 Annex 2, the unit for CMPR was incorrectly recorded as minutes (i.e., ' +
-        'within a 15 minute period). However, Annex 1 is authoritative on units and records ' +
-        'CMPR in seconds. When this discrepancy was detected, the cce-interop JSON schema was ' +
-        'corrected at 0.8.0, with the CMPR value capped at 900 (i.e., the total seconds in 15 ' +
-        'minutes); the published Annex 2 has not been corrected and still reads minutes. ' +
-        'Loggers recording minute values will validate against the schema because 0–15 sits ' +
-        'inside 0–900, but minute values do not match the unit Annex 1 prescribes.',
+      detail: CMPR_MINUTES_RATIONALE,
     }),
   ];
 };

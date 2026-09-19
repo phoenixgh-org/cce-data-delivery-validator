@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { advisoryRationale } from '../ingest/stages/semantic/advisory.js';
 import {
   computeSignatures,
   contractIssueSignatures,
@@ -293,6 +294,46 @@ test('computeSignatures: advisories fold with kind advisory, sev info, req ""', 
   assert.equal(sig.first, '2026-06-17T14:00:00.000Z');
   assert.equal(sig.last, '2026-06-17T14:05:00.000Z');
   assert.equal(sig.examplePointer, '/data/0/records/0/TCON');
+});
+
+test('computeSignatures: an advisory signature carries the catalogue rationale (synm)', () => {
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [adv('adv.null_padding')]),
+  ]);
+  assert.equal(
+    sigs[0]!.rationale,
+    advisoryRationale('adv.null_padding'),
+    'the served text is the catalogue text',
+  );
+  assert.ok(sigs[0]!.rationale, 'and it is not blank');
+});
+
+test('computeSignatures: the rationale is resolved by ID, never read off a finding', () => {
+  // A finding stored earlier in the retention window carries whatever `detail`
+  // was current when it was ingested; the catalogue carries what is current now.
+  // One row must not show two suppliers different wording for one advisory, so
+  // the id is what the lookup uses and the stored prose is ignored.
+  const stale = adv('adv.null_padding', { detail: 'wording from an earlier release' });
+  const sigs = computeSignatures([tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [stale])]);
+  assert.equal(sigs[0]!.rationale, advisoryRationale('adv.null_padding'));
+  assert.notEqual(sigs[0]!.rationale, 'wording from an earlier release');
+});
+
+test('computeSignatures: only advisories carry a rationale, and unknown ids carry none', () => {
+  // A §7 signature is a defect, and its explanation is the requirement text the
+  // matrix already carries — the KEY is absent rather than null, so a deepEqual
+  // pin on a non-advisory signature is unchanged by this field existing.
+  const sigs = computeSignatures([
+    tx('t1', '2026-06-17T14:00:00.000Z', 'nairobi', [
+      finding({ requirement: '1.2', code: 'tx.missing_charset' }),
+      // An id the catalogue does not hold: a finding stored under a since-renamed
+      // advisory still reaches the API inside the retention window.
+      adv('adv.never_registered'),
+    ]),
+  ]);
+  for (const sig of sigs) {
+    assert.ok(!('rationale' in sig), `${sig.key} carries a rationale key`);
+  }
 });
 
 test('computeSignatures: advisories never displace or merge with issue signatures', () => {

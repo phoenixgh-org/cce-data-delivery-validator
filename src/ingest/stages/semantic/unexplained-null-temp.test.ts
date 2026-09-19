@@ -39,7 +39,10 @@ import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
 import { isAdvisoryId } from './advisory.js';
 import { violatesAdvisoryCopyBar } from './advisory-finding.js';
-import { unexplainedNullTempCheck } from './unexplained-null-temp.js';
+import {
+  UNEXPLAINED_NULL_TEMP_RATIONALE,
+  unexplainedNullTempCheck,
+} from './unexplained-null-temp.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
 
@@ -549,18 +552,36 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 
 // ── wording is acceptance, not polish ────────────────────────────────────────
 
-test('it names what arrived, then why a null TVC is worth following up', () => {
+test('RTMD: the observation names what arrived, and is unchanged by the static rationale', () => {
   assert.equal(
     summaryOf(RTM_UNEXPLAINED),
     '1 of 1 record carries TVC as null with LERR and EERR both blank.',
   );
+});
+
+test('the rationale is ONE static text for both arms, pinned verbatim (synm)', () => {
+  // Approved 2026-09-18, replacing the per-arm texts. The compliance column
+  // shows a single expandable row per advisory id with no payload in front of
+  // it, so an arm-dependent text would render whichever arm happened to arrive
+  // last. The approved copy states the EMS condition and the RTMD condition in
+  // turn, and carries none of either arm's numbers.
+  assert.equal(detailOf(RTM_UNEXPLAINED), UNEXPLAINED_NULL_TEMP_RATIONALE);
+  assert.equal(detailOf(EMS_BLANK_LERR), UNEXPLAINED_NULL_TEMP_RATIONALE);
   assert.equal(
-    detailOf(RTM_UNEXPLAINED),
-    'rtmd-record allows a null TVC without tying it to anything that accounts for it, so ' +
-      'these records are fully conformant. However, TVC is the most essential measurement ' +
-      'for protecting vaccine health, so null TVC values should be investigated to ensure ' +
-      'proper device operation.',
+    UNEXPLAINED_NULL_TEMP_RATIONALE,
+    'A null temperature reading leaves the receiving country without the measurement that ' +
+      'matters most, so what accompanies the null is what makes it interpretable. Which ' +
+      'condition this advisory looks for depends on the report type. For an `ems-report` it ' +
+      'is a null `TVC` whose logger error code is blank space: the schema accepts any ' +
+      'one-character string as an error code, so this passes validation, but blank space ' +
+      'explains nothing about why the reading is missing. A null reading with a real code ' +
+      'names a sensor or logger condition; a null with blank space is indistinguishable from ' +
+      'an unexplained gap. For an `rtmd-report`, `rtmd-record` allows a null `TVC` without ' +
+      'tying it to anything that accounts for it, so these records are fully conformant. In ' +
+      'both cases `TVC` is the most essential measurement for protecting vaccine health, so ' +
+      'null values should be investigated to ensure proper device operation.',
   );
+  assert.doesNotMatch(UNEXPLAINED_NULL_TEMP_RATIONALE, /\bRecord \d|\d+ of \d+/, 'no numbers');
 });
 
 test('the copy carries no defect vocabulary and no synonym for the category', () => {
@@ -584,8 +605,14 @@ test('the copy concludes nothing about the device', () => {
   // "a quiet null may be ordinary on an RTMD", which read as a reason to leave
   // it alone. It still names no cause: a reading the device did not take and one
   // it could not obtain are indistinguishable from the receiving side.
+  //
+  // `sensor` is not on this list, unlike before the arms merged (synm): the one
+  // rationale now carries the EMS sentence "names a sensor or logger condition",
+  // which says what a REAL error code would do and not what this device did. The
+  // EMS copy test has always allowed it for that reason; the list below is the
+  // one both arms are now held to.
   const copy = `${summaryOf(RTM_UNEXPLAINED)} ${detailOf(RTM_UNEXPLAINED)}`;
-  assert.doesNotMatch(copy, /sensor|broke|broken|fault|faulty|suppress/i, `concludes: ${copy}`);
+  assert.doesNotMatch(copy, /broke|broken|fault|faulty|suppress/i, `concludes: ${copy}`);
   assert.match(detailOf(RTM_UNEXPLAINED), /fully conformant/, 'the payload is not faulted');
 });
 
@@ -596,39 +623,27 @@ test('the observation stands alone per transmission', () => {
   assert.doesNotMatch(summary, /this session|every transmission/i);
 });
 
-// ── the EMS arm's approved copy, pinned verbatim (xwgr, approved 2026-09-18) ──
+// ── the EMS arm's approved copy, pinned verbatim (xwgr / synm, 2026-09-18) ────
 
-/** The rationale half of the EMS detail, identical on both the singular and plural forms. */
-const EMS_RATIONALE =
-  'The schema accepts any one-character string as an error code, so this passes validation, ' +
-  'but blank space explains nothing about why the reading is missing. A null reading with a ' +
-  'real code names a sensor or logger condition; a null with blank space is indistinguishable ' +
-  'from an unexplained gap.';
-
-test('EMS: the approved observation carries no numbers and the detail names the record', () => {
+test('EMS: the observation names the record, which is where this payload’s numbers live', () => {
+  // The record reference used to open the detail (xwgr). It moved into the
+  // summary when the rationale went static (synm), so the transmission detail
+  // still shows which record of this delivery carried the null.
   assert.equal(
     summaryOf(EMS_BLANK_LERR),
-    'A temperature reading is null and the logger error code beside it is blank space.',
-  );
-  assert.equal(
-    detailOf(EMS_BLANK_LERR),
-    `Record 0 carries TVC null with LERR set to whitespace only. ${EMS_RATIONALE}`,
+    'Record 0 carries TVC null with LERR set to whitespace only.',
   );
 });
 
 test('EMS: more than one offending record pluralises the way the rtm arm does', () => {
   // emsPayload applies its override to all three records, so this is the plural
-  // form: the approved sentences stand and only the record reference changes.
+  // form: only the record reference changes, and the rationale does not move.
   const payload = emsPayload({ TVC: null, LERR: '   ' });
   assert.equal(
     summaryOf(payload),
-    'A temperature reading is null and the logger error code beside it is blank space.',
-    'the observation is static on this arm',
+    '3 of 3 records carry TVC null with LERR set to whitespace only.',
   );
-  assert.equal(
-    detailOf(payload),
-    `3 of 3 records carry TVC null with LERR set to whitespace only. ${EMS_RATIONALE}`,
-  );
+  assert.equal(detailOf(payload), UNEXPLAINED_NULL_TEMP_RATIONALE);
 });
 
 test('PIN: the §7 summary is identical with and without the EMS advisory', async () => {

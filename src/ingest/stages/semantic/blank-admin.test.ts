@@ -34,7 +34,12 @@ import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
 import { violatesAdvisoryCopyBar } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
-import { blankAdminCheck } from './blank-admin.js';
+import {
+  BLANK_ADMIN_RATIONALE,
+  EMS_ADMIN_FIELDS,
+  RTMD_ADMIN_FIELDS,
+  blankAdminCheck,
+} from './blank-admin.js';
 import { nullIdentityCheck } from './null-identity.js';
 
 const JSON_UTF8 = 'application/json; charset=utf-8';
@@ -466,38 +471,53 @@ test('PIN: the §7 summary is identical with and without this advisory', async (
 
 // ── wording is acceptance, not polish ────────────────────────────────────────
 
-test('EMS: the observation names the count and every blank field, and the rationale the branch', () => {
+test('EMS: the observation names the count and every blank field', () => {
   assert.equal(
     summaryOf(EMS_BLANK_ADMIN),
     '1 of 1 report delivers required admin objects blank — AMFR is null and LMOD is empty.',
   );
-  assert.equal(
-    detailOf(EMS_BLANK_ADMIN),
-    'These objects describe the country, appliance, logger and monitoring device once per ' +
-      'report. The ems-report requires them but accepts null and sets no minimum length, so ' +
-      'a blank satisfies the schema. These objects are important and should not be blank; a ' +
-      'receiving country cannot infer the correct values.',
-  );
 });
 
-test('RTMD: the rationale names its own branch and only the objects it reads', () => {
-  // The approved copy (agj.17, 2026-09-15) is one paragraph for both branches.
-  // Two things vary: the name of the report schema whose `required` list was
-  // read, and the opening sentence's categories — rtmd-report's admin list
-  // (CID EDOP EMFR EMOD EPQS ESER) holds no appliance and no logger object, so
-  // naming them would be untrue on this branch (uvjd, decided 2026-09-18).
-  // Pinned verbatim rather than derived from the EMS string: a derivation would
-  // follow the EMS copy wherever it went.
+test('RTMD: the observation is the branch’s own, and names no object it never read', () => {
   assert.equal(
     summaryOf(RTM_BLANK_ADMIN),
     '1 of 1 report delivers required admin objects blank — EMFR is null.',
   );
+});
+
+test('the rationale is ONE static text for both branches, pinned verbatim (synm)', () => {
+  // Approved 2026-09-18, replacing the per-branch variants. The compliance
+  // column shows a single expandable row per advisory id with no payload in
+  // front of it, so a branch-dependent text would render whichever branch
+  // happened to arrive last. The approved copy names both branches instead.
+  assert.equal(detailOf(EMS_BLANK_ADMIN), BLANK_ADMIN_RATIONALE);
+  assert.equal(detailOf(RTM_BLANK_ADMIN), BLANK_ADMIN_RATIONALE);
   assert.equal(
-    detailOf(RTM_BLANK_ADMIN),
-    'These objects describe the country and the monitoring device once per report. The ' +
-      'rtmd-report requires them but accepts null and sets no minimum length, so a blank ' +
-      'satisfies the schema. These objects are important and should not be blank; a ' +
-      'receiving country cannot infer the correct values.',
+    BLANK_ADMIN_RATIONALE,
+    'Administrative objects describe the equipment once per report. Which objects this ' +
+      'advisory reads depends on the report type. For an `ems-report` it reads 15 objects ' +
+      'describing the country, appliance, logger and monitoring device. For an `rtmd-report` ' +
+      'it reads 6, describing the country and the monitoring device; an RTMD report has no ' +
+      'required appliance or logger objects. Both schemas require these objects but accept ' +
+      'null and set no minimum length, so a blank satisfies the schema. These objects are ' +
+      'important and should not be blank; a receiving country cannot infer the correct values.',
+  );
+});
+
+test('PIN: the counts in the rationale are the lengths of the field lists themselves', () => {
+  // The copy states two numbers a supplier will act on — how many objects the
+  // advisory reads on each branch. A field added to or removed from either list
+  // would otherwise leave the sentence quietly wrong, and nothing in the suite
+  // would say so. Derived from the lists, never from a literal.
+  assert.match(
+    BLANK_ADMIN_RATIONALE,
+    new RegExp(`For an \`ems-report\` it reads ${EMS_ADMIN_FIELDS.length} objects`),
+    `EMS_ADMIN_FIELDS holds ${EMS_ADMIN_FIELDS.length} objects: ${BLANK_ADMIN_RATIONALE}`,
+  );
+  assert.match(
+    BLANK_ADMIN_RATIONALE,
+    new RegExp(`For an \`rtmd-report\` it reads ${RTMD_ADMIN_FIELDS.length},`),
+    `RTMD_ADMIN_FIELDS holds ${RTMD_ADMIN_FIELDS.length} objects: ${BLANK_ADMIN_RATIONALE}`,
   );
 });
 

@@ -35,7 +35,11 @@ import { parseStage } from '../parse.js';
 import { schemaStage } from '../schema.js';
 import { semanticStage, type SemanticDeps } from '../semantic.js';
 import { sizeStage } from '../size.js';
-import { ABST_WINDOW_OVERLAP_ID, abstWindowOverlapCheck } from './abst-window-overlap.js';
+import {
+  ABST_WINDOW_OVERLAP_ID,
+  ABST_WINDOW_OVERLAP_RATIONALE,
+  abstWindowOverlapCheck,
+} from './abst-window-overlap.js';
 import { findAdvisoryCopyViolation } from './advisory-finding.js';
 import { isAdvisoryId } from './advisory.js';
 
@@ -276,16 +280,22 @@ test('an overlapping prior raises the approved copy verbatim', async () => {
   assert.equal(rest.length, 0, 'one advisory per unit');
   assert.ok(finding);
 
+  // The five timestamps are the OBSERVATION (synm): they describe this delivery
+  // and the one it overlaps, so they move with the finding rather than with the
+  // advisory id.
   assert.equal(
     finding.summary,
-    'The timestamps in this report overlap a report received earlier in this session for the ' +
-      'same appliance.',
-  );
-  assert.equal(
-    finding.detail,
     'Records for appliance id AMID appliance-1 span 2020-01-15T04:00:00Z to ' +
       '2020-01-15T04:45:00Z. A report received at 2026-09-18T09:14:07Z for the same appliance ' +
-      'spans 2020-01-15T03:30:00Z to 2020-01-15T04:15:00Z, and the two bodies differ. ' +
+      'spans 2020-01-15T03:30:00Z to 2020-01-15T04:15:00Z, and the two bodies differ.',
+  );
+  // The rationale is static per advisory id, so the finding carries the
+  // catalogue text and nothing of this payload.
+  assert.equal(finding.detail, ABST_WINDOW_OVERLAP_RATIONALE);
+  assert.equal(
+    finding.detail,
+    'A report whose timestamps overlap a report already received for the same appliance ' +
+      'leaves the receiving country to decide which copy of the overlapping period to keep. ' +
       'Overlapping windows are what a record chunk appended to the previous delivery looks ' +
       'like from the receiving side; they are also what two deliveries that legitimately cover ' +
       'adjoining periods look like when a clock or a boundary is off by a little. Exact ' +
@@ -293,21 +303,30 @@ test('an overlapping prior raises the approved copy verbatim', async () => {
   );
 });
 
+test('the rationale names no appliance and no timestamp', async () => {
+  // Static per id means it has to read correctly on a row that has no payload in
+  // front of it: an interpolated span or serial would be a claim about whichever
+  // transmission happened to arrive last.
+  const [finding] = await checkOnly(SECOND_DELIVERY, [priorWindow()]);
+  assert.doesNotMatch(finding?.detail ?? '', /\d{4}-\d{2}-\d{2}T/, 'no timestamp');
+  assert.doesNotMatch(finding?.detail ?? '', /appliance-1|A-SerialNum|AMID|ASER/, 'no identity');
+});
+
 test('every timestamp renders ISO 8601 UTC to the second', async () => {
   // The bounds arrived as compact ABST strings and the received_at carries
   // milliseconds; both are read beside each other, so both are rendered one way.
   const [finding] = await checkOnly(SECOND_DELIVERY, [priorWindow()]);
-  const stamps = (finding?.detail ?? '').match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/g) ?? [];
+  const stamps = (finding?.summary ?? '').match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/g) ?? [];
   assert.equal(
     stamps.length,
     5,
     "this body's two bounds, the prior's received_at, and the prior's two bounds",
   );
   assert.ok(
-    !/\d{8}T\d{6}Z/.test(finding?.detail ?? ''),
+    !/\d{8}T\d{6}Z/.test(finding?.summary ?? ''),
     'no compact ABST form survives into the copy',
   );
-  assert.ok(!/\.\d{3}Z/.test(finding?.detail ?? ''), 'no milliseconds survive into the copy');
+  assert.ok(!/\.\d{3}Z/.test(finding?.summary ?? ''), 'no milliseconds survive into the copy');
 });
 
 test('an ASER-keyed report names the serial namespace', async () => {
@@ -315,8 +334,8 @@ test('an ASER-keyed report names the serial namespace', async () => {
     priorWindow({ unit_key: 'aser:A-SerialNum' }),
   ]);
   assert.ok(
-    finding?.detail?.startsWith('Records for appliance serial ASER A-SerialNum span '),
-    `expected the ASER namespace, got: ${finding?.detail}`,
+    finding?.summary?.startsWith('Records for appliance serial ASER A-SerialNum span '),
+    `expected the ASER namespace, got: ${finding?.summary}`,
   );
 });
 
@@ -373,7 +392,7 @@ test('a prior for a different appliance raises nothing', async () => {
 test('one advisory per appliance, and only for the appliance with a prior', async () => {
   const findings = await checkOnly(TWO_APPLIANCES, [priorWindow()]);
   assert.equal(findings.length, 1, 'appliance-2 has no prior and draws nothing');
-  assert.ok(findings[0]?.detail?.includes('AMID appliance-1'));
+  assert.ok(findings[0]?.summary?.includes('AMID appliance-1'));
   assert.equal(findings[0]?.pointer, '/data/0');
 });
 
@@ -390,8 +409,8 @@ test('several overlapping priors raise ONE advisory naming the most recent', asy
   ]);
   assert.equal(findings.length, 1, 'one advisory per unit, however many priors overlap');
   assert.ok(
-    findings[0]?.detail?.includes('received at 2026-09-18T11:00:00Z'),
-    `expected the most recent prior, got: ${findings[0]?.detail}`,
+    findings[0]?.summary?.includes('received at 2026-09-18T11:00:00Z'),
+    `expected the most recent prior, got: ${findings[0]?.summary}`,
   );
 });
 

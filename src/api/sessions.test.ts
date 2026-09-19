@@ -25,7 +25,7 @@ import {
   type InsertFindingInput,
 } from '../db/repository.js';
 import { stampProfiles, type Finding } from '../ingest/pipeline.js';
-import { advisory } from '../ingest/stages/semantic/advisory.js';
+import { advisory, advisoryRationale } from '../ingest/stages/semantic/advisory.js';
 import { sigKey } from './signatures.js';
 import type { SignatureFinding } from './signatures.js';
 
@@ -1084,15 +1084,12 @@ test(
       // emission helper — the shape under test is the one production emits.
       const advisories = [
         advisory({
-          // The ems branch of nullIdentityCheck as it reads today (1o64, agj.17):
-          // the advisory reads ASER alone there, and never claims the report names
-          // no appliance at all.
+          // nullIdentityCheck on an ems payload as it reads today (1o64, synm):
+          // the observation carries this transmission's numbers, and the
+          // rationale is the catalogue's one static text for both branches.
           id: 'adv.null_identity',
           summary: '1 of 1 report carries no appliance serial number — ASER is null.',
-          detail:
-            'ASER is the appliance serial number, as assigned by the manufacturer. No other ' +
-            'ID is an adequate substitute. Without this attribute, the receiving country ' +
-            'cannot tie the records to the appliance.',
+          detail: advisoryRationale('adv.null_identity') ?? '',
           pointer: '/data/0',
         }),
         advisory({

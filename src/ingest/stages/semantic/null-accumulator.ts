@@ -122,10 +122,13 @@
  * country, and the mechanism the numeric records elsewhere in the report point
  * at.
  *
- * The rationale carries no counts, but it does name the ACCUMULATORS — the third
- * sentence is about the objects this finding is raised on, so `CMPR` in the
- * approved copy is substituted with whatever {@link ACCUMULATOR_KEYS} the scan
- * actually found, and the verb agrees with the list.
+ * THE RATIONALE IS STATIC (synm, approved 2026-09-18). Its third sentence used
+ * to name the accumulators the scan actually found, substituted from
+ * {@link ACCUMULATOR_KEYS} with the verb agreeing with the list. The compliance
+ * column now carries a single expandable row per advisory id, which has one
+ * rationale to show and no payload in front of it, so that sentence is stated in
+ * general terms instead; the summary already names the accumulators this
+ * transmission raised the advisory on. See {@link NULL_ACCUMULATOR_RATIONALE}.
  *
  * Observe, never conclude. We say what arrived and what the receiving country
  * therefore cannot tell apart. We do not say the device broke and we do not say
@@ -155,6 +158,23 @@ const SUPPLY_KEY = 'SVA';
 
 /** The codes that can explain a null, in the order the prose names them. */
 const ERROR_CODES = ['LERR', 'EERR'] as const;
+
+/**
+ * THE RATIONALE, static per advisory id and approved verbatim (synm, Benson,
+ * 2026-09-18). This module is its single owner: ./advisory.ts collects it into
+ * `ADVISORY_RATIONALES`, the API serves it on the advisory signature, and the
+ * browser holds no copy of its own.
+ *
+ * It names no accumulator and carries no counts — the summary does both.
+ */
+export const NULL_ACCUMULATOR_RATIONALE =
+  'With no supplied electricity the compressor could not have run, so the ' +
+  "period's total should be an explicit 0 that the receiving country can add up. A null " +
+  'value here leaves the country unable to distinguish a period in which the compressor did ' +
+  'not run from a period in which the compressor runtime could not be measured. Where the ' +
+  'same objects arrive as numbers in the other records of a report, the null appears when ' +
+  'the compressor controller goes offline during a power outage, and a logger that already ' +
+  'knows no power was supplied can report a runtime of 0 rather than null.';
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -265,7 +285,6 @@ export const nullAccumulatorCheck: SemanticCheck = (ctx: PipelineContext): Findi
   const recordNoun = totalRecords === 1 ? 'record' : 'records';
   const verb = affected === 1 ? 'carries' : 'carry';
   const list = joinPhrases([...named].sort());
-  const listArrives = named.size === 1 ? 'arrives as a number' : 'arrive as numbers';
 
   return [
     advisory({
@@ -274,16 +293,7 @@ export const nullAccumulatorCheck: SemanticCheck = (ctx: PipelineContext): Findi
       summary:
         `${affected} of ${totalRecords} ${recordNoun} ${verb} ${list} as null in a period ` +
         `whose ${SUPPLY_KEY} is 0, with ${ERROR_CODES.join(' and ')} blank.`,
-      detail:
-        'With no supplied electricity the compressor could not have run, so the ' +
-        "period's total should be an explicit 0 that the receiving country can add up. A " +
-        'null value here leaves the country unable to distinguish a period in which the ' +
-        'compressor did not run from a period in which the compressor runtime could not be ' +
-        'measured. ' +
-        `${list} ${listArrives} in the other records of this report, which suggests the null ` +
-        'appears when the compressor controller goes offline during a power outage, and a ' +
-        'logger that already knows no power was supplied can report a runtime of 0 rather ' +
-        'than null.',
+      detail: NULL_ACCUMULATOR_RATIONALE,
     }),
   ];
 };

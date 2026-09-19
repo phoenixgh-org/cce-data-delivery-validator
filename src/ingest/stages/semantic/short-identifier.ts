@@ -156,6 +156,20 @@ import { advisory } from './advisory-finding.js';
 export const SHORT_IDENTIFIER_ID = 'adv.short_identifier' as const;
 
 /**
+ * THE RATIONALE, static per advisory id. This module is its single owner:
+ * ./advisory.ts collects it into `ADVISORY_RATIONALES`, the API serves it on the
+ * advisory signature, and the browser holds no copy of its own. It carries no
+ * numbers and no branch variant, so the compliance column's advisory row can
+ * show it with no payload in front of it.
+ */
+export const SHORT_IDENTIFIER_RATIONALE =
+  'A national cold chain in a large country might hold over 50,000 appliances across ' +
+  'several suppliers, but three alphanumeric characters span only 46,656 values. An ' +
+  'identifier of this width is not likely to distinguish the members of a national ' +
+  'fleet, much less a global population of equipment. Review the structure of these ' +
+  'values to ensure they are suitable for the intended scale of deployment.';
+
+/**
  * The shortest identifier this check treats as able to address a national fleet.
  * Four characters of a 36-symbol alphanumeric alphabet give 1,679,616 distinct
  * values; three give 46,656. See the header for the full argument.
@@ -301,12 +315,7 @@ export const shortIdentifierCheck: SemanticCheck = (ctx: PipelineContext): Findi
       summary:
         `${affected} of ${total} ${reportNoun} ${verb} an identifier under four characters — ` +
         `${lead}${list}.`,
-      detail:
-        'A national cold chain in a large country might hold over 50,000 appliances across ' +
-        'several suppliers, but three alphanumeric characters span only 46,656 values. An ' +
-        'identifier of this width is not likely to distinguish the members of a national ' +
-        'fleet, much less a global population of equipment. Review the structure of these ' +
-        'values to ensure they are suitable for the intended scale of deployment.',
+      detail: SHORT_IDENTIFIER_RATIONALE,
     }),
   ];
 };

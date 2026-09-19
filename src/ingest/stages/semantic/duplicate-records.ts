@@ -150,6 +150,21 @@ import { advisory } from './advisory-finding.js';
  */
 export const DUPLICATE_RECORDS_ID = 'adv.duplicate_records' as const;
 
+/**
+ * THE RATIONALE, static per advisory id. This module is its single owner:
+ * ./advisory.ts collects it into `ADVISORY_RATIONALES`, the API serves it on the
+ * advisory signature, and the browser holds no copy of its own. It carries no
+ * numbers and no branch variant, so the compliance column's advisory row can
+ * show it with no payload in front of it.
+ */
+export const DUPLICATE_RECORDS_RATIONALE =
+  'Two records that share the same timestamp force the country to perform the ' +
+  'de-duplication or to risk duplicate records landing twice in every average, total ' +
+  'and alarm tally. Countries should anticipate occasional duplicate transmissions, ' +
+  'which requirements clause 1.8 allows after a delivery failure or on request, but ' +
+  'duplicate records within a single transmission cannot be explained by ' +
+  "retransmission and are worth checking in the supplier's assembly step.";
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -256,13 +271,7 @@ export const duplicateRecordsCheck: SemanticCheck = (ctx: PipelineContext): Find
       summary:
         `${repeats.length} ${noun} ${verb} an earlier record in the same report — ` +
         `${sameAbst} by ABST, ${identical} identical in full.`,
-      detail:
-        'Two records that share the same timestamp force the country to perform the ' +
-        'de-duplication or to risk duplicate records landing twice in every average, total ' +
-        'and alarm tally. Countries should anticipate occasional duplicate transmissions, ' +
-        'which requirements clause 1.8 allows after a delivery failure or on request, but ' +
-        'duplicate records within a single transmission cannot be explained by ' +
-        "retransmission and are worth checking in the supplier's assembly step.",
+      detail: DUPLICATE_RECORDS_RATIONALE,
     }),
   ];
 };

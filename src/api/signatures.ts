@@ -46,7 +46,11 @@
  */
 
 import { clauseUnderLens } from './lens.js';
-import { ADVISORY_PREFIX, isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
+import {
+  ADVISORY_PREFIX,
+  advisoryRationale,
+  isAdvisoryId,
+} from '../ingest/stages/semantic/advisory.js';
 import { CONTRACT_PROFILE } from '../schema-registry.js';
 import type { Profile } from '../schema-registry.js';
 
@@ -161,6 +165,23 @@ export interface Signature {
    * would then have two homes.
    */
   requirementUnderLens?: string;
+  /**
+   * Why a receiving country cares about this advisory (synm). PRESENT ONLY on an
+   * advisory signature: a §7 signature is a defect, and its explanation is the
+   * requirement text the matrix already carries.
+   *
+   * Resolved from {@link advisoryRationale} by advisory id, NOT read off a
+   * representative finding. The rationale is static per id, so the catalogue is
+   * the current text while a stored finding's `detail` is whatever was current
+   * when it was ingested, and a signature folds findings from across the
+   * retention window. Reading the catalogue means one row never shows two
+   * suppliers different wording for the same advisory.
+   *
+   * Absent for an id the catalogue does not hold, which is what a row stored
+   * under a since-renamed advisory produces; the browser shows no rationale
+   * rather than inventing one.
+   */
+  rationale?: string;
 }
 
 /**
@@ -350,6 +371,8 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
     first: string;
     last: string;
     examplePointer: string | null;
+    /** The catalogue rationale for an advisory; null for every other kind. */
+    rationale: string | null;
   }
 
   const map = new Map<string, Group>();
@@ -375,6 +398,9 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
           first: tx.received_at,
           last: tx.received_at,
           examplePointer: f.pointer ?? null,
+          // From the catalogue, keyed by id — never from this finding's stored
+          // `detail` (see Signature.rationale).
+          rationale: adv ? advisoryRationale(advisoryIdOf(f)) : null,
         };
         map.set(k, g);
       }
@@ -402,6 +428,10 @@ export function computeSignatures(transmissions: readonly SignatureTransmission[
       first: g.first,
       last: g.last,
       examplePointer: g.examplePointer,
+      // Spread rather than assigned, so a non-advisory signature carries no
+      // `rationale` KEY at all: an explicit `undefined` would serialize away on
+      // the wire but still compare unequal in a deepEqual pin.
+      ...(g.rationale === null ? {} : { rationale: g.rationale }),
     }))
     .sort((a, b) => b.count - a.count);
 }

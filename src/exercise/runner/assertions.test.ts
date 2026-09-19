@@ -526,14 +526,20 @@ test('"error code" is exempt, so the approved EMS whitespace-LERR copy passes', 
   const approved = auditAdvisoryCopy(
     advisoryFindings([
       {
-        summary:
-          'A temperature reading is null and the logger error code beside it is blank space.',
+        summary: 'Record 0 carries TVC null with LERR set to whitespace only.',
         detail:
-          'Record 0 carries TVC null with LERR set to whitespace only. The schema accepts any ' +
-          'one-character string as an error code, so this passes validation, but blank space ' +
-          'explains nothing about why the reading is missing. A null reading with a real code ' +
-          'names a sensor or logger condition; a null with blank space is indistinguishable ' +
-          'from an unexplained gap.',
+          'A null temperature reading leaves the receiving country without the measurement ' +
+          'that matters most, so what accompanies the null is what makes it interpretable. ' +
+          'Which condition this advisory looks for depends on the report type. For an ' +
+          '`ems-report` it is a null `TVC` whose logger error code is blank space: the schema ' +
+          'accepts any one-character string as an error code, so this passes validation, but ' +
+          'blank space explains nothing about why the reading is missing. A null reading with ' +
+          'a real code names a sensor or logger condition; a null with blank space is ' +
+          'indistinguishable from an unexplained gap. For an `rtmd-report`, `rtmd-record` ' +
+          'allows a null `TVC` without tying it to anything that accounts for it, so these ' +
+          'records are fully conformant. In both cases `TVC` is the most essential ' +
+          'measurement for protecting vaccine health, so null values should be investigated ' +
+          'to ensure proper device operation.',
       },
     ]),
   );

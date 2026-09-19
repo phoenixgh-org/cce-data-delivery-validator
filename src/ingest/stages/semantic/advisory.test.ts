@@ -24,8 +24,10 @@ import {
   ADVISORY_CHECKS,
   ADVISORY_IDS,
   ADVISORY_PREFIX,
+  ADVISORY_RATIONALES,
   advisoriesCheck,
   advisory,
+  advisoryRationale,
   isAdvisoryId,
   runAdvisories,
 } from './advisory.js';
@@ -191,6 +193,35 @@ test('ADVISORY_IDS names the catalogue, one id per registered check (axdd)', () 
     'adv.null_accumulator',
     'adv.abst_window_overlap',
   ]);
+});
+
+test('ADVISORY_RATIONALES covers exactly ADVISORY_IDS, and nothing else (synm)', () => {
+  // The catalogue is what a reader holding an ID and no finding looks the
+  // rationale up in — the API serves it on the advisory signature, so a missing
+  // entry is an advisory whose row in the compliance column would explain
+  // nothing, and a stray entry is copy no check owns. Pinned in both directions,
+  // and in ADVISORY_IDS order so a reordering is a visible change.
+  assert.deepEqual([...ADVISORY_RATIONALES.keys()], [...ADVISORY_IDS]);
+  for (const id of ADVISORY_IDS) {
+    const text = advisoryRationale(id);
+    assert.ok(text, `${id} has no rationale`);
+    assert.ok(text.trim().length > 0, `${id}'s rationale is blank`);
+  }
+  assert.equal(advisoryRationale('adv.never_registered'), null, 'an unknown id resolves to null');
+  assert.equal(advisoryRationale('3.2'), null, 'a §7 requirement is not in the catalogue');
+  assert.equal(advisoryRationale(null), null);
+});
+
+test('every rationale is STATIC — no payload number survives into one (synm)', () => {
+  // The rationale is shown once per advisory id, on a row that has no payload in
+  // front of it. A count, a timestamp or a serial interpolated into one would be
+  // a claim about whichever transmission happened to arrive last. Numbers that
+  // describe one delivery belong in that finding's `summary`.
+  for (const [id, text] of ADVISORY_RATIONALES) {
+    assert.doesNotMatch(text, /\b\d+ of \d+\b/, `${id}: carries an "N of M" count`);
+    assert.doesNotMatch(text, /\d{4}-\d{2}-\d{2}T/, `${id}: carries a timestamp`);
+    assert.doesNotMatch(text, /\$\{/, `${id}: carries an unresolved template`);
+  }
 });
 
 test('stage 8 records advisories alongside conformance findings and still continues', async () => {

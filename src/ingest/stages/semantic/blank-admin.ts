@@ -84,9 +84,14 @@
  * carrying no numbers: what these objects describe, why the branch's schema
  * admits a blank, and what a receiving country cannot do about it.
  *
- * The rationale varies with the BRANCH only, and only to name the branch whose
- * `required` list was read — `ems-report` or `rtmd-report`. Everything else in
- * it is the approved copy, identical on both.
+ * THE RATIONALE IS ONE STATIC TEXT FOR BOTH BRANCHES (synm, approved
+ * 2026-09-18). It used to vary with the branch whose `required` list was read.
+ * The compliance column now carries a single expandable row per advisory id,
+ * which has one rationale to show and no payload in front of it, so a
+ * branch-dependent text would render whichever branch happened to arrive last.
+ * The approved copy therefore introduces the idea once and then says what
+ * applies to `ems-report` and what applies to `rtmd-report`; see
+ * {@link BLANK_ADMIN_RATIONALE}.
  *
  * Observe, never conclude. We say which required objects arrived blank and what
  * the receiving country is therefore holding. We do NOT say the supplier forgot,
@@ -133,8 +138,13 @@ export const BLANK_ADMIN_ID = 'adv.blank_admin' as const;
 /**
  * The administrative objects `ems-report` requires, in the branch's own
  * `required` order, less `records` and less ASER (adv.null_identity's field).
+ *
+ * Exported so ./blank-admin.test.ts can hold the count quoted in
+ * {@link BLANK_ADMIN_RATIONALE} against the list itself: the copy states a
+ * number a reader will act on, and a field added or removed here would
+ * otherwise leave that number quietly wrong.
  */
-const EMS_ADMIN_FIELDS = [
+export const EMS_ADMIN_FIELDS = [
   'CID',
   'ADOP',
   'AMFR',
@@ -156,8 +166,30 @@ const EMS_ADMIN_FIELDS = [
  * The administrative objects `rtmd-report` requires, in the branch's own
  * `required` order, less `records`, less AMID (adv.null_identity's field) and
  * less DLST (an object, not an administrative string — see the header).
+ *
+ * Exported for the same reason as {@link EMS_ADMIN_FIELDS}: the rationale
+ * quotes its length.
  */
-const RTMD_ADMIN_FIELDS = ['CID', 'EDOP', 'EMFR', 'EMOD', 'EPQS', 'ESER'] as const;
+export const RTMD_ADMIN_FIELDS = ['CID', 'EDOP', 'EMFR', 'EMOD', 'EPQS', 'ESER'] as const;
+
+/**
+ * THE RATIONALE, static per advisory id and approved verbatim (synm, Benson,
+ * 2026-09-18). This module is its single owner: ./advisory.ts collects it into
+ * `ADVISORY_RATIONALES`, the API serves it on the advisory signature, and the
+ * browser holds no copy of its own.
+ *
+ * The two counts restate {@link EMS_ADMIN_FIELDS} and {@link RTMD_ADMIN_FIELDS}
+ * and are pinned against those lists in ./blank-admin.test.ts, so the copy
+ * cannot drift from what the check actually reads.
+ */
+export const BLANK_ADMIN_RATIONALE =
+  'Administrative objects describe the equipment once per report. Which objects this advisory ' +
+  'reads depends on the report type. For an `ems-report` it reads 15 objects describing the ' +
+  'country, appliance, logger and monitoring device. For an `rtmd-report` it reads 6, ' +
+  'describing the country and the monitoring device; an RTMD report has no required appliance ' +
+  'or logger objects. Both schemas require these objects but accept null and set no minimum ' +
+  'length, so a blank satisfies the schema. These objects are important and should not be ' +
+  'blank; a receiving country cannot infer the correct values.';
 
 /** How a field arrived. Only `present` carries a description. */
 type FieldState = 'present' | 'null' | 'empty' | 'absent';
@@ -238,30 +270,13 @@ export const blankAdminCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
   // than letting it read as a claim about all of them.
   const lead = affected === 1 ? '' : 'in the first, ';
   const list = joinPhrases(firstBlanks);
-  // The rationale is the approved copy (agj.17, 2026-09-15). Two things move
-  // with the branch: the name of the report schema whose `required` list was
-  // read, and the categories the opening sentence names. Neither variant claims
-  // the report identifies nothing: ASER and AMID belong to adv.null_identity,
-  // are never read here, and may well be populated.
-  const branch = ems ? 'ems-report' : 'rtmd-report';
-  // uvjd (decided 2026-09-18): the sentence names only what the branch reads.
-  // RTMD_ADMIN_FIELDS is CID EDOP EMFR EMOD EPQS ESER — the country and the
-  // monitoring device; no appliance object and no L* logger object is in the
-  // list at all. The EMS sentence stays byte-for-byte as approved.
-  const objects = ems
-    ? 'These objects describe the country, appliance, logger and monitoring device once per ' +
-      'report.'
-    : 'These objects describe the country and the monitoring device once per report.';
 
   return [
     advisory({
       id: BLANK_ADMIN_ID,
       pointer: `/data/${firstIndex}`,
       summary: `${affected} of ${total} ${reportNoun} ${verb} required admin objects blank — ${lead}${list}.`,
-      detail:
-        `${objects} The ${branch} requires them but accepts null and sets no minimum ` +
-        'length, so a blank satisfies the schema. These objects are important and should not ' +
-        'be blank; a receiving country cannot infer the correct values.',
+      detail: BLANK_ADMIN_RATIONALE,
     }),
   ];
 };

@@ -67,6 +67,15 @@
  * uses (`20200115T040554Z`) is hard to read beside a `received_at` that never
  * had it, and the two timestamps in this copy are compared by eye.
  *
+ * ── THE NUMBERS ARE IN THE OBSERVATION, THE REASON IS STATIC ────────────────
+ * The five timestamps — this body's two `ABST` bounds, the prior's `received_at`
+ * and the prior's two bounds — are all in `summary` (synm, 2026-09-18), which is
+ * the half of the copy that carries this transmission's own numbers. `detail` is
+ * one static text per advisory id, because the compliance column shows a single
+ * expandable row with no payload in front of it; see {@link ABST_WINDOW_OVERLAP_RATIONALE}. That
+ * makes this the longest observation in the catalogue: five timestamps cannot be
+ * shortened without dropping one of the two windows a reader is comparing.
+ *
  * ── VOCABULARY ──────────────────────────────────────────────────────────────
  * The copy OBSERVES and never concludes (approved 2026-09-18). Overlapping
  * windows have an innocent reading — a clock or a boundary off by a little
@@ -84,6 +93,23 @@ import { advisory } from './advisory-finding.js';
 
 /** The advisory id, exported for `ADVISORY_IDS` (see ./advisory.ts). */
 export const ABST_WINDOW_OVERLAP_ID = 'adv.abst_window_overlap' as const;
+
+/**
+ * THE RATIONALE, static per advisory id and approved verbatim (synm, Benson,
+ * 2026-09-18). This module is its single owner: ./advisory.ts collects it into
+ * `ADVISORY_RATIONALES`, the API serves it on the advisory signature, and the
+ * browser holds no copy of its own.
+ *
+ * It carries none of the five timestamps — those are in the summary, which is
+ * the half of the copy that speaks about one delivery.
+ */
+export const ABST_WINDOW_OVERLAP_RATIONALE =
+  'A report whose timestamps overlap a report already received for the same appliance leaves ' +
+  'the receiving country to decide which copy of the overlapping period to keep. Overlapping ' +
+  'windows are what a record chunk appended to the previous delivery looks like from the ' +
+  'receiving side; they are also what two deliveries that legitimately cover adjoining ' +
+  'periods look like when a clock or a boundary is off by a little. Exact retransmissions ' +
+  'are excluded from this observation and are graded under §1.8.';
 
 /** Whether a value is a plain (non-array) object we can read keys off. */
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -181,17 +207,11 @@ export const abstWindowOverlapCheck: SemanticCheck = async (
         id: ABST_WINDOW_OVERLAP_ID,
         pointer: pointerForUnit(ctx.parsedBody, window.unitKey),
         summary:
-          'The timestamps in this report overlap a report received earlier in this session ' +
-          'for the same appliance.',
-        detail:
           `Records for ${unit} span ${isoSeconds(window.abstMin)} to ` +
           `${isoSeconds(window.abstMax)}. A report received at ${isoSeconds(prior.received_at)} ` +
           `for the same appliance spans ${isoSeconds(prior.abst_min)} to ` +
-          `${isoSeconds(prior.abst_max)}, and the two bodies differ. Overlapping windows are ` +
-          'what a record chunk appended to the previous delivery looks like from the receiving ' +
-          'side; they are also what two deliveries that legitimately cover adjoining periods ' +
-          'look like when a clock or a boundary is off by a little. Exact retransmissions are ' +
-          'excluded from this observation and are graded under §1.8.',
+          `${isoSeconds(prior.abst_max)}, and the two bodies differ.`,
+        detail: ABST_WINDOW_OVERLAP_RATIONALE,
       }),
     );
   }

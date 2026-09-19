@@ -92,6 +92,18 @@ import { advisory } from './advisory-finding.js';
 export const NULL_PADDING_ID = 'adv.null_padding' as const;
 
 /**
+ * THE RATIONALE, static per advisory id. This module is its single owner:
+ * ./advisory.ts collects it into `ADVISORY_RATIONALES`, the API serves it on the
+ * advisory signature, and the browser holds no copy of its own. It carries no
+ * numbers and no branch variant, so the compliance column's advisory row can
+ * show it with no payload in front of it.
+ */
+export const NULL_PADDING_RATIONALE =
+  'A property the device never populates is better omitted than sent as null, unless ' +
+  'the record schema requires it. A null value indicates that the device sometimes has ' +
+  'a value for it; omission says it never does.';
+
+/**
  * Minimum number of records that must carry a property before its being null in
  * all of them says anything. See the header for why 12.
  */
@@ -202,10 +214,7 @@ export const nullPaddingCheck: SemanticCheck = (ctx: PipelineContext): Finding[]
       summary:
         `${list} ${areIs} null in every one of the ${group(carrying)} records that carry ` +
         `${pronoun}.`,
-      detail:
-        'A property the device never populates is better omitted than sent as null, unless ' +
-        'the record schema requires it. A null value indicates that the device sometimes has ' +
-        'a value for it; omission says it never does.',
+      detail: NULL_PADDING_RATIONALE,
     }),
   ];
 };

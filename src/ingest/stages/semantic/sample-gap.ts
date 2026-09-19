@@ -137,6 +137,19 @@ import { parseAbst } from './interval.js';
 export const SAMPLE_GAP_ID = 'adv.sample_gap' as const;
 
 /**
+ * THE RATIONALE, static per advisory id. This module is its single owner:
+ * ./advisory.ts collects it into `ADVISORY_RATIONALES`, the API serves it on the
+ * advisory signature, and the browser holds no copy of its own. It carries no
+ * numbers and no branch variant, so the compliance column's advisory row can
+ * show it with no payload in front of it.
+ */
+export const SAMPLE_GAP_RATIONALE =
+  'Recording gaps have everyday causes, such as an extended power outage. However, in ' +
+  'normal operation, loggers should rarely produce gaps longer than the standard ' +
+  '15-minute sampling interval. A gap wider than the sampling interval is worth ' +
+  'checking on the logger side.';
+
+/**
  * The sampling period DS01 is written around, in milliseconds: 900 s, which is
  * also the schema's own `maximum` on every per-period accumulator (CMPR, CMPR2,
  * SVA, DORV, DORF). See the header.
@@ -233,11 +246,7 @@ export const sampleGapCheck: SemanticCheck = (ctx: PipelineContext): Finding[] =
       summary:
         `${gaps.length} ${gapNoun} between consecutive readings ${verb} the ` +
         `${SAMPLE_PERIOD_MS / 1000} s period; the widest is ${minutesPhrase(widest.spanMs)}.`,
-      detail:
-        'Recording gaps have everyday causes, such as an extended power outage. However, in ' +
-        'normal operation, loggers should rarely produce gaps longer than the standard ' +
-        '15-minute sampling interval. A gap wider than the sampling interval is worth ' +
-        'checking on the logger side.',
+      detail: SAMPLE_GAP_RATIONALE,
     }),
   ];
 };

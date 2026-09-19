@@ -104,6 +104,18 @@ import { advisory } from './advisory-finding.js';
  */
 export const COMPRESSOR_EXCEEDS_SUPPLY_ID = 'adv.compressor_exceeds_supply' as const;
 
+/**
+ * THE RATIONALE, static per advisory id. This module is its single owner:
+ * ./advisory.ts collects it into `ADVISORY_RATIONALES`, the API serves it on the
+ * advisory signature, and the browser holds no copy of its own. It carries no
+ * numbers and no branch variant, so the compliance column's advisory row can
+ * show it with no payload in front of it.
+ */
+export const COMPRESSOR_EXCEEDS_SUPPLY_RATIONALE =
+  'On a mains appliance SVA and CMPR are both represented as seconds within the same ' +
+  '15-minute period. It is unexpected for the compressor to run for longer than power ' +
+  'was available within the period.';
+
 /** The compressor-runtime objects, in the order they are reported. */
 export const COMPRESSOR_KEYS: readonly string[] = ['CMPR', 'CMPR2'];
 
@@ -210,10 +222,7 @@ export const compressorSupplyCheck: SemanticCheck = (ctx: PipelineContext): Find
       summary:
         `${records.size} ${recordNoun} ${reports} ${named} larger than ${SUPPLY_KEY}; the ` +
         `largest excess is ${worst} s.`,
-      detail:
-        'On a mains appliance SVA and CMPR are both represented as seconds within the same ' +
-        '15-minute period. It is unexpected for the compressor to run for longer than power ' +
-        'was available within the period.',
+      detail: COMPRESSOR_EXCEEDS_SUPPLY_RATIONALE,
     }),
   ];
 };

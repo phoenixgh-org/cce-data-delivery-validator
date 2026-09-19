@@ -146,15 +146,20 @@
  * NOT registered; nothing here acts on it.
  *
  * ── WORDING: AN OBSERVATION AND A RATIONALE (agj.17) ─────────────────────────
- * Two pieces of prose, not one. `summary` is the OBSERVATION and `detail` is the
- * RATIONALE, and the two arms split the numbers differently because their
- * approved copy does:
+ * Two pieces of prose, not one. `summary` is the OBSERVATION and carries this
+ * transmission's numbers on BOTH arms; `detail` is the RATIONALE, one static
+ * text covering both arms (synm, approved 2026-09-18).
  *
- *   - RTMD (approved 2026-09-15): the summary counts how many of the
- *     transmission's records carry TVC as null with neither error code beside
- *     it; the detail is static and carries no numbers.
- *   - EMS (xwgr, approved 2026-09-18): the summary is a single static sentence
- *     and the record reference sits in the detail's first sentence instead.
+ * THE ARMS NO LONGER WORD IT DIFFERENTLY. The compliance column carries a single
+ * expandable row per advisory id, which has one rationale to show and no payload
+ * in front of it, so an arm-dependent text would render whichever arm happened
+ * to arrive last. The approved copy states the idea once and then says what the
+ * EMS condition is and what the RTMD condition is; see {@link UNEXPLAINED_NULL_TEMP_RATIONALE}.
+ *
+ * The EMS arm's record reference — `Record 0 carries …`, or `2 of 3 records
+ * carry …` in the plural — moved out of the rationale and INTO the summary with
+ * that decision, so the transmission detail still shows this payload's numbers.
+ * The RTMD summary is unchanged.
  *
  * THE RTMD RATIONALE WAS REPLACED ON 2026-09-15. The earlier draft argued from
  * what the receiving country cannot distinguish and closed on "a quiet null may
@@ -255,23 +260,27 @@ function isEmsBranch(ctx: PipelineContext): boolean {
   return ctx.meta.transferType === 'ems';
 }
 
-/** The EMS arm's observation, approved 2026-09-18 (xwgr). It carries no numbers. */
-const EMS_SUMMARY =
-  'A temperature reading is null and the logger error code beside it is blank space.';
-
-/** The EMS arm's rationale, approved 2026-09-18 (xwgr), following the record reference. */
-const EMS_RATIONALE =
-  'The schema accepts any one-character string as an error code, so this passes validation, ' +
-  'but blank space explains nothing about why the reading is missing. A null reading with a ' +
-  'real code names a sensor or logger condition; a null with blank space is indistinguishable ' +
-  'from an unexplained gap.';
-
-/** The RTMD arm's rationale, approved 2026-09-15 (agj.17). It carries no numbers. */
-const RTM_RATIONALE =
-  'rtmd-record allows a null TVC without tying it to anything that accounts for it, so ' +
-  'these records are fully conformant. However, TVC is the most essential measurement ' +
-  'for protecting vaccine health, so null TVC values should be investigated to ensure ' +
-  'proper device operation.';
+/**
+ * THE RATIONALE, static per advisory id and approved verbatim (synm, Benson,
+ * 2026-09-18), covering both arms. This module is its single owner: ./advisory.ts
+ * collects it into `ADVISORY_RATIONALES`, the API serves it on the advisory
+ * signature, and the browser holds no copy of its own.
+ *
+ * It carries no numbers. The EMS record reference the earlier copy opened with
+ * is in the summary now — see the header.
+ */
+export const UNEXPLAINED_NULL_TEMP_RATIONALE =
+  'A null temperature reading leaves the receiving country without the measurement that ' +
+  'matters most, so what accompanies the null is what makes it interpretable. Which condition ' +
+  'this advisory looks for depends on the report type. For an `ems-report` it is a null `TVC` ' +
+  'whose logger error code is blank space: the schema accepts any one-character string as an ' +
+  'error code, so this passes validation, but blank space explains nothing about why the ' +
+  'reading is missing. A null reading with a real code names a sensor or logger condition; a ' +
+  'null with blank space is indistinguishable from an unexplained gap. For an `rtmd-report`, ' +
+  '`rtmd-record` allows a null `TVC` without tying it to anything that accounts for it, so ' +
+  'these records are fully conformant. In both cases `TVC` is the most essential measurement ' +
+  'for protecting vaccine health, so null values should be investigated to ensure proper ' +
+  'device operation.';
 
 /** The `adv.unexplained_null_temp` check, registered in `ADVISORY_CHECKS`. */
 export const unexplainedNullTempCheck: SemanticCheck = (ctx: PipelineContext): Finding[] => {
@@ -308,6 +317,9 @@ export const unexplainedNullTempCheck: SemanticCheck = (ctx: PipelineContext): F
   const verb = affected === 1 ? 'carries' : 'carry';
 
   if (ems) {
+    // The record reference the EMS rationale used to open with (synm): it is
+    // this transmission's own number, so it belongs in the observation now that
+    // the rationale is static.
     const subject =
       affected === 1
         ? `Record ${firstRecordIndex} carries`
@@ -316,10 +328,8 @@ export const unexplainedNullTempCheck: SemanticCheck = (ctx: PipelineContext): F
       advisory({
         id: UNEXPLAINED_NULL_TEMP_ID,
         pointer,
-        summary: EMS_SUMMARY,
-        detail:
-          `${subject} ${TEMPERATURE} null with ${LOGGER_ERROR} set to whitespace only. ` +
-          EMS_RATIONALE,
+        summary: `${subject} ${TEMPERATURE} null with ${LOGGER_ERROR} set to whitespace only.`,
+        detail: UNEXPLAINED_NULL_TEMP_RATIONALE,
       }),
     ];
   }
@@ -331,7 +341,7 @@ export const unexplainedNullTempCheck: SemanticCheck = (ctx: PipelineContext): F
       summary:
         `${affected} of ${totalRecords} ${recordNoun} ${verb} ${TEMPERATURE} as null with ` +
         `${ERROR_CODES.join(' and ')} both blank.`,
-      detail: RTM_RATIONALE,
+      detail: UNEXPLAINED_NULL_TEMP_RATIONALE,
     }),
   ];
 };

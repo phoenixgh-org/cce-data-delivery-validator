@@ -106,6 +106,19 @@ import { advisory } from './advisory-finding.js';
  */
 export const DATE_FORMAT_ID = 'adv.date_format' as const;
 
+/**
+ * THE RATIONALE, static per advisory id. This module is its single owner:
+ * ./advisory.ts collects it into `ADVISORY_RATIONALES`, the API serves it on the
+ * advisory signature, and the browser holds no copy of its own. It carries no
+ * numbers and no branch variant, so the compliance column's advisory row can
+ * show it with no payload in front of it.
+ */
+export const DATE_FORMAT_RATIONALE =
+  'The DS01 date objects (ADOP, LDOP, EDOP, CDAT, CDAT2) are plain strings, so a date ' +
+  'arrives in whatever form it was written. YYYY-MM-DD, the ISO 8601 calendar date ' +
+  'format, is prescribed by DS01 Annex 1, ensuring that every date representation has ' +
+  'the same field widths, which is what lets a receiving system order and compare them.';
+
 /** The strict ISO-8601 calendar date: four-digit year, two-digit month and day. */
 export const ISO_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 
@@ -199,11 +212,7 @@ export const dateFormatCheck: SemanticCheck = (ctx: PipelineContext): Finding[] 
       summary:
         `${entries.length} ${fieldNoun} ${areIs} not YYYY-MM-DD — ${firstField} at ` +
         `${firstStats.firstPointer} arrived as ${quote(firstStats.firstValue)}.`,
-      detail:
-        'The DS01 date objects (ADOP, LDOP, EDOP, CDAT, CDAT2) are plain strings, so a date ' +
-        'arrives in whatever form it was written. YYYY-MM-DD, the ISO 8601 calendar date ' +
-        'format, is prescribed by DS01 Annex 1, ensuring that every date representation has ' +
-        'the same field widths, which is what lets a receiving system order and compare them.',
+      detail: DATE_FORMAT_RATIONALE,
     }),
   ];
 };

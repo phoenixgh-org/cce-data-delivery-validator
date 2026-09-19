@@ -337,6 +337,18 @@ export interface Signature {
    * lens for a signature that lands on no row of that package.
    */
   requirementUnderLens?: string;
+  /**
+   * Why a receiving country cares about this advisory (synm) — mirror
+   * `Signature.rationale` in src/api/signatures.ts. PRESENT ONLY when `kind` is
+   * 'advisory', and absent for an advisory id the server's catalogue does not
+   * hold.
+   *
+   * The server resolves it from the check that owns the wording, so the browser
+   * renders whatever arrives and holds no copy of the copy. A second copy here
+   * would drift the day a rationale is reworded, and the dashboard would then
+   * disagree with the finding a supplier is looking at.
+   */
+  rationale?: string;
 }
 
 /**

@@ -63,10 +63,16 @@
  * Advisory prose is TWO PIECES, not one (agj.17). `summary` is the OBSERVATION —
  * one line, roughly 90 characters at ordinary values, carrying this
  * transmission's numbers; it is what the advisory row shows. `detail` is the
- * RATIONALE — a few sentences, static per check and per branch variant, held
- * behind that row's expander. Both are required of every check; see
+ * RATIONALE — a few sentences, STATIC PER ADVISORY ID (synm): one text per id,
+ * with no branch variant and nothing interpolated from the payload, collected in
+ * {@link ADVISORY_RATIONALES}. Both are required of every check; see
  * ./advisory-finding.ts for the shape and DESIGN §7.1 for why the row is split
  * that way.
+ *
+ * The split is what makes the static rule affordable: a number that describes
+ * one delivery goes in that delivery's `summary`, so a rationale shown once, on
+ * a row that has no payload in front of it, never has to speak for a payload it
+ * cannot see.
  *
  * Both must OBSERVE, never CONCLUDE. We cannot prove a null means "no sensor
  * fitted" — a broken sensor looks identical, and a 100%-null rate is strong
@@ -81,20 +87,48 @@
 
 import type { Finding, PipelineContext } from '../../pipeline.js';
 import type { SemanticCheck, SemanticDeps } from '../semantic.js';
-import { ABST_WINDOW_OVERLAP_ID, abstWindowOverlapCheck } from './abst-window-overlap.js';
+import {
+  ABST_WINDOW_OVERLAP_ID,
+  ABST_WINDOW_OVERLAP_RATIONALE,
+  abstWindowOverlapCheck,
+} from './abst-window-overlap.js';
 import type { AdvisoryId } from './advisory-finding.js';
-import { BLANK_ADMIN_ID, blankAdminCheck } from './blank-admin.js';
-import { CMPR_MINUTES_ID, cmprMinutesCheck } from './cmpr-minutes.js';
-import { COMPRESSOR_EXCEEDS_SUPPLY_ID, compressorSupplyCheck } from './compressor-supply.js';
-import { DATE_FORMAT_ID, dateFormatCheck } from './date-format.js';
-import { DUPLICATE_RECORDS_ID, duplicateRecordsCheck } from './duplicate-records.js';
-import { NULL_ACCUMULATOR_ID, nullAccumulatorCheck } from './null-accumulator.js';
-import { NULL_IDENTITY_ID, nullIdentityCheck } from './null-identity.js';
-import { NULL_PADDING_ID, nullPaddingCheck } from './null-padding.js';
-import { SAMPLE_GAP_ID, sampleGapCheck } from './sample-gap.js';
-import { SHORT_IDENTIFIER_ID, shortIdentifierCheck } from './short-identifier.js';
-import { TIME_NOT_INCREASING_ID, timeOrderCheck } from './time-order.js';
-import { UNEXPLAINED_NULL_TEMP_ID, unexplainedNullTempCheck } from './unexplained-null-temp.js';
+import { BLANK_ADMIN_ID, BLANK_ADMIN_RATIONALE, blankAdminCheck } from './blank-admin.js';
+import { CMPR_MINUTES_ID, CMPR_MINUTES_RATIONALE, cmprMinutesCheck } from './cmpr-minutes.js';
+import {
+  COMPRESSOR_EXCEEDS_SUPPLY_ID,
+  COMPRESSOR_EXCEEDS_SUPPLY_RATIONALE,
+  compressorSupplyCheck,
+} from './compressor-supply.js';
+import { DATE_FORMAT_ID, DATE_FORMAT_RATIONALE, dateFormatCheck } from './date-format.js';
+import {
+  DUPLICATE_RECORDS_ID,
+  DUPLICATE_RECORDS_RATIONALE,
+  duplicateRecordsCheck,
+} from './duplicate-records.js';
+import {
+  NULL_ACCUMULATOR_ID,
+  NULL_ACCUMULATOR_RATIONALE,
+  nullAccumulatorCheck,
+} from './null-accumulator.js';
+import { NULL_IDENTITY_ID, NULL_IDENTITY_RATIONALE, nullIdentityCheck } from './null-identity.js';
+import { NULL_PADDING_ID, NULL_PADDING_RATIONALE, nullPaddingCheck } from './null-padding.js';
+import { SAMPLE_GAP_ID, SAMPLE_GAP_RATIONALE, sampleGapCheck } from './sample-gap.js';
+import {
+  SHORT_IDENTIFIER_ID,
+  SHORT_IDENTIFIER_RATIONALE,
+  shortIdentifierCheck,
+} from './short-identifier.js';
+import {
+  TIME_NOT_INCREASING_ID,
+  TIME_NOT_INCREASING_RATIONALE,
+  timeOrderCheck,
+} from './time-order.js';
+import {
+  UNEXPLAINED_NULL_TEMP_ID,
+  UNEXPLAINED_NULL_TEMP_RATIONALE,
+  unexplainedNullTempCheck,
+} from './unexplained-null-temp.js';
 
 /**
  * The advisory constructor and its id helpers live in the LEAF module
@@ -180,6 +214,56 @@ export const ADVISORY_IDS: readonly AdvisoryId[] = [
   NULL_ACCUMULATOR_ID,
   ABST_WINDOW_OVERLAP_ID,
 ];
+
+/**
+ * THE RATIONALE CATALOGUE — one static text per advisory id, in
+ * {@link ADVISORY_IDS} order (synm).
+ *
+ * A rationale says why the receiving country cares about what the check
+ * observed. It used to be emitted per finding, and two checks worded it by
+ * report branch. The compliance column now carries a single expandable row per
+ * advisory id, which has one rationale to show and no payload in front of it, so
+ * a branch- or payload-dependent text would render whichever transmission
+ * happened to arrive last. Every rationale is therefore STATIC PER ID: no branch
+ * variant, no interpolation. Numbers that belong to one delivery live in that
+ * finding's `summary` instead.
+ *
+ * Collected here for the reason {@link ADVISORY_IDS} is: each check module stays
+ * the single owner of its own wording and exports the constant, and this file
+ * gathers them, so the text a check emits as `detail` and the text a reader
+ * looks up by id cannot drift apart. What a map still cannot catch is a new
+ * check whose rationale is never added here — advisory.test.ts pins the key set
+ * against `ADVISORY_IDS` exactly, in both directions, for that.
+ *
+ * Checks keep passing their own constant as `detail`, so nothing about the
+ * `Finding` shape or its persistence changed: this is a second way to reach the
+ * same string, for a reader holding an id and no finding.
+ */
+export const ADVISORY_RATIONALES: ReadonlyMap<string, string> = new Map<string, string>([
+  [NULL_IDENTITY_ID, NULL_IDENTITY_RATIONALE],
+  [NULL_PADDING_ID, NULL_PADDING_RATIONALE],
+  [DATE_FORMAT_ID, DATE_FORMAT_RATIONALE],
+  [TIME_NOT_INCREASING_ID, TIME_NOT_INCREASING_RATIONALE],
+  [COMPRESSOR_EXCEEDS_SUPPLY_ID, COMPRESSOR_EXCEEDS_SUPPLY_RATIONALE],
+  [CMPR_MINUTES_ID, CMPR_MINUTES_RATIONALE],
+  [SAMPLE_GAP_ID, SAMPLE_GAP_RATIONALE],
+  [DUPLICATE_RECORDS_ID, DUPLICATE_RECORDS_RATIONALE],
+  [BLANK_ADMIN_ID, BLANK_ADMIN_RATIONALE],
+  [UNEXPLAINED_NULL_TEMP_ID, UNEXPLAINED_NULL_TEMP_RATIONALE],
+  [SHORT_IDENTIFIER_ID, SHORT_IDENTIFIER_RATIONALE],
+  [NULL_ACCUMULATOR_ID, NULL_ACCUMULATOR_RATIONALE],
+  [ABST_WINDOW_OVERLAP_ID, ABST_WINDOW_OVERLAP_RATIONALE],
+]);
+
+/**
+ * The rationale for one advisory id, or `null` for an id the catalogue does not
+ * hold. A miss is not an error: a finding stored before a check was renamed
+ * still reaches the API inside the retention window, and a reader that gets
+ * `null` should show no rationale rather than invent one.
+ */
+export function advisoryRationale(id: string | null | undefined): string | null {
+  return (typeof id === 'string' ? ADVISORY_RATIONALES.get(id) : undefined) ?? null;
+}
 
 /**
  * Run `checks` against the context and collect their advisories. `checks`

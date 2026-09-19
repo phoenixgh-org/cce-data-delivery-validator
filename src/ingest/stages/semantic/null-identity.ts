@@ -84,9 +84,15 @@
  * Two pieces of prose, not one. `summary` is the OBSERVATION — one line naming
  * how many reports of how many arrived without the branch's identifier, and how
  * that identifier arrived in the first of them. `detail` is the RATIONALE — what
- * the identifier is and what the receiving country cannot do without it; it is
- * static per branch, so the two branches carry the two approved paragraphs and
- * nothing is templated into either.
+ * the identifier is and what the receiving country cannot do without it.
+ *
+ * THE RATIONALE IS ONE STATIC TEXT FOR BOTH BRANCHES (synm, approved
+ * 2026-09-18), where it used to be one approved paragraph per branch. The
+ * compliance column now carries a single expandable row per advisory id, which
+ * has one rationale to show and no payload in front of it, so a branch-dependent
+ * text would render whichever branch happened to arrive last. The approved copy
+ * names the ems-report identifier and the rtmd-report identifier in turn; see
+ * {@link NULL_IDENTITY_RATIONALE}.
  *
  * Observe, never conclude. We say what arrived and what the receiving side can
  * therefore not do with it. We do NOT say the supplier lost track of the
@@ -132,6 +138,26 @@ const EMS_IDENTIFIER = 'ASER';
 
 /** The one identifier this advisory grades on an `rtmd-report`. */
 const RTMD_IDENTIFIER = 'AMID';
+
+/**
+ * THE RATIONALE, static per advisory id and approved verbatim (synm, Benson,
+ * 2026-09-18). This module is its single owner: ./advisory.ts collects it into
+ * `ADVISORY_RATIONALES`, the API serves it on the advisory signature, and the
+ * browser holds no copy of its own.
+ *
+ * It carries no numbers and makes no claim the check has not made. In
+ * particular it does not say the report names no appliance at all: AID may be
+ * populated and is never read here (see the header).
+ */
+export const NULL_IDENTITY_RATIONALE =
+  "This advisory looks at the one identifier that ties a report's records to an appliance, " +
+  'and that identifier differs by report type. For an `ems-report` it is `ASER`, the ' +
+  'appliance serial number as assigned by the manufacturer; no other ID is an adequate ' +
+  "substitute. For an `rtmd-report` it is `AMID`, the identifier under which the supplier's " +
+  'platform holds the appliance. The schema requires `AMID` as a non-null string, so a blank ' +
+  'is the only empty form that passes, and neither `ASER` nor `AID` stands in for it on a ' +
+  'retrofitted logger. Without this identifier, the receiving country cannot tie the records ' +
+  'to an appliance.';
 
 /** How an identifier arrived. Only `present` names an appliance. */
 type IdState = 'present' | 'null' | 'empty' | 'absent';
@@ -202,24 +228,12 @@ export const nullIdentityCheck: SemanticCheck = (ctx: PipelineContext): Finding[
   const lead = unnamed === 1 ? '' : 'in the first, ';
   const missing = ems ? 'no appliance serial number' : 'no supplier-platform appliance identifier';
 
-  // The rationale is the approved copy for the branch (agj.17, 2026-09-15) and
-  // carries no numbers: each says what its identifier is, why nothing else on
-  // the branch stands in for it, and what the receiving country cannot do.
-  const rationale = ems
-    ? 'ASER is the appliance serial number, as assigned by the manufacturer. No other ID is ' +
-      'an adequate substitute. Without this attribute, the receiving country cannot tie the ' +
-      'records to the appliance.'
-    : "AMID is the identifier under which the supplier's platform holds the appliance. The " +
-      'schema requires it as a non-null string, so a blank is the only form that passes, and ' +
-      'neither ASER nor AID stands in for it on a retrofitted logger. Without this attribute, ' +
-      "the receiving country cannot tie the records to an appliance in the supplier's platform.";
-
   return [
     advisory({
       id: NULL_IDENTITY_ID,
       pointer: `/data/${firstIndex}`,
       summary: `${unnamed} of ${total} ${reportNoun} ${verb} ${missing} — ${lead}${firstBlank}.`,
-      detail: rationale,
+      detail: NULL_IDENTITY_RATIONALE,
     }),
   ];
 };
