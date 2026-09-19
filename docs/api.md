@@ -688,20 +688,21 @@ numbers map to the DS01.3 rewrite.
 A signature collapses identical defects across transmissions into one distinct issue —
 the answer to "what are the distinct things to fix, and how widespread is each?".
 
-| Field                  | Meaning                                                                                                                                                               |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `key`                  | Stable key; pass it as `signatureKey` to the list route to cross-filter.                                                                                              |
-| `req`                  | Requirement, e.g. `3.2`; empty string for an advisory.                                                                                                                |
-| `profile`              | Requirement lineage the defect grades against (`2025` or `ds013`); `null` for an advisory.                                                                            |
-| `title`                | Human title for the defect (for an advisory, the label derived from its id).                                                                                          |
-| `kind`                 | `schema` (Ajv keyword), `check` (a `tx.*` code), or `advisory` (an `adv.*` observation).                                                                              |
-| `sev`                  | `fail`, or `info` for the outdated-schema signature and every advisory.                                                                                               |
-| `count`                | Raw finding count.                                                                                                                                                    |
-| `txCount`              | Distinct transmissions exhibiting it.                                                                                                                                 |
-| `sourceCount`          | Distinct sources exhibiting it.                                                                                                                                       |
-| `first`, `last`        | ISO timestamps of the earliest and latest occurrence.                                                                                                                 |
-| `examplePointer`       | Representative JSON Pointer, may be `null`.                                                                                                                           |
-| `requirementUnderLens` | The row this signature belongs to under the selected `lens`; absent under the contract lens, and absent for a signature that lands on no row of the selected package. |
+| Field                  | Meaning                                                                                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`                  | Stable key; pass it as `signatureKey` to the list route to cross-filter.                                                                                                           |
+| `req`                  | Requirement, e.g. `3.2`; empty string for an advisory.                                                                                                                             |
+| `profile`              | Requirement lineage the defect grades against (`2025` or `ds013`); `null` for an advisory.                                                                                         |
+| `title`                | Human title for the defect (for an advisory, the label derived from its id).                                                                                                       |
+| `kind`                 | `schema` (Ajv keyword), `check` (a `tx.*` code), or `advisory` (an `adv.*` observation).                                                                                           |
+| `sev`                  | `fail`, or `info` for the outdated-schema signature and every advisory.                                                                                                            |
+| `count`                | Raw finding count.                                                                                                                                                                 |
+| `txCount`              | Distinct transmissions exhibiting it.                                                                                                                                              |
+| `sourceCount`          | Distinct sources exhibiting it.                                                                                                                                                    |
+| `first`, `last`        | ISO timestamps of the earliest and latest occurrence.                                                                                                                              |
+| `examplePointer`       | Representative JSON Pointer, may be `null`.                                                                                                                                        |
+| `rationale`            | An advisory's rationale — why a receiving country cares. One static text per `adv.*` id. Present only when `kind` is `advisory`, and absent for an id the catalogue does not know. |
+| `requirementUnderLens` | The row this signature belongs to under the selected `lens`; absent under the contract lens, and absent for a signature that lands on no row of the selected package.              |
 
 **Profiles keep the two lineages apart.** `key` is prefixed with `profile` for every
 non-advisory signature (`2025|3.2|required|/data/*|LSER` versus

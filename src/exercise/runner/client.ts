@@ -327,8 +327,8 @@ export async function fetchSessionEvidence(
               // grading side never sees a third state.
               outdated: f.outdated === true,
               // The two pieces of ADVISORY PROSE (y0w4): `summary` is the
-              // one-line observation shown on the row, `detail` the rationale
-              // behind its expander. Carried so the run-wide audit in
+              // one-line observation the transmission detail shows, `detail` the
+              // rationale, static per advisory id. Carried so the run-wide audit in
               // ./assertions.ts can hold a live instance's copy to the wording
               // bar — the only place that path is checked end to end.
               //

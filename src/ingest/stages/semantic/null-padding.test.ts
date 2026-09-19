@@ -217,8 +217,8 @@ test('it names every padded property and pins the full prose', () => {
   const [finding] = advisories(checkOnly(emsPayload(16, PADDED)));
   assert.ok(finding);
 
-  // The approved agj.17 copy, split: summary is the one-line observation shown
-  // on the advisory row, detail the rationale behind its expander.
+  // The approved agj.17 copy, split: summary is the one-line observation the
+  // transmission detail shows, detail the rationale the compliance row shows.
   assert.equal(
     finding.summary,
     'HAMB, TCON and TFRZ are null in every one of the 16 records that carry them.',

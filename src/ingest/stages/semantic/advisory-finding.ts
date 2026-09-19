@@ -48,10 +48,15 @@ export function isAdvisoryId(id: string | null | undefined): boolean {
  * shape for a list a supplier scans:
  *
  *   - `summary` is THE OBSERVATION — one line, in the supplier's terms, carrying
- *     the numbers ("3 of 12 reports carry no appliance serial number"). It is
- *     what the advisory row shows, so keep it to roughly 90 characters.
+ *     this payload's numbers ("3 of 12 reports carry no appliance serial
+ *     number"). It is the advisory line in the transmission detail, so keep it to
+ *     roughly 90 characters.
  *   - `detail` is THE RATIONALE — why a receiving country cares, or what to send
- *     instead. A few sentences, shown behind the row's expander.
+ *     instead. A few sentences, STATIC PER ADVISORY ID (synm): the compliance
+ *     column shows one text per id, on a row that has no payload in front of it,
+ *     so nothing here may be interpolated from the payload or worded by report
+ *     branch. Each check owns its text and `ADVISORY_RATIONALES` in advisory.ts
+ *     collects them.
  *
  * Both OBSERVE, never conclude — see the wording note in advisory.ts's header.
  *
@@ -65,9 +70,15 @@ export function isAdvisoryId(id: string | null | undefined): boolean {
 export interface AdvisoryInput {
   /** The `adv.*` id of the advisory being raised. */
   id: AdvisoryId;
-  /** The one-line observation, with its numbers. Shown on the advisory row. */
+  /**
+   * The one-line observation, with this payload's numbers. Shown as the advisory
+   * line in the transmission detail.
+   */
   summary: string;
-  /** The rationale: why the observation matters to the receiving country. */
+  /**
+   * The rationale: why the observation matters to the receiving country. Static
+   * per advisory id, and shown on the advisory row in the compliance column.
+   */
   detail: string;
   /** JSON Pointer to where it was observed, for the raw-payload drill-down. */
   pointer?: string | null;

@@ -60,13 +60,15 @@
  * "issue", which read as defects.
  *
  * ── wording ──────────────────────────────────────────────────────────────────
- * Advisory prose is TWO PIECES, not one (agj.17). `summary` is the OBSERVATION —
- * one line, roughly 90 characters at ordinary values, carrying this
- * transmission's numbers; it is what the advisory row shows. `detail` is the
- * RATIONALE — a few sentences, STATIC PER ADVISORY ID (synm): one text per id,
- * with no branch variant and nothing interpolated from the payload, collected in
- * {@link ADVISORY_RATIONALES}. Both are required of every check; see
- * ./advisory-finding.ts for the shape and DESIGN §7.1 for why the row is split
+ * Advisory prose is TWO PIECES, not one (agj.17), and the two are read on
+ * different surfaces. `summary` is the OBSERVATION — one line, roughly 90
+ * characters at ordinary values, carrying this transmission's numbers; it is the
+ * advisory line in the transmission detail. `detail` is the RATIONALE — a few
+ * sentences, STATIC PER ADVISORY ID (synm): one text per id, with no branch
+ * variant and nothing interpolated from the payload, collected in
+ * {@link ADVISORY_RATIONALES} and served on the advisory signature for the
+ * compliance column's advisory row. Both are required of every check; see
+ * ./advisory-finding.ts for the shape and DESIGN §7.1 for why the prose is split
  * that way.
  *
  * The split is what makes the static rule affordable: a number that describes

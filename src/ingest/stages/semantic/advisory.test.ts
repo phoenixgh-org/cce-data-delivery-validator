@@ -86,8 +86,8 @@ test('advisory() emits severity info under the adv.* id in requirement AND code'
   assert.equal(f.requirement, 'adv.null_padding', 'requirement carries the adv.* id');
   assert.equal(f.code, 'adv.null_padding', 'code carries the same id, so it de-duplicates');
   assert.equal(f.pointer, '/data/0', 'pointer drives the raw-payload drill-down');
-  assert.equal(f.summary, 'observed', 'the observation, shown on the advisory row');
-  assert.equal(f.detail, 'why it matters', 'the rationale, behind the expander');
+  assert.equal(f.summary, 'observed', 'the observation, shown in the transmission detail');
+  assert.equal(f.detail, 'why it matters', 'the rationale, shown on the compliance row');
 });
 
 test('advisory() never sets `outdated` — an advisory is not a defect', () => {

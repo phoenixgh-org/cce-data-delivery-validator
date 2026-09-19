@@ -285,8 +285,8 @@ test('RTMD: it fires through the real §6 body stages on a 200 with zero fail fi
 // ── one identifier per branch (2km, 38p) ─────────────────────────────────────
 
 test('EMS: the observation names the count and how ASER arrived', () => {
-  // The summary is the one-line observation shown on the advisory row; the
-  // rationale behind the expander is static per id and pinned below.
+  // The summary is the one-line observation the transmission detail shows; the
+  // rationale is static per id, shown on the compliance row, and pinned below.
   assert.equal(
     summaryOf(EMS_UNIDENTIFIED),
     '1 of 1 report carries no appliance serial number — ASER is null.',

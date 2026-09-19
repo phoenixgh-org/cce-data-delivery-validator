@@ -361,15 +361,20 @@ Several properties follow from that decision:
   It is the exception rather than the new rule — every other check in the catalogue is
   a pure function of one parsed body, and a proposal that needs storage is a design
   decision rather than a registration.
-- An advisory carries TWO pieces of prose, not one. `summary` is the observation — one
-  line, with its numbers ("3 of 12 reports carry no appliance serial number"), shown on
-  the advisory row. `detail` is the rationale for it, kept one click away behind that
-  row's expander. A supplier scanning a list of advisories is reading for what was
-  seen; the reason it matters is what they open next. Every advisory check supplies
-  both, and `AdvisoryInput` requires them. A graded §7 finding carries no `summary`
-  and keeps its explanation in `detail` alone, and a row whose `summary` is absent —
-  stored before the column existed — falls back to rendering `detail` as the line,
-  with no expander.
+- An advisory carries TWO pieces of prose, not one, and the two sit on different
+  surfaces. `summary` is the observation — one line, carrying this payload's numbers
+  ("3 of 12 reports carry no appliance serial number") — and it is the advisory line
+  in the transmission detail. `detail` is the rationale, and it is one static text per
+  `adv.*` id: no branch variant, nothing interpolated from a payload. The API serves
+  it on the advisory signature, and a supplier reads it on the advisory row in the
+  compliance column. The split is drawn there because that row has no payload in front
+  of it — it stands for every transmission that raised the advisory, so a rationale
+  that quoted one delivery's numbers, or chose its wording by report type, would be
+  speaking for a payload it cannot see. Every advisory check supplies both, and
+  `AdvisoryInput` requires them. A graded §7 finding carries no `summary` and keeps its
+  explanation in `detail` alone, and a row whose `summary` is absent — stored before
+  the column existed — falls back to rendering `detail` as the transmission-detail
+  line.
 - Advisories use named codes rather than numbers, because an advisory catalogue has
   no external document to number against.
 - The §7 matrix is immune by construction: the join iterates the 27 static rows and
@@ -381,13 +386,17 @@ Several properties follow from that decision:
 `ADVISORY_CHECKS` in [`advisory.ts`](src/ingest/stages/semantic/advisory.ts) is the
 registration point and the count of record. Each check's scope (what it reads,
 what it deliberately excludes, and why) is documented in its own module header.
-The dashboard surface is specified in two places: the compliance column (section
-behaviour, palette, and cross-filtering) in
-[`ComplianceCard.tsx`](src/web/components/ComplianceCard.tsx), and the
-transmission detail (the separate advisory block, the chip that reads "Advisory"
-rather than "Issue", and the exclusion of advisories from the findings cell and the
-raw-payload inspector) in
-[`TransmissionsCard.tsx`](src/web/components/TransmissionsCard.tsx).
+The dashboard surface is specified in two places. The compliance column
+([`ComplianceCard.tsx`](src/web/components/ComplianceCard.tsx)) specifies section
+behaviour, palette, cross-filtering, and the advisory row: it collapses and expands
+in the same shape as a requirement row, and what it expands to is the served
+rationale and one "Matching transmissions" control that sets the signature filter.
+The transmission detail
+([`TransmissionsCard.tsx`](src/web/components/TransmissionsCard.tsx)) specifies the
+separate advisory block, the chip that reads "Advisory" rather than "Issue", the
+exclusion of advisories from the findings cell and the raw-payload inspector, and
+the advisory line — this payload's observation and its pointer drill-down, under a
+title that opens the matching row in the compliance column.
 
 | Advisory                        | Observes                                                                                                                                                                                                                                                                                         | Module                                                                            |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |

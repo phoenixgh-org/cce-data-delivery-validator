@@ -713,8 +713,13 @@ function PointerLine({
  * piece of FindingItem that applies unchanged, and it is how a supplier sees
  * what the observation is about.
  *
- * The prose is two pieces since agj.17 — the observation on the row, the
- * rationale behind the expander. {@link advisoryLine} decides which, and why.
+ * THIS ROW CARRIES THE OBSERVATION ONLY. Advisory prose is two pieces, and since
+ * synm the two sit on different surfaces: the observation, with this payload's
+ * numbers, is the line below the title ({@link advisoryLine}); the rationale is
+ * static per advisory id and is read on the advisory row in the compliance
+ * column, which is what the title links to. Repeating a text that is the same on
+ * every transmission under each transmission that raised it would be noise here,
+ * and it is the reason the "why" expander this row used to carry is gone.
  */
 export function AdvisoryItem({
   finding,
@@ -785,21 +790,21 @@ export function AdvisoryItem({
 }
 
 /**
- * What an advisory row SHOWS, and whether anything sits behind its expander
- * (agj.17).
+ * The one line an advisory shows in the transmission detail (agj.17, synm).
  *
  * An advisory carries two pieces of prose: `summary` is the one-line observation
- * with its numbers, `detail` the rationale for it. The row shows the observation
- * and keeps the rationale one click away, because a supplier scanning a list of
- * advisories is reading for what was seen, not yet for why it matters.
+ * with this payload's numbers, `detail` the rationale for it. What belongs here
+ * is the observation, because this is the one surface that has the payload in
+ * front of it; the rationale is static per advisory id and is read on the
+ * advisory row in the compliance column instead.
  *
  * TWO COHORTS, ONE COMPONENT. `summary` arrived after findings were already being
  * stored, and a check emits one only once its copy has been converted. So a row
  * whose summary is null or blank — a finding written before the column existed
  * and still inside the retention window, or a check not yet converted — falls
- * back to rendering `detail` as the line, with no expander: exactly what it
- * looked like before this split. The fallback is not a transitional hack to be
- * removed; it is also what a graded finding routed here would need.
+ * back to rendering `detail` as the line, which is the best text that row has and
+ * is what it rendered before the split. The fallback is not a transitional hack
+ * to be removed; it is also what a graded finding routed here would need.
  */
 export function advisoryLine(finding: Pick<FindingView, 'summary' | 'detail'>): string | null {
   const summary = typeof finding.summary === 'string' ? finding.summary.trim() : '';

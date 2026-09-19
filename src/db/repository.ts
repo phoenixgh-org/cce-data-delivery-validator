@@ -103,8 +103,9 @@ export interface InsertFindingInput {
   severity: Severity;
   /**
    * The one-line OBSERVATION carried by an advisory (agj.17) — the numbers, in
-   * the supplier's terms, shown on the advisory row with `detail` behind the
-   * expander. Null on graded findings, and null on advisories stored before this
+   * the supplier's terms, shown in the transmission detail while `detail`, the
+   * rationale, is read on the compliance column's advisory row (synm). Null on
+   * graded findings, and null on advisories stored before this
    * column existed (db/initdb/90-finding-summary.sql); the dashboard falls back
    * to `detail` for both.
    */

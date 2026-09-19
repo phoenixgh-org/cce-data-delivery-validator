@@ -347,8 +347,9 @@ export function sigTone(sig: Pick<Signature, 'kind' | 'sev'>): string {
  * §3.2 finding, which carries `sev:'info'`). The active row (key ===
  * `activeSignatureKey`) takes an `--accent` border + `--accent-weak` fill.
  *
- * Advisories reuse this row wholesale but NOT its status palette — see
- * {@link sigTone}.
+ * Advisories no longer render through this row — they have {@link AdvisoryRow}
+ * since synm — but they still share {@link sigTone}, which is what keeps a status
+ * colour off the advisory surface.
  */
 export function SigRow({
   sig,
@@ -923,13 +924,15 @@ export function AdvisoryRow({
  * header's SHAPE (chevron · label · count · one faint line) so the column reads
  * as one thing.
  *
- * WHY IT LIVES IN THE COLUMN AT ALL. Its rows are the same interaction as a
- * requirement's distinct-issue rows — click to cross-filter the transmission
- * list — so they are the same {@link SigRow}, driving the same
- * `onSelectSignature`. Picking one sets the signature filter and NOTHING else:
- * `failuresOnly` is a separate control the Dashboard never touches from here,
- * which matters because an advisory-only transmission has zero failures and
- * would vanish from its own cross-filter if picking implied failures-only.
+ * WHY IT LIVES IN THE COLUMN AT ALL. Its rows read as requirement rows do: an
+ * {@link AdvisoryRow} collapses and expands on the same column grid, and what it
+ * expands to is the served rationale and one "Matching transmissions" control.
+ * That control is the cross-filter the rows themselves used to be, before synm
+ * gave each advisory a row of its own — so picking it still hands the whole
+ * Signature to `onSelectSignature` and sets NOTHING else. `failuresOnly` is a
+ * separate control the Dashboard never touches from here, which matters because
+ * an advisory-only transmission has zero failures and would vanish from the
+ * cross-filter the click just set.
  *
  * WHAT IT DOES NOT DO: no StatusPill, no `§` cross-link (an advisory belongs to
  * no requirement), no pass/fail tally, and no status colour — see

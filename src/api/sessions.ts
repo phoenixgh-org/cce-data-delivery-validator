@@ -70,9 +70,10 @@ function toFindingView(f: FindingRow) {
     requirement: f.requirement,
     severity: f.severity,
     // Advisory prose is two pieces since agj.17: `summary` is the one-line
-    // observation shown on the row, `detail` the rationale behind its expander.
-    // Null on graded findings and on rows stored before the column existed — the
-    // browser falls back to `detail` in both cases.
+    // observation this detail shows, `detail` the rationale, which since synm is
+    // static per id and read on the compliance column's advisory row. Null on
+    // graded findings and on rows stored before the column existed — the browser
+    // falls back to `detail` as the line in both cases.
     summary: f.summary,
     detail: f.detail,
     pointer: f.pointer,

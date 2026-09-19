@@ -80,7 +80,7 @@ export interface ObservedFinding {
    * run-wide instead.
    */
   readonly summary?: string;
-  /** The rationale behind the advisory row's expander. Optional like {@link summary}. */
+  /** The rationale, static per advisory id. Optional like {@link summary}. */
   readonly detail?: string;
   /**
    * The stable check code the finding carries, where it carries one (tfnv.10).

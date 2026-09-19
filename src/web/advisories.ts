@@ -30,8 +30,15 @@
  * what this category exists to avoid.
  *
  * What remains here is what the server signature cannot supply: the
- * per-transmission partition ({@link splitFindings}), the label derivation for a
- * raw finding ({@link advisoryLabel}), and the copy ({@link ADVISORY_COPY}).
+ * per-transmission partition ({@link splitFindings}), the words for an `adv.*` id
+ * ({@link advisoryLabel}) and the id itself out of a signature key
+ * ({@link advisoryIdFromKey}), and the section copy ({@link ADVISORY_COPY}).
+ *
+ * WHAT THIS MODULE DELIBERATELY DOES NOT HOLD is the per-advisory RATIONALE.
+ * Since synm it is one static text per id, served on the advisory signature and
+ * rendered on the compliance column's advisory row; a browser-side copy would be
+ * a second owner of wording each check is the single owner of, and it would go
+ * stale the first time a check reworded its own text.
  *
  * WORDING. Every string this module exports is user-facing, and wording is
  * acceptance rather than polish (pwd's HONESTY section): advisory prose must
