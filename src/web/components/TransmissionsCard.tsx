@@ -1913,11 +1913,13 @@ function RawPayload({
  * The band's background is the region's own `--detail`, opaque, so content
  * passes under it rather than through it.
  *
- * `tx === null` is the empty state: the label and the bar's alignment stay, the
- * identity line and the accent colour do not. There is no transmission to name,
- * and colouring the bar would claim a tie to a selected row that does not exist.
+ * THE BAND ALWAYS HAS A TRANSMISSION TO NAME (gcfj). The pinned region renders
+ * it only where the list is non-empty, and the card resolves a selection for
+ * every non-empty list — so the prop is a `TransmissionView`, not a nullable
+ * one, and the compiler holds the invariant in place of a branch that could
+ * never run.
  */
-function TxDetailHeader({ tx }: { tx: TransmissionView | null }): ReactElement {
+function TxDetailHeader({ tx }: { tx: TransmissionView }): ReactElement {
   return (
     <div
       style={{
@@ -1926,21 +1928,19 @@ function TxDetailHeader({ tx }: { tx: TransmissionView | null }): ReactElement {
         zIndex: 1,
         background: 'var(--detail)',
         borderBottom: '1px solid var(--border)',
-        borderLeft: `${ACCENT_BAR_PX}px solid ${tx === null ? 'transparent' : 'var(--accent)'}`,
+        borderLeft: `${ACCENT_BAR_PX}px solid var(--accent)`,
         // Left padding is short by the bar's width so the label and the identity
         // line sit on the body's own 16px text edge below.
         padding: `7px 16px 7px ${16 - ACCENT_BAR_PX}px`,
       }}
     >
       <div style={eyebrow}>Transmission detail</div>
-      {tx !== null && (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ ...mono, fontWeight: 700, fontSize: 13 }}>t-{shortId(tx.id)}</span>
-          <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)' }}>
-            {tx.sourceLabel} · HTTP {tx.http_status ?? '—'} · {relativeAgo(tx.received_at)}
-          </span>
-        </div>
-      )}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ ...mono, fontWeight: 700, fontSize: 13 }}>t-{shortId(tx.id)}</span>
+        <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)' }}>
+          {tx.sourceLabel} · HTTP {tx.http_status ?? '—'} · {relativeAgo(tx.received_at)}
+        </span>
+      </div>
     </div>
   );
 }
@@ -2238,6 +2238,11 @@ export function TransmissionsCard({
   // Default to the newest (first) transmission when nothing is selected or the
   // selection no longer exists. The API returns newest-first, so [0] is newest.
   // Dashboard owns selection reconciliation; we only resolve the row to dock.
+  //
+  // Null EXACTLY when the list is empty (gcfj): the fallback resolves a row for
+  // every non-empty list, so there is no "nothing selected" state to render. The
+  // list below branches on this rather than on `transmissions.length`, which is
+  // the same condition said once, and narrows the type for the detail pane.
   const selected = transmissions.find((t) => t.id === selectedTx) ?? transmissions[0] ?? null;
   // Header denominator: prefer the post-filter scoped total from the list
   // response; fall back to the page length when the seam isn't supplied.
@@ -2378,7 +2383,7 @@ export function TransmissionsCard({
         </div>
       )}
 
-      {transmissions.length === 0 ? (
+      {selected === null ? (
         <div style={{ padding: '34px 24px', textAlign: 'center', color: 'var(--text-muted)' }}>
           <div style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: 300, margin: '0 auto' }}>
             No transmissions match the current filters. Widen the time window or clear a filter.
@@ -2471,7 +2476,7 @@ export function TransmissionsCard({
                   >
                     <TxRow
                       tx={t}
-                      selected={selected !== null && selected.id === t.id}
+                      selected={selected.id === t.id}
                       onSelect={() => onSelectTx(t.id)}
                       shadowProfile={shadowProfile}
                       lens={lens}
@@ -2486,9 +2491,8 @@ export function TransmissionsCard({
               It is its own panel now (tast): DETAIL_GAP_PX of pane ground above it
               and a 1px top edge, in place of the 2px divider that made it read as a
               continuation of the list's last row. TxDetailHeader is rendered here
-              rather than inside TxDetail so the band reaches the region's edges —
-              which is what lets it stick at `top: 0` — and so the empty state below
-              carries the same label. */}
+              rather than inside TxDetail so the band reaches the region's edges,
+              which is what lets it stick at `top: 0`. */}
           <div
             style={{
               flex: TX_DETAIL_FLEX,
@@ -2500,27 +2504,14 @@ export function TransmissionsCard({
             }}
           >
             <TxDetailHeader tx={selected} />
-            {selected ? (
-              <TxDetail
-                tx={selected}
-                onSelectReq={onSelectReq}
-                lens={lens}
-                contractProfile={contractProfile}
-                signatures={signatures}
-                onSelectSignature={onSelectSignature}
-              />
-            ) : (
-              <div
-                style={{
-                  padding: '24px 16px',
-                  textAlign: 'center',
-                  fontSize: 12,
-                  color: 'var(--text-faint)',
-                }}
-              >
-                Select a transmission to see its findings.
-              </div>
-            )}
+            <TxDetail
+              tx={selected}
+              onSelectReq={onSelectReq}
+              lens={lens}
+              contractProfile={contractProfile}
+              signatures={signatures}
+              onSelectSignature={onSelectSignature}
+            />
           </div>
         </>
       )}

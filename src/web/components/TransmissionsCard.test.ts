@@ -735,7 +735,7 @@ test('the reveal effect keys on the counter alone, so an unasked-for open does n
 /**
  * THE DETAIL PANE IS ITS OWN PANEL (tast). The pane used to sit one 2px divider
  * below the list and open on a bare mono `t-` line, which let a reader take it
- * as describing the list's last row rather than the selected one. Four claims
+ * as describing the list's last row rather than the selected one. Three claims
  * fix that, all of them styling a component renders rather than a value it
  * returns — so, like the reveal wiring above, they are pinned against the source
  * text. Nothing here can be held by the compiler and nothing here has a DOM to
@@ -751,9 +751,13 @@ test('the reveal effect keys on the counter alone, so an unasked-for open does n
  *      bar must be the same width and the same token, or the tie they exist to
  *      make is not a tie. The width comes from one constant; both read
  *      `var(--accent)`.
- *   4. THE EMPTY STATE STAYS SENSIBLE. With nothing selected the band keeps its
- *      label and its alignment but names no transmission and takes no accent —
- *      there is no selected row for the accent to point at.
+ *
+ * A fourth claim used to be here — that the band stayed sensible with nothing
+ * selected — and it was retired with the branch it described (gcfj). The card
+ * docks the newest transmission whenever the list is non-empty and renders the
+ * band only there, so "nothing selected" was a state the pane could not reach;
+ * `TxDetailHeader` now takes a non-null `TransmissionView` and the compiler
+ * holds what that test was standing in for.
  */
 
 /** The body of a `function <name>(…) { … }` declaration, to its closing brace. */
@@ -786,20 +790,13 @@ test('the detail header band is sticky, labelled, and names the transmission', (
 test('the selected row and the detail header share one accent bar', () => {
   assert.match(componentSource, /const ACCENT_BAR_PX = \d+;/);
   // Both bars take their width from the constant, so neither can drift alone.
-  const bars = componentSource.match(/borderLeft: `\$\{ACCENT_BAR_PX\}px solid \$\{[^`]+`/g) ?? [];
+  // The row's colour is conditional (transparent when unselected) and the band's
+  // is not, so the pin is on the width and the token, not on the expression.
+  const bars = componentSource.match(/borderLeft: `\$\{ACCENT_BAR_PX\}px solid [^`]+`/g) ?? [];
   assert.equal(bars.length, 2, bars.join('\n'));
   for (const bar of bars) assert.match(bar, /var\(--accent\)/);
   // The row's old marker was --text, which tied it to nothing.
   assert.doesNotMatch(componentSource, /2px solid var\(--text\)/);
-});
-
-test('with nothing selected the band keeps its label but claims no transmission', () => {
-  const header = functionBody('TxDetailHeader');
-  assert.match(header, /tx === null \? 'transparent' : 'var\(--accent\)'/);
-  assert.match(header, /\{tx !== null && \(/);
-  // The pinned region renders the band for both states, so the empty body below
-  // it is labelled too.
-  assert.match(componentSource, /<TxDetailHeader tx=\{selected\} \/>\n\s*\{selected \? \(/);
 });
 
 test('the height-budget docblock does the arithmetic the constants actually make', () => {
