@@ -664,6 +664,41 @@ test('a lens row agreeing with the folded findings and the verdicts is clean', (
   );
 });
 
+test('a fanned-out body is ONE failing transmission on the row it folds onto (vsy1)', () => {
+  // The audit grades the number the page shows, and since vsy1 that number is in
+  // transmissions. One body whose schema run wrote five fails is one failing
+  // transmission on 5.3.2 — a served 5 would now be the defect, not the match.
+  const fanout: ObservedFinding[] = ['LDOP', 'LMFR', 'LPQS', 'LMOD', 'LSER'].map((property) => ({
+    requirement: '5.3.2',
+    severity: 'fail',
+    profile: 'ds013',
+    outdated: false,
+    detail: `Annex 4 requires ${property}`,
+  }));
+
+  const clean = auditLensRows(
+    'ds013',
+    lensRows({ '5.3.2': 1 }),
+    findings({ 'tx-1': fanout }),
+    verdicts({ 'tx-1': { ds013: 'fail' } }),
+  );
+  assert.deepEqual(clean.violations, []);
+  assert.deepEqual(
+    clean.failing.map((row) => [row.requirement, row.served, row.folded]),
+    [['5.3.2', 1, 1]],
+  );
+
+  // And the transmission id really is threaded through: were every finding folded
+  // under one constant id, two bodies would still report 1 here.
+  const two = auditLensRows(
+    'ds013',
+    lensRows({ '5.3.2': 2 }),
+    findings({ 'tx-1': fanout, 'tx-2': fanout }),
+    verdicts({ 'tx-1': { ds013: 'fail' }, 'tx-2': { ds013: 'fail' } }),
+  );
+  assert.deepEqual(two.violations, []);
+});
+
 test('a served count the findings do not support is a violation naming both numbers', () => {
   // The regression this exists for: the page adds up a clause differently from
   // the evidence beneath it. Both numbers are in the line, so the reader is not
@@ -676,7 +711,10 @@ test('a served count the findings do not support is a violation naming both numb
   );
 
   assert.equal(audit.violations.length, 1);
-  assert.match(audit.violations[0]!, /5\.1\.5: the ds013 summary reports 2 fail\(s\)/);
+  assert.match(
+    audit.violations[0]!,
+    /5\.1\.5: the ds013 summary reports 2 failing transmission\(s\)/,
+  );
   assert.match(audit.violations[0]!, /fold 1 onto it/);
 });
 
@@ -705,7 +743,10 @@ test('evidence folding onto a clause the package does not serve is a violation',
   );
 
   assert.equal(audit.violations.length, 1);
-  assert.match(audit.violations[0]!, /5\.1\.5: 1 fail\(s\) fold onto a row the ds013 package/);
+  assert.match(
+    audit.violations[0]!,
+    /5\.1\.5: 1 failing transmission\(s\) fold onto a row the ds013 package/,
+  );
 });
 
 test('a row failure the transmission verdict denies is a violation, and so is the converse', () => {

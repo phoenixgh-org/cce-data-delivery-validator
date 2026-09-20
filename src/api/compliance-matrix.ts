@@ -42,27 +42,54 @@ export interface MatrixRow {
   classes: readonly ComplianceClass[];
 }
 
-/** Live per-requirement finding counts, keyed by `Severity` (DESIGN.md §8). */
-export type FindingCounts = Record<Severity, number>;
-
 /**
- * Map of requirement id → live counts. The caller (slice B) aggregates
- * `finding` rows by requirement+severity. Requirements absent from the map are
- * treated as having zero findings.
+ * A live tally keyed by `Severity` (DESIGN.md §8).
+ *
+ * THE UNIT IS THE FIELD'S, NOT THE TYPE'S (vsy1). The same three keys now carry
+ * two different units, and the field holding them says which:
+ * {@link ComplianceLive.counts} tallies DISTINCT TRANSMISSIONS, and
+ * {@link ComplianceLive.findings} tallies FINDINGS. That is why this type is no
+ * longer called `FindingCounts` — a name that was true while there was only one
+ * unit and would now be a lie on the larger of the two readings.
  */
-export type FindingCountsByRequirement = Record<string, FindingCounts>;
+export type SeverityCounts = Record<Severity, number>;
 
 /**
- * Map of requirement id → how many of that requirement's findings carry the
- * `outdated` flag (2kx).
+ * Map of requirement id → live counts. The caller (slice B) aggregates the
+ * session's findings by requirement+severity. Requirements absent from the map
+ * are treated as zero.
+ */
+export type SeverityCountsByRequirement = Record<string, SeverityCounts>;
+
+/**
+ * Map of requirement id → how many SCOPED TRANSMISSIONS produced at least one
+ * finding on that row — the "reached the check" half of {@link
+ * ComplianceLive.notReached}.
+ *
+ * It is not derivable from {@link SeverityCountsByRequirement}: one transmission
+ * can carry both a pass and a fail on a collapsed DS01.3 clause (one member
+ * passed, another failed), so `pass + fail` can exceed the number of
+ * transmissions that reached the row. Requirements absent from the map have zero.
+ */
+export type ReachedByRequirement = Record<string, number>;
+
+/**
+ * Map of requirement id → how many SCOPED TRANSMISSIONS carry at least one
+ * `outdated`-flagged finding on that row (2kx).
  *
  * `outdated` is NOT a severity and deliberately does not become one: an
  * outdated-but-valid schema version is recorded severity=`info` (see bd memory
  * `schema-registry-0.8.1-current-outdated`), and 2kx locked that model — no
  * fourth severity, no DDL. It is a per-finding MODIFIER carried alongside the
  * severity counts, which is why it travels in its own map rather than as a
- * fourth key of {@link FindingCounts} (that type mirrors the DB severity enum
+ * fourth key of {@link SeverityCounts} (that type mirrors the DB severity enum
  * and the browser's copy of it). Requirements absent from the map have zero.
+ *
+ * ITS UNIT FOLLOWS `counts` (vsy1). The modifier is rendered on the same line as
+ * the severity tally, so leaving it in findings while that tally moved to
+ * transmissions would put two units in one line — the defect vsy1 exists to
+ * remove. Today the two readings coincide (the schema stage writes at most one
+ * outdated finding per transmission), so nothing on the page moves.
  *
  * Only the §3.2 schema stage sets the flag today, but nothing here is §3.2
  * specific — any requirement that ever flags a finding gets the same treatment.
@@ -101,17 +128,65 @@ export type DisplayStatus =
  * a richer row type through — the DS01.3 package's rows (src/api/lens.ts) add
  * three fields of their own, and they reach the wire because the join spreads
  * whatever row it was given rather than rebuilding a fixed shape.
+ *
+ * WHY THE ROW CARRIES BOTH UNITS (vsy1). A row's headline tally has to be
+ * readable against the scorecard beside it, and the scorecard counts
+ * TRANSMISSIONS. Counting findings made the two read as a ratio when they were
+ * not one: the schema stage emits one fail per Ajv error, so a single structural
+ * omission could show as five failures on a row whose neighbour reported one
+ * transmission. So `counts` moves to transmissions.
+ *
+ * The finding tally is kept rather than dropped, under its own name, because it
+ * is the only number that says how much evidence sits behind the row — "55
+ * transmissions failing" and "230 distinct findings" answer different questions,
+ * and the expansion shows both. The alternative considered was moving the finding
+ * tally into the signature payload and leaving only transmissions here. It was
+ * rejected: a signature is a defect SHAPE, so its counts cannot be summed back to
+ * a row total (one transmission contributes to several signatures), and a row
+ * with no matching signature would lose its finding count altogether. Two fields
+ * on the row keep both numbers derivable from the row that reports them, which is
+ * also what a hand-written browser mirror can follow without a second join.
  */
 export interface ComplianceLive {
-  counts: FindingCounts;
   /**
-   * How many of this requirement's findings carry the `outdated` flag (2kx).
-   * Sits beside `counts` rather than inside it because it is a modifier, not a
-   * severity — see {@link OutdatedCountsByRequirement}. It is the evidence
-   * behind a `pass-outdated` status, and the dashboard renders it as its own
-   * amber count.
+   * DISTINCT SCOPED TRANSMISSIONS carrying at least one finding of that severity
+   * on this row. A transmission with five `fail` findings here counts once, and
+   * so does a transmission failing two members of a collapsed DS01.3 clause
+   * (f2bl) — which is why no row can now report more than the scope holds.
+   *
+   * The three keys are independent, not a partition: a transmission that passed
+   * one member of a collapsed clause and failed another is counted in `pass` AND
+   * in `fail`. Use {@link notReached}, not `total − pass − fail`, for the
+   * remainder.
+   */
+  counts: SeverityCounts;
+  /**
+   * FINDINGS on this row, by severity — the unit `counts` carried before vsy1,
+   * retained so the expansion can say how much evidence is behind the tally.
+   * Always ≥ the matching `counts` entry.
+   */
+  findings: SeverityCounts;
+  /**
+   * How many of this row's scoped transmissions carry an `outdated`-flagged
+   * finding (2kx). Sits beside `counts` rather than inside it because it is a
+   * modifier, not a severity — see {@link OutdatedCountsByRequirement}. It is the
+   * evidence behind a `pass-outdated` status, and the dashboard renders it as its
+   * own amber count.
    */
   outdated: number;
+  /**
+   * Scoped transmissions that produced NO finding on this row: they never reached
+   * the check, because an earlier stage rejected them (a 401, a 413, a body that
+   * never parsed) or because the check does not apply to them.
+   *
+   * This is a THIRD STATE, not a subtraction the reader can do: `pass + fail`
+   * never had to equal the scope, and the two are not disjoint. It is computed
+   * here, in the join, because this is the first place that knows both halves —
+   * the fold sees only findings and cannot know how large the scope was, and the
+   * browser knows neither. Zero when the caller supplied no scoped total, which
+   * says the join was handed no scope beyond the findings themselves.
+   */
+  notReached: number;
   status: DisplayStatus;
 }
 
@@ -204,7 +279,7 @@ export const COMPLIANCE_MATRIX: readonly MatrixRow[] = [
   { requirement: '5.3', summary: 'Filter all vs never-sent', classes: ['active-only'] },
 ];
 
-const ZERO_COUNTS: FindingCounts = { pass: 0, fail: 0, info: 0 };
+const ZERO_COUNTS: SeverityCounts = { pass: 0, fail: 0, info: 0 };
 
 /**
  * Derive a row's display status from its PRIMARY class (classes[0]), live counts
@@ -225,10 +300,17 @@ const ZERO_COUNTS: FindingCounts = { pass: 0, fail: 0, info: 0 };
  *      an older version has something to fix, so the amber verdict wins over a
  *      clean `pass`);
  *   3. only then do zero pass findings mean `untested`.
+ *
+ * UNIT-INDEPENDENT BY CONSTRUCTION (vsy1). Every test here is `> 0` or `=== 0`,
+ * and a row has a nonzero transmission count for a severity exactly when it has a
+ * nonzero finding count for it. Moving `counts` from findings to distinct
+ * transmissions therefore cannot move a single status — which is why that change
+ * was presentation only, and why the equality is pinned by test rather than
+ * argued.
  */
 function deriveStatus(
   primary: ComplianceClass,
-  counts: FindingCounts,
+  counts: SeverityCounts,
   outdated: number,
 ): DisplayStatus {
   switch (primary) {
@@ -253,14 +335,47 @@ function deriveStatus(
 }
 
 /**
- * Join LIVE per-requirement finding counts onto a requirement matrix and derive
- * each row's display status (DESIGN.md §7). PURE: no DB, no HTTP, no mutation of
+ * The SECOND unit and the THIRD state, supplied by the caller that knows them
+ * (vsy1). Optional as a group: omitting it reproduces the pre-vsy1 row exactly,
+ * with the finding tally equal to `counts` and nothing outstanding.
+ */
+export interface ScopeEvidence {
+  /**
+   * Findings per row per severity. Defaults to `countsByRequirement`, which is
+   * right for a caller that has not distinguished the two units — the counts it
+   * passed are then both tallies at once.
+   */
+  findings?: SeverityCountsByRequirement;
+  /** Scoped transmissions that produced any finding on the row. */
+  reached?: ReachedByRequirement;
+  /**
+   * How many transmissions the caller's scope holds. This is the one fact no
+   * pure fold over findings can recover, and without it {@link
+   * ComplianceLive.notReached} is 0 on every row.
+   */
+  scopedTotal?: number;
+}
+
+/**
+ * Join LIVE per-requirement counts onto a requirement matrix and derive each
+ * row's display status (DESIGN.md §7). PURE: no DB, no HTTP, no mutation of
  * inputs. Returns every row in matrix order; requirements with no entry in
- * `countsByRequirement` are treated as zero findings (→ `untested` when
- * gradeable, never a false pass).
+ * `countsByRequirement` are treated as zero (→ `untested` when gradeable, never a
+ * false pass).
  *
- * `outdatedByRequirement` (2kx) is the parallel count of findings carrying the
- * `outdated` flag; omitting it reproduces the pre-2kx behaviour exactly.
+ * `countsByRequirement` is in DISTINCT TRANSMISSIONS since vsy1 when the caller
+ * folded it that way (src/api/lens.ts does). The join neither knows nor needs to
+ * know which unit it was handed — `deriveStatus` only asks `> 0` — so a caller
+ * that still passes per-finding counts gets exactly the row it got before.
+ *
+ * `outdatedByRequirement` (2kx) is the parallel count of transmissions carrying
+ * an `outdated`-flagged finding; omitting it reproduces the pre-2kx behaviour.
+ *
+ * `evidence` carries the finding tally and the scoped total, the two things this
+ * module cannot derive; see {@link ScopeEvidence}. THE NOT-REACHED REMAINDER IS
+ * COMPUTED HERE, and deliberately not in the fold (which cannot see the scope)
+ * nor in the browser (which cannot see it either, and would have to subtract two
+ * non-disjoint counts to guess it).
  *
  * `matrix` defaults to the §7 matrix and is the ONE thing the grading lens
  * changes (tfnv.4): under the DS01.3 lens the caller passes that package's rows,
@@ -271,18 +386,42 @@ function deriveStatus(
  * the result untouched.
  */
 export function computeComplianceSummary<T extends MatrixRow = MatrixRow>(
-  countsByRequirement: FindingCountsByRequirement = {},
+  countsByRequirement: SeverityCountsByRequirement = {},
   outdatedByRequirement: OutdatedCountsByRequirement = {},
   matrix: readonly T[] = COMPLIANCE_MATRIX as readonly T[],
+  evidence: ScopeEvidence = {},
 ): Array<T & ComplianceLive> {
+  const {
+    findings: findingsByRequirement = countsByRequirement,
+    reached: reachedByRequirement = {},
+    scopedTotal,
+  } = evidence;
+
   return matrix.map((row) => {
     const live = countsByRequirement[row.requirement];
-    const counts: FindingCounts = live
+    const counts: SeverityCounts = live
       ? { pass: live.pass, fail: live.fail, info: live.info }
       : { ...ZERO_COUNTS };
+    const liveFindings = findingsByRequirement[row.requirement];
+    const findings: SeverityCounts = liveFindings
+      ? { pass: liveFindings.pass, fail: liveFindings.fail, info: liveFindings.info }
+      : { ...ZERO_COUNTS };
     const outdated = outdatedByRequirement[row.requirement] ?? 0;
+    // Clamped at zero so a caller that scoped one set and folded another can
+    // never make a row read as owing a negative number of transmissions.
+    const notReached =
+      scopedTotal === undefined
+        ? 0
+        : Math.max(0, scopedTotal - (reachedByRequirement[row.requirement] ?? 0));
     // classes is non-empty by construction; classes[0] is the grading class.
     const primary = row.classes[0]!;
-    return { ...row, counts, outdated, status: deriveStatus(primary, counts, outdated) };
+    return {
+      ...row,
+      counts,
+      findings,
+      outdated,
+      notReached,
+      status: deriveStatus(primary, counts, outdated),
+    };
   });
 }

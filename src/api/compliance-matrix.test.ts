@@ -5,7 +5,11 @@ import {
   COMPLIANCE_MATRIX,
   computeComplianceSummary,
   type ComplianceRow,
+  type OutdatedCountsByRequirement,
+  type SeverityCountsByRequirement,
 } from './compliance-matrix.js';
+import { foldUnderLens, lensMatrix, type LensFinding } from './lens.js';
+import type { Profile } from '../schema-registry.js';
 
 /** Find the computed row for a requirement id (asserts it exists). */
 function row(rows: ComplianceRow[], requirement: string): ComplianceRow {
@@ -288,4 +292,244 @@ test('PIN: a 100%-conformant supplier stays 100% conformant while carrying advis
     advised.every((r) => r.status === 'pass'),
     'advisories must never cost a supplier a green row',
   );
+});
+
+/* ── the row's two units and its third state (vsy1, f2bl) ────────────────────
+ *
+ * A row's headline tally counts DISTINCT TRANSMISSIONS; the finding tally rides
+ * beside it under `findings`; and `notReached` names the scoped transmissions
+ * that produced no finding on the row at all. What these cases protect:
+ *
+ *   1. GRADING DOES NOT MOVE. The unit change is presentation. Every status is
+ *      asserted against the status the SAME session produced under the old
+ *      per-finding unit, recomputed here by `foldByFinding` rather than copied
+ *      from a snapshot — so the pin cannot rot into agreeing with itself.
+ *   2. NO ROW OUTRUNS THE SCOPE (f2bl). The defect f2bl records is a clause
+ *      reporting 142 passes over 76 transmissions; the invariant that forbids it
+ *      is asserted over every row of both packages.
+ *   3. THE REMAINDER IS THE CALLER'S. `notReached` is 0 until a scoped total is
+ *      supplied, because nothing in a finding set says how many transmissions
+ *      never produced one.
+ */
+
+const CONTRACT_LENS: Profile = '2025';
+const DRAFT_LENS: Profile = 'ds013';
+
+/**
+ * Seven transmissions exercising every way the two units diverge: a clause
+ * collapse (1.1 + 1.2 → 5.1.3) on three bodies, a schema fan-out on one body in
+ * each lineage, a transport halt, an outdated-but-valid body, and one body that
+ * produced no finding at all — the not-reached case, which no fold can see.
+ */
+const SESSION: readonly LensFinding[] = [
+  // tx-1 — clean under both members of the collapsed clause.
+  {
+    transmissionId: 'tx-1',
+    requirement: '1.1',
+    severity: 'pass',
+    profile: '2025',
+    outdated: false,
+  },
+  {
+    transmissionId: 'tx-1',
+    requirement: '1.2',
+    severity: 'pass',
+    profile: '2025',
+    outdated: false,
+  },
+  {
+    transmissionId: 'tx-1',
+    requirement: '3.2',
+    severity: 'pass',
+    profile: '2025',
+    outdated: false,
+  },
+  // tx-2 — clean on the clause, rejected by Annex 4 on five logger properties.
+  {
+    transmissionId: 'tx-2',
+    requirement: '1.1',
+    severity: 'pass',
+    profile: '2025',
+    outdated: false,
+  },
+  {
+    transmissionId: 'tx-2',
+    requirement: '1.2',
+    severity: 'pass',
+    profile: '2025',
+    outdated: false,
+  },
+  ...['LDOP', 'LMFR', 'LPQS', 'LMOD', 'LSER'].map(
+    (property): LensFinding => ({
+      transmissionId: 'tx-2',
+      requirement: '5.3.2',
+      severity: 'fail',
+      profile: 'ds013',
+      outdated: false,
+      code: `required:${property}`,
+    }),
+  ),
+  // tx-3 — fails BOTH members of the collapsed clause: one failing transmission.
+  {
+    transmissionId: 'tx-3',
+    requirement: '1.1',
+    severity: 'fail',
+    profile: '2025',
+    outdated: false,
+  },
+  {
+    transmissionId: 'tx-3',
+    requirement: '1.2',
+    severity: 'fail',
+    profile: '2025',
+    outdated: false,
+  },
+  // tx-4 — a transport halt, which the clause map carries onto 5.1.5.
+  {
+    transmissionId: 'tx-4',
+    requirement: '1.4',
+    severity: 'fail',
+    profile: '2025',
+    outdated: false,
+  },
+  // tx-5 — nothing at all: rejected at the door, and invisible to the fold.
+  // tx-6 — valid against a registered-but-older version (2kx).
+  { transmissionId: 'tx-6', requirement: '1.8', severity: 'info', profile: '2025', outdated: true },
+  // tx-7 — the same fan-out on the CONTRACT side, so the two units diverge under
+  // the contract lens too and the pin below is not a draft-only assertion. §3.2 is
+  // not carried onto a DS01.3 clause, so these findings are dropped under the
+  // draft lens — which is itself the rule tfnv locked.
+  ...['ABST', 'TVC', 'CMPR'].map(
+    (object): LensFinding => ({
+      transmissionId: 'tx-7',
+      requirement: '3.2',
+      severity: 'fail',
+      profile: '2025',
+      outdated: false,
+      code: `required:${object}`,
+    }),
+  ),
+];
+
+/** How many transmissions the scope above holds — tx-5 included, findings or not. */
+const SCOPED = 7;
+
+/** The PRE-vsy1 fold: one increment per finding, one per outdated flag. */
+function foldByFinding(
+  findings: readonly LensFinding[],
+  lens: Profile,
+): { counts: SeverityCountsByRequirement; outdated: OutdatedCountsByRequirement } {
+  const counts: SeverityCountsByRequirement = {};
+  const outdated: OutdatedCountsByRequirement = {};
+  // The ROUTING is not what changed, so it is borrowed from the fold under test
+  // rather than re-implemented: one finding at a time, the new fold's row tally
+  // is 1 exactly on the row the old one would have incremented.
+  for (const f of findings) {
+    const { counts: single } = foldUnderLens([f], lens, CONTRACT_LENS);
+    const row = Object.keys(single)[0];
+    if (row === undefined) continue;
+    const bucket = (counts[row] ??= { pass: 0, fail: 0, info: 0 });
+    bucket[f.severity] += 1;
+    if (f.outdated) outdated[row] = (outdated[row] ?? 0) + 1;
+  }
+  return { counts, outdated };
+}
+
+const statusMapOf = (rows: ComplianceRow[]) =>
+  Object.fromEntries(rows.map((r) => [r.requirement, r.status]));
+
+test('PIN: no row’s status moves when the tally changes unit (vsy1)', () => {
+  for (const lens of [CONTRACT_LENS, DRAFT_LENS]) {
+    const matrix = lensMatrix(lens, CONTRACT_LENS);
+    const folded = foldUnderLens(SESSION, lens, CONTRACT_LENS);
+
+    const after = computeComplianceSummary(folded.counts, folded.outdated, matrix, {
+      findings: folded.findings,
+      reached: folded.reached,
+      scopedTotal: SCOPED,
+    });
+
+    const old = foldByFinding(SESSION, lens);
+    const before = computeComplianceSummary(old.counts, old.outdated, matrix);
+
+    assert.deepEqual(
+      statusMapOf(after as ComplianceRow[]),
+      statusMapOf(before as ComplianceRow[]),
+      `${lens}: the unit change moved a status — the change is wrong, not the expectation`,
+    );
+    // Guard the guard: a fixture that produced one status everywhere would make
+    // the equality above vacuous.
+    assert.ok(
+      new Set(Object.values(statusMapOf(after as ComplianceRow[]))).size >= 5,
+      `${lens}: fixture covers ≥5 distinct statuses`,
+    );
+    // And the two units really did diverge on this fixture, or nothing was tested.
+    assert.notDeepEqual(folded.counts, old.counts, `${lens}: the fixture separates the units`);
+  }
+});
+
+test('PIN: no row reports more transmissions than the scope holds (f2bl)', () => {
+  for (const lens of [CONTRACT_LENS, DRAFT_LENS]) {
+    const folded = foldUnderLens(SESSION, lens, CONTRACT_LENS);
+    const rows = computeComplianceSummary(
+      folded.counts,
+      folded.outdated,
+      lensMatrix(lens, CONTRACT_LENS),
+      { findings: folded.findings, reached: folded.reached, scopedTotal: SCOPED },
+    );
+    for (const r of rows) {
+      for (const sev of ['pass', 'fail', 'info'] as const) {
+        assert.ok(r.counts[sev] <= SCOPED, `${lens} ${r.requirement}: ${sev} exceeds the scope`);
+      }
+      assert.ok(r.outdated <= SCOPED, `${lens} ${r.requirement}: outdated exceeds the scope`);
+      assert.ok(r.notReached >= 0 && r.notReached <= SCOPED, `${lens} ${r.requirement}: remainder`);
+    }
+  }
+});
+
+test('the collapsed clause 5.1.3 reads in transmissions, with its findings beside it', () => {
+  // f2bl's worked case: three bodies touch the clause, each through BOTH members.
+  // The old fold reported six passes and two fails on a session of six.
+  const folded = foldUnderLens(SESSION, DRAFT_LENS, CONTRACT_LENS);
+  const rows = computeComplianceSummary(
+    folded.counts,
+    folded.outdated,
+    lensMatrix(DRAFT_LENS, CONTRACT_LENS),
+    { findings: folded.findings, reached: folded.reached, scopedTotal: SCOPED },
+  );
+  const clause = row(rows as ComplianceRow[], '5.1.3');
+
+  assert.deepEqual(clause.counts, { pass: 2, fail: 1, info: 0 }, 'tx-1 and tx-2 pass, tx-3 fails');
+  assert.deepEqual(clause.findings, { pass: 4, fail: 2, info: 0 }, 'six findings behind them');
+  assert.equal(clause.notReached, 4, 'tx-4 through tx-7 never reached the clause');
+  assert.equal(clause.status, 'mixed', 'and the verdict is the one the old unit gave');
+
+  // The fan-out row, the other way the units diverge.
+  const annex4 = row(rows as ComplianceRow[], '5.3.2');
+  assert.deepEqual(annex4.counts, { pass: 0, fail: 1, info: 0 }, 'one rejected body');
+  assert.deepEqual(annex4.findings, { pass: 0, fail: 5, info: 0 }, 'five Ajv errors on it');
+  assert.equal(annex4.notReached, 6);
+});
+
+test('the remainder is 0 until a caller supplies a scoped total', () => {
+  const folded = foldUnderLens(SESSION, CONTRACT_LENS, CONTRACT_LENS);
+  const rows = computeComplianceSummary(folded.counts, folded.outdated, COMPLIANCE_MATRIX, {
+    findings: folded.findings,
+    reached: folded.reached,
+  });
+  assert.ok(
+    rows.every((r) => r.notReached === 0),
+    'a fold over findings alone cannot see a transmission that produced none',
+  );
+});
+
+test('omitting the evidence entirely reproduces the pre-vsy1 row', () => {
+  const counts = { '1.4': { pass: 3, fail: 1, info: 0 } };
+  const [only] = computeComplianceSummary(counts, {}, [
+    { requirement: '1.4', summary: 'x', classes: ['verified'] },
+  ]);
+  assert.deepEqual(only?.counts, { pass: 3, fail: 1, info: 0 });
+  assert.deepEqual(only?.findings, { pass: 3, fail: 1, info: 0 }, 'both tallies, one input');
+  assert.equal(only?.notReached, 0);
+  assert.equal(only?.status, 'mixed');
 });

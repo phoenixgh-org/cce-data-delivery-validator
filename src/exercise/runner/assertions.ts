@@ -490,7 +490,13 @@ export type VerdictsByProfile = Partial<Record<Profile, Verdict>>;
 /** Wire verdicts keyed by the transmission id they were reported against. */
 export type VerdictsByTransmission = ReadonlyMap<string, VerdictsByProfile>;
 
-/** One `summary` row as the session read serves it: the id, and its live counts. */
+/**
+ * One `summary` row as the session read serves it: the id, and its live counts.
+ *
+ * `counts` is in DISTINCT TRANSMISSIONS since vsy1 — the row's findings ride
+ * beside it on the wire, under `findings`, which this audit does not read: what
+ * it grades is the number the page puts in front of a supplier.
+ */
 export interface LensSummaryRow {
   /** Requirement id under the contract lens, clause id under the draft lens. */
   readonly requirement: string;
@@ -502,7 +508,7 @@ export interface LensRowAudit {
   readonly requirement: string;
   /** `counts.fail` as the row came off the wire. */
   readonly served: number;
-  /** Fail findings the session's findings fold onto the row, recomputed here. */
+  /** Transmissions the session's findings fold a failure onto, recomputed here. */
   readonly folded: number;
   /** Transmission ids contributing at least one of them, in read order. */
   readonly transmissions: readonly string[];
@@ -522,9 +528,19 @@ export interface LensAudit {
   readonly notes: readonly string[];
 }
 
-/** An observed finding as the read-time fold consumes it. */
-function asLensFinding(found: ObservedFinding): LensFinding {
+/**
+ * An observed finding as the read-time fold consumes it.
+ *
+ * The transmission id comes in as an argument because the wire does not put it on
+ * the finding: the read serves findings INSIDE their transmission, so the id is
+ * the key of the map the caller is already iterating. Since vsy1 the fold counts
+ * distinct transmissions, so the id is required — an audit that supplied a
+ * constant here would fold the whole session onto one phantom transmission and
+ * report every row as 1.
+ */
+function asLensFinding(found: ObservedFinding, transmissionId: string): LensFinding {
   return {
+    transmissionId,
     requirement: found.requirement,
     severity: found.severity,
     profile: profileOf(found),
@@ -547,8 +563,8 @@ function asLensFinding(found: ObservedFinding): LensFinding {
  *
  * THREE DISAGREEMENTS, all reported as violations:
  *
- *   1. A served row's `counts.fail` differs from the number of fail findings the
- *      session's own findings fold onto it.
+ *   1. A served row's `counts.fail` differs from the number of TRANSMISSIONS the
+ *      session's own findings fold a failure onto (vsy1 — the row's unit).
  *   2. A fail folds onto a row the selected package does not serve — a clause
  *      with evidence and no line on the page.
  *   3. A transmission contributing a failure to a row whose verdict under this
@@ -593,9 +609,21 @@ export function auditLensRows(
 
   // Folded per transmission rather than over the whole pool, so a row's failure
   // can be attributed back to the rows the verdicts are reported on.
+  //
+  // THIS IS ALSO WHAT MAKES THE COMPARISON A LIKE-FOR-LIKE ONE SINCE vsy1. A served
+  // `counts.fail` now counts distinct transmissions; a fold of ONE transmission's
+  // findings returns 0 or 1 for a row whatever the fan-out or the clause collapse
+  // did, so adding those across transmissions reproduces exactly the distinct
+  // count the row claims. A pool-wide fold would too, but per transmission keeps
+  // the attribution list, and it holds the row to the same definition the server
+  // used rather than to a second one written here.
   const folded = new Map<string, { fails: number; transmissions: string[] }>();
   for (const [id, findings] of findingsByTransmission) {
-    const { counts } = foldUnderLens(findings.map(asLensFinding), lens, contract);
+    const { counts } = foldUnderLens(
+      findings.map((found) => asLensFinding(found, id)),
+      lens,
+      contract,
+    );
     for (const [row, tallied] of Object.entries(counts)) {
       if (tallied.fail === 0) continue;
       const bucket = folded.get(row) ?? { fails: 0, transmissions: [] };
@@ -612,8 +640,8 @@ export function auditLensRows(
     const foldedFails = here?.fails ?? 0;
     if (row.counts.fail !== foldedFails) {
       violations.push(
-        `${row.requirement}: the ${lens} summary reports ${row.counts.fail} fail(s), ` +
-          `the session's findings fold ${foldedFails} onto it`,
+        `${row.requirement}: the ${lens} summary reports ${row.counts.fail} failing ` +
+          `transmission(s), the session's findings fold ${foldedFails} onto it`,
       );
     }
     if (row.counts.fail > 0 || foldedFails > 0) {
@@ -629,7 +657,7 @@ export function auditLensRows(
   for (const [row, here] of folded) {
     if (servedRows.has(row)) continue;
     violations.push(
-      `${row}: ${here.fails} fail(s) fold onto a row the ${lens} package does not serve`,
+      `${row}: ${here.fails} failing transmission(s) fold onto a row the ${lens} package does not serve`,
     );
   }
 

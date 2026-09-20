@@ -23,6 +23,12 @@
  *   - DRAFT findings already numbered in DS01.3 (5.3.2, 5.3.3), which land on
  *     the clause they name.
  *
+ * WHAT A ROW COUNTS (vsy1, f2bl). Distinct TRANSMISSIONS, not findings — so a
+ * clause that merges several 2025 requirements counts a body once however many
+ * members it touched, and a body the schema stage wrote five errors against is
+ * one failing transmission. The per-finding tally survives beside it; see
+ * {@link foldUnderLens}.
+ *
  * ONE SPLIT: §3.1 → 5.3.3 AND 5.3.5. DS01.3 separates the transmission-metadata
  * duties (5.3.3) from the duty to describe manufacturer-specific objects with a
  * schema (5.3.5), which the 2025 package carries as a single §3.1. The
@@ -37,10 +43,11 @@
 import { forwardClause } from './clause-map.js';
 import { COMPLIANCE_MATRIX } from './compliance-matrix.js';
 import type {
-  FindingCounts,
-  FindingCountsByRequirement,
   MatrixRow,
   OutdatedCountsByRequirement,
+  ReachedByRequirement,
+  SeverityCounts,
+  SeverityCountsByRequirement,
 } from './compliance-matrix.js';
 import { DS013_MATRIX } from './matrix-ds013.js';
 import { RE_RUN_UNDER_SHADOW } from './verdicts.js';
@@ -100,6 +107,17 @@ export function clauseUnderLens(requirement: string, code?: string | null): stri
 
 /** The minimal finding shape the fold reads: what it counts, and where it counts. */
 export interface LensFinding {
+  /**
+   * The transmission this finding was recorded against — what makes a row's tally
+   * countable in transmissions (vsy1).
+   *
+   * REQUIRED, not optional, and on purpose: an optional id would let a caller
+   * that forgot it fold every finding onto one phantom transmission and report a
+   * row of 1, which no type error and no unit test would catch — it would surface
+   * as a red lens audit against a live instance. Required, the compiler names the
+   * caller instead.
+   */
+  transmissionId: string;
   requirement: string;
   severity: Severity;
   /** Which lineage produced the finding (by1c.5) — the fold's first question. */
@@ -110,20 +128,63 @@ export interface LensFinding {
   code?: string | null;
 }
 
-/** What {@link foldUnderLens} produces: the two maps `computeComplianceSummary` joins on. */
+/** What {@link foldUnderLens} produces: the maps `computeComplianceSummary` joins on. */
 export interface LensCounts {
-  counts: FindingCountsByRequirement;
+  /** Per row, DISTINCT TRANSMISSIONS carrying a finding of each severity (vsy1). */
+  counts: SeverityCountsByRequirement;
+  /** Per row, FINDINGS of each severity — the unit `counts` carried before vsy1. */
+  findings: SeverityCountsByRequirement;
+  /** Per row, distinct transmissions carrying an `outdated`-flagged finding (2kx). */
   outdated: OutdatedCountsByRequirement;
+  /**
+   * Per row, distinct transmissions carrying ANY finding — the transmissions that
+   * REACHED the check. The caller subtracts it from its scoped total to name the
+   * not-reached remainder; see the note on the scope below.
+   */
+  reached: ReachedByRequirement;
+}
+
+/** The distinct transmissions one row saw, before they are reduced to sizes. */
+interface RowSets {
+  pass: Set<string>;
+  fail: Set<string>;
+  info: Set<string>;
+  outdated: Set<string>;
+  reached: Set<string>;
 }
 
 /**
  * Fold an already-scoped finding set into per-row counts under the selected lens.
- * PURE: no DB, no HTTP, and no knowledge of transmissions — the caller narrows to
- * the scope and hands over the findings.
+ * PURE: no DB and no HTTP — the caller narrows to the scope and hands over the
+ * findings.
  *
- * Under the contract lens this is exactly the fold the summary read has always
+ * IT DOES KNOW WHICH TRANSMISSION A FINDING CAME FROM (vsy1), and that is the
+ * whole of its knowledge of transmissions: `LensFinding.transmissionId` is an
+ * opaque key it counts distinct values of. It never looks a transmission up, and
+ * it still cannot see a transmission that produced no finding at all.
+ *
+ * WHY DISTINCT. Two mechanisms inflated the old per-finding tally, and both are
+ * fixed here by construction rather than by capping anything:
+ *
+ *   - THE PER-ERROR FAN-OUT. The schema stage records one fail per Ajv error
+ *     (`allErrors: true`), so one ems-report missing five logger-identity
+ *     properties wrote five fails. One transmission, one count.
+ *   - THE CLAUSE COLLAPSE (f2bl). Under the draft lens the forward map is
+ *     many-to-one — §1.1 and §1.2 both land on 5.1.3 — so summing members made a
+ *     clause report more passes than the session had transmissions. A
+ *     transmission counted once per row cannot exceed the scope, whatever a row
+ *     merges.
+ *
+ * THE SCOPE IS NOT VISIBLE HERE, so the not-reached remainder is not computed
+ * here. This function sees findings; a transmission rejected at the door produced
+ * none and is indistinguishable from a transmission that does not exist. What it
+ * can report is {@link LensCounts.reached} — the transmissions that DID reach each
+ * row — and `computeComplianceSummary` subtracts that from the caller's scoped
+ * total (src/api/compliance-matrix.ts states the rule).
+ *
+ * Under the contract lens the ROUTING is exactly what the summary read has always
  * done (count contract findings by requirement id, ignore the other lineage), so
- * the default response is unchanged by construction rather than by coincidence.
+ * which rows are fed is unchanged by construction rather than by coincidence.
  * Keys that no matrix row claims — an advisory id, a clause the selected package
  * does not carry — are simply never read by the join, which is how they were
  * dropped before.
@@ -133,18 +194,43 @@ export function foldUnderLens(
   lens: Profile,
   contract: Profile = CONTRACT_PROFILE,
 ): LensCounts {
-  const counts: FindingCountsByRequirement = {};
-  const outdated: OutdatedCountsByRequirement = {};
+  const findingCounts: SeverityCountsByRequirement = {};
+  const sets = new Map<string, RowSets>();
 
   for (const f of findings) {
     const row = rowFor(f, lens, contract);
     if (row === null) continue;
-    const bucket: FindingCounts = (counts[row] ??= { pass: 0, fail: 0, info: 0 });
+    const bucket: SeverityCounts = (findingCounts[row] ??= { pass: 0, fail: 0, info: 0 });
     bucket[f.severity] += 1;
-    if (f.outdated) outdated[row] = (outdated[row] ?? 0) + 1;
+
+    let seen = sets.get(row);
+    if (!seen) {
+      seen = {
+        pass: new Set(),
+        fail: new Set(),
+        info: new Set(),
+        outdated: new Set(),
+        reached: new Set(),
+      };
+      sets.set(row, seen);
+    }
+    seen[f.severity].add(f.transmissionId);
+    seen.reached.add(f.transmissionId);
+    if (f.outdated) seen.outdated.add(f.transmissionId);
   }
 
-  return { counts, outdated };
+  const counts: SeverityCountsByRequirement = {};
+  const outdated: OutdatedCountsByRequirement = {};
+  const reached: ReachedByRequirement = {};
+  for (const [row, seen] of sets) {
+    counts[row] = { pass: seen.pass.size, fail: seen.fail.size, info: seen.info.size };
+    reached[row] = seen.reached.size;
+    // Absent rather than zero when nothing was flagged, as it was before vsy1:
+    // `outdated` is a modifier, and a row that never saw one has no entry.
+    if (seen.outdated.size > 0) outdated[row] = seen.outdated.size;
+  }
+
+  return { counts, findings: findingCounts, outdated, reached };
 }
 
 /** The row one finding is counted under, or `null` when the lens counts it nowhere. */

@@ -13,6 +13,11 @@
  *   3. THE THREE RULES OF THE DRAFT FOLD: the clause map carries a contract
  *      finding forward, §3.2 is NOT carried (the draft re-runs it), and a §3.1
  *      custom-object finding lands on 5.3.5 rather than 5.3.3.
+ *   4. THE ROW'S UNIT IS THE TRANSMISSION (vsy1, f2bl). A row counts distinct
+ *      transmissions, however many findings each one wrote and however many
+ *      members a DS01.3 clause merges; the finding tally survives beside it under
+ *      its own name; and the transmissions that REACHED a row are reported so the
+ *      caller — which alone knows how large the scope was — can name the rest.
  */
 
 import { test } from 'node:test';
@@ -27,9 +32,23 @@ import type { Profile } from '../schema-registry.js';
 const CONTRACT: Profile = '2025';
 const DRAFT: Profile = 'ds013';
 
-/** One finding, defaulted so each case states only what it varies. */
+/**
+ * One finding, defaulted so each case states only what it varies.
+ *
+ * `transmissionId` defaults to a SINGLE transmission, which is the conservative
+ * default now that the fold counts distinct ones: a case that does not say
+ * otherwise is one body's worth of evidence, and a case about counting says which
+ * transmission each finding came from.
+ */
 function f(over: Partial<LensFinding> & { requirement: string }): LensFinding {
-  return { severity: 'fail', profile: CONTRACT, outdated: false, code: null, ...over };
+  return {
+    transmissionId: 'tx-1',
+    severity: 'fail',
+    profile: CONTRACT,
+    outdated: false,
+    code: null,
+    ...over,
+  };
 }
 
 // ── parseLens ───────────────────────────────────────────────────────────────
@@ -118,11 +137,13 @@ test('under the draft lens a contract failure is counted on its forward clause',
 
 test('under the draft lens the two lineages land on the same clause', () => {
   // 1.1 and 1.2 merge into 5.1.3; a draft finding numbered 5.1.3 joins them.
+  // Three transmissions, so what is asserted is the routing, not the collapse —
+  // the collapse has a case of its own below.
   const { counts } = foldUnderLens(
     [
-      f({ requirement: '1.1', severity: 'pass' }),
-      f({ requirement: '1.2', severity: 'pass' }),
-      f({ requirement: '5.1.3', profile: DRAFT }),
+      f({ requirement: '1.1', severity: 'pass', transmissionId: 'tx-1' }),
+      f({ requirement: '1.2', severity: 'pass', transmissionId: 'tx-2' }),
+      f({ requirement: '5.1.3', profile: DRAFT, transmissionId: 'tx-3' }),
     ],
     DRAFT,
     CONTRACT,
@@ -176,6 +197,102 @@ test('an advisory is counted under neither package', () => {
     CONTRACT,
   );
   assert.deepEqual(counts, {});
+});
+
+// ── foldUnderLens: the unit is the transmission (vsy1, f2bl) ────────────────
+
+test('the per-error fan-out counts once: five findings on one body are one transmission', () => {
+  // The measured case behind vsy1: an ems-report missing five logger-identity
+  // properties, which the schema stage records as five fails (allErrors: true).
+  const { counts, findings, reached } = foldUnderLens(
+    ['LDOP', 'LMFR', 'LPQS', 'LMOD', 'LSER'].map((param) =>
+      f({
+        requirement: '5.3.2',
+        profile: DRAFT,
+        transmissionId: 'tx-1',
+        code: `required:${param}`,
+      }),
+    ),
+    DRAFT,
+    CONTRACT,
+  );
+  assert.deepEqual(counts['5.3.2'], { pass: 0, fail: 1, info: 0 }, 'one body, one failure');
+  assert.deepEqual(findings['5.3.2'], { pass: 0, fail: 5, info: 0 }, 'and five findings behind it');
+  assert.equal(reached['5.3.2'], 1);
+});
+
+test('a collapsed DS01.3 clause counts a transmission once across its members (f2bl)', () => {
+  // f2bl's acceptance, as filed: 1.1 and 1.2 both forward onto 5.1.3, so summing
+  // members made the clause report two passes for one body — 142 over 76
+  // transmissions on the session it was measured on. Two transmissions here, each
+  // passing BOTH members, plus a third failing both.
+  const { counts, findings, reached } = foldUnderLens(
+    [
+      f({ requirement: '1.1', severity: 'pass', transmissionId: 'tx-1' }),
+      f({ requirement: '1.2', severity: 'pass', transmissionId: 'tx-1' }),
+      f({ requirement: '1.1', severity: 'pass', transmissionId: 'tx-2' }),
+      f({ requirement: '1.2', severity: 'pass', transmissionId: 'tx-2' }),
+      f({ requirement: '1.1', severity: 'fail', transmissionId: 'tx-3' }),
+      f({ requirement: '1.2', severity: 'fail', transmissionId: 'tx-3' }),
+    ],
+    DRAFT,
+    CONTRACT,
+  );
+  assert.deepEqual(counts['5.1.3'], { pass: 2, fail: 1, info: 0 });
+  assert.deepEqual(findings['5.1.3'], { pass: 4, fail: 2, info: 0 }, 'the members still sum here');
+  assert.equal(reached['5.1.3'], 3, 'every transmission reached the clause');
+  // The claim f2bl makes: the clause cannot outrun the scope it was folded over.
+  const scoped = 3;
+  const row = counts['5.1.3']!;
+  assert.ok(row.pass <= scoped && row.fail <= scoped && row.info <= scoped);
+});
+
+test('a transmission passing one member and failing another is counted in both', () => {
+  // The reason `notReached` is a third state and not `total − pass − fail`: the
+  // three severity counts are not a partition of the scope.
+  const { counts, reached } = foldUnderLens(
+    [
+      f({ requirement: '1.1', severity: 'pass', transmissionId: 'tx-1' }),
+      f({ requirement: '1.2', severity: 'fail', transmissionId: 'tx-1' }),
+    ],
+    DRAFT,
+    CONTRACT,
+  );
+  assert.deepEqual(counts['5.1.3'], { pass: 1, fail: 1, info: 0 });
+  assert.equal(reached['5.1.3'], 1, 'one transmission, counted under two severities');
+});
+
+test('reached counts every transmission with a finding on the row, whatever its severity', () => {
+  const { reached } = foldUnderLens(
+    [
+      f({ requirement: '1.4', severity: 'fail', transmissionId: 'tx-1' }),
+      f({ requirement: '1.4', severity: 'pass', transmissionId: 'tx-2' }),
+      f({ requirement: '1.4', severity: 'info', transmissionId: 'tx-3' }),
+      f({ requirement: '1.4', severity: 'info', transmissionId: 'tx-3' }),
+    ],
+    CONTRACT,
+    CONTRACT,
+  );
+  assert.equal(reached['1.4'], 3);
+  assert.equal(reached['3.2'], undefined, 'a row no finding touched is absent, not zero');
+});
+
+test('the outdated modifier counts transmissions too, and stays absent when unflagged', () => {
+  const { counts, outdated } = foldUnderLens(
+    [
+      f({ requirement: '3.2', severity: 'info', outdated: true, transmissionId: 'tx-1' }),
+      f({ requirement: '3.2', severity: 'info', outdated: true, transmissionId: 'tx-1' }),
+      f({ requirement: '3.2', severity: 'pass', transmissionId: 'tx-2' }),
+    ],
+    CONTRACT,
+    CONTRACT,
+  );
+  assert.deepEqual(counts['3.2'], { pass: 1, fail: 0, info: 1 });
+  assert.deepEqual(
+    outdated,
+    { '3.2': 1 },
+    'one transmission on an older version, not two findings',
+  );
 });
 
 // ── lensMatrix ──────────────────────────────────────────────────────────────

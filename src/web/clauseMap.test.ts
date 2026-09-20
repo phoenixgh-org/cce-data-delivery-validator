@@ -109,7 +109,7 @@ test('the mirrored tables cover the DS01.3 matrix: every clause titled, the adde
  * lenses. The expectation is computed by the server, never written here, so the
  * pin cannot drift into agreeing with a stale copy of the rule.
  */
-const FIXTURES: LensFinding[] = [
+const SHAPES: Array<Omit<LensFinding, 'transmissionId'>> = [
   { requirement: '1.1', severity: 'fail', profile: CONTRACT_PROFILE, outdated: false },
   { requirement: '1.4', severity: 'fail', profile: CONTRACT_PROFILE, outdated: false },
   { requirement: '1.8', severity: 'pass', profile: CONTRACT_PROFILE, outdated: false },
@@ -142,6 +142,13 @@ const FIXTURES: LensFinding[] = [
   { requirement: 'adv.null_padding', severity: 'info', profile: CONTRACT_PROFILE, outdated: false },
   { requirement: '9.9', severity: 'fail', profile: CONTRACT_PROFILE, outdated: false },
 ];
+
+/**
+ * Each shape on a transmission of its own. The fold counts distinct transmissions
+ * since vsy1, so `LensFinding` carries an id; every fixture below is folded alone,
+ * so the id only has to exist — what it is never reaches an assertion.
+ */
+const FIXTURES: LensFinding[] = SHAPES.map((f, i) => ({ transmissionId: `tx-${i}`, ...f }));
 
 /** The row the server's fold puts one finding on, or null when it counts it nowhere. */
 function serverRow(f: LensFinding, lens: 'ds013' | typeof CONTRACT_PROFILE): string | null {

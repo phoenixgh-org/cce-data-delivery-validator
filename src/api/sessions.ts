@@ -567,16 +567,32 @@ export function registerSessionsApi(app: FastifyInstance): void {
       // it is the clause map that decides the row, and §3.2 — the one requirement
       // the draft re-runs rather than re-tags — is excluded from the carry-forward
       // (src/api/lens.ts states both rules).
-      const scopedFindings = scopedViews.flatMap((t) => t.findings);
-      const { counts: scopedCounts, outdated: scopedOutdated } = foldUnderLens(
-        scopedFindings,
-        lens,
-        grading.contractProfile,
+      //
+      // EACH FINDING CARRIES ITS TRANSMISSION ID (vsy1), because a row's tally is
+      // stated in transmissions: the id is what makes five Ajv errors on one body,
+      // or two members of one collapsed DS01.3 clause, count once.
+      const scopedFindings = scopedViews.flatMap((t) =>
+        t.findings.map((f) => ({ ...f, transmissionId: t.id })),
       );
+      const {
+        counts: scopedCounts,
+        findings: scopedFindingCounts,
+        outdated: scopedOutdated,
+        reached: scopedReached,
+      } = foldUnderLens(scopedFindings, lens, grading.contractProfile);
+      // THE SCOPED TOTAL IS SUPPLIED HERE and nowhere else: this is the only place
+      // that has both the narrowed set and the fold. It is `scopedViews.length` —
+      // the same denominator `scoped.scoped` reports below — so the not-reached
+      // remainder on every row is stated against the count beside it on the page.
       const summary = computeComplianceSummary(
         scopedCounts,
         scopedOutdated,
         lensMatrix(lens, grading.contractProfile),
+        {
+          findings: scopedFindingCounts,
+          reached: scopedReached,
+          scopedTotal: scopedViews.length,
+        },
       );
 
       // computeSignatures consumes the scoped views via the shared signature-tx
