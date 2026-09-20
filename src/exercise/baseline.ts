@@ -84,13 +84,15 @@ export interface BaselineRequest {
  *     (which runs after the generator and overwrites whatever it produced).
  *  4. A DISTINCT APPLIANCE IDENTITY PER (caseId, index) — `AMID` on the rtm
  *     branch, `ASER` on the ems one (src/identity/unit-key.ts decides which key
- *     names the appliance). The same argument as clause 3, one heuristic over:
+ *     names the appliance). The same argument as clause 3, two heuristics over:
  *     `adv.abst_window_overlap` compares a delivery against the earlier
- *     deliveries in the session that named the SAME appliance, and the runner
- *     plays the whole table against one session. A generator holding the
- *     appliance constant — the obvious shape for one seeded from a fixture —
- *     would make every rtm case after the first record the advisory from table
- *     ordering alone, exactly as a constant transferId does for §1.8 (agj.24).
+ *     deliveries in the session that named the SAME appliance, and
+ *     `adv.identifier_collision` compares it against the identifiers those
+ *     earlier deliveries carried — and the runner plays the whole table against
+ *     one session. A generator holding the appliance constant — the obvious
+ *     shape for one seeded from a fixture — would make every rtm case after the
+ *     first record one of those observations from table ordering alone, exactly
+ *     as a constant transferId does for §1.8 (agj.24, 0rfk).
  *
  *     A case that WANTS two POSTs to be about one appliance pins the identity
  *     itself with `setApplianceMonitoringId` (rtm) or `setApplianceSerial`
@@ -147,10 +149,11 @@ function identityFor(request: BaselineRequest): string {
  * points at (5xi). Deriving the id per POST also makes the serialized bytes
  * distinct, so the content-replay flavour of the same check cannot trip either.
  *
- * `AMID` is stamped for the same reason one heuristic over: it is the appliance
- * `adv.abst_window_overlap` keys a delivery on, and the fixture's `appliance-1`
- * would make every rtm case in the table a second delivery for the appliance the
- * case before it reported on (agj.24).
+ * `AMID` is stamped for the same reason two heuristics over: it is the value both
+ * `adv.abst_window_overlap` and `adv.identifier_collision` key a delivery's
+ * appliance on, and the fixture's `appliance-1` would make every rtm case in the
+ * table a second delivery for the appliance the case before it reported on
+ * (agj.24, 0rfk).
  *
  * Cases that WANT a duplicate pin the id themselves on every POST with
  * `setTransferId`, and cases that want one appliance across two POSTs pin it

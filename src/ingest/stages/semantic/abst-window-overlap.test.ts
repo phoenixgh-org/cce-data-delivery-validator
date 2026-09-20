@@ -9,8 +9,9 @@
  * through the real §6 body stages for its 200 and its zero contract-profile fail
  * findings, the way null-accumulator.test.ts does.
  *
- * THE DEP IS STUBBED, and that is the whole difference from every other advisory
- * test: this is the one check with a read path. The prior windows a real run
+ * THE DEP IS STUBBED, and that is the whole difference from the advisory tests
+ * with no read path: this is one of the two checks that have one, beside
+ * identifier-collision.test.ts. The prior windows a real run
  * would fetch from `transmission_unit_window` are handed in directly, so the
  * intersection rule, the copy and the exclusions the check ASKS FOR are pinned
  * here without a database. What the SQL does with those exclusions is pinned

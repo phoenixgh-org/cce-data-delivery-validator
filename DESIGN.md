@@ -4,7 +4,7 @@ Status: living document. The v1 scope is locked, and §3 records the decisions t
 are settled and are not reopened casually. Everything else describes the system as
 built and is updated as it ships.
 
-Last updated: September 18, 2026
+Last updated: September 19, 2026
 
 ## 1. Overview
 
@@ -354,11 +354,14 @@ Several properties follow from that decision:
 
 - Advisories cost almost no DDL. `severity` is always `info`, and the identifier lives
   in its own `adv.*` namespace, carried in both `finding.requirement` and
-  `finding.code`. The one column they did add is `finding.summary` (see below). One
-  advisory has since added a table of its own: `adv.abst_window_overlap` (agj.24)
-  compares this delivery against the `ABST` windows earlier deliveries in the session
-  recorded, which needs `transmission_unit_window` (section 8) and a read at stage 8.
-  It is the exception rather than the new rule — every other check in the catalogue is
+  `finding.code`. The one column they did add is `finding.summary` (see below). Two
+  advisories have since added a table each, and both read it at stage 8.
+  `adv.abst_window_overlap` (agj.24) compares this delivery against the `ABST` windows
+  earlier deliveries in the session recorded, which needs `transmission_unit_window`
+  (section 8). `adv.identifier_collision` (0rfk) compares this delivery's
+  appliance-side identifiers against the identifiers those earlier deliveries carried,
+  which needs `transmission_unit_identity` (section 8). They are the exception rather
+  than the new rule — every other check in the catalogue is
   a pure function of one parsed body, and a proposal that needs storage is a design
   decision rather than a registration.
 - An advisory carries TWO pieces of prose, not one, and the two sit on different
@@ -413,6 +416,7 @@ title that opens the matching row in the compliance column.
 | `adv.short_identifier`          | An identifier delivered populated and shorter than four characters — `ASER`, `LSER`, `ESER`, `AMID`, `AID`, `LID`, `EID`, and `SID` under every `DLST` sensor; product and place codes (`CSER`, `CSER2`, `FID`, `CID`) excluded                                                                  | [`short-identifier.ts`](src/ingest/stages/semantic/short-identifier.ts)           |
 | `adv.null_accumulator`          | A mains EMS record whose compressor runtime (`CMPR`, `CMPR2`) is `null` in a period whose own `SVA` is 0, with neither `LERR` nor `EERR` accounting for it and the same accumulator numeric elsewhere in the report                                                                              | [`null-accumulator.ts`](src/ingest/stages/semantic/null-accumulator.ts)           |
 | `adv.abst_window_overlap`       | Two transmissions in one session for the same appliance whose `ABST` windows intersect while their bodies differ; an exact replay and a re-used `transferId` are excluded in SQL and graded under §1.8, and a delivery the service rejected writes no window and is filtered out on read besides | [`abst-window-overlap.ts`](src/ingest/stages/semantic/abst-window-overlap.ts)     |
+| `adv.identifier_collision`      | An appliance-side identifier that arrived earlier in the session beside a different companion identifier, over the pairs (`ASER`, `AMID`), (`ASER`, `AID`) and (`AMID`, `AID`); logger and monitoring-device identifiers are not compared, and a corrected identifier looks like a shared one    | [`identifier-collision.ts`](src/ingest/stages/semantic/identifier-collision.ts)   |
 
 All modules are under `src/ingest/stages/semantic/`.
 
@@ -484,6 +488,21 @@ The tables are:
   means the §11 inactivity purge reaches them transitively, so the sweep still needs
   no per-table delete. An index on `(session_uuid, unit_key)` serves the one read,
   "every earlier window in this session for these units".
+- `transmission_unit_identity`: `transmission_id` (foreign key to `transmission`),
+  `session_uuid`, `unit_key`, and `aser`, `amid`, `aid` as reported after trimming,
+  added in `db/initdb/96-transmission-unit-identity.sql`. One row per report-unit per
+  transmission, holding the appliance-side identifiers that transmission carried, so
+  `adv.identifier_collision` can ask which companion identifier travelled with a value
+  an earlier delivery in the session also used. It is a second table rather than three
+  more columns on the window, because a window row exists only when a record's `ABST`
+  parsed and identity must not depend on timestamps. The same rules as the window
+  apply: a report naming no appliance writes no row, a delivery the service did not
+  accept writes none either, `findPriorUnitIdentities` filters on `schema_ok IS TRUE`
+  besides, and `ON DELETE CASCADE` from `transmission` gives the rows no independent
+  lifetime, so the §11 inactivity purge still reaches them transitively. Three indexes
+  serve the reads: `(session_uuid, unit_key)` for the forward lookup, and
+  `(session_uuid, amid)` and `(session_uuid, aid)` for the reverse ones the key cannot
+  make, such as one `AMID` arriving under two serials.
 
 Three indexes on `transmission` support the access patterns: `(session_uuid, received_at
 DESC)` for the dashboard's reverse-chronological list and per-session rollups, and
@@ -496,7 +515,8 @@ numbered DDL files are the chosen mechanism for evolving it, and there is no
 migration runner; the alternative was weighed and declined on September 15, 2026.
 Two properties make the manual route safe enough: every file added after the first
 cut (`50-session-auth-bearer`, `60-finding-profile`, `70-finding-profile-no-default`,
-`80-contract-profile-marker`, `90-finding-summary`, `95-transmission-unit-window`) is
+`80-contract-profile-marker`, `90-finding-summary`, `95-transmission-unit-window`,
+`96-transmission-unit-identity`) is
 idempotent and applies in a single command, and the
 flip-day guard fails closed when `service_marker` is absent
 ([`contract-marker.ts`](src/db/contract-marker.ts)), so a forgotten apply refuses to

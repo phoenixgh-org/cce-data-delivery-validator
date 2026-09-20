@@ -10,7 +10,7 @@ of synthetic cases against a **running** validator and checks five things.
 Every case count in this document is read at the time of writing and is not
 maintained per case. The authority on how large the table is today is the
 runner's own summary line, `N case(s) · N passed · N failed`, which it prints on
-every run; the table held 69 cases when this was written.
+every run; the table held 71 cases when this was written.
 
 - **Requirements, both directions.** Every requirement the §7 matrix says we grade
   is exercised once in the passing direction and once in the failing one.
@@ -213,13 +213,14 @@ over `BASELINE_GENERATORS` so a generator added later is held to them without a 
 test: the payload is **schema-valid** against the version it names, **freshly owned**
 on every call, carries a **distinct `meta.transferId` per (caseId, index)**, and names
 a **distinct appliance per (caseId, index)**. The last two are obligations rather than
-quirks of the fixture generator (bd b8r, agj.24): the runner plays the whole table
-against ONE session, and both §1.8 and `adv.abst_window_overlap` are session-scoped —
-§1.8 per transferId, the advisory per appliance. A generator holding either value
+quirks of the fixture generator (bd b8r, agj.24, 0rfk): the runner plays the whole table
+against ONE session, and §1.8 and the two cross-transmission advisories —
+`adv.abst_window_overlap` and `adv.identifier_collision` — are all session-scoped: §1.8
+per transferId, the advisories per appliance. A generator holding either value
 constant — the obvious shape for one seeded from
 https://github.com/phoenixgh-org/ems-data-simulator/ output — would make every
-non-replay case record a §1.8 fail, or every case after the first record the window
-observation, from table ordering alone.
+non-replay case record a §1.8 fail, or every case after the first record one of the two
+cross-transmission observations, from table ordering alone.
 
 All three shipped generators stamp `<caseId>#<index>` as the transferId and
 `appliance:<caseId>#<index>` as the identity, on whichever key their branch names the
@@ -287,7 +288,7 @@ invalidity it claims is held by `cases.test.ts`'s real-Ajv check on the declared
 
 An advisory is an observation the service offers a supplier, not a requirement it
 grades — so the case model treats it as a first-class target while the coverage join
-refuses to count it as a requirement. Eighteen cases exercise the thirteen registered
+refuses to count it as a requirement. Nineteen cases exercise the fourteen registered
 advisories at the time of writing; the runner's advisory join prints how many are
 registered and how many are fired on every run.
 
@@ -295,12 +296,14 @@ registered and how many are fired on every run.
 rule is unchanged: an advisory reads the body, so it belongs with the payload domain.
 There is no advisory module and no advisory directory.
 
-**One exception, and the rule it follows.** `adv.abst_window_overlap` is graded from how
-two transmissions relate rather than from one body — one delivery's `ABST` window against
-the windows earlier deliveries in the session recorded for the same appliance — so its
-cases live in `cases/sequence.ts` with the other multi-POST heuristics. The grouping rule
-did not change; this advisory is simply a sequence heuristic that happens to be an
-advisory.
+**Two exceptions, and the rule they follow.** `adv.abst_window_overlap` and
+`adv.identifier_collision` are graded from how two transmissions relate rather than from
+one body — one delivery's `ABST` window against the windows earlier deliveries in the
+session recorded for the same appliance, and one delivery's appliance-side identifiers
+against the identifiers those earlier deliveries carried — so their cases live in
+`cases/sequence.ts` with the other multi-POST heuristics. The grouping rule did not
+change; these two advisories are simply sequence heuristics that happen to be
+advisories.
 
 **`requirements` is empty.** Every `adv.*` case declares `requirements: []` (by1c.42),
 because an advisory is not a `COMPLIANCE_MATRIX` row: naming one in `requirements`
@@ -512,7 +515,7 @@ advisory it did not set out to provoke.
 Fired advisories are annotated with payload types exactly as requirements are:
 
 ```
-advisories — 13 registered: fired 13
+advisories — 14 registered: fired 14
   [types] after an advisory are the payload branches its fire case(s) send — [ems] means ems ONLY
   fired                      adv.null_identity[ems,rtm] adv.null_padding[ems] adv.date_format[ems,rtm] …
   NOT EXERCISED              —

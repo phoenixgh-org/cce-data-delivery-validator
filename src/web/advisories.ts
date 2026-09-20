@@ -132,7 +132,7 @@ export function splitFindings(findings: readonly FindingView[]): {
  *
  * The byte-budget argument the blurb used to carry (bytes spent against the
  * §1.4 1 MB cap) is GONE by decision (agj.17, approved 2026-09-15). It applied
- * to one advisory of thirteen, so it framed the category by its narrowest member;
+ * to one advisory of fourteen, so it framed the category by its narrowest member;
  * the size angle now lives in that advisory's own rationale, where it is true.
  *
  * `columnSubhead` is the non-verdict claim compressed to ONE line, for the

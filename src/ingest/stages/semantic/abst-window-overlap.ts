@@ -32,10 +32,11 @@
  *     re-send carries a new `transferId` and, being corrected, new bytes.
  *
  * ── WHAT IT READS, AND FROM WHERE ───────────────────────────────────────────
- * The only advisory with a read path. Every other check in the catalogue is a
- * pure function of one parsed body; this one compares the body in hand against
- * `transmission_unit_window` rows earlier POSTs in the SAME session left behind
- * (db/initdb/95-transmission-unit-window.sql). The two halves:
+ * The first of the two advisories with a read path — ./identifier-collision.ts
+ * (0rfk) is the other, and was built from this one. Every other check in the
+ * catalogue is a pure function of one parsed body; this one compares the body in
+ * hand against `transmission_unit_window` rows earlier POSTs in the SAME session
+ * left behind (db/initdb/95-transmission-unit-window.sql). The two halves:
  *
  *   - THIS BODY'S WINDOWS come from {@link computeUnitWindows}
  *     (src/identity/unit-key.ts): one `{unitKey, abstMin, abstMax}` per

@@ -274,6 +274,11 @@ has to apply by hand:
   window observation reads back. Without it, every ingest write fails: the route
   records these rows beside the findings, and the table they go to does not
   exist.
+- `96-transmission-unit-identity.sql` — creates `transmission_unit_identity`, the
+  appliance-side identifiers each transmission carried per CCE unit, which the
+  cross-transmission identifier observation reads back. Without it, every ingest
+  write fails for the same reason `95-` does: the route records these rows beside
+  the findings, and the table they go to does not exist.
 
 Apply them in order against a running database:
 
@@ -290,6 +295,8 @@ docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
   < db/initdb/90-finding-summary.sql
 docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
   < db/initdb/95-transmission-unit-window.sql
+docker exec -i cce-validator-db psql -U cce_validator -d cce_validator -f - \
+  < db/initdb/96-transmission-unit-identity.sql
 ```
 
 Every one of these files is written to be idempotent — `DROP CONSTRAINT IF
@@ -297,9 +304,9 @@ EXISTS` before `ADD`, `ADD COLUMN IF NOT EXISTS`, a `DROP DEFAULT` that is a
 no-op when there is no default, `CREATE TABLE IF NOT EXISTS`, and `COMMENT ON`
 statements that simply overwrite. Re-applying one that is already in place
 changes nothing, so an operator who is unsure which files a volume has can run
-all six rather than investigate. Order still matters on a database that has
-none of them: `70` drops a default that `60` creates, and `95` references a
-table `20-transmission.sql` creates.
+all seven rather than investigate. Order still matters on a database that has
+none of them: `70` drops a default that `60` creates, and `95` and `96` both
+reference a table `20-transmission.sql` creates.
 
 Discarding the volume (`docker compose down -v`) and letting initdb re-run is the
 other valid route. The service stores synthetic test data that retention deletes

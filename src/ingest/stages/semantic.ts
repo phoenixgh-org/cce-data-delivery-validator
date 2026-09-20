@@ -54,10 +54,10 @@ export interface SemanticDeps {
     opts: { transferId?: string | null; contentHash?: Buffer | null },
   ) => Promise<PriorTransmission[]>;
   /**
-   * Prior ABST-window lookup for `adv.abst_window_overlap` (agj.24) — the only
-   * advisory with a read path. Same signature as the repository function it is
-   * built from, minus the `db` argument, so the route hands the repository
-   * function straight in and a test hands in a stub.
+   * Prior ABST-window lookup for `adv.abst_window_overlap` (agj.24) — the first
+   * of the two read paths in the advisory catalogue. Same signature as the
+   * repository function it is built from, minus the `db` argument, so the route
+   * hands the repository function straight in and a test hands in a stub.
    */
   findPriorUnitWindows: (
     sessionUuid: string,
