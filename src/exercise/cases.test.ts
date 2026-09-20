@@ -40,9 +40,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { COMPLIANCE_MATRIX } from '../api/compliance-matrix.js';
-import { unitKey } from '../identity/unit-key.js';
+import { computeUnitIdentities, unitKey } from '../identity/unit-key.js';
 import { ABST_WINDOW_OVERLAP_ID } from '../ingest/stages/semantic/abst-window-overlap.js';
 import { ADVISORY_IDS, isAdvisoryId } from '../ingest/stages/semantic/advisory.js';
+import { IDENTIFIER_COLLISION_ID } from '../ingest/stages/semantic/identifier-collision.js';
 import { CONTRACT_PROFILE, SchemaRegistry } from '../schema-registry.js';
 import { BASELINE_GENERATORS, DEFAULT_BASELINE, emsBaseline } from './baseline.js';
 import {
@@ -216,14 +217,48 @@ function unitKeysOf(post: { payload: { data: Record<string, unknown>[] } }): str
   return keys;
 }
 
+/**
+ * Every appliance-side value one POST could be matched on by a LATER delivery,
+ * one token per match arm — the identity surface `findPriorUnitIdentities`
+ * (src/db/repository.ts) actually reads, rather than the key alone (0rfk, bk23).
+ *
+ * THE LOOKUP HAS THREE ARMS, and the uniqueness invariant below has to cover all
+ * three or it under-measures: a prior qualifies when it shares this body's
+ * `unit_key`, its `AMID`, or its `AID`. Two POSTs with DISTINCT unit keys can
+ * still collide — `ASER "s1"`/`AMID "m"` against `ASER "s2"`/`AMID "m"` keys on
+ * two different serials but shares the platform handle, and the disagreeing
+ * serial is exactly what fires the advisory. Comparing `unitKey` alone would
+ * call that pair unique.
+ *
+ * The tokens are namespaced by arm, so a value that is both a report's key and
+ * its `AMID` (an rtm report carrying no serial) is one identity, not a
+ * self-collision. {@link computeUnitIdentities} is the ingest side's own pure
+ * extractor for the three values, so what is compared here is what will be
+ * stored.
+ */
+function identityTokensOf(post: { payload: { data: Record<string, unknown>[] } }): string[] {
+  const tokens: string[] = [];
+  for (const identity of computeUnitIdentities(post.payload)) {
+    tokens.push(`unit_key ${identity.unitKey}`);
+    if (identity.amid !== null) tokens.push(`AMID "${identity.amid}"`);
+    if (identity.aid !== null) tokens.push(`AID "${identity.aid}"`);
+  }
+  return tokens;
+}
+
 test('no two POSTs in the table share an appliance identity unless the case pins one', () => {
   // The appliance counterpart of the transferId invariant above, and the same
-  // hazard one heuristic over (agj.24): `adv.abst_window_overlap` compares a
-  // delivery against the earlier deliveries in the session that named the SAME
-  // appliance, and the runner plays the whole table against ONE session. An
-  // identity shared by unrelated cases would record the advisory from table
-  // ordering alone — on pass-direction cases and on cases declaring the whole
-  // advisory catalogue silent.
+  // hazard two heuristics over (agj.24, 0rfk): `adv.abst_window_overlap` compares
+  // a delivery against the earlier deliveries in the session that named the SAME
+  // appliance, `adv.identifier_collision` against the identifiers those earlier
+  // deliveries carried, and the runner plays the whole table against ONE session.
+  // An identity shared by unrelated cases would record one of those advisories
+  // from table ordering alone — on pass-direction cases and on cases declaring
+  // the whole advisory catalogue silent.
+  //
+  // MEASURED OVER THE FULL IDENTITY SURFACE, not the key: see
+  // {@link identityTokensOf}. The narrower check this replaced would have missed
+  // a shared `AMID` under two serials, which is a live collision.
   //
   // A case that WANTS two POSTs to be about one appliance says so with
   // `setApplianceMonitoringId` / `setApplianceSerial`, and is exempt WITHIN
@@ -236,16 +271,16 @@ test('no two POSTs in the table share an appliance identity unless the case pins
     for (const post of materialize(kase)) {
       const where = `${kase.id}[${post.label}]`;
       const pinned = pinsApplianceIdentity(post);
-      for (const key of unitKeysOf(post)) {
-        if (pinned && withinCase.has(key)) continue;
-        const prior = seen.get(key);
+      for (const token of identityTokensOf(post)) {
+        if (pinned && withinCase.has(token)) continue;
+        const prior = seen.get(token);
         assert.equal(
           prior,
           undefined,
-          `${where}: appliance identity "${key}" already reported on by ${prior}`,
+          `${where}: appliance identity ${token} already reported on by ${prior}`,
         );
-        seen.set(key, where);
-        withinCase.add(key);
+        seen.set(token, where);
+        withinCase.add(token);
       }
     }
   }
@@ -253,18 +288,35 @@ test('no two POSTs in the table share an appliance identity unless the case pins
 
 test('a case about one appliance across two POSTs really does pin the identity', () => {
   // The other half, and the mirror of the deliberate-replay tripwire: a case that
-  // expects `adv.abst_window_overlap` — or declares it absent over two POSTs —
-  // is making a claim about ONE appliance, which the generators do not hand it.
-  // A case that lost its pin would send two appliances and quietly assert
-  // nothing.
+  // expects one of the two cross-transmission advisories — or declares one absent
+  // over two POSTs — is making a claim about ONE appliance, which the generators
+  // do not hand it. A case that lost its pin would send two appliances and
+  // quietly assert nothing.
+  //
+  // BOTH ADVISORIES ARE IN THE FILTER (0rfk, bk23). `adv.identifier_collision`
+  // is the same shape as `adv.abst_window_overlap` here: its silence case
+  // `1.8-pass-one-appliance-named-the-same-way-twice` is two deliveries about one
+  // appliance, and if its pins were dropped the baseline would stamp a distinct
+  // appliance per POST, the declared absence would be vacuously satisfied, and
+  // the case would stop proving anything. Filtering on the window advisory alone
+  // covered its sibling fire case only incidentally — that one happens to declare
+  // `adv.abst_window_overlap` absent as well.
+  //
+  // The claim is about the KEY, deliberately: the collision fire case names one
+  // appliance under two different platform handles, so its POSTs share a
+  // `unitKey` and disagree on the companion. That disagreement is the case.
   const aboutOneAppliance = EXERCISE_CASES.filter(
     (kase) =>
       kase.posts.length > 1 &&
       [...kase.expectedFindings, ...(kase.absentFindings ?? [])].some(
-        (f) => f.requirement === ABST_WINDOW_OVERLAP_ID,
+        (f) =>
+          f.requirement === ABST_WINDOW_OVERLAP_ID || f.requirement === IDENTIFIER_COLLISION_ID,
       ),
   );
-  assert.ok(aboutOneAppliance.length > 0, 'the table still carries a window-overlap case');
+  assert.ok(
+    aboutOneAppliance.length > 0,
+    'the table still carries a case about one appliance across two POSTs',
+  );
   for (const kase of aboutOneAppliance) {
     const keys = materialize(kase).map((post) => unitKeysOf(post).join(','));
     assert.equal(
