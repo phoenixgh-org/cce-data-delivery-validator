@@ -510,8 +510,6 @@ export interface LensRowAudit {
   readonly served: number;
   /** Transmissions the session's findings fold a failure onto, recomputed here. */
   readonly folded: number;
-  /** Transmission ids contributing at least one of them, in read order. */
-  readonly transmissions: readonly string[];
 }
 
 /** What {@link auditLensRows} found, in the shape {@link CopyAudit} established. */
@@ -649,7 +647,6 @@ export function auditLensRows(
         requirement: row.requirement,
         served: row.counts.fail,
         folded: foldedFails,
-        transmissions: here?.transmissions ?? [],
       });
     }
   }
