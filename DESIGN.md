@@ -296,6 +296,28 @@ live pass and fail counts from the supplier's actual traffic. Active-only rows r
 "not yet exercised; available in a future test mode". Self-attestation rows read
 "self-attestation; outside what a receiver can prove".
 
+**A row counts transmissions, and says so beside every number.** The tally on a row
+is the number of distinct in-scope transmissions carrying a finding of that
+severity, not the number of findings — the same noun the scope totals and the
+scorecard above the card count, so a supplier can read the two against each other.
+The distinction is not cosmetic: the schema stage records one failure per Ajv error,
+so a single `ems-report` missing five logger-identity properties produced five
+failures on a row whose neighbour reported one transmission, and under the DS01.3
+lens a clause that merges several 2025 requirements summed its members and could
+report more passes than the session had transmissions. Counting distinct
+transmissions removes both by construction rather than by capping anything
+(`cce-data-delivery-validator-vsy1`, `cce-data-delivery-validator-f2bl`).
+
+The finding tally survives beside it, on the row and in the drill-down, because it
+is the only number that says how much evidence sits behind the grade. The dashboard
+renders the two on separate lines and labels each with its unit.
+
+**Not reached is a third state.** Passing and failing do not add up to the scope: a
+transmission rejected at the door never reaches a schema check, and the two tallies
+are not disjoint either, because one body can pass one member of a collapsed DS01.3
+clause and fail another. So the remainder is served as its own number rather than
+left to be subtracted, and the drill-down names it.
+
 Two presentation rules protect the honesty of the grade. A gradeable row with zero
 findings shows "untested", never a false pass. A row whose only evidence came from a
 registered but older schema version shows "pass-outdated": those findings are `info`
@@ -689,7 +711,12 @@ Each session's dashboard at `/d/{uuid}` is a single scrolling page. From the top
   counts and transmission counts in one band and named neither.
 - Compliance summary renders the §7 matrix as §7 describes. Each row drills down to
   the verbatim text of the 2025 requirement, with the service's own reading of it in
-  a separate guidance field, so a supplier can always tell the two apart. Under the
+  a separate guidance field, so a supplier can always tell the two apart. The
+  drill-down opens on the evidence line — "60 of 80 transmissions failing · 13
+  passing · 7 not reached", in the same noun the transmissions card above it counts
+  — and the finding count sits below it beside the distinct issues, labelled as
+  findings ("251 findings" for that row). Two lines, two units, each named, for the
+  same reason the two summary cards each name theirs. Under the
   DS01.3 DRAFT lens the card renders the derived matrix instead: the same five
   verifiability-class groups, with TIGHTENED and NEW as tags on the rows rather than
   groups of their own, and a drill-down that quotes the draft clause text under a

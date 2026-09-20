@@ -403,8 +403,10 @@ numbers the rows beneath them carry. So once the table has been played the runne
 the session summary again under `?lens=ds013` and holds it to one invariant
 (`auditLensRows` in `runner/assertions.ts`):
 
-- each served row's `counts.fail` equals the number of fail findings the run's own
-  findings fold onto that clause;
+- each served row's `counts.fail` equals the number of **transmissions** the run's own
+  findings fold a failure onto for that clause — the unit the row states since
+  `cce-data-delivery-validator-vsy1`, so five Ajv errors on one body and two members of
+  one collapsed clause each count once;
 - no failure folds onto a clause the draft package does not serve;
 - every transmission contributing a failure to a row carries a `fail` verdict under that
   lineage, and every transmission whose verdict is `fail` has a row carrying it.
@@ -416,10 +418,16 @@ so a run can be checked against the page without opening the dashboard:
 
 ```
 grading lens — ds013: 27 row(s) served, 10 carrying a failure
-  5.1.3   2 fail (folded 2) from 2 transmission(s)
-  5.1.5   1 fail (folded 1) from 1 transmission(s)
-  5.3.2   199 fail (folded 199) from 49 transmission(s)
+  5.1.3  2 fail (folded 2) from 2 transmission(s)
+  5.1.5  1 fail (folded 1) from 1 transmission(s)
+  5.3.2  60 fail (folded 60) from 60 transmission(s)
 ```
+
+The first figure and the trailing transmission count now agree by construction:
+both count distinct transmissions, so 5.3.2 reads 60 from 60 where it once read 199
+findings over 49 transmissions. What the line is still claiming is the middle
+number against the first — the count the instance served against the count this run
+recomputed — and that pair is the point of the block.
 
 A disagreement fails the run on its own — exit 1 even with every case green — for the
 same reason an advisory served with no summary does: those numbers are part of what the

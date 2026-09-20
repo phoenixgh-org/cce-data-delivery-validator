@@ -36,8 +36,16 @@ export type DisplayStatus =
   | 'enforced'
   | 'not-applicable';
 
-/** Live per-requirement finding counts (DESIGN §8 severities). */
-export interface FindingCounts {
+/**
+ * A live per-requirement tally keyed by severity (DESIGN §8).
+ *
+ * THE UNIT IS THE FIELD'S, NOT THE TYPE'S (vsy1) — mirror of `SeverityCounts` in
+ * src/api/compliance-matrix.ts, where the same three keys carry two units:
+ * {@link ComplianceRow.counts} is in DISTINCT TRANSMISSIONS and
+ * {@link ComplianceRow.findings} is in findings. Renamed from `FindingCounts`
+ * for that reason; a name naming one unit would now be a lie on the other.
+ */
+export interface SeverityCounts {
   pass: number;
   fail: number;
   info: number;
@@ -57,13 +65,39 @@ export interface ComplianceRow {
   requirement: string;
   summary: string;
   classes: ComplianceClass[];
-  counts: FindingCounts;
   /**
-   * How many of this requirement's findings carry the `outdated` flag (2kx) —
-   * a modifier, not a severity, hence its own field beside `counts`. Nonzero is
-   * exactly what makes `status` `pass-outdated`.
+   * DISTINCT TRANSMISSIONS carrying at least one finding of that severity on this
+   * row (vsy1) — the unit the scorecard beside the card already counts, so the
+   * two numbers on the page can be read against each other. Five Ajv errors on
+   * one body count once, and so does a body that touched two members of a
+   * collapsed DS01.3 clause.
+   *
+   * THE THREE KEYS ARE NOT A PARTITION: a transmission that passed one member of
+   * a collapsed clause and failed another is counted in `pass` AND in `fail`. The
+   * remainder is {@link notReached}, served as its own number — never
+   * `total − pass − fail`, which this file has no honest total to subtract from.
+   */
+  counts: SeverityCounts;
+  /**
+   * FINDINGS on this row, by severity — the unit `counts` carried before vsy1,
+   * kept because it is the only number that says how much evidence sits behind
+   * the row. Always at least the matching `counts` entry. The expansion renders
+   * it labelled as findings, never as the row's headline tally.
+   */
+  findings: SeverityCounts;
+  /**
+   * How many of this requirement's scoped transmissions carry an `outdated`-
+   * flagged finding (2kx) — a modifier, not a severity, hence its own field
+   * beside `counts`. Nonzero is exactly what makes `status` `pass-outdated`.
    */
   outdated: number;
+  /**
+   * Scoped transmissions that produced NO finding on this row: they never reached
+   * the check, because an earlier stage rejected them or because it does not
+   * apply to them. A THIRD STATE, computed on the server (which alone knows the
+   * scope) and rendered from this field rather than inferred here.
+   */
+  notReached: number;
   status: DisplayStatus;
   /**
    * At least one of the clause's 2025 members is TIGHTENED: DS01.3 changes what

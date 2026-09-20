@@ -94,6 +94,17 @@ export interface CompliancePaneProps {
   lens?: Profile;
   /** The package in force, as the session serves it. */
   contractProfile?: Profile;
+  /**
+   * Transmissions in the current scope — the denominator the expanded evidence
+   * line states its transmission tallies against (vsy1).
+   *
+   * IT COMES FROM THE SERVER'S `scoped.scoped`, the same number the summary card
+   * above this pane reports, and NOT from `transmissions.length`: that prop is
+   * the session's whole capture, while the row counts beside it were folded over
+   * the scoped set. Omitting it (as the tests do) drops the "of N transmissions"
+   * clause and leaves the tallies bare rather than inventing a denominator.
+   */
+  scopedTotal?: number;
 }
 
 /* ------------------------------------------------------------------ *
@@ -455,27 +466,69 @@ export function SigRow({
  * `pass-outdated` with zero passes and zero fails — which used to render as the
  * "no transmissions in this window" empty state despite every payload having
  * been validated. Empty array = genuinely nothing in scope.
+ *
+ * EVERY SEGMENT COUNTS TRANSMISSIONS (vsy1), because `row.counts` does since the
+ * server stopped counting findings. The noun and the denominator ride on the
+ * FIRST segment only — "60 of 80 transmissions failing · 13 passing" — so the
+ * line says once what it is counting and against what, rather than repeating the
+ * word on every clause or leaving the reader to guess the unit from the
+ * scorecard.
+ *
+ * `scopedTotal` is the scope's transmission count, straight from the same
+ * `scoped.scoped` the summary cards report. Undefined (a caller that has no
+ * scope, as the tests do) drops the "of N transmissions" and leaves the bare
+ * tallies.
+ *
+ * THE NOT-REACHED SEGMENT IS A THIRD STATE, NOT A SUBTRACTION. `pass` and `fail`
+ * are not disjoint — one transmission can pass one member of a collapsed DS01.3
+ * clause and fail another — so `scopedTotal − pass − fail` is not the remainder
+ * and would go negative on exactly the rows the collapse affects. It is rendered
+ * from `row.notReached`, which the server computed against the scope it knows,
+ * and in the faint neutral: never reaching a check is not a verdict either way.
+ *
+ * It is suppressed on a row the server says nothing feeds (`graded === false`,
+ * a clause DS01.3 adds with no check behind it). There the remainder is the whole
+ * scope by construction, and "80 not reached" would read as a measurement when
+ * {@link NOT_FED_NOTE} above it has just said there is no check to reach.
  */
-function countSegments(row: ComplianceRow): ReactElement[] {
+function countSegments(row: ComplianceRow, scopedTotal?: number): ReactElement[] {
   const segments: ReactElement[] = [];
+  // Applied to whichever segment lands first, then spent.
+  let scope = scopedTotal === undefined ? '' : ` of ${scopedTotal} transmissions`;
+  const take = (): string => {
+    const s = scope;
+    scope = '';
+    return s;
+  };
   if (row.counts.fail > 0) {
     segments.push(
       <span key="fail" style={{ color: 'var(--fail)' }}>
-        {row.counts.fail} failing
+        {row.counts.fail}
+        {take()} failing
       </span>,
     );
   }
   if (row.counts.pass > 0) {
     segments.push(
       <span key="pass" style={{ color: 'var(--pass)' }}>
-        {row.counts.pass} passing
+        {row.counts.pass}
+        {take()} passing
       </span>,
     );
   }
   if (row.outdated > 0) {
     segments.push(
       <span key="outdated" style={{ color: 'var(--mixed)' }}>
-        {row.outdated} validated against an outdated schema
+        {row.outdated}
+        {take()} validated against an outdated schema
+      </span>,
+    );
+  }
+  if (row.notReached > 0 && row.graded !== false) {
+    segments.push(
+      <span key="not-reached" style={{ color: 'var(--text-faint)' }}>
+        {row.notReached}
+        {take()} not reached
       </span>,
     );
   }
@@ -483,14 +536,46 @@ function countSegments(row: ComplianceRow): ReactElement[] {
 }
 
 /**
+ * How many FINDINGS sit behind an expanded row's issue rows (vsy1) — the number
+ * the eyebrow line carries now that the tally beside it counts transmissions.
+ *
+ * This is the one thing the transmission tally deliberately hides. The schema
+ * stage writes one fail per Ajv error, so an `ems-report` missing five
+ * logger-identity properties is ONE failing transmission and FIVE findings, and a
+ * supplier reading "60 failing" is entitled to know how much evidence that is
+ * before deciding how much work it represents.
+ *
+ * FAILS ONLY, for two reasons. It heads the issue rows, and a pass raises no
+ * issue to head — its finding count would answer a question the block is not
+ * asking, and on a collapsed DS01.3 clause it is inflated anyway (5.1.3 folds
+ * 150 pass findings from 77 transmissions, one per member clause). And an `info`
+ * finding is either an observation with no issue row at all or the
+ * outdated-schema case, which the evidence line above already reports in
+ * transmissions — a row whose only findings are outdated infos therefore shows no
+ * finding count, which loses nothing: the schema stage writes at most one of
+ * those per transmission, so the two numbers would be the same.
+ */
+function findingTotal(row: ComplianceRow): number {
+  return row.findings.fail;
+}
+
+/**
  * The "Distinct issues" summary block in an expanded (gradeable) requirement:
- * an eyebrow + a mono "{f} failing · {p} passing" line, then a column of
- * deduped signature rows (max 540px wide). Past 4 signatures it offers a
+ * the evidence line, an eyebrow + the finding count, then a column of deduped
+ * signature rows (max 540px wide). Past 4 signatures it offers a
  * "+ N more issues" / "Show fewer" toggle (local state). A requirement with no
  * in-scope signatures shows the empty-state copy; low-cardinality requirements
  * simply render their single signature. The proportion bar's `max` is the
  * requirement's largest signature `count`, so widths read as a share of this
  * requirement's issue volume.
+ *
+ * TWO LINES, TWO UNITS, EACH NAMED (vsy1). The evidence line comes first and is
+ * stated in transmissions against the scope — "60 of 80 transmissions failing ·
+ * 13 passing · 7 not reached" — because that is the noun the scorecard above the
+ * card counts, and the two numbers are meant to be read against each other. The
+ * finding count then sits beside the eyebrow, where the per-severity tally used
+ * to, and says the word: "Distinct issues  251 findings". Nothing on either line
+ * is left to be inferred from the other.
  */
 function SignatureSummary({
   row,
@@ -499,6 +584,7 @@ function SignatureSummary({
   onSelectSignature,
   lens,
   contractProfile,
+  scopedTotal,
 }: {
   row: ComplianceRow;
   signatures: Signature[];
@@ -508,9 +594,12 @@ function SignatureSummary({
   lens: Profile;
   /** The package in force, as the session serves it. */
   contractProfile: Profile;
+  /** Transmissions in the scope — the evidence line's denominator. */
+  scopedTotal?: number;
 }): ReactElement {
   const [showAll, setShowAll] = useState(false);
-  const segments = countSegments(row);
+  const segments = countSegments(row, scopedTotal);
+  const findings = findingTotal(row);
   const sigs = signaturesForReq(signatures, row.requirement, lens, contractProfile);
   const hasSigs = sigs.length > 0;
   const max = hasSigs ? Math.max(...sigs.map((s) => s.count)) : 0;
@@ -519,6 +608,19 @@ function SignatureSummary({
 
   return (
     <div style={{ marginTop: 12 }}>
+      <div
+        style={{
+          fontFamily: mono,
+          fontSize: 11,
+          color: 'var(--text-muted)',
+          marginBottom: 7,
+        }}
+      >
+        {segments.flatMap((seg, i) =>
+          i === 0 ? [seg] : [<span key={`sep-${i}`}>{' · '}</span>, seg],
+        )}
+        {segments.length === 0 && 'no transmissions in this window'}
+      </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 7 }}>
         <span
           style={{
@@ -530,12 +632,11 @@ function SignatureSummary({
         >
           {hasSigs ? 'Distinct issues' : 'Status'}
         </span>
-        <span style={{ fontFamily: mono, fontSize: 11, color: 'var(--text-muted)' }}>
-          {segments.flatMap((seg, i) =>
-            i === 0 ? [seg] : [<span key={`sep-${i}`}>{' · '}</span>, seg],
-          )}
-          {segments.length === 0 && 'no transmissions in this window'}
-        </span>
+        {findings > 0 && (
+          <span style={{ fontFamily: mono, fontSize: 11, color: 'var(--text-muted)' }}>
+            {findings} finding{findings === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
       {hasSigs ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 540 }}>
@@ -586,6 +687,7 @@ function ReqRow({
   onSelectSignature,
   lens,
   contractProfile,
+  scopedTotal,
 }: {
   row: ComplianceRow;
   dead: boolean;
@@ -599,6 +701,8 @@ function ReqRow({
   lens: Profile;
   /** The package in force, as the session serves it. */
   contractProfile: Profile;
+  /** Transmissions in the scope — the expanded evidence line's denominator. */
+  scopedTotal?: number;
 }): ReactElement {
   const ref = getRequirementReference(row.requirement);
   const text = ref?.text ?? row.summary;
@@ -747,6 +851,7 @@ function ReqRow({
               onSelectSignature={onSelectSignature}
               lens={lens}
               contractProfile={contractProfile}
+              scopedTotal={scopedTotal}
             />
           )}
         </div>
@@ -1082,6 +1187,7 @@ export function ComplianceCard({
   activeSignatureKey = null,
   lens = CONTRACT_PROFILE,
   contractProfile = CONTRACT_PROFILE,
+  scopedTotal,
 }: CompliancePaneProps): ReactElement {
   // A non-contract package is selected (tfnv.5) — what tints the card's chrome
   // and names the package in the header. The rows read `lens` and
@@ -1304,6 +1410,7 @@ export function ComplianceCard({
                     onSelectSignature={onSelectSignature}
                     lens={lens}
                     contractProfile={contractProfile}
+                    scopedTotal={scopedTotal}
                   />
                 ))}
             </div>

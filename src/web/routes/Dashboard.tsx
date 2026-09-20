@@ -605,6 +605,12 @@ export function Dashboard() {
           // tfnv.6.
           lens={lens}
           contractProfile={session.contractProfile}
+          // The denominator an expanded row states its transmission tallies
+          // against (vsy1). It is the SERVER's scope total — the same number the
+          // summary card above this pane shows and the same one the row counts
+          // were folded over — never `transmissions.length`, which is the whole
+          // capture and would disagree the moment a window or source is picked.
+          scopedTotal={state.data.scoped.scoped}
         />
         <TransmissionsCard
           // The list renders the paginated PAGE rows (scoped/filtered), not the

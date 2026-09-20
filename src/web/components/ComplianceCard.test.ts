@@ -52,6 +52,23 @@
  *      invent a second rule about which issues belong to a clause, because the
  *      key it hands to the cross-filter is what scopes the transmission list.
  *
+ * THE TWO UNITS ON A ROW (vsy1). The server now serves both — `counts` in
+ * distinct transmissions and `findings` in findings — and what a test has to
+ * hold is which of them reaches which surface:
+ *
+ *   9. THE TALLY AND THE EVIDENCE LINE AGREE, IN TRANSMISSIONS. The collapsed
+ *      "60f 13p" and the expanded "60 of 80 transmissions failing · 13 passing"
+ *      are the same field, so a supplier cannot read one number closed and a
+ *      different one open. The finding count (251) appears on neither.
+ *  10. THE REMAINDER IS SERVED, NOT SUBTRACTED. On a collapsed DS01.3 clause
+ *      `pass` and `fail` overlap, so `scope − pass − fail` is wrong and can go
+ *      negative. The fixture makes them overlap and pins the rendered number to
+ *      `notReached`. A row the server says nothing feeds shows no remainder at
+ *      all, and a caller with no scope shows no denominator.
+ *  11. THE FINDING COUNT SURVIVES, LABELLED. It sits beside the "Distinct issues"
+ *      eyebrow saying the word "findings", which is the only place the per-error
+ *      fan-out is still visible.
+ *
  * Most of this file reaches pure functions only, the Setup.test.ts /
  * TransmissionsCard.test.ts pattern: {@link AdvisorySection} is hook-free by
  * design (its collapse state is the parent's), so it can be CALLED as a plain
@@ -394,7 +411,9 @@ function draftSummary(over: Record<string, Partial<ComplianceRow>> = {}): Compli
     summary: row.summary,
     classes: [...row.classes],
     counts: { pass: 0, fail: 0, info: 0 },
+    findings: { pass: 0, fail: 0, info: 0 },
     outdated: 0,
+    notReached: 0,
     status: 'untested',
     tightened: row.tightened,
     members: [...row.members],
@@ -410,7 +429,9 @@ function contractSummary(): ComplianceRow[] {
     summary: row.summary,
     classes: [...row.classes],
     counts: { pass: 0, fail: 0, info: 0 },
+    findings: { pass: 0, fail: 0, info: 0 },
     outdated: 0,
+    notReached: 0,
     status: 'untested',
   })) as ComplianceRow[];
 }
@@ -681,4 +702,139 @@ test('the row a contract signature lands on is lens.ts’s clauseUnderLens', () 
       s.key,
     );
   }
+});
+
+/* ------------------------------------------------------------------ *
+ * The two units on a row: transmissions on the tally, findings in the
+ * expansion (vsy1).
+ * ------------------------------------------------------------------ */
+
+/** Transmissions in the scope of the run the two fixtures below were read from. */
+const SCOPE = 80;
+
+/**
+ * 5.3.2 as a live exercise run serves it (read 2026-09-19, session c57c2007, 80
+ * transmissions in scope): the schema stage's per-error fan-out makes the finding
+ * count four times the number of failing transmissions, and seven transmissions
+ * were rejected before the Annex 4 validator ever saw them. Read from an instance
+ * rather than invented, so the shape the tests pin is one the service produces.
+ */
+const FANNED_OUT: Partial<ComplianceRow> = {
+  counts: { pass: 13, fail: 60, info: 0 },
+  findings: { pass: 13, fail: 251, info: 0 },
+  notReached: 7,
+  status: 'mixed',
+};
+
+test('an expanded row states its evidence in transmissions, against the scope', () => {
+  const slice =
+    rowSlices(
+      cardMarkup({
+        summary: draftSummary({ '5.3.2': FANNED_OUT }),
+        expandedReq: '5.3.2',
+        scopedTotal: SCOPE,
+      }),
+    ).get('5.3.2') ?? '';
+
+  // The noun and the denominator ride on the first segment and are said once.
+  assert.ok(slice.includes('60 of 80 transmissions failing'), 'the failing tally names the scope');
+  assert.ok(slice.includes('13 passing'));
+  assert.equal(slice.split('transmissions failing').length - 1, 1);
+  assert.ok(!slice.includes('13 of 80'), 'the denominator is not repeated per segment');
+
+  // The collapsed tally is the same number in the same unit — it reads
+  // `row.counts`, which the server moved to transmissions, so the headline a
+  // supplier sees closed and the line they see open cannot disagree.
+  assert.ok(slice.includes('60f'), 'the collapsed tally counts transmissions too');
+  assert.ok(slice.includes('13p'));
+  // And never the finding count, which is the number this change took off the row.
+  assert.ok(!slice.includes('251 failing'), 'the finding count is not the row tally');
+  assert.ok(!slice.includes('251f'));
+});
+
+test('the finding count stays in the expansion, labelled as findings', () => {
+  const draftSig = sig({
+    key: 'ds013|5.3.2|required|/data|LSER',
+    req: '5.3.2',
+    profile: DRAFT,
+    kind: 'schema',
+  });
+  const slice =
+    rowSlices(
+      cardMarkup({
+        summary: draftSummary({ '5.3.2': FANNED_OUT }),
+        expandedReq: '5.3.2',
+        scopedTotal: SCOPE,
+        signatures: [draftSig],
+      }),
+    ).get('5.3.2') ?? '';
+
+  // The eyebrow the issue rows sit under, and beside it the evidence behind them
+  // — 251 findings over the 60 failing transmissions the line above reports.
+  assert.ok(slice.includes('Distinct issues'));
+  assert.ok(slice.includes('251 findings'), 'the finding tally says the word');
+  // Passes are not in it: a pass raises no issue and has no row to sit under.
+  assert.ok(!slice.includes('264 findings'));
+});
+
+test('the not-reached remainder is the served number, never a subtraction', () => {
+  // 5.1.3 merges §1.1 and §1.2, and the same live run serves it as below: 77
+  // transmissions passed at least one member, 2 failed at least one, and 3 never
+  // reached the clause. 77 + 2 + 3 is 82 over a scope of 80, because `pass` and
+  // `fail` are NOT disjoint — two transmissions passed one member and failed the
+  // other. So 80 − 77 − 2 is 1 and the remainder is 3: only the server, which saw
+  // the scope and the sets, can say which. A web layer that subtracted would be
+  // wrong here and negative on a clause with more overlap.
+  const slice =
+    rowSlices(
+      cardMarkup({
+        summary: draftSummary({
+          '5.1.3': {
+            counts: { pass: 77, fail: 2, info: 0 },
+            findings: { pass: 150, fail: 2, info: 0 },
+            notReached: 3,
+            status: 'mixed',
+          },
+        }),
+        expandedReq: '5.1.3',
+        scopedTotal: SCOPE,
+      }),
+    ).get('5.1.3') ?? '';
+
+  assert.ok(slice.includes('3 not reached'));
+  assert.ok(!slice.includes('1 not reached'));
+  // No tally on a collapsed clause claims more than the scope holds (f2bl) — the
+  // 150 pass FINDINGS the members sum to would have, and are not on the row.
+  for (const n of [77, 2, 3]) assert.ok(n <= SCOPE);
+  assert.ok(!slice.includes('150'), 'the summed member findings are not on the row');
+});
+
+test('a row nothing feeds says nothing about transmissions not reaching it', () => {
+  // 5.3.5 is Verified and added by the draft, so it is the one shape where an
+  // ungraded row reaches the expansion: `graded` false means there is no check
+  // to reach, and the server still fills `notReached` with the whole scope.
+  const slice =
+    rowSlices(
+      cardMarkup({
+        summary: draftSummary({ '5.3.5': { graded: false, notReached: SCOPE } }),
+        expandedReq: '5.3.5',
+        scopedTotal: SCOPE,
+      }),
+    ).get('5.3.5') ?? '';
+
+  assert.ok(slice.includes(NOT_FED_NOTE));
+  assert.ok(!slice.includes('not reached'), 'no remainder where there is no check');
+  assert.ok(slice.includes('no transmissions in this window'));
+});
+
+test('with no scope in hand the line drops the denominator rather than inventing one', () => {
+  const slice =
+    rowSlices(
+      cardMarkup({ summary: draftSummary({ '5.3.2': FANNED_OUT }), expandedReq: '5.3.2' }),
+    ).get('5.3.2') ?? '';
+
+  assert.ok(slice.includes('60 failing'));
+  assert.ok(!slice.includes('transmissions failing'));
+  // The remainder is still the server's own number — it needs no denominator.
+  assert.ok(slice.includes('7 not reached'));
 });

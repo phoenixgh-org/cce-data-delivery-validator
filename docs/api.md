@@ -538,6 +538,9 @@ What changes under `lens=ds013`:
   contract lens.
 - Counts fold through the clause map (`docs/clause-mapping.md`). Transport and semantic
   checks are graded once and shared, so a §1.4 failure is counted on clause 5.1.5.
+  The forward map is many-to-one — 5.1.3 merges §1.1 and §1.2 — and because `counts`
+  is in distinct transmissions, a body that touched both members is counted once. No
+  clause can report more than `scoped.scoped`.
 - **§3.2 is the exception**: the draft's counterpart, 5.3.2, is genuinely re-run by the
   Annex 4 validator, so clause 5.3.2 reports what that run found and a 2025 schema
   failure is not carried onto it. A body can fail `cce-interop` and satisfy Annex 4.
@@ -658,7 +661,9 @@ this session's live counts:
   "summary": "HTTPS POST, UTF-8 JSON",
   "classes": ["verified", "enforced"],
   "counts": { "pass": 1, "fail": 0, "info": 0 },
+  "findings": { "pass": 1, "fail": 0, "info": 0 },
   "outdated": 0,
+  "notReached": 0,
   "status": "pass"
 }
 ```
@@ -666,9 +671,23 @@ this session's live counts:
 - `classes` — one or more of `verified` (✅), `heuristic` (🟡), `active-only` (🔌),
   `attestation` (📝), `enforced` (🔒), `none`. The **first** entry drives `status`;
   two rows are split-class (§1.1, §4.4).
-- `outdated` — how many of the requirement's findings carry the `outdated` flag. It is a
-  modifier, **not** a severity (so it is not a key of `counts`), and today only §3.2
-  raises it.
+- `counts` — **distinct transmissions in scope** carrying at least one finding of that
+  severity on the row. It is the same noun `scoped.scoped` counts, so the two numbers on
+  a page can be read against each other. A body the schema stage wrote five Ajv errors
+  against is one failing transmission, and so is a body that touched two members of one
+  collapsed DS01.3 clause.
+- `findings` — the same three severities counted in **findings**, which is what `counts`
+  held before. It is the measure of how much evidence sits behind a row, and it is
+  always at least the matching `counts` entry.
+- `outdated` — how many of the requirement's transmissions carry an `outdated`-flagged
+  finding. It is a modifier, **not** a severity (so it is not a key of `counts`), and
+  today only §3.2 raises it. It counts transmissions, following `counts`, because the
+  dashboard renders the two on one line.
+- `notReached` — in-scope transmissions that produced no finding on the row at all: an
+  earlier stage rejected them, or the check does not apply to them. This is a **third
+  state**, not a subtraction a client can do. `counts.pass` and `counts.fail` are not
+  disjoint — one transmission can pass one member of a collapsed DS01.3 clause and fail
+  another — so `scoped.scoped − pass − fail` is not the remainder and can go negative.
 - `status` — `pass`, `pass-outdated`, `fail`, `mixed`, `untested` (gradeable, no findings
   yet — never a false pass), `not-exercised` (🔌), `self-attestation` (📝), `enforced`
   (🔒), or `not-applicable`.
