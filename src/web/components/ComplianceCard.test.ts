@@ -295,6 +295,41 @@ test('the collapsed row carries the label, the tx count and a neutral advisory t
   assert.ok(markup.includes('width:42px'), 'the empty id slot keeps the column width');
 });
 
+/**
+ * THE TWO ROW KINDS SIT ON ONE GRID (693r).
+ *
+ * synm's acceptance is that an advisory row sits "on the ReqRow column grid so
+ * titles align", and alignment is a relation between two rows rather than a
+ * property of either — so it is asserted between them, on rendered markup, and
+ * not against numbers restated here. The grid is one module-level source both
+ * rows read; this pins the outcome, so that lowering it back into either
+ * component fails rather than un-aligning the other silently.
+ *
+ * Geometry only. Colour, opacity and slot contents legitimately differ: a
+ * requirement row dims when its group is not gradeable and prints a clause id
+ * and a verdict, an advisory row does neither.
+ */
+test('an advisory row and a requirement row share the column grid', () => {
+  // A gradeable clause: a dead row drops the count slot, which is a difference
+  // in what the row HAS rather than in where its slots sit.
+  const clause = DS013_MATRIX.find((row) => row.classes[0] === 'verified')?.clause;
+  assert.ok(clause !== undefined, 'the served matrix has a verified clause');
+
+  const requirement = rowSlices(cardMarkup()).get(clause);
+  const advisory = rowSlices(
+    advisoryRowMarkup(adv('adv.blank_admin', { txCount: 4 }), { expanded: false }),
+  ).get('adv.blank_admin');
+  assert.ok(requirement !== undefined && advisory !== undefined, 'both rows rendered');
+
+  assert.deepEqual(rowGeometry(advisory), rowGeometry(requirement));
+
+  // And the shared numbers, named once, so a change to them is a deliberate one.
+  assert.deepEqual(rowGeometry(requirement), {
+    grid: ['display:flex', 'align-items:baseline', 'gap:13px', 'padding:9px 16px'],
+    slots: ['42px', '58px', '88px'],
+  });
+});
+
 test('no verdict reaches the row: no pill, no pass/fail tally, no status colour', () => {
   const markup = advisoryRowMarkup(adv('adv.blank_admin', { txCount: 4, count: 9 }));
 
@@ -475,6 +510,22 @@ function rowSlices(markup: string): Map<string, string> {
     slices.set(part.slice(0, part.indexOf('"')), part);
   }
   return slices;
+}
+
+/**
+ * The column geometry of one row slice: the grid declarations of the row's own
+ * style attribute, and the widths of its fixed slots in render order.
+ *
+ * A slice starts at its `data-req` attribute, so the first `style="` in it is
+ * the row container's and the first three fixed widths are the id, count and
+ * verdict slots — the title slot has no width, it takes what is left.
+ */
+function rowGeometry(slice: string): { grid: string[]; slots: string[] } {
+  const style = /style="([^"]*)"/.exec(slice)?.[1] ?? '';
+  return {
+    grid: style.split(';').filter((d) => /^(display|align-items|gap|padding):/.test(d)),
+    slots: [...slice.matchAll(/width:([\d.]+px)/g)].slice(0, 3).map((m) => m[1] as string),
+  };
 }
 
 /** The ids carrying one annotation pill, in render order. */

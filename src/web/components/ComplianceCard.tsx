@@ -165,6 +165,69 @@ const prefersReducedMotion =
 const mono = 'var(--mono)';
 
 /* ------------------------------------------------------------------ *
+ * The column grid — ONE source for both kinds of row (693r).
+ *
+ * A requirement row ({@link ReqRow}) and an advisory row ({@link AdvisoryRow})
+ * are deliberately the same shape: synm's acceptance for the advisory row is
+ * that it sits "on the ReqRow column grid so titles align". That held only by
+ * coincidence while each row typed the geometry out for itself — the grid lived
+ * in a const scoped inside ReqRow, so the advisory row could not read it and
+ * carried a copy instead. A change to one row's gap, padding or slot width
+ * would then have un-aligned the other silently.
+ *
+ * So the geometry lives here, at module scope, and both rows read it. What is
+ * shared is geometry only: colour, opacity and what goes IN each slot stay with
+ * the row, because that is where the two legitimately differ.
+ * ------------------------------------------------------------------ */
+
+/**
+ * The row container: four slots in a line, on the shared gap and padding.
+ *
+ * `opacity` is optional rather than defaulted, because the two rows differ in
+ * kind and not in value: a requirement row dims when its group is not gradeable,
+ * and an advisory row has no dead state to dim for — so it passes nothing and
+ * renders no `opacity` at all.
+ */
+function rowGridStyle(opts: { expanded: boolean; opacity?: number }): CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 13,
+    padding: '9px 16px',
+    cursor: 'pointer',
+    ...(opts.opacity === undefined ? {} : { opacity: opts.opacity }),
+    borderBottom: '1px solid var(--border)',
+    background: opts.expanded ? 'var(--detail)' : 'transparent',
+    transition: prefersReducedMotion ? undefined : 'background 120ms ease',
+  };
+}
+
+/**
+ * Slot 1, the id: wide enough for a six-character DS01.3 clause id ('5.1.10').
+ * A §7 id is shorter and simply sits in the same column, so the two packages
+ * align on one width rather than reflowing at the toggle; an advisory has no id
+ * to print and renders the slot empty, which is what keeps its title in line
+ * with the titles above it.
+ */
+const ROW_SLOT_ID: CSSProperties = { width: 42, flexShrink: 0 };
+
+/** Slot 2, the title: takes the remaining width. */
+const ROW_SLOT_TITLE: CSSProperties = { flex: 1, fontSize: 13 };
+
+/** Slot 3, the count: faint by default; the advisory row overrides the colour. */
+const ROW_SLOT_COUNT: CSSProperties = {
+  fontFamily: mono,
+  fontSize: 11,
+  color: 'var(--text-faint)',
+  width: 58,
+  textAlign: 'right',
+  flexShrink: 0,
+};
+
+/** Slot 4, the verdict: a status pill on a requirement, a neutral tag on an advisory. */
+const ROW_SLOT_VERDICT: CSSProperties = { width: 88, textAlign: 'right', flexShrink: 0 };
+
+/* ------------------------------------------------------------------ *
  * Row annotations — what the draft package adds to a row, orthogonal to the
  * verifiability class that groups it (tfnv.14).
  * ------------------------------------------------------------------ */
@@ -716,17 +779,7 @@ function ReqRow({
   // count lands here, which is a different statement from "no traffic yet".
   const notFed = isNewInDraft(row) && row.graded === false;
 
-  const rowStyle: CSSProperties = {
-    display: 'flex',
-    alignItems: 'baseline',
-    gap: 13,
-    padding: '9px 16px',
-    cursor: 'pointer',
-    opacity: dead ? 0.5 : 1,
-    borderBottom: '1px solid var(--border)',
-    background: expanded ? 'var(--detail)' : 'transparent',
-    transition: prefersReducedMotion ? undefined : 'background 120ms ease',
-  };
+  const rowStyle = rowGridStyle({ expanded, opacity: dead ? 0.5 : 1 });
 
   return (
     <div data-req={row.requirement}>
@@ -748,16 +801,12 @@ function ReqRow({
             fontFamily: mono,
             fontSize: 11.5,
             color: 'var(--text-faint)',
-            // Wide enough for a six-character DS01.3 clause id ('5.1.10'); a §7
-            // id is shorter and simply sits in the same column, so the two
-            // packages align on one width rather than reflowing at the toggle.
-            width: 42,
-            flexShrink: 0,
+            ...ROW_SLOT_ID,
           }}
         >
           {row.requirement}
         </span>
-        <span style={{ flex: 1, fontSize: 13 }}>
+        <span style={ROW_SLOT_TITLE}>
           {row.summary}
           <Icon
             name="info"
@@ -769,16 +818,7 @@ function ReqRow({
           ))}
         </span>
         {!dead && (
-          <span
-            style={{
-              fontFamily: mono,
-              fontSize: 11,
-              color: 'var(--text-faint)',
-              width: 58,
-              textAlign: 'right',
-              flexShrink: 0,
-            }}
-          >
+          <span style={ROW_SLOT_COUNT}>
             {row.counts.fail > 0 && (
               <span style={{ color: 'var(--fail)' }}>{row.counts.fail}f </span>
             )}
@@ -796,7 +836,7 @@ function ReqRow({
             {row.counts.pass + row.counts.fail + row.outdated === 0 && '—'}
           </span>
         )}
-        <span style={{ width: 88, textAlign: 'right', flexShrink: 0 }}>
+        <span style={ROW_SLOT_VERDICT}>
           {dead ? <StatusPill status={row.status} /> : <StatusPill status={row.status} dot />}
         </span>
       </div>
@@ -927,34 +967,14 @@ export function AdvisoryRow({
             onToggle();
           }
         }}
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 13,
-          padding: '9px 16px',
-          cursor: 'pointer',
-          borderBottom: '1px solid var(--border)',
-          background: expanded ? 'var(--detail)' : 'transparent',
-          transition: prefersReducedMotion ? undefined : 'background 120ms ease',
-        }}
+        style={rowGridStyle({ expanded })}
       >
         {/* The id slot, empty and the same width, so advisory titles line up with
             requirement titles rather than starting 42px to their left. */}
-        <span style={{ width: 42, flexShrink: 0 }} />
-        <span style={{ flex: 1, fontSize: 13 }}>{advisoryLabel(id)}</span>
-        <span
-          style={{
-            fontFamily: mono,
-            fontSize: 11,
-            color: tone,
-            width: 58,
-            textAlign: 'right',
-            flexShrink: 0,
-          }}
-        >
-          {sig.txCount} tx
-        </span>
-        <span style={{ width: 88, textAlign: 'right', flexShrink: 0 }}>
+        <span style={ROW_SLOT_ID} />
+        <span style={ROW_SLOT_TITLE}>{advisoryLabel(id)}</span>
+        <span style={{ ...ROW_SLOT_COUNT, color: tone }}>{sig.txCount} tx</span>
+        <span style={ROW_SLOT_VERDICT}>
           <Tag label="advisory" color={tone} background="var(--accent-weak)" />
         </span>
       </div>
