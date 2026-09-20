@@ -618,8 +618,8 @@ nothing to report.
 - `severity` — `pass`, `fail`, or `info`.
 - `pointer` / `instancePath` — RFC 6901 JSON Pointer into the submitted body; `null`
   for a root-level or non-schema finding.
-- `outdated` — `true` only on the §3.2 info finding for a valid-but-older schema
-  version.
+- `outdated` — `true` only on the `tx.outdated_schema` info finding for a
+  valid-but-older schema version.
 - `keyword` / `param` — Ajv's defect class and its identifying parameter (the missing
   property, the expected format, the limit …) — never the offending value. `null` for
   non-schema findings.
@@ -633,9 +633,12 @@ nothing to report.
 
 The table below is the **full catalogue of `tx.*` codes the service emits, on both
 lineages** — not the contract lineage alone. The Req column gives the clause the
-finding is filed under; a code raised by the shadow run as well as the primary carries
-both clauses, and the finding's own `profile` says which of them applies to it. A code
-not listed here is one this service does not emit.
+finding is filed under. Two clauses appear where the code is filed against whichever
+lineage the run graded, because the clause follows the lineage and not the code:
+`meta.schemaVersion` decides which lineage is primary, and a supplier declaring the
+DS01.3 draft version makes `ds013` the primary and `2025` the shadow. The finding's own
+`profile` says which of the two applies to it. A code not listed here is one this
+service does not emit.
 
 | `code`                          | Req           | Raised when                                                                                     |
 | ------------------------------- | ------------- | ----------------------------------------------------------------------------------------------- |
@@ -649,8 +652,8 @@ not listed here is one this service does not emit.
 | `tx.missing_schema_version`     | §3.2          | `meta.schemaVersion` absent or not a string                                                     |
 | `tx.unsupported_schema_version` | §3.2          | Declared version is not registered                                                              |
 | `tx.schema_invalid`             | §3.2 / §5.3.2 | Validation failed with no per-error detail — every error was a suppressed container (both runs) |
-| `tx.null_unexplained`           | §5.3.2        | Shadow run only: a null sensed value carrying no explaining error code                          |
-| `tx.outdated_schema`            | §3.2          | Valid, but against an older registered version (info)                                           |
+| `tx.null_unexplained`           | §3.2 / §5.3.2 | Shadow run only, on either lineage: a null sensed value carrying no explaining error code       |
+| `tx.outdated_schema`            | §3.2 / §5.3.2 | Valid, but against an older registered version of the declared lineage (info)                   |
 | `tx.duplicate_transfer`         | §1.8          | Repeated `transferId` or identical content                                                      |
 | `tx.concurrent_delivery`        | §2.1          | Another POST for this session was in flight                                                     |
 | `tx.irregular_interval`         | §3.4          | `ABST` reading cadence looks irregular                                                          |
