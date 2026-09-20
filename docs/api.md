@@ -264,11 +264,13 @@ produced them. A schema failure lists one finding per non-container Ajv error: t
 combining keywords (`if`, `then`, `else`, `oneOf`, `anyOf`, `allOf`) are suppressed on
 both the primary and the shadow run, because they carry no location a supplier can act
 on — Ajv reports `if` at the document root — while the leaf errors beneath them name the
-actual defect. A failure consisting only of combining-keyword errors yields a single
-`tx.schema_invalid` finding, so a 422 always arrives with at least one finding from the
-schema stage, filed under the primary lineage's own clause — §3.2 for cce-interop;
-§5.3.2 for DS01.3, or §5.3.3 when the defect lies in the transmission metadata block
-(`/meta`) — to explain it. On the shadow run, a null reading that lacks its explaining
+actual defect. Every finding is filed under the clause of the lineage that produced it:
+§3.2 for cce-interop; §5.3.2 for DS01.3, or §5.3.3 when the defect lies in the
+transmission metadata block (`/meta`). A failure consisting only of combining-keyword
+errors yields a single `tx.schema_invalid` finding under that lineage's own clause, on
+the shadow run as well as the primary, so a 422 always arrives with at least one finding
+from the schema stage to explain it and each lineage records a verdict for every
+transmission it graded. On the shadow run, a null reading that lacks its explaining
 error code is collapsed further still: the `oneOf` and its leaf errors become a single
 `tx.null_unexplained` finding, so a shadow finding count can be lower than the
 leaf-error count.

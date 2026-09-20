@@ -30,6 +30,7 @@ import { buildApp } from '../../app.js';
 import { closePool, getPool } from '../../db/pool.js';
 import { createSession } from '../../db/repository.js';
 import { emsBaseline } from '../../exercise/baseline.js';
+import { duplicateVersionStringsIntoRecords } from '../../exercise/transforms/payload.js';
 import { SchemaRegistry, type Profile, type RegistryEntry } from '../../schema-registry.js';
 import { cloneValid } from '../fixtures/transmissions.js';
 import type { Finding, PipelineContext, StageOutcome } from '../pipeline.js';
@@ -490,6 +491,43 @@ test('shadow: a wrong-TYPE second record keeps both of its branch errors (by1c.2
     .map((f) => f.param);
   assert.ok(branchTypes.includes('number'), `normal branch kept, got ${branchTypes.join('|')}`);
   assert.ok(branchTypes.includes('null'), `abnormal branch kept, got ${branchTypes.join('|')}`);
+});
+
+test('shadow: a container-only failure records ONE 5.3.2 fail, as the primary does (xtss)', () => {
+  // The never-zero-findings guard, on the shadow half. The exercise suite's
+  // '3.2-fail-ems-version-strings-in-both-places' body satisfies BOTH branches of
+  // each version-string `oneOf`, and a oneOf matched twice is violated — so Ajv
+  // returns nothing but containers (two `oneOf`s at /data/0 and the root `if`)
+  // under EITHER lineage. Suppressing all three used to leave the shadow clause
+  // recording neither a pass nor a fail for a transmission the draft rejected, so
+  // 5.3.2's tally could only understate the draft's rejections.
+  const payload = duplicateVersionStringsIntoRecords().apply(
+    emsBaseline({ caseId: 'shadow-container-only', index: 0 }),
+  );
+  const ctx = makeCtx(payload);
+  const outcome = schemaStage().run(ctx) as StageOutcome;
+
+  assert.deepEqual(outcome, { kind: 'halt', status: 422 }, 'the primary rejection still stands');
+  assert.equal(ctx.primaryProfile, '2025');
+  assert.equal(ctx.shadowProfile, 'ds013');
+  assert.equal(
+    ctx.findings.filter((f) => f.keyword !== undefined).length,
+    0,
+    'no container-keyword finding reaches the supplier on either run',
+  );
+
+  const shadow = byProfile(ctx.findings, 'ds013');
+  assert.equal(shadow.length, 1, `exactly one shadow finding, got ${JSON.stringify(shadow)}`);
+  assert.equal(shadow[0]?.severity, 'fail', 'a rejection the draft made is recorded as a fail');
+  assert.equal(shadow[0]?.requirement, '5.3.2', "the SHADOW validator's clause, not §3.2");
+  assert.equal(shadow[0]?.code, 'tx.schema_invalid');
+  assert.match(shadow[0]?.detail ?? '', /failed validation against schema 1 \(§5\.3\.2\)/);
+
+  // The primary path is unchanged: the same single fallback, under its own clause.
+  const primary = byProfile(ctx.findings, '2025');
+  assert.equal(primary.length, 1, `exactly one primary finding, got ${JSON.stringify(primary)}`);
+  assert.equal(primary[0]?.code, 'tx.schema_invalid');
+  assert.equal(primary[0]?.requirement, '3.2');
 });
 
 test('translateNullExplanations scopes leaves to their own record', () => {

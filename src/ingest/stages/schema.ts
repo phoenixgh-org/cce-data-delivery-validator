@@ -54,10 +54,12 @@
  *      unpublished proposal.
  *   5. Runs the shadow validator over the same parsed body, recording its errors
  *      (or its own single pass finding) with `profile` set to the shadow
- *      lineage. Of the two exported pure translations, container-keyword
- *      suppression has applied to BOTH runs since bd bt8o; null-explanation
- *      collapsing stays shadow-only by decision, because moving it would change
- *      which pointers and params a §3.2 failure reports.
+ *      lineage. A shadow failure that leaves none emitted falls back to a single
+ *      `tx.schema_invalid` under the SHADOW clause, exactly as the primary run
+ *      does under its own (bd xtss). Of the two exported pure translations,
+ *      container-keyword suppression has applied to BOTH runs since bd bt8o;
+ *      null-explanation collapsing stays shadow-only by decision, because moving
+ *      it would change which pointers and params a §3.2 failure reports.
  *
  * Pointer mapping: Ajv `instancePath` is already an RFC-6901 JSON Pointer, which
  * we surface verbatim as the finding `pointer`. Ajv emits '' (empty) for a
@@ -362,7 +364,9 @@ export function identifyingParam(err: ErrorObject): string | null {
  * Never halts and never touches `ctx.schemaOk`: the shadow lineage is not the
  * contract, so nothing it finds may change the response. A clean run records ONE
  * pass finding so "also passes the other profile" is a recorded fact rather than
- * an absence the dashboard would have to infer.
+ * an absence the dashboard would have to infer — and, since bd xtss, a failing
+ * run always records at least one fail for the same reason: the shadow clause
+ * must count every transmission it graded, either way.
  *
  * There is no shadow equivalent of the primary run's outdated-but-valid check.
  * "Outdated" is intra-lineage, and the shadow entry is by construction the
@@ -386,9 +390,11 @@ function recordShadowFindings(ctx: PipelineContext, entry: RegistryEntry): void 
   }
 
   const { explanations, remaining } = translateNullExplanations(errors);
+  let emitted = 0;
 
   for (const explanation of explanations) {
     const clause = clauseFor(entry.profile, explanation.pointer);
+    emitted += 1;
     ctx.findings.push({
       requirement: clause,
       severity: 'fail',
@@ -402,6 +408,7 @@ function recordShadowFindings(ctx: PipelineContext, entry: RegistryEntry): void 
 
   for (const err of remaining) {
     if (isContainerError(err)) continue;
+    emitted += 1;
     const clause = clauseFor(entry.profile, err.instancePath);
     ctx.findings.push({
       requirement: clause,
@@ -412,6 +419,23 @@ function recordShadowFindings(ctx: PipelineContext, entry: RegistryEntry): void 
       keyword: err.keyword,
       instancePath: err.instancePath,
       param: identifyingParam(err),
+    });
+  }
+
+  // The same never-zero-findings guard the primary run carries (bd bt8o, and bd
+  // xtss for this half): a shadow REJECTION whose every error was a suppressed
+  // container would otherwise record neither a pass nor a fail, and the shadow
+  // clause would count the transmission neither way — a rejection the other
+  // lineage actually made, absent from its tally. The clause is the shadow
+  // validator's own (`clauseFor(entry.profile, '')`), never the primary's.
+  if (emitted === 0) {
+    const clause = clauseFor(entry.profile, '');
+    ctx.findings.push({
+      requirement: clause,
+      severity: 'fail',
+      profile: entry.profile,
+      detail: `body failed validation against schema ${entry.version} (§${clause})`,
+      code: 'tx.schema_invalid',
     });
   }
 }
