@@ -28,6 +28,7 @@ const deps = {
   concurrentAtEntry: 1,
   findPriorTransmissions: async () => [],
   findPriorUnitWindows: async () => [],
+  findPriorUnitIdentities: async () => [],
 };
 
 /** A PipelineContext whose parse+schema stages already ran on `parsedBody`. */

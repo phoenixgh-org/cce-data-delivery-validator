@@ -45,6 +45,7 @@ function fakeDeps(priors: PriorTransmission[]): SemanticDeps {
     concurrentAtEntry: 1,
     findPriorTransmissions: async () => priors,
     findPriorUnitWindows: async () => [],
+    findPriorUnitIdentities: async () => [],
   };
 }
 

@@ -42,6 +42,7 @@ const deps: SemanticDeps = {
   concurrentAtEntry: 1,
   findPriorTransmissions: async () => [],
   findPriorUnitWindows: async () => [],
+  findPriorUnitIdentities: async () => [],
 };
 
 // ── the fixture: a conformant EMS transmission that pads three properties ────

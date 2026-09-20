@@ -109,6 +109,11 @@ import {
   duplicateRecordsCheck,
 } from './duplicate-records.js';
 import {
+  IDENTIFIER_COLLISION_ID,
+  IDENTIFIER_COLLISION_RATIONALE,
+  identifierCollisionCheck,
+} from './identifier-collision.js';
+import {
   NULL_ACCUMULATOR_ID,
   NULL_ACCUMULATOR_RATIONALE,
   nullAccumulatorCheck,
@@ -158,8 +163,9 @@ export {
  * (agj.4), `adv.compressor_exceeds_supply` (agj.3), `adv.cmpr_minutes` (agj.7),
  * `adv.sample_gap` (agj.6), `adv.duplicate_records` (agj.8),
  * `adv.blank_admin` (agj.5), `adv.unexplained_null_temp` (agj.2),
- * `adv.short_identifier` (krh), `adv.null_accumulator` (agj.9) and
- * `adv.abst_window_overlap` (agj.24); it grows from here. Each is written in the ordinary
+ * `adv.short_identifier` (krh), `adv.null_accumulator` (agj.9),
+ * `adv.abst_window_overlap` (agj.24) and `adv.identifier_collision` (0rfk); it
+ * grows from here. Each is written in the ordinary
  * `export const …Check: SemanticCheck =` idiom the §7 checks use: the imports
  * run ONE WAY (checks ← advisory-finding.ts, this registry ← checks), so there
  * is no cycle and no load-order hazard to work around (igw). A new check needs
@@ -179,10 +185,11 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   shortIdentifierCheck,
   nullAccumulatorCheck,
   abstWindowOverlapCheck,
+  identifierCollisionCheck,
 ];
 
 /**
- * THE CATALOGUE AS DATA — the same thirteen advisories as {@link ADVISORY_CHECKS},
+ * THE CATALOGUE AS DATA — the same fourteen advisories as {@link ADVISORY_CHECKS},
  * in the same order, named by id rather than by function (axdd).
  *
  * The checks are bare functions and carry no id metadata: an id is a string
@@ -215,6 +222,7 @@ export const ADVISORY_IDS: readonly AdvisoryId[] = [
   SHORT_IDENTIFIER_ID,
   NULL_ACCUMULATOR_ID,
   ABST_WINDOW_OVERLAP_ID,
+  IDENTIFIER_COLLISION_ID,
 ];
 
 /**
@@ -255,6 +263,7 @@ export const ADVISORY_RATIONALES: ReadonlyMap<string, string> = new Map<string, 
   [SHORT_IDENTIFIER_ID, SHORT_IDENTIFIER_RATIONALE],
   [NULL_ACCUMULATOR_ID, NULL_ACCUMULATOR_RATIONALE],
   [ABST_WINDOW_OVERLAP_ID, ABST_WINDOW_OVERLAP_RATIONALE],
+  [IDENTIFIER_COLLISION_ID, IDENTIFIER_COLLISION_RATIONALE],
 ]);
 
 /**

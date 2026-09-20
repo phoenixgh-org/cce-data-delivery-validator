@@ -10,7 +10,7 @@
 import type { Pool, PoolClient } from 'pg';
 
 import { getPool } from './pool.js';
-import type { UnitWindow } from '../identity/unit-key.js';
+import type { UnitIdentity, UnitWindow } from '../identity/unit-key.js';
 
 /** Anything we can run a query against: the pool or a checked-out client. */
 export type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
@@ -533,6 +533,96 @@ export async function findPriorUnitWindows(
 }
 
 /**
+ * One prior appliance identity: the appliance-side identifiers an EARLIER
+ * transmission in this session carried for one CCE unit, with the two transmission
+ * columns the observation needs to describe it (when it arrived, and under which
+ * transfer id).
+ */
+export interface PriorUnitIdentity {
+  transmission_id: string;
+  unit_key: string;
+  aser: string | null;
+  amid: string | null;
+  aid: string | null;
+  received_at: Date;
+  transfer_id: string | null;
+}
+
+/**
+ * Find the appliance identities earlier transmissions in the SAME session recorded
+ * that share ANY value with `identities` (0rfk, the read behind
+ * `adv.identifier_collision`). Like {@link findPriorUnitWindows} it runs BEFORE the
+ * current transmission is persisted, so it only ever returns EARLIER rows and a
+ * transmission can never collide with itself.
+ *
+ * THREE MATCH ARMS, one per index in
+ * db/initdb/96-transmission-unit-identity.sql — a prior qualifies when it shares
+ * this body's `unit_key`, its `AMID`, or its `AID`:
+ *
+ *   - `unit_key` is also how a shared ASER is found, and needs no arm of its own.
+ *     A report carrying a usable `ASER` ALWAYS keys on it (`unitKey` prefers ASER),
+ *     so two reports sharing a serial share a `unit_key` by construction.
+ *   - `amid` catches the reverse shape the key cannot: a prior that reported the
+ *     same platform handle under a different serial keys on that other serial.
+ *   - `aid` catches the same shape for the employer's asset id.
+ *
+ * NULLs never match. `= ANY(...)` is false for a NULL column, and the caller's own
+ * NULL values are dropped from the arrays before they are bound, so an identifier
+ * neither side carried is not a shared value.
+ *
+ * The EXCLUSIONS are exactly {@link findPriorUnitWindows}'s, for the same reasons:
+ * `excludeContentHash` drops an exact replay and `excludeTransferId` a re-send
+ * under the same transfer id — both already graded under §1.8 — while the
+ * unconditional `t.schema_ok IS TRUE` drops any prior the service did not accept
+ * (and, because it is `IS TRUE`, the NULL rows of a halt that never reached the
+ * schema stage). Both optional comparisons are `IS DISTINCT FROM`, so a prior whose
+ * column is NULL is KEPT.
+ *
+ * With nothing to match on — no identities, or identities carrying no values at all
+ * — it short-circuits to `[]` with no SQL run. Results are newest-first, so a caller
+ * naming a single prior names the most recent one.
+ */
+export async function findPriorUnitIdentities(
+  sessionUuid: string,
+  identities: readonly UnitIdentity[],
+  opts: { excludeContentHash?: Buffer | null; excludeTransferId?: string | null },
+  db: Queryable = getPool(),
+): Promise<PriorUnitIdentity[]> {
+  const unitKeys = [...new Set(identities.map((i) => i.unitKey))];
+  const amids = [...new Set(identities.map((i) => i.amid).filter((v): v is string => v !== null))];
+  const aids = [...new Set(identities.map((i) => i.aid).filter((v): v is string => v !== null))];
+
+  // No value on any arm → nothing this body could share (skip the query).
+  if (unitKeys.length === 0 && amids.length === 0 && aids.length === 0) return [];
+
+  const { rows } = await db.query<PriorUnitIdentity>(
+    `SELECT i.transmission_id, i.unit_key, i.aser, i.amid, i.aid,
+            t.received_at, t.transfer_id
+     FROM transmission_unit_identity i
+     JOIN transmission t ON t.id = i.transmission_id
+     WHERE i.session_uuid = $1
+       AND (
+         i.unit_key = ANY($2::text[])
+         OR i.amid = ANY($3::text[])
+         OR i.aid = ANY($4::text[])
+       )
+       AND t.schema_ok IS TRUE
+       AND ($5::bytea IS NULL OR t.content_hash IS DISTINCT FROM $5)
+       AND ($6::text IS NULL OR t.transfer_id IS DISTINCT FROM $6)
+     ORDER BY t.received_at DESC`,
+    [
+      sessionUuid,
+      unitKeys,
+      amids,
+      aids,
+      opts.excludeContentHash ?? null,
+      opts.excludeTransferId ?? null,
+    ],
+  );
+  return rows;
+}
+
+/**
  * Insert a transmission for a session and return the full inserted row.
  *
  * `content_hash` is intentionally NON-UNIQUE (DESIGN.md §8): every POST is
@@ -733,6 +823,55 @@ export async function insertUnitWindows(
             v.record_count::integer
      FROM (VALUES ${tuples.join(', ')})
        AS v(unit_key, abst_min, abst_max, record_count)`,
+    values,
+  );
+}
+
+/**
+ * Record this transmission's appliance identities — one row per identified
+ * report-unit (0rfk). Called AFTER {@link insertTransmission}, on the same client
+ * as {@link insertFindings} and {@link insertUnitWindows}, so the identities, the
+ * windows and the findings of one POST land or roll back together.
+ *
+ * `session_uuid` is passed in rather than read back off the transmission, exactly
+ * as {@link insertUnitWindows} takes it: the caller already has it, and the column
+ * exists precisely so the prior-identity lookup never has to join to find the
+ * session.
+ *
+ * No `ON CONFLICT`: `computeUnitIdentities` already yields one entry per unit, and
+ * this runs once per transmission, so a primary-key collision would mean a double
+ * write rather than a legitimate repeat — better raised than swallowed. Empty
+ * `identities` writes nothing and runs no SQL.
+ */
+export async function insertUnitIdentities(
+  transmissionId: string,
+  sessionUuid: string,
+  identities: readonly UnitIdentity[],
+  db: Queryable = getPool(),
+): Promise<void> {
+  if (identities.length === 0) return;
+
+  const COLS = 4; // per-row bound params (unit_key…aid)
+  const values: unknown[] = [transmissionId, sessionUuid];
+  const tuples = identities.map((identity, i) => {
+    // +2 for the transmission_id / session_uuid params bound once, up front.
+    const base = i * COLS + 2;
+    values.push(identity.unitKey, identity.aser, identity.amid, identity.aid);
+    const ph = Array.from({ length: COLS }, (_, j) => `$${base + j + 1}`);
+    return `(${ph.join(', ')})`;
+  });
+
+  // The VALUES-derived columns carry bound params, which infer as text — the type
+  // these four columns already are — so only the NULLs need pinning, which the
+  // explicit `::text` casts below do (the same treatment insertUnitWindows gives
+  // its timestamps).
+  await db.query(
+    `INSERT INTO transmission_unit_identity (
+       transmission_id, session_uuid, unit_key, aser, amid, aid
+     )
+     SELECT $1, $2, v.unit_key::text, v.aser::text, v.amid::text, v.aid::text
+     FROM (VALUES ${tuples.join(', ')})
+       AS v(unit_key, aser, amid, aid)`,
     values,
   );
 }

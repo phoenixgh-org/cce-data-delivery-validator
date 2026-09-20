@@ -4,15 +4,17 @@
  * `unitKey`'s own rule is already held from the dashboard side by
  * `src/api/scope.test.ts` (the p98 cases under "distinct CCE units"), which still
  * imports it through `unitTotals` and is unchanged by the move. What is proved
- * here is the identity seam itself and the new window reader: which reports and
- * which records contribute a window, and which are skipped because there is
- * nothing comparable to store.
+ * here is the identity seam itself and the two per-report readers built on it: the
+ * window reader (which reports and which records contribute a window, and which
+ * are skipped because there is nothing comparable to store) and the identity
+ * reader `computeUnitIdentities` (0rfk), which carries the three appliance-side
+ * identifiers and depends on no timestamp at all.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeUnitWindows, identifier, unitKey } from './unit-key.js';
+import { computeUnitIdentities, computeUnitWindows, identifier, unitKey } from './unit-key.js';
 
 /** One record at the given compact ABST instant. */
 function rec(abst: unknown): Record<string, unknown> {
@@ -182,4 +184,90 @@ test('computeUnitWindows returns [] for a body that is not an object with an arr
   assert.deepEqual(computeUnitWindows({ data: null }), []);
   assert.deepEqual(computeUnitWindows({ data: { '0': { ASER: 'sn-1' } } }), []);
   assert.deepEqual(computeUnitWindows({ data: ['not-a-report', 7, null] }), []);
+});
+
+// ── computeUnitIdentities ───────────────────────────────────────────────────
+
+test('computeUnitIdentities returns one identity per identified report (0rfk)', () => {
+  assert.deepEqual(
+    computeUnitIdentities({
+      data: [
+        { ASER: 'sn-1', AMID: 'fridge-1', AID: 'asset-1', records: [] },
+        { AMID: 'fridge-2', records: [rec('20260901T000000Z')] },
+      ],
+    }),
+    [
+      { unitKey: 'aser:sn-1', aser: 'sn-1', amid: 'fridge-1', aid: 'asset-1' },
+      { unitKey: 'amid:fridge-2', aser: null, amid: 'fridge-2', aid: null },
+    ],
+  );
+});
+
+test('computeUnitIdentities needs no records — identity does not depend on ABST', () => {
+  // The whole reason the identity is a table of its own: a report whose timestamps
+  // this service cannot read still names its appliance perfectly well.
+  assert.deepEqual(
+    computeUnitIdentities({ data: [{ ASER: 'sn-1', records: [rec('not-a-timestamp')] }] }),
+    [{ unitKey: 'aser:sn-1', aser: 'sn-1', amid: null, aid: null }],
+  );
+  assert.deepEqual(computeUnitIdentities({ data: [{ ASER: 'sn-1' }] }), [
+    { unitKey: 'aser:sn-1', aser: 'sn-1', amid: null, aid: null },
+  ]);
+});
+
+test('computeUnitIdentities trims values and treats blanks and non-strings as absent', () => {
+  assert.deepEqual(
+    computeUnitIdentities({ data: [{ ASER: '  sn-1 ', AMID: '   ', AID: 7 }] }),
+    [{ unitKey: 'aser:sn-1', aser: 'sn-1', amid: null, aid: null }],
+    'the identifier() rule, so a padded value never reads as a different one',
+  );
+});
+
+test('computeUnitIdentities reads only the three appliance-side identifiers', () => {
+  // LSER/ESER/LID/EID name the logger and the monitoring device: re-instrumenting
+  // one appliance is ordinary, so they are deliberately not carried.
+  assert.deepEqual(
+    computeUnitIdentities({
+      data: [{ ASER: 'sn-1', LSER: 'logger-1', ESER: 'emd-1', LID: 'l-1', EID: 'e-1' }],
+    }),
+    [{ unitKey: 'aser:sn-1', aser: 'sn-1', amid: null, aid: null }],
+  );
+});
+
+test('computeUnitIdentities skips a report with no appliance identifier', () => {
+  assert.deepEqual(
+    computeUnitIdentities({ data: [{ AMFR: 'Alpha', AID: 'asset-1' }] }),
+    [],
+    'AID alone is the employer’s handle, not the identity key',
+  );
+  assert.deepEqual(
+    computeUnitIdentities({ data: [{ ASER: null, AMID: null, AID: 'asset-1' }] }),
+    [],
+  );
+});
+
+test('computeUnitIdentities keeps the FIRST of two reports for one appliance', () => {
+  // Merging would invent an identity no single report declared; intra-body
+  // disagreement is a different observation (out of scope on 0rfk).
+  assert.deepEqual(
+    computeUnitIdentities({
+      data: [
+        { ASER: 'sn-1', AMID: 'fridge-a' },
+        { ASER: 'sn-1', AMID: 'fridge-b' },
+      ],
+    }),
+    [{ unitKey: 'aser:sn-1', aser: 'sn-1', amid: 'fridge-a', aid: null }],
+  );
+});
+
+test('computeUnitIdentities returns [] for a body that is not an object with an array data', () => {
+  assert.deepEqual(computeUnitIdentities(null), []);
+  assert.deepEqual(computeUnitIdentities(undefined), []);
+  assert.deepEqual(computeUnitIdentities('{"data":[]}'), []);
+  assert.deepEqual(computeUnitIdentities(42), []);
+  assert.deepEqual(computeUnitIdentities([{ ASER: 'sn-1' }]), [], 'a bare array is not a body');
+  assert.deepEqual(computeUnitIdentities({}), []);
+  assert.deepEqual(computeUnitIdentities({ data: null }), []);
+  assert.deepEqual(computeUnitIdentities({ data: { '0': { ASER: 'sn-1' } } }), []);
+  assert.deepEqual(computeUnitIdentities({ data: ['not-a-report', 7, null] }), []);
 });

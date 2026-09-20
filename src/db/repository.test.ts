@@ -19,16 +19,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 
+import type { UnitIdentity } from '../identity/unit-key.js';
 import { getPool, closePool } from './pool.js';
 import {
   bumpLastPostAt,
   createSession,
   findPriorTransmissions,
+  findPriorUnitIdentities,
   findPriorUnitWindows,
   getSession,
   insertFinding,
   insertFindings,
   insertTransmission,
+  insertUnitIdentities,
   insertUnitWindows,
   purgeExpiredSessions,
   type Profile,
@@ -576,6 +579,179 @@ test('unit windows cascade-delete with their transmission (§11 retention)', { s
 
   await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
 });
+
+/** One appliance identity to store, defaulted so a test names only what it varies. */
+function identity(over: Partial<UnitIdentity> = {}): UnitIdentity {
+  return { unitKey: 'aser:S-1', aser: 'S-1', amid: 'fridge-a', aid: null, ...over };
+}
+
+test(
+  'unit identities round-trip and findPriorUnitIdentities matches on ANY value (0rfk)',
+  { skip },
+  async () => {
+    const session = await createSession();
+    const hashA = createHash('sha256').update('identity-body-A').digest();
+
+    const first = await insertTransmission({
+      sessionUuid: session.uuid,
+      transferId: 'T-1',
+      contentHash: hashA,
+      schemaOk: true,
+    });
+
+    await insertUnitIdentities(first.id, session.uuid, [
+      identity({ aid: 'asset-7' }),
+      identity({ unitKey: 'amid:fridge-2', aser: null, amid: 'fridge-2', aid: null }),
+    ]);
+
+    // Round-trip: every column comes back as stored, with the two transmission
+    // columns the observation needs joined on.
+    const sameUnit = await findPriorUnitIdentities(session.uuid, [identity()], {});
+    assert.equal(sameUnit.length, 1, 'the unit_key arm matches one row');
+    assert.equal(sameUnit[0]?.transmission_id, first.id);
+    assert.equal(sameUnit[0]?.unit_key, 'aser:S-1');
+    assert.equal(sameUnit[0]?.aser, 'S-1');
+    assert.equal(sameUnit[0]?.amid, 'fridge-a');
+    assert.equal(sameUnit[0]?.aid, 'asset-7');
+    assert.equal(sameUnit[0]?.transfer_id, 'T-1');
+    assert.ok(sameUnit[0]?.received_at instanceof Date, 'received_at joins off transmission');
+
+    // THE REVERSE ARM: a body keyed on a DIFFERENT serial still finds the prior
+    // through the platform handle they share. This is the match the unit_key index
+    // alone cannot make, and the reason the table carries its own amid index.
+    const byAmid = await findPriorUnitIdentities(
+      session.uuid,
+      [identity({ unitKey: 'aser:S-9', aser: 'S-9' })],
+      {},
+    );
+    assert.deepEqual(
+      byAmid.map((r) => r.unit_key),
+      ['aser:S-1'],
+      'the amid arm matches across unit keys',
+    );
+
+    // …and the same for the employer's asset id.
+    const byAid = await findPriorUnitIdentities(
+      session.uuid,
+      [identity({ unitKey: 'aser:S-9', aser: 'S-9', amid: null, aid: 'asset-7' })],
+      {},
+    );
+    assert.deepEqual(
+      byAid.map((r) => r.unit_key),
+      ['aser:S-1'],
+      'the aid arm matches across unit keys',
+    );
+
+    // A NULL value is not a shared value: a body carrying no AID must not match the
+    // prior rows whose aid is NULL.
+    const noValues = await findPriorUnitIdentities(
+      session.uuid,
+      [identity({ unitKey: 'aser:S-9', aser: 'S-9', amid: null })],
+      {},
+    );
+    assert.deepEqual(noValues, [], 'nothing in common → no priors');
+
+    // Nothing to match on at all short-circuits without running SQL.
+    assert.deepEqual(await findPriorUnitIdentities(session.uuid, [], {}), []);
+
+    // Another session's identities are invisible even under the same values.
+    const other = await createSession();
+    const otherTx = await insertTransmission({ sessionUuid: other.uuid, schemaOk: true });
+    await insertUnitIdentities(otherTx.id, other.uuid, [identity()]);
+    assert.deepEqual(
+      (await findPriorUnitIdentities(session.uuid, [identity()], {})).map((r) => r.transmission_id),
+      [first.id],
+      'the lookup stays inside its own session',
+    );
+
+    await getPool().query('DELETE FROM session WHERE uuid = ANY($1)', [[session.uuid, other.uuid]]);
+  },
+);
+
+/**
+ * The two exclusions the §1.8-graded repeats need, and the one no caller can switch
+ * off. Same shapes as findPriorUnitWindows', because the two lookups answer the same
+ * question about which priors an advisory may speak about.
+ */
+test('findPriorUnitIdentities applies the §1.8 and schema_ok exclusions', { skip }, async () => {
+  const session = await createSession();
+  const hash = createHash('sha256').update('same-identity-bytes').digest();
+
+  const replay = await insertTransmission({
+    sessionUuid: session.uuid,
+    transferId: 'T-1',
+    contentHash: hash,
+    schemaOk: true,
+  });
+  const novel = await insertTransmission({
+    sessionUuid: session.uuid,
+    transferId: 'T-9',
+    contentHash: createHash('sha256').update('other-identity-bytes').digest(),
+    schemaOk: true,
+  });
+  const anonymous = await insertTransmission({ sessionUuid: session.uuid, schemaOk: true });
+  // A delivery the schema stage rejected, and one that never reached it at all.
+  const rejected = await insertTransmission({ sessionUuid: session.uuid, schemaOk: false });
+  const ungraded = await insertTransmission({ sessionUuid: session.uuid });
+
+  for (const tx of [replay, novel, anonymous, rejected, ungraded]) {
+    await insertUnitIdentities(tx.id, session.uuid, [identity()]);
+  }
+
+  const ids = async (opts: Parameters<typeof findPriorUnitIdentities>[2]): Promise<Set<string>> =>
+    new Set(
+      (await findPriorUnitIdentities(session.uuid, [identity()], opts)).map(
+        (r) => r.transmission_id,
+      ),
+    );
+
+  assert.deepEqual(
+    await ids({}),
+    new Set([replay.id, novel.id, anonymous.id]),
+    'only the deliveries the schema accepted are priors — schema_ok false and NULL are out',
+  );
+  assert.deepEqual(
+    await ids({ excludeContentHash: hash }),
+    new Set([novel.id, anonymous.id]),
+    'the exact replay is dropped; the null-hash row is kept',
+  );
+  assert.deepEqual(
+    await ids({ excludeTransferId: 'T-1' }),
+    new Set([novel.id, anonymous.id]),
+    'the repeated transfer id is dropped; the null-transferId row is kept',
+  );
+  assert.deepEqual(
+    await ids({ excludeContentHash: hash, excludeTransferId: 'T-9' }),
+    new Set([anonymous.id]),
+    'both exclusions apply together',
+  );
+
+  await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+});
+
+test(
+  'unit identities cascade-delete with their transmission (§11 retention)',
+  { skip },
+  async () => {
+    const session = await createSession();
+    const tx = await insertTransmission({ sessionUuid: session.uuid });
+    await insertUnitIdentities(tx.id, session.uuid, [identity()]);
+
+    const count = async (): Promise<string | undefined> =>
+      (
+        await getPool().query<{ n: string }>(
+          'SELECT count(*) AS n FROM transmission_unit_identity WHERE transmission_id = $1',
+          [tx.id],
+        )
+      ).rows[0]?.n;
+
+    assert.equal(await count(), '1', 'identity stored');
+    await getPool().query('DELETE FROM transmission WHERE id = $1', [tx.id]);
+    assert.equal(await count(), '0', 'identity cascade-deleted with its transmission');
+
+    await getPool().query('DELETE FROM session WHERE uuid = $1', [session.uuid]);
+  },
+);
 
 test(
   'purgeExpiredSessions deletes sessions inactive >7 days and cascades; recent survives (§11)',

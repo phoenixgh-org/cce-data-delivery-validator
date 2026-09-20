@@ -46,6 +46,7 @@ const deps: SemanticDeps = {
   concurrentAtEntry: 1,
   findPriorTransmissions: async () => [],
   findPriorUnitWindows: async () => [],
+  findPriorUnitIdentities: async () => [],
 };
 
 // ── fixtures ────────────────────────────────────────────────────────────────

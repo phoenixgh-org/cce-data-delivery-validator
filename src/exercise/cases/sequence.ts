@@ -22,17 +22,23 @@
  * freshly owned payload (../baseline.ts), so a §1.8 case that leaned on it would
  * decay silently the day it is swapped (bd b8r).
  *
- * THE ONE ADVISORY IN THIS FILE. Advisory cases live in ./payload.ts, because an
- * advisory reads the body. `adv.abst_window_overlap` (agj.24) is the exception
- * and belongs here: it is the only advisory graded from how two transmissions
- * relate — one delivery's ABST window against the windows earlier deliveries in
- * the session recorded for the same appliance — so it is a sequence heuristic
- * that happens to be an advisory, and it needs the multi-POST shape this file
- * owns. One case expects it to fire; two more (the exact retransmission and the
- * corrected re-send after a rejection) declare its silence. Every one of them
- * PINS the appliance identity with `setApplianceMonitoringId`, so what each
- * asserts is a fact about its own two POSTs rather than about every other rtm
- * case the runner played into the same session.
+ * THE TWO ADVISORIES IN THIS FILE. Advisory cases live in ./payload.ts, because
+ * an advisory reads the body. `adv.abst_window_overlap` (agj.24) and
+ * `adv.identifier_collision` (0rfk) are the exceptions and belong here: they are
+ * the advisories graded from how two transmissions RELATE — one delivery's ABST
+ * window against the windows earlier deliveries in the session recorded for the
+ * same appliance, and one delivery's appliance identifiers against the
+ * identifiers those earlier deliveries carried — so each is a sequence heuristic
+ * that happens to be an advisory, and each needs the multi-POST shape this file
+ * owns. Each has a case that expects it to fire and at least one that declares
+ * its silence: the window advisory adds the exact retransmission and the
+ * corrected re-send after a rejection, and the identifier advisory adds the two
+ * deliveries that name one appliance the same way twice.
+ *
+ * Every one of those cases PINS the appliance identity with
+ * `setApplianceMonitoringId` or `setApplianceSerial`, so what each asserts is a
+ * fact about its own two POSTs rather than about every other rtm case the runner
+ * played into the same session.
  *
  * §3.4 IS GRADED WITHIN ONE PAYLOAD, so its two cases are single-POST despite
  * living in the sequence table: the interval check reads `records[].ABST` of the
@@ -43,12 +49,14 @@
  */
 
 import { ABST_WINDOW_OVERLAP_ID } from '../../ingest/stages/semantic/abst-window-overlap.js';
+import { IDENTIFIER_COLLISION_ID } from '../../ingest/stages/semantic/identifier-collision.js';
 import type { ExerciseCase } from '../case.js';
 import {
   irregularCadence,
   readingWindow,
   regularCadence,
   setApplianceMonitoringId,
+  setApplianceSerial,
   setInvalidValue,
   setTransferId,
 } from '../transforms/payload.js';
@@ -269,6 +277,107 @@ export const SEQUENCE_CASES: readonly ExerciseCase[] = [
     ],
     expectedFindings: [{ requirement: '3.2', severity: 'fail' }],
     absentFindings: [{ requirement: ABST_WINDOW_OVERLAP_ID }],
+  },
+
+  // ── adv.identifier_collision (the cross-transmission identity shape) ──────
+  //
+  // BOTH CASES PIN BOTH APPLIANCE IDENTIFIERS on every POST, which is what makes
+  // each a statement about its own two deliveries. The baseline generators stamp
+  // a DISTINCT appliance identity per POST (2538ba0, ../baseline.ts contract
+  // clause 4) and carry no `AID` at all, so no two unrelated cases in the table
+  // share an appliance-side identifier and the advisory cannot be fired — or
+  // silenced — by shared-session ordering.
+  {
+    id: 'adv.identifier_collision-fail-one-serial-under-two-monitoring-ids',
+    title:
+      'A second delivery reporting the same appliance serial under a different AMID is observed',
+    // Empty by the advisory-case rule: an advisory is not a COMPLIANCE_MATRIX
+    // row, so the claim is the expectation below (../cases.test.ts, by1c.42).
+    requirements: [],
+    direction: 'fail',
+    fault: {
+      layer: 'sequence',
+      note: 'the second POST reports appliance serial ASER "exercise-collision-serial" under a different AMID than the first',
+    },
+    // Both POSTs key on the pinned ASER — `unitKey` prefers the manufacturer
+    // serial over the platform handle (src/identity/unit-key.ts) — so the two
+    // deliveries are about one appliance, and the platform handle is the
+    // companion that disagrees.
+    //
+    // THE READING WINDOWS ARE DISJOINT ON PURPOSE (+0…+45 against +120…+165), so
+    // the OTHER cross-transmission advisory stays out of the way: this case is
+    // about the identifiers alone, and the absence declared below is what says
+    // the two observations are independent rather than one signal seen twice.
+    posts: [
+      {
+        label: 'first',
+        transforms: [
+          setApplianceSerial('exercise-collision-serial'),
+          setApplianceMonitoringId('exercise-collision-amid-a'),
+          readingWindow(0, 4),
+          setTransferId('exercise-adv-collision-a'),
+        ],
+        expectedStatus: 200,
+      },
+      {
+        label: 'second',
+        transforms: [
+          setApplianceSerial('exercise-collision-serial'),
+          setApplianceMonitoringId('exercise-collision-amid-b'),
+          readingWindow(120, 4),
+          setTransferId('exercise-adv-collision-b'),
+        ],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [{ requirement: IDENTIFIER_COLLISION_ID, severity: 'info' }],
+    absentFindings: [{ requirement: ABST_WINDOW_OVERLAP_ID }],
+  },
+  {
+    id: '1.8-pass-one-appliance-named-the-same-way-twice',
+    title: 'Two deliveries naming one appliance identically draw no identifier observation',
+    // NAMED FOR THE REQUIREMENT, NOT THE ADVISORY, the way the two window-silence
+    // cases above are: the `adv.<id>-` prefix is a claim that the case expects
+    // that advisory to FIRE (../cases.test.ts, axdd), so a silence case cannot
+    // carry it. Two POSTs under distinct pinned transferIds are a genuine §1.8
+    // pass, which is the positive evidence a pass-direction case owes; what the
+    // case is ABOUT is the absence declared under it.
+    requirements: ['1.8'],
+    direction: 'pass',
+    // The counterpart of the case above, and the half that keeps it honest: an
+    // appliance delivering twice under the SAME serial and the SAME platform
+    // handle is the ordinary shape, and the advisory has to stay silent on it.
+    // Only the companion value changes between the two cases, so a check that
+    // fired on any repeated identifier rather than on a disagreeing one would
+    // pass the case above and fail this one.
+    //
+    // The windows are disjoint here too, for the same reason: two deliveries of
+    // adjoining periods for one appliance are exactly what a supplier is supposed
+    // to send, and nothing else in the catalogue should speak about them either.
+    posts: [
+      {
+        label: 'first',
+        transforms: [
+          setApplianceSerial('exercise-collision-quiet-serial'),
+          setApplianceMonitoringId('exercise-collision-quiet-amid'),
+          readingWindow(0, 4),
+          setTransferId('exercise-adv-collision-quiet-a'),
+        ],
+        expectedStatus: 200,
+      },
+      {
+        label: 'second',
+        transforms: [
+          setApplianceSerial('exercise-collision-quiet-serial'),
+          setApplianceMonitoringId('exercise-collision-quiet-amid'),
+          readingWindow(120, 4),
+          setTransferId('exercise-adv-collision-quiet-b'),
+        ],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [{ requirement: '1.8', severity: 'pass' }],
+    absentFindings: [{ requirement: IDENTIFIER_COLLISION_ID }],
   },
 
   // ── §2.1 serial delivery (the concurrent-delivery shape) ──────────────────

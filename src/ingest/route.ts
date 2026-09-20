@@ -24,13 +24,15 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getPool } from '../db/pool.js';
 import {
   findPriorTransmissions,
+  findPriorUnitIdentities,
   findPriorUnitWindows,
   insertFindings,
   insertTransmission,
+  insertUnitIdentities,
   insertUnitWindows,
   type Queryable,
 } from '../db/repository.js';
-import { computeUnitWindows } from '../identity/unit-key.js';
+import { computeUnitIdentities, computeUnitWindows } from '../identity/unit-key.js';
 import { normalizeVersion, type SchemaRegistry } from '../schema-registry.js';
 import { enterSession, leaveSession } from './concurrency-tracker.js';
 import {
@@ -243,8 +245,21 @@ async function persistTransmission(
     //     would be written without this branch. A supplier who corrects a
     //     rejected body and re-sends the same period would then be observed
     //     overlapping a delivery we never accepted.
+    //
+    // The appliance identities this transmission declared (0rfk) are written in
+    // the SAME branch and for the same reasons: they are what the next delivery's
+    // identifiers are compared against, and a delivery the service did not accept
+    // is not one the next delivery is compared against. They are a SEPARATE row
+    // per unit from the window above — a window exists only when a record's ABST
+    // parsed, and identity must not depend on timestamps.
     if (ctx.schemaOk === true) {
       await insertUnitWindows(tx.id, ctx.sessionUuid, computeUnitWindows(ctx.parsedBody), client);
+      await insertUnitIdentities(
+        tx.id,
+        ctx.sessionUuid,
+        computeUnitIdentities(ctx.parsedBody),
+        client,
+      );
     }
 
     await client.query('COMMIT');
@@ -311,6 +326,7 @@ export function registerIngestRoute(app: FastifyInstance): void {
           concurrentAtEntry,
           findPriorTransmissions,
           findPriorUnitWindows,
+          findPriorUnitIdentities,
         };
 
         // Body stages (3–7[, 8]): reached with a valid session + POST, so a row is

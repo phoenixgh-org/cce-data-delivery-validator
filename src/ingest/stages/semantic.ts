@@ -28,7 +28,8 @@
  * further edits here. See `semantic/advisory.ts`.
  */
 
-import type { PriorTransmission, PriorUnitWindow } from '../../db/repository.js';
+import type { PriorTransmission, PriorUnitIdentity, PriorUnitWindow } from '../../db/repository.js';
+import type { UnitIdentity } from '../../identity/unit-key.js';
 import { CONTINUE, type Finding, type PipelineContext, type Stage } from '../pipeline.js';
 import { advisoriesCheck } from './semantic/advisory.js';
 import { concurrencyCheck } from './semantic/concurrency.js';
@@ -37,7 +38,7 @@ import { duplicateCheck } from './semantic/duplicate.js';
 import { intervalCheck } from './semantic/interval.js';
 import { inventoryCheck } from './semantic/inventory.js';
 
-export type { PriorTransmission, PriorUnitWindow };
+export type { PriorTransmission, PriorUnitIdentity, PriorUnitWindow };
 
 /**
  * Everything the semantic checks need that is NOT already on the
@@ -63,6 +64,17 @@ export interface SemanticDeps {
     unitKeys: readonly string[],
     opts: { excludeContentHash?: Buffer | null; excludeTransferId?: string | null },
   ) => Promise<PriorUnitWindow[]>;
+  /**
+   * Prior appliance-identity lookup for `adv.identifier_collision` (0rfk), the
+   * second read path in the advisory catalogue. Same signature as the repository
+   * function it is built from, minus the `db` argument, so the route hands the
+   * repository function straight in and a test hands in a stub.
+   */
+  findPriorUnitIdentities: (
+    sessionUuid: string,
+    identities: readonly UnitIdentity[],
+    opts: { excludeContentHash?: Buffer | null; excludeTransferId?: string | null },
+  ) => Promise<PriorUnitIdentity[]>;
 }
 
 /**

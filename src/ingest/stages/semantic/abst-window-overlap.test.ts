@@ -143,6 +143,7 @@ function depsWith(priors: readonly PriorUnitWindow[]): SemanticDeps {
       calls.push({ sessionUuid, unitKeys, opts });
       return [...priors];
     },
+    findPriorUnitIdentities: async () => [],
   };
 }
 

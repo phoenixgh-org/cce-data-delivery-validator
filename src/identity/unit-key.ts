@@ -160,3 +160,80 @@ export function computeUnitWindows(body: unknown): UnitWindow[] {
 
   return [...windows.values()];
 }
+
+/**
+ * The appliance-side identifiers one report carried, keyed by the appliance it
+ * reported on — the unit of `transmission_unit_identity`
+ * (db/initdb/96-transmission-unit-identity.sql).
+ *
+ * THE THREE FIELDS ARE THE APPLIANCE'S OWN NAMES, and the list is closed (0rfk):
+ *
+ *   - `ASER`, the manufacturer's serial for the equipment;
+ *   - `AMID`, the supplier platform's handle on it (an `rtmd-report` property
+ *     only — `ems-report` declares no such property);
+ *   - `AID`, the employer's asset id, optional on both branches.
+ *
+ * `LSER`, `ESER`, `LID` and `EID` are deliberately NOT here. They name the logger
+ * and the monitoring device rather than the appliance, and the docblock on
+ * {@link unitKey} says why that distinction matters: one appliance can be
+ * re-instrumented and one logger can be moved, both ordinary operations. A check
+ * comparing those across deliveries would remark on routine maintenance.
+ */
+export interface UnitIdentity {
+  /** The appliance identity ({@link unitKey}), prefix included. */
+  unitKey: string;
+  /** `ASER` as reported, trimmed, or `null` when the report carried no usable value. */
+  aser: string | null;
+  /** `AMID` as reported, trimmed, or `null`. */
+  amid: string | null;
+  /** `AID` as reported, trimmed, or `null`. */
+  aid: string | null;
+}
+
+/**
+ * The appliance-side identifiers each identified report in a parsed body carried,
+ * one entry per report (0rfk). PURE, exactly as {@link computeUnitWindows} is: it
+ * reads `body.data[]` and knows nothing about transmissions or storage.
+ *
+ * What is skipped, and why:
+ *
+ *   - a body that is not an object with an array `data` (including an unparsed
+ *     body) contributes nothing;
+ *   - an entry of `data[]` that is not an object is not a report;
+ *   - a report whose {@link unitKey} is `null` named no appliance, so there is
+ *     nothing to match it against a later delivery.
+ *
+ * Unlike {@link computeUnitWindows} it does NOT depend on the records: a report
+ * whose timestamps this service cannot read still names its appliance, and the
+ * identity is exactly as comparable for it.
+ *
+ * TWO REPORTS FOR ONE APPLIANCE IN ONE BODY: the FIRST wins, and the second is
+ * dropped whole rather than merged. Merging would invent an identity no single
+ * report declared — a row carrying the first report's `ASER` beside the second's
+ * `AID` — and intra-body disagreement is a different observation from the
+ * cross-delivery one this feeds (out of scope on 0rfk).
+ */
+export function computeUnitIdentities(body: unknown): UnitIdentity[] {
+  if (!isPlainObject(body)) return [];
+  const data = body['data'];
+  if (!Array.isArray(data)) return [];
+
+  // Insertion-ordered, so the returned array follows the payload's report order.
+  const identities = new Map<string, UnitIdentity>();
+
+  for (const report of data) {
+    if (!isPlainObject(report)) continue;
+    const key = unitKey(report);
+    if (key === null) continue;
+    if (identities.has(key)) continue;
+
+    identities.set(key, {
+      unitKey: key,
+      aser: identifier(report['ASER']),
+      amid: identifier(report['AMID']),
+      aid: identifier(report['AID']),
+    });
+  }
+
+  return [...identities.values()];
+}
