@@ -327,7 +327,7 @@ since planting a defect is a statement about the draft as well as about the advi
 
 **A silence case** is the other half of the catalogue's contract, and it is an ordinary
 pass-direction case carrying `absentFindings`: the payload is conformant traffic the
-advisory must NOT speak about. Fourteen cases declared an absence at the time of
+advisory must NOT speak about. Sixteen cases declared an absence at the time of
 writing. Most name a single advisory — the population its own header says it is
 silent on, such as solar records or an explained null — while the two baseline pass cases,
 `3.2-pass-baseline` and `3.2-pass-ems-baseline` — and the EMS readiness pass case

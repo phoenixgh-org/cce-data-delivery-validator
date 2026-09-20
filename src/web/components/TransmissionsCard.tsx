@@ -355,6 +355,19 @@ const LIST_VISIBLE_ROWS = 9;
  * (7px padding top and bottom + an 11.5px line at line-height 1.5 + a 1px bottom
  * border), which no term here counts.
  *
+ * THAT TERM BREAKS THE CHIP CASE, and this is the one combination that fails.
+ * Draft lens with the issue chip set puts the budget at 635 + 38 + 32 = 705 and
+ * leaves the region ~95px at an 800px viewport, under its 120px min-height — so
+ * the minHeight wins and the page scrolls, exactly as ten contract-lens rows did
+ * above. Both states are shipped and independent: Dashboard.tsx renders the
+ * banner whenever the selected lens is not the contract profile, and the chip
+ * follows a cross-filter whatever the lens is.
+ *
+ * NINE ROWS IS STILL THE CALL (eid2). Sizing the list for the draft-lens chip
+ * case would cost a row in every other state to buy back ~25px in one, and the
+ * failure it buys back is a scroll rather than a hidden control. What is owed
+ * here is the plain statement, not a smaller constant.
+ *
  * The list keeps its own scrollbar and stays virtualized — this caps the region,
  * it does not page the data.
  */

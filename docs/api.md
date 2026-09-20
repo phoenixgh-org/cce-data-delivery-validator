@@ -631,24 +631,31 @@ nothing to report.
   runs alongside the primary one, a conformant transmission carries `2025` passes and
   may carry `ds013` fails at the same time.
 
-| `code`                          | Req  | Raised when                                                   |
-| ------------------------------- | ---- | ------------------------------------------------------------- |
-| `tx.bad_media_type`             | §1.2 | `Content-Type` missing or not `application/json`              |
-| `tx.missing_charset`            | §1.2 | JSON media type without `charset=utf-8`                       |
-| `tx.body_too_large`             | §1.4 | Wire body over the 1 MiB cap                                  |
-| `tx.unsupported_encoding`       | §1.6 | `Content-Encoding` other than `gzip`/`identity`               |
-| `tx.undecodable_body`           | §1.6 | gzip body would not decompress (or exceeded the cap)          |
-| `tx.double_encoded`             | §1.6 | gzip inside gzip                                              |
-| `tx.parse_failed`               | §1.1 | Body is not valid UTF-8 JSON                                  |
-| `tx.missing_schema_version`     | §3.2 | `meta.schemaVersion` absent or not a string                   |
-| `tx.unsupported_schema_version` | §3.2 | Declared version is not registered                            |
-| `tx.schema_invalid`             | §3.2 | Validation failed with no per-error detail                    |
-| `tx.outdated_schema`            | §3.2 | Valid, but against an older registered version (info)         |
-| `tx.duplicate_transfer`         | §1.8 | Repeated `transferId` or identical content                    |
-| `tx.concurrent_delivery`        | §2.1 | Another POST for this session was in flight                   |
-| `tx.irregular_interval`         | §3.4 | `ABST` reading cadence looks irregular                        |
-| `tx.missing_custom_schema`      | §3.1 | Custom data objects sent without `meta.customDataSchema`      |
-| `tx.custom_schema_ok`           | §3.1 | The same check passing: declared, or no custom objects (pass) |
+The table below is the **full catalogue of `tx.*` codes the service emits, on both
+lineages** — not the contract lineage alone. The Req column gives the clause the
+finding is filed under; a code raised by the shadow run as well as the primary carries
+both clauses, and the finding's own `profile` says which of them applies to it. A code
+not listed here is one this service does not emit.
+
+| `code`                          | Req           | Raised when                                                                                     |
+| ------------------------------- | ------------- | ----------------------------------------------------------------------------------------------- |
+| `tx.bad_media_type`             | §1.2          | `Content-Type` missing or not `application/json`                                                |
+| `tx.missing_charset`            | §1.2          | JSON media type without `charset=utf-8`                                                         |
+| `tx.body_too_large`             | §1.4          | Wire body over the 1 MiB cap                                                                    |
+| `tx.unsupported_encoding`       | §1.6          | `Content-Encoding` other than `gzip`/`identity`                                                 |
+| `tx.undecodable_body`           | §1.6          | gzip body would not decompress (or exceeded the cap)                                            |
+| `tx.double_encoded`             | §1.6          | gzip inside gzip                                                                                |
+| `tx.parse_failed`               | §1.1          | Body is not valid UTF-8 JSON                                                                    |
+| `tx.missing_schema_version`     | §3.2          | `meta.schemaVersion` absent or not a string                                                     |
+| `tx.unsupported_schema_version` | §3.2          | Declared version is not registered                                                              |
+| `tx.schema_invalid`             | §3.2 / §5.3.2 | Validation failed with no per-error detail — every error was a suppressed container (both runs) |
+| `tx.null_unexplained`           | §5.3.2        | Shadow run only: a null sensed value carrying no explaining error code                          |
+| `tx.outdated_schema`            | §3.2          | Valid, but against an older registered version (info)                                           |
+| `tx.duplicate_transfer`         | §1.8          | Repeated `transferId` or identical content                                                      |
+| `tx.concurrent_delivery`        | §2.1          | Another POST for this session was in flight                                                     |
+| `tx.irregular_interval`         | §3.4          | `ABST` reading cadence looks irregular                                                          |
+| `tx.missing_custom_schema`      | §3.1          | Custom data objects sent without `meta.customDataSchema`                                        |
+| `tx.custom_schema_ok`           | §3.1          | The same check passing: declared, or no custom objects (pass)                                   |
 
 ### Compliance summary rows
 
