@@ -418,16 +418,18 @@ so a run can be checked against the page without opening the dashboard:
 
 ```
 grading lens — ds013: 27 row(s) served, 10 carrying a failure
-  5.1.3  2 fail (folded 2) from 2 transmission(s)
-  5.1.5  1 fail (folded 1) from 1 transmission(s)
-  5.3.2  60 fail (folded 60) from 60 transmission(s)
+  5.1.3  2 transmission(s) fail (folded 2)
+  5.1.5  1 transmission(s) fail (folded 1)
+  5.3.2  60 transmission(s) fail (folded 60)
 ```
 
-The first figure and the trailing transmission count now agree by construction:
-both count distinct transmissions, so 5.3.2 reads 60 from 60 where it once read 199
-findings over 49 transmissions. What the line is still claiming is the middle
-number against the first — the count the instance served against the count this run
-recomputed — and that pair is the point of the block.
+Both numbers count distinct transmissions, which is the unit the row has stated since
+`cce-data-delivery-validator-vsy1`: 5.3.2 reads 60 against 60 where it once read 199
+findings over 49 transmissions. The claim is the second figure against the first — the
+count the instance served against the count this run recomputed. The line carried a
+third figure until `cce-data-delivery-validator-qgl7`, the transmissions the fold
+attributed the row to; since the audit folds one transmission at a time that figure
+could never differ from the fold, so it was removed rather than explained.
 
 A disagreement fails the run on its own — exit 1 even with every case green — for the
 same reason an advisory served with no summary does: those numbers are part of what the

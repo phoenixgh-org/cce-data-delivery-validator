@@ -320,9 +320,19 @@ function formatAdvisoryCopy(audit: CopyAudit): string[] {
  *
  * The failing rows are printed with BOTH numbers — the count the summary served
  * and the count the run's own findings fold onto the row — because the two
- * agreeing is the whole claim. A reader who sees `5.1.5  2 fail (folded 2)` can
- * check the page against the run without opening the dashboard, and a
- * disagreement reads as the mismatch it is rather than as one unexplained number.
+ * agreeing is the whole claim. A reader who sees
+ * `5.1.5  2 transmission(s) fail (folded 2)` can check the page against the run
+ * without opening the dashboard, and a disagreement reads as the mismatch it is
+ * rather than as one unexplained number.
+ *
+ * TWO NUMBERS, NOT THREE (qgl7). The line used to close with the transmissions
+ * the fold attributed the row to, which since vsy1 (84a8421) is the same number
+ * as the fold itself, not a third measurement: `foldUnderLens` counts DISTINCT
+ * transmission ids, ../runner/assertions.ts folds one transmission at a time, so
+ * each fold returns 0 or 1 for a row and contributes at most one id to its
+ * attribution list. `folded` and the size of that list are therefore equal on
+ * every row, always. The unit moved into the first figure instead, where it says
+ * what both numbers count.
  */
 function formatLensAudit(audit: LensAudit): string[] {
   if (audit.lens === null && audit.notes.length === 0) return [];
@@ -335,8 +345,8 @@ function formatLensAudit(audit: LensAudit): string[] {
   const width = Math.max(1, ...audit.failing.map((row) => row.requirement.length));
   for (const row of audit.failing) {
     lines.push(
-      `  ${row.requirement.padEnd(width)}  ${row.served} fail (folded ${row.folded}) ` +
-        `from ${new Set(row.transmissions).size} transmission(s)`,
+      `  ${row.requirement.padEnd(width)}  ${row.served} transmission(s) fail ` +
+        `(folded ${row.folded})`,
     );
   }
   for (const violation of audit.violations) lines.push(`  FAIL  ${violation}`);

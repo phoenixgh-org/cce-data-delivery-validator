@@ -254,6 +254,6 @@ test('the printed run shows what the draft package made of the session', () => {
   const printed = lines.join('\n');
 
   assert.match(printed, /grading lens — ds013: 1 row\(s\) served, 1 carrying a failure/);
-  assert.match(printed, /5\.1\.5 {2}1 fail \(folded 1\) from 1 transmission\(s\)/);
+  assert.match(printed, /5\.1\.5 {2}1 transmission\(s\) fail \(folded 1\)/);
   assert.doesNotMatch(printed, /grading lens[^]*FAIL/);
 });
