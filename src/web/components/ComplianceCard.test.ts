@@ -330,6 +330,43 @@ test('an advisory row and a requirement row share the column grid', () => {
   });
 });
 
+/**
+ * AND ON ONE DRILL-DOWN PANEL (3q17).
+ *
+ * Opening either row opens a panel beneath it, and the two read as one surface:
+ * the same ground, the same rule below, the same indent. Each row used to type
+ * that chrome out for itself, exactly as each typed out the grid above, so this
+ * is the same claim one level down and it is asserted the same way — between
+ * two rendered rows, not against a component.
+ *
+ * The indent is the part worth holding. It is meant to start the panel's text
+ * under the row title, which makes it a function of the grid: the row's left
+ * padding, the id slot and the gap. It is NOT written as that function, because
+ * the two have already drifted apart — 60px against a title column that now
+ * begins at 71 (c117 carries the decision, and DETAIL_PANEL_INDENT carries the
+ * reasoning). Pinning it here is what makes the next such move visible.
+ */
+test('an advisory row and a requirement row share the drill-down panel', () => {
+  const clause = DS013_MATRIX.find((row) => row.classes[0] === 'verified')?.clause;
+  assert.ok(clause !== undefined, 'the served matrix has a verified clause');
+
+  const requirement = rowSlices(cardMarkup({ expandedReq: clause })).get(clause);
+  const advisory = rowSlices(
+    advisoryRowMarkup(adv('adv.blank_admin', { txCount: 4 }), { expanded: true }),
+  ).get('adv.blank_admin');
+  assert.ok(requirement !== undefined && advisory !== undefined, 'both rows rendered open');
+
+  assert.deepEqual(panelChrome(advisory), panelChrome(requirement));
+
+  // And the shared values, named once. The 60px is the indent: 16px of row
+  // padding plus a 42px id slot plus a 13px gap would be 71 (c117).
+  assert.deepEqual(panelChrome(requirement), [
+    'background:var(--detail)',
+    'border-bottom:1px solid var(--border)',
+    'padding:12px 16px 15px 60px',
+  ]);
+});
+
 test('no verdict reaches the row: no pill, no pass/fail tally, no status colour', () => {
   const markup = advisoryRowMarkup(adv('adv.blank_admin', { txCount: 4, count: 9 }));
 
@@ -526,6 +563,26 @@ function rowGeometry(slice: string): { grid: string[]; slots: string[] } {
     grid: style.split(';').filter((d) => /^(display|align-items|gap|padding):/.test(d)),
     slots: [...slice.matchAll(/width:([\d.]+px)/g)].slice(0, 3).map((m) => m[1] as string),
   };
+}
+
+/**
+ * The drill-down panel's chrome within one OPEN row slice: the declarations of
+ * the single style attribute that sets a background, a border and a padding and
+ * nothing else.
+ *
+ * The panel is found by which properties it sets rather than by their values,
+ * so the search does not restate the numbers the caller is about to assert. The
+ * row container above it sets a background too, but also display, gap, cursor
+ * and a transition, so the signature picks out the panel alone.
+ */
+function panelChrome(slice: string): string[] {
+  const panels = [...slice.matchAll(/style="([^"]*)"/g)]
+    .map((m) => (m[1] as string).split(';'))
+    .filter(
+      (decls) => decls.map((d) => d.split(':')[0]).join(' ') === 'background border-bottom padding',
+    );
+  assert.equal(panels.length, 1, 'the open row slice holds exactly one drill-down panel');
+  return panels[0] as string[];
 }
 
 /** The ids carrying one annotation pill, in render order. */

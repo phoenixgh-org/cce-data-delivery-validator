@@ -227,6 +227,49 @@ const ROW_SLOT_COUNT: CSSProperties = {
 /** Slot 4, the verdict: a status pill on a requirement, a neutral tag on an advisory. */
 const ROW_SLOT_VERDICT: CSSProperties = { width: 88, textAlign: 'right', flexShrink: 0 };
 
+/**
+ * The drill-down panel's left indent — MEASURED, not derived (3q17).
+ *
+ * The indent exists to start the panel's text under the row's title rather than
+ * under its id, so in principle it is the grid above: the row's 16px left
+ * padding, plus {@link ROW_SLOT_ID}'s width, plus the 13px gap. It no longer
+ * equals that sum. The title column begins at 71px and this indent is 60, an
+ * 11px difference a reader sees as the panel sitting slightly left of the title
+ * it belongs to.
+ *
+ * The 60 was correct when it was written, against a 30px id slot (16 + 30 + 13
+ * = 59). Widening that slot to 42 for a six-character DS01.3 clause id moved the
+ * title column and left the indent behind — which is the drift this constant is
+ * named to prevent, already realised once.
+ *
+ * It is left at what it renders today on purpose: closing the gap is a visual
+ * decision rather than a mechanical one, and this lift is a refactor that must
+ * change nothing on screen (c117 carries the decision). So the coupling is
+ * written down here instead of expressed in code — a change to ROW_SLOT_ID's
+ * width, or to the row's horizontal padding, is a change to where this panel
+ * ought to start.
+ */
+const DETAIL_PANEL_INDENT = 60;
+
+/**
+ * The drill-down panel: ONE source for both kinds of row (3q17).
+ *
+ * Expanding either row opens this panel beneath it, and a supplier reads the two
+ * as one surface — same ground, same rule below, same indent. It lives at module
+ * scope for the reason the grid does: each row used to type the panel out for
+ * itself, so a change to one would have left the other behind with nothing
+ * failing.
+ *
+ * Chrome only, as with the grid. What goes IN the panel is the row's own: a
+ * requirement prints clause text, its evidence line and its distinct issues; an
+ * advisory prints a rationale and its matching transmissions.
+ */
+const DETAIL_PANEL_STYLE: CSSProperties = {
+  background: 'var(--detail)',
+  borderBottom: '1px solid var(--border)',
+  padding: `12px 16px 15px ${DETAIL_PANEL_INDENT}px`,
+};
+
 /* ------------------------------------------------------------------ *
  * Row annotations — what the draft package adds to a row, orthogonal to the
  * verifiability class that groups it (tfnv.14).
@@ -841,13 +884,7 @@ function ReqRow({
         </span>
       </div>
       {expanded && (
-        <div
-          style={{
-            background: 'var(--detail)',
-            borderBottom: '1px solid var(--border)',
-            padding: '12px 16px 15px 60px',
-          }}
-        >
+        <div style={DETAIL_PANEL_STYLE}>
           {notFed && (
             <div
               style={{
@@ -979,13 +1016,7 @@ export function AdvisoryRow({
         </span>
       </div>
       {expanded && (
-        <div
-          style={{
-            background: 'var(--detail)',
-            borderBottom: '1px solid var(--border)',
-            padding: '12px 16px 15px 60px',
-          }}
-        >
+        <div style={DETAIL_PANEL_STYLE}>
           {sig.rationale !== undefined && sig.rationale !== '' && (
             <div style={{ fontSize: 12.5, lineHeight: 1.65, maxWidth: 640 }}>
               {inlineCode(sig.rationale)}
