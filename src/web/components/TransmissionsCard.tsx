@@ -30,8 +30,8 @@ import { ADVISORY_COPY, advisoryLabel, splitFindings } from '../advisories';
 import { inlineCode } from './ui/inlineCode';
 import { clauseUnderLens, failCountUnderLens } from '../clauseMap';
 import { detailGroupCopy, detailRows, type ClauseRow, type FindingRow } from '../detailGroups';
-// Pane width shared with the summary card above it, and the detail region's own
-// share of this card's height (src/web/layout.ts, vamh.8).
+// Pane width shared with the summary card above it, and the detail card's own
+// share of the pane's height (src/web/layout.ts, vamh.8).
 import { TRANSMISSIONS_PANE_FLEX, TX_DETAIL_FLEX } from '../layout';
 import { PROFILE_NAME } from '../profiles';
 import { Icon } from './ui/Icon';
@@ -2267,9 +2267,11 @@ export function TransmissionsCard({
   lens = CONTRACT_PROFILE,
   contractProfile = CONTRACT_PROFILE,
 }: TransmissionsCardProps): ReactElement {
-  // A non-contract package is selected: the card's border takes the lens tint
-  // with the rest of the page's cards (tfnv.5). One derivation, from the two
-  // props the rest of the card reads.
+  // A non-contract package is selected: BOTH of the pane's card borders — the
+  // list card's and the detail card's, since mq8x split the pane in two — take
+  // the lens tint with the rest of the page's cards (tfnv.5). One derivation,
+  // from the two props the rest of the component reads, used at both borders so
+  // the lens cannot tint one and miss the other.
   const draftLens = lens !== contractProfile;
   // Default to the newest (first) transmission when nothing is selected or the
   // selection no longer exists. The API returns newest-first, so [0] is newest.

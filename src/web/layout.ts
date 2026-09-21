@@ -36,12 +36,16 @@ export const REQUIREMENTS_PANE_FLEX = '1 1 57%';
 export const TRANSMISSIONS_PANE_FLEX = '1 1 44%';
 
 /**
- * The docked detail region INSIDE the transmissions pane, as a share of that
+ * The docked detail CARD inside the transmissions pane, as a share of that
  * pane's height.
+ *
+ * The pane is a column of two sibling cards since mq8x — the list card and the
+ * detail card — not one card with two regions inside it, so this is the detail
+ * card's flex within that column.
  *
  * It is the same string as {@link TRANSMISSIONS_PANE_FLEX} by coincidence, not
  * by dependency: that one is a width across the body, this one is a height
- * within one card's column. Narrowing the pane must not resize the detail
- * region, so the two are named separately and must be changed separately.
+ * within the pane's column. Narrowing the pane must not resize the detail card,
+ * so the two are named separately and must be changed separately.
  */
 export const TX_DETAIL_FLEX = '1 1 44%';
