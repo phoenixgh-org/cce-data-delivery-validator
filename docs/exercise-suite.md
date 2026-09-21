@@ -10,7 +10,7 @@ of synthetic cases against a **running** validator and checks five things.
 Every case count in this document is read at the time of writing and is not
 maintained per case. The authority on how large the table is today is the
 runner's own summary line, `N case(s) · N passed · N failed`, which it prints on
-every run; the table held 71 cases when this was written.
+every run; the table held 73 cases when this was written.
 
 - **Requirements, both directions.** Every requirement the §7 matrix says we grade
   is exercised once in the passing direction and once in the failing one.
@@ -288,7 +288,7 @@ invalidity it claims is held by `cases.test.ts`'s real-Ajv check on the declared
 
 An advisory is an observation the service offers a supplier, not a requirement it
 grades — so the case model treats it as a first-class target while the coverage join
-refuses to count it as a requirement. Nineteen cases exercise the fourteen registered
+refuses to count it as a requirement. Twenty-two cases exercise the fifteen registered
 advisories at the time of writing; the runner's advisory join prints how many are
 registered and how many are fired on every run.
 
@@ -303,7 +303,9 @@ session recorded for the same appliance, and one delivery's appliance-side ident
 against the identifiers those earlier deliveries carried — so their cases live in
 `cases/sequence.ts` with the other multi-POST heuristics. The grouping rule did not
 change; these two advisories are simply sequence heuristics that happen to be
-advisories.
+advisories. `adv.identifier_disagreement` reads the same appliance-side identifiers as
+the second of them, but within ONE body, so its cases are ordinary single-POST payload
+cases and stay in `cases/payload.ts`.
 
 **`requirements` is empty.** Every `adv.*` case declares `requirements: []` (by1c.42),
 because an advisory is not a `COMPLIANCE_MATRIX` row: naming one in `requirements`
@@ -327,7 +329,7 @@ since planting a defect is a statement about the draft as well as about the advi
 
 **A silence case** is the other half of the catalogue's contract, and it is an ordinary
 pass-direction case carrying `absentFindings`: the payload is conformant traffic the
-advisory must NOT speak about. Sixteen cases declared an absence at the time of
+advisory must NOT speak about. Eighteen cases declared an absence at the time of
 writing. Most name a single advisory — the population its own header says it is
 silent on, such as solar records or an explained null — while the two baseline pass cases,
 `3.2-pass-baseline` and `3.2-pass-ems-baseline` — and the EMS readiness pass case
