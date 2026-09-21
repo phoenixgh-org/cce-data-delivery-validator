@@ -150,6 +150,25 @@ const ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES = rtmPayload(
   rtmReport({ ASER: 'S-2', AMID: 'fridge-b', AID: 'asset-7' }),
 );
 
+// The remaining two boundaries, which need THREE reports: the two comparisons
+// hold on DIFFERENT pairs, so no single pair has to share an identifier and
+// disagree on it at once (bmuc). Each body raises two findings, and the order of
+// the two is what COMPARISONS decides.
+
+/** ('aser','aid') on reports 0 and 1, ahead of ('amid','aser') on reports 0 and 2. */
+const TWO_PAIRS_UNDER_SERIAL_AND_HANDLE = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-8' }),
+  rtmReport({ ASER: 'S-2', AMID: 'fridge-a', AID: 'asset-7' }),
+);
+
+/** ('amid','aid') on reports 0 and 1, ahead of ('aid','aser') on reports 0 and 2. */
+const TWO_PAIRS_UNDER_HANDLE_AND_ASSET_ID = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ AMID: 'fridge-a', AID: 'asset-8' }),
+  rtmReport({ ASER: 'S-2', AMID: 'fridge-b', AID: 'asset-7' }),
+);
+
 // Bodies the advisory stays silent on, and the two that pin how a value is read.
 
 /** The asset id is carried by one report only, so nothing is compared under it. */
@@ -337,6 +356,11 @@ test('the fixtures really are schema-conformant on both registered contract vers
     {
       label: 'ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES',
       payload: ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES,
+    },
+    { label: 'TWO_PAIRS_UNDER_SERIAL_AND_HANDLE', payload: TWO_PAIRS_UNDER_SERIAL_AND_HANDLE },
+    {
+      label: 'TWO_PAIRS_UNDER_HANDLE_AND_ASSET_ID',
+      payload: TWO_PAIRS_UNDER_HANDLE_AND_ASSET_ID,
     },
     { label: 'ASSET_ID_ON_ONE_REPORT_ONLY', payload: ASSET_ID_ON_ONE_REPORT_ONLY },
     { label: 'TWO_APPLIANCES_NOTHING_SHARED', payload: TWO_APPLIANCES_NOTHING_SHARED },
@@ -561,10 +585,11 @@ test('when two comparisons hold on one pair, the earlier entry of the table name
   // COMPARISONS order is the reporting priority the module's header pins as a
   // decision, so it is pinned here through what the copy says rather than by
   // reading the table. Each body below satisfies two comparisons at once; the
-  // summary names the earlier one. The three boundaries a pair of reports can
-  // actually reach are all here — the other two are unreachable, because they
-  // would need one pair to share an identifier and disagree on it at the same
-  // time.
+  // summary names the earlier one. These are the three boundaries one PAIR of
+  // reports can reach: the other two would need that pair to share an identifier
+  // and disagree on it at the same time, which no pair can do. They are reachable
+  // across three reports, where the two comparisons hold on different pairs, and
+  // the test below pins them (bmuc).
   const boundaries = [
     {
       label: "('aser','amid') ahead of ('aser','aid')",
@@ -588,6 +613,41 @@ test('when two comparisons hold on one pair, the earlier entry of the table name
     const findings = await checkOnly(body);
     assert.equal(findings.length, 1, `${label}: one finding per pair of reports`);
     assert.equal(findings[0]?.summary, summary, label);
+  }
+});
+
+test('the last two boundaries take three reports, and the two summaries come out in table order', async () => {
+  // The same pinned decision, one step wider (bmuc). A boundary that no PAIR can
+  // reach is still reachable across three reports, because the two comparisons
+  // then hold on different pairs — and the check walks a whole body in
+  // COMPARISONS order, so the table decides which finding is emitted first.
+  // Pinning the ARRAY rather than one summary is what makes a reordering of
+  // either row fail here instead of passing silently.
+  const boundaries = [
+    {
+      label: "('aser','aid') ahead of ('amid','aser')",
+      body: TWO_PAIRS_UNDER_SERIAL_AND_HANDLE,
+      summaries: [
+        'Two reports carry appliance serial ASER S-1 beside asset id AID asset-7 and asset-8.',
+        'Two reports carry appliance id AMID fridge-a beside appliance serial ASER S-1 and S-2.',
+      ],
+    },
+    {
+      label: "('amid','aid') ahead of ('aid','aser')",
+      body: TWO_PAIRS_UNDER_HANDLE_AND_ASSET_ID,
+      summaries: [
+        'Two reports carry appliance id AMID fridge-a beside asset id AID asset-7 and asset-8.',
+        'Two reports carry asset id AID asset-7 beside appliance serial ASER S-1 and S-2.',
+      ],
+    },
+  ];
+  for (const { label, body, summaries } of boundaries) {
+    const findings = await checkOnly(body);
+    assert.deepEqual(
+      findings.map((f) => f.summary),
+      summaries,
+      label,
+    );
   }
 });
 
