@@ -20,6 +20,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import { computeComplianceSummary } from '../../../api/compliance-matrix.js';
 import { computeUnitIdentities } from '../../../identity/unit-key.js';
@@ -391,6 +392,62 @@ test('the fixtures really are schema-conformant on both registered contract vers
       );
     }
   }
+
+  // What keeps the exhaustiveness claim above true rather than merely true today
+  // (qmdh): this file reads its own source and holds the list to it. A fixture
+  // added without its label, or a body built inline inside a test, fails here
+  // instead of going unvalidated for months, which is the failure mlr4 was filed
+  // for. The precedent is TransmissionsCard.test.ts, which reads its component's
+  // source the same way, and Setup.test.ts, which reads the README's.
+  //
+  // Every pattern below writes the builder's opening parenthesis ESCAPED, so none
+  // of them counts its own source text: the unescaped token occurs only at a real
+  // declaration or call site.
+  const source = readFileSync(
+    new URL('./identifier-disagreement.test.ts', import.meta.url),
+    'utf8',
+  );
+
+  const declared = [...source.matchAll(/^const ([A-Z][A-Z0-9_]*) = rtmPayload\(/gm)].map(
+    (m) => m[1],
+  );
+  assert.deepEqual(
+    [...declared].sort(),
+    fixtures.map((f) => f.label).sort(),
+    'the named payload fixtures and the list above have diverged — add the new fixture to' +
+      ' `fixtures`, or make its label match the name of the const it points at',
+  );
+
+  const builders = (source.match(/^function rtmPayload\(/gm) ?? []).length;
+  assert.equal(builders, 1, `expected 1 payload builder in this file, found ${builders}`);
+  const calls = (source.match(/rtmPayload\(/g) ?? []).length - builders;
+  assert.equal(
+    calls,
+    declared.length + 1,
+    `expected ${declared.length} named fixtures plus the 1 exemption below, found ${calls}` +
+      ' payload builder calls — a body is being built outside the list, most likely inline in a' +
+      ' test; give it a name at module scope and add it to `fixtures` above',
+  );
+
+  // The one exemption, pinned to the test it belongs to so that the arithmetic
+  // cannot be satisfied by an inline body elsewhere while the exemption quietly
+  // disappears. The title occurs twice: once in the line below, once on the test.
+  const exemptTitle = "test('an entry of data[] that is not an object is not a report'";
+  const titles = source.split(exemptTitle).length - 1;
+  assert.equal(
+    titles,
+    2,
+    `expected the exempt test's title twice — here and on the test itself — found ${titles};` +
+      ' the malformed-entry test was renamed or removed, so this exemption names nothing',
+  );
+  const exemptCalls = (source.slice(source.lastIndexOf(exemptTitle)).match(/rtmPayload\(/g) ?? [])
+    .length;
+  assert.equal(
+    exemptCalls,
+    1,
+    `expected the malformed-entry test to build exactly 1 body, found ${exemptCalls} — if it` +
+      ' needs another, that one is conformant traffic and belongs in the list above',
+  );
 });
 
 test('the extractor keeps its first-wins contract, which is why this check reads the reports', () => {
