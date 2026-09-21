@@ -39,6 +39,7 @@ import {
   isAdvisoryId,
   violatesAdvisoryCopyBar,
 } from '../../ingest/stages/semantic/advisory-finding.js';
+import { ADVISORY_IDS_CITING_A_PRIOR } from '../../ingest/stages/semantic/advisory.js';
 import { CONTRACT_PROFILE, type Profile } from '../../schema-registry.js';
 import {
   isAcceptedStatus,
@@ -349,8 +350,18 @@ export function tally(verdicts: readonly CaseVerdict[]): RunTotals {
  * A longer one is reported, never failed: the counts a summary carries grow with
  * the payload, so a run against a bigger body can push a well-written line past
  * the mark without anything being wrong with it.
+ *
+ * It is not applied to an advisory that cites a prior delivery
+ * ({@link ADVISORY_IDS_CITING_A_PRIOR}): the guidance excepts those by name
+ * (yjni), and a warning the guidance blesses is noise that teaches a reader to
+ * skip the warnings.
  */
 const SUMMARY_LENGTH_HINT = 90;
+
+/** Whether the roughly-90-character guidance applies to this advisory's summary. */
+function summaryLengthHintApplies(id: string): boolean {
+  return !(ADVISORY_IDS_CITING_A_PRIOR as readonly string[]).includes(id);
+}
 
 /** One advisory id and the summary an instance served with it, for printing. */
 export interface AdvisoryCopyLine {
@@ -452,7 +463,7 @@ export function auditAdvisoryCopy(findingsByTransmission: FindingsByTransmission
         if (violatesAdvisoryCopyBar(found.summary)) {
           violations.push(`${id}: summary reads as a defect: ${found.summary}`);
         }
-        if (found.summary.length > SUMMARY_LENGTH_HINT) {
+        if (summaryLengthHintApplies(id) && found.summary.length > SUMMARY_LENGTH_HINT) {
           warnings.push(
             `${id}: summary is ${found.summary.length} characters ` +
               `(over ${SUMMARY_LENGTH_HINT}): ${found.summary}`,

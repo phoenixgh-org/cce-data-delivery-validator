@@ -50,7 +50,12 @@ export function isAdvisoryId(id: string | null | undefined): boolean {
  *   - `summary` is THE OBSERVATION — one line, in the supplier's terms, carrying
  *     this payload's numbers ("3 of 12 reports carry no appliance serial
  *     number"). It is the advisory line in the transmission detail, so keep it to
- *     roughly 90 characters.
+ *     roughly 90 characters. ONE EXCEPTION (yjni, decided 2026-09-21): an
+ *     advisory that cites a PRIOR DELIVERY may run longer, because naming the
+ *     prior is what makes the observation checkable — the shared value, this
+ *     report's side, the prior's side, and when the prior arrived all have to be
+ *     on the line. Such an id is listed in `ADVISORY_IDS_CITING_A_PRIOR` in
+ *     advisory.ts; do not compress its summary to meet the figure.
  *   - `detail` is THE RATIONALE — why a receiving country cares, or what to send
  *     instead. A few sentences, STATIC PER ADVISORY ID (synm): the compliance
  *     column shows one text per id, on a row that has no payload in front of it,

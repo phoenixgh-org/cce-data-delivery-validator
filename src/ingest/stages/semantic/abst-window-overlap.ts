@@ -73,9 +73,10 @@
  * and the prior's two bounds — are all in `summary` (synm, 2026-09-18), which is
  * the half of the copy that carries this transmission's own numbers. `detail` is
  * one static text per advisory id, because the compliance column shows a single
- * expandable row with no payload in front of it; see {@link ABST_WINDOW_OVERLAP_RATIONALE}. That
- * makes this the longest observation in the catalogue: five timestamps cannot be
- * shortened without dropping one of the two windows a reader is comparing.
+ * expandable row with no payload in front of it; see {@link ABST_WINDOW_OVERLAP_RATIONALE}. The
+ * line runs well past the roughly-90-character guidance, which it may: this id
+ * cites a prior delivery and is listed in `ADVISORY_IDS_CITING_A_PRIOR`
+ * (./advisory.ts), where the exception and its reason are stated once (yjni).
  *
  * ── VOCABULARY ──────────────────────────────────────────────────────────────
  * The copy OBSERVES and never concludes (approved 2026-09-18). Overlapping

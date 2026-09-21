@@ -388,7 +388,9 @@ grader may reword, and a case matching on it would fail on an edit that changed 
 behaviour. The runner prints one line per distinct `(advisory, summary)` pair, and a
 violation fails the run on its own — exit 1 even with every case green. Two things are
 softer than that: a summary over 90 characters is a warning, because the counts a
-summary carries grow with the payload, and a target that serves no summary on **any**
+summary carries grow with the payload (an advisory that cites a prior delivery is
+excepted from that warning by id, in `ADVISORY_IDS_CITING_A_PRIOR`, because naming the
+prior is what makes its observation checkable), and a target that serves no summary on **any**
 advisory is reported as an instance fact rather than a failure. A target that serves
 some and not others is a violation, which is the regression the audit exists to catch.
 

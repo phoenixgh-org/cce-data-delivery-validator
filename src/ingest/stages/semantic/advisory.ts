@@ -63,7 +63,9 @@
  * Advisory prose is TWO PIECES, not one (agj.17), and the two are read on
  * different surfaces. `summary` is the OBSERVATION — one line, roughly 90
  * characters at ordinary values, carrying this transmission's numbers; it is the
- * advisory line in the transmission detail. `detail` is the RATIONALE — a few
+ * advisory line in the transmission detail. An advisory that cites a prior
+ * delivery is the one exception to that figure and may run longer; see
+ * {@link ADVISORY_IDS_CITING_A_PRIOR}. `detail` is the RATIONALE — a few
  * sentences, STATIC PER ADVISORY ID (synm): one text per id, with no branch
  * variant and nothing interpolated from the payload, collected in
  * {@link ADVISORY_RATIONALES} and served on the advisory signature for the
@@ -221,6 +223,33 @@ export const ADVISORY_IDS: readonly AdvisoryId[] = [
   UNEXPLAINED_NULL_TEMP_ID,
   SHORT_IDENTIFIER_ID,
   NULL_ACCUMULATOR_ID,
+  ABST_WINDOW_OVERLAP_ID,
+  IDENTIFIER_COLLISION_ID,
+];
+
+/**
+ * THE ADVISORIES THAT CITE A PRIOR DELIVERY — the stated exception to the
+ * roughly-90-character summary guidance on `AdvisoryInput` (yjni, decided by the
+ * owner 2026-09-21).
+ *
+ * Most advisories observe THIS payload and carry one or two of its numbers, which
+ * is what the 90-character figure was sized for. A cross-transmission advisory
+ * has to name the other delivery as well, and that costs four values on the
+ * line: the value the two deliveries share, this report's side of the
+ * disagreement, the prior's side, and the prior's `received_at`. Dropping the
+ * receipt time leaves a supplier holding several deliveries unable to find the
+ * one meant; dropping either side removes the disagreement the finding exists to
+ * report. So the length is structural, and these summaries are NOT compressed to
+ * fit.
+ *
+ * It is a list rather than a judgment each check argues in its own header, and it
+ * is here so that both readers of the guidance agree: the docblock a new check's
+ * author reads, and the exercise runner's copy audit, which does not print its
+ * length warning for an id listed here. A new advisory belongs on it only when
+ * its observation names a prior delivery — a summary that is merely long does
+ * not qualify.
+ */
+export const ADVISORY_IDS_CITING_A_PRIOR: readonly AdvisoryId[] = [
   ABST_WINDOW_OVERLAP_ID,
   IDENTIFIER_COLLISION_ID,
 ];

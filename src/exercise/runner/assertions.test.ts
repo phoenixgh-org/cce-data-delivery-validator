@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { ADVISORY_IDS_CITING_A_PRIOR } from '../../ingest/stages/semantic/advisory.js';
 import type { ExerciseCase } from '../case.js';
 import {
   auditAdvisoryCopy,
@@ -583,6 +584,22 @@ test('an over-long summary is a warning and nothing more', () => {
   assert.deepEqual(audit.violations, []);
   assert.equal(audit.warnings.length, 1);
   assert.match(audit.warnings[0]!, /summary is 96 characters \(over 90\)/);
+});
+
+test('an advisory that cites a prior delivery may run long without a warning', () => {
+  // The guidance excepts these by name (yjni): naming the prior delivery costs
+  // four values on the line, so the length is structural and not compressed.
+  const long = `${'a'.repeat(250)}.`;
+  for (const requirement of ADVISORY_IDS_CITING_A_PRIOR) {
+    const audit = auditAdvisoryCopy(advisoryFindings([{ requirement, summary: long }]));
+    assert.deepEqual(audit.violations, []);
+    assert.deepEqual(audit.warnings, [], `${requirement} is excepted from the length hint`);
+  }
+  // And the exception is by id, not by length: the same line elsewhere still warns.
+  const other = auditAdvisoryCopy(
+    advisoryFindings([{ requirement: 'adv.blank_admin', summary: long }]),
+  );
+  assert.equal(other.warnings.length, 1);
 });
 
 test('repeated occurrences collapse into one printable line and one violation', () => {

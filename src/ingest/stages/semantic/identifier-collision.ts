@@ -91,17 +91,11 @@
  * {@link IDENTIFIER_COLLISION_RATIONALE}.
  *
  * THE SUMMARY RUNS PAST THE ROUGHLY-90-CHARACTER GUIDANCE on `AdvisoryInput`
- * (./advisory-finding.ts), at about 195 characters on ordinary values, and that
- * is deliberate rather than careless — the same trade ./abst-window-overlap.ts
- * makes for its five timestamps. FOUR VALUES have to be on the line for it to say
- * anything: the identifier that repeated, the companion THIS report carried, the
- * companion the EARLIER report carried, and when that earlier report arrived.
- * Dropping either companion leaves a sentence that names a repetition without
- * showing the disagreement, which is the whole observation; dropping the receipt
- * time leaves the supplier with no way to find the other delivery. The guidance
- * is written for the one-value checks that make up most of the catalogue, and
- * cce-data-delivery-validator-yjni is open against its wording — do not silently
- * shorten this line to meet a number it was never sized for.
+ * (./advisory-finding.ts), which it may: this id cites a prior delivery and is
+ * listed in `ADVISORY_IDS_CITING_A_PRIOR` (./advisory.ts), where the exception
+ * and its reason are stated once (yjni). The four values on the line are the
+ * identifier that repeated, the companion THIS report carried, the companion the
+ * EARLIER report carried, and when that earlier report arrived.
  *
  * ── VOCABULARY ──────────────────────────────────────────────────────────────
  * The copy OBSERVES and never concludes. It says which identifier repeated, which
