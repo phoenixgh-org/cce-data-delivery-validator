@@ -103,6 +103,129 @@ const ONE_APPLIANCE_TWICE = rtmPayload(
   rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
 );
 
+/** One platform handle under two serials — the reverse of ONE_SERIAL_TWO_HANDLES. */
+const ONE_HANDLE_TWO_SERIALS = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
+  rtmReport({ ASER: 'S-2', AMID: 'fridge-a' }),
+);
+
+/**
+ * One serial under two asset ids. Both reports name the same handle, so the only
+ * comparison left to hold is ('aser','aid').
+ */
+const ONE_SERIAL_TWO_ASSET_IDS = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-8' }),
+);
+
+/** One asset id under two handles, with neither report naming a serial. */
+const ONE_ASSET_ID_TWO_HANDLES = rtmPayload(
+  rtmReport({ AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ AMID: 'fridge-b', AID: 'asset-7' }),
+);
+
+// The three boundaries one PAIR of reports can reach: each body satisfies two
+// comparisons at once, so COMPARISONS order alone decides which one is named.
+
+/** ('aser','amid') and ('aser','aid') both hold on the pair. */
+const ONE_SERIAL_TWO_HANDLES_TWO_ASSET_IDS = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-b', AID: 'asset-8' }),
+);
+
+/** ('amid','aser') and ('amid','aid') both hold on the pair. */
+const ONE_HANDLE_TWO_SERIALS_TWO_ASSET_IDS = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ ASER: 'S-2', AMID: 'fridge-a', AID: 'asset-8' }),
+);
+
+/**
+ * ('aid','aser') and ('aid','amid') both hold on the pair. The two handles have
+ * to DIFFER for the asset id to lead: with one shared handle ('amid','aser')
+ * would outrank ('aid','aser') and name the handle instead. That also makes this
+ * the plain shared-asset-id fixture, so the two tests share one body.
+ */
+const ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ ASER: 'S-2', AMID: 'fridge-b', AID: 'asset-7' }),
+);
+
+// Bodies the advisory stays silent on, and the two that pin how a value is read.
+
+/** The asset id is carried by one report only, so nothing is compared under it. */
+const ASSET_ID_ON_ONE_REPORT_ONLY = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
+);
+
+/** Two appliances sharing no identifier at all. */
+const TWO_APPLIANCES_NOTHING_SHARED = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
+  rtmReport({ ASER: 'S-2', AMID: 'fridge-b' }),
+);
+
+/** A single report, which has nothing to disagree with. */
+const ONE_REPORT_ONLY = rtmPayload(rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }));
+
+/** Two serials that are whitespace, which `identifier` reads as absent. */
+const BLANK_SERIALS = rtmPayload(
+  rtmReport({ ASER: '  ', AMID: 'fridge-a' }),
+  rtmReport({ ASER: '', AMID: 'fridge-b' }),
+);
+
+/** One serial written with surrounding space on one report and without on the other. */
+const SERIAL_WITH_SURROUNDING_SPACE = rtmPayload(
+  rtmReport({ ASER: ' S-1 ', AMID: 'fridge-a' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-b' }),
+);
+
+/** Two serials differing only in case, which are two serials. */
+const SERIALS_DIFFERING_ONLY_IN_CASE = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
+  rtmReport({ ASER: 's-1', AMID: 'fridge-b' }),
+);
+
+/** One appliance whose monitoring-device serial changed between the two reports. */
+const ONE_APPLIANCE_TWO_MONITORING_DEVICES = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', ESER: 'EMD-one' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', ESER: 'EMD-two' }),
+);
+
+// Bodies with more than one disagreeing pair, or more than two reports in one.
+
+/** One pair disagreeing under ('aser','amid') and ('aid','amid') at once. */
+const ONE_SERIAL_ONE_ASSET_ID_TWO_HANDLES = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-b', AID: 'asset-7' }),
+);
+
+/** Two separate disagreements, one per serial. */
+const TWO_SERIALS_EACH_UNDER_TWO_HANDLES = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-b' }),
+  rtmReport({ ASER: 'S-2', AMID: 'fridge-c' }),
+  rtmReport({ ASER: 'S-2', AMID: 'fridge-d' }),
+);
+
+/** Three reports under one serial, the third disagreeing with the first two. */
+const ONE_SERIAL_THREE_HANDLES = rtmPayload(
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-b' }),
+  rtmReport({ ASER: 'S-1', AMID: 'fridge-c' }),
+);
+
+/**
+ * Three reports under one handle, the first of them carrying no asset id. The
+ * companion has to be an OPTIONAL identifier for this shape to be conformant
+ * traffic: `AMID` is required on `rtmd-report`, so a report that names no handle
+ * never reaches the check at all (mlr4).
+ */
+const ASSET_ID_ABSENT_ON_THE_FIRST_OF_THREE = rtmPayload(
+  rtmReport({ AMID: 'fridge-a' }),
+  rtmReport({ AMID: 'fridge-a', AID: 'asset-7' }),
+  rtmReport({ AMID: 'fridge-a', AID: 'asset-8' }),
+);
+
 // ── harnesses ────────────────────────────────────────────────────────────────
 
 /** Deps with every lookup stubbed empty: this check asks for none of them. */
@@ -188,10 +311,50 @@ test('the fixtures really are schema-conformant on both registered contract vers
   // advisory rather than a §3.2 finding. If a future contract version rejected one
   // of these bodies, the copy pinned below would be unreachable on the wire while
   // its test kept passing (b8dm).
+  //
+  // THE LIST IS EXHAUSTIVE, which is why every body in this file is a named
+  // fixture rather than an inline literal (mlr4): an unlisted body is one this
+  // gate does not cover, and two of them were rejected by both registered
+  // versions for months while their tests kept passing. The one deliberate
+  // omission is the malformed-entry body of the last test, which pushes a string
+  // into `data[]` and so cannot be conformant by design — it pins what the check
+  // does with an entry no contract version accepts.
   const fixtures = [
     { label: 'ONE_SERIAL_TWO_HANDLES', payload: ONE_SERIAL_TWO_HANDLES },
-    { label: 'ONE_APPLIANCE_TWICE', payload: ONE_APPLIANCE_TWICE },
     { label: 'NO_SERIAL_TWO_ASSET_IDS', payload: NO_SERIAL_TWO_ASSET_IDS },
+    { label: 'ONE_APPLIANCE_TWICE', payload: ONE_APPLIANCE_TWICE },
+    { label: 'ONE_HANDLE_TWO_SERIALS', payload: ONE_HANDLE_TWO_SERIALS },
+    { label: 'ONE_SERIAL_TWO_ASSET_IDS', payload: ONE_SERIAL_TWO_ASSET_IDS },
+    { label: 'ONE_ASSET_ID_TWO_HANDLES', payload: ONE_ASSET_ID_TWO_HANDLES },
+    {
+      label: 'ONE_SERIAL_TWO_HANDLES_TWO_ASSET_IDS',
+      payload: ONE_SERIAL_TWO_HANDLES_TWO_ASSET_IDS,
+    },
+    {
+      label: 'ONE_HANDLE_TWO_SERIALS_TWO_ASSET_IDS',
+      payload: ONE_HANDLE_TWO_SERIALS_TWO_ASSET_IDS,
+    },
+    {
+      label: 'ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES',
+      payload: ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES,
+    },
+    { label: 'ASSET_ID_ON_ONE_REPORT_ONLY', payload: ASSET_ID_ON_ONE_REPORT_ONLY },
+    { label: 'TWO_APPLIANCES_NOTHING_SHARED', payload: TWO_APPLIANCES_NOTHING_SHARED },
+    { label: 'ONE_REPORT_ONLY', payload: ONE_REPORT_ONLY },
+    { label: 'BLANK_SERIALS', payload: BLANK_SERIALS },
+    { label: 'SERIAL_WITH_SURROUNDING_SPACE', payload: SERIAL_WITH_SURROUNDING_SPACE },
+    { label: 'SERIALS_DIFFERING_ONLY_IN_CASE', payload: SERIALS_DIFFERING_ONLY_IN_CASE },
+    {
+      label: 'ONE_APPLIANCE_TWO_MONITORING_DEVICES',
+      payload: ONE_APPLIANCE_TWO_MONITORING_DEVICES,
+    },
+    { label: 'ONE_SERIAL_ONE_ASSET_ID_TWO_HANDLES', payload: ONE_SERIAL_ONE_ASSET_ID_TWO_HANDLES },
+    { label: 'TWO_SERIALS_EACH_UNDER_TWO_HANDLES', payload: TWO_SERIALS_EACH_UNDER_TWO_HANDLES },
+    { label: 'ONE_SERIAL_THREE_HANDLES', payload: ONE_SERIAL_THREE_HANDLES },
+    {
+      label: 'ASSET_ID_ABSENT_ON_THE_FIRST_OF_THREE',
+      payload: ASSET_ID_ABSENT_ON_THE_FIRST_OF_THREE,
+    },
   ];
   for (const version of ['0.8.0', '0.8.1']) {
     const entry = registry.get(version);
@@ -338,11 +501,7 @@ test('the copy observes and never concludes', async () => {
 test('a shared platform handle under two serials fires in the reverse direction', async () => {
   // Neither report keys on the handle — `unitKey` prefers the serial — so this is
   // the disagreement no unit-keyed reading would find.
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
-    rtmReport({ ASER: 'S-2', AMID: 'fridge-a' }),
-  );
-  const [finding, ...rest] = await checkOnly(body);
+  const [finding, ...rest] = await checkOnly(ONE_HANDLE_TWO_SERIALS);
   assert.equal(rest.length, 0);
   assert.equal(
     finding?.summary,
@@ -351,11 +510,10 @@ test('a shared platform handle under two serials fires in the reverse direction'
 });
 
 test('a shared asset id under two serials fires, and names the asset id', async () => {
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1', AID: 'asset-7' }),
-    rtmReport({ ASER: 'S-2', AID: 'asset-7' }),
-  );
-  const [finding] = await checkOnly(body);
+  // Each report also names its own handle, because `AMID` is required on
+  // `rtmd-report` and a body without it is traffic the service never accepts
+  // (mlr4). The two handles differ, so the asset id still leads.
+  const [finding] = await checkOnly(ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES);
   assert.equal(
     finding?.summary,
     'Two reports carry asset id AID asset-7 beside appliance serial ASER S-1 and S-2.',
@@ -366,11 +524,7 @@ test('a shared serial under two asset ids fires, and names the asset id', async 
   // The ('aser','aid') direction (3m8r). Both reports name the same platform
   // handle, so ('aser','amid') finds nothing to disagree about and the comparison
   // that does hold is the one on the employer's asset id.
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-8' }),
-  );
-  const [finding, ...rest] = await checkOnly(body);
+  const [finding, ...rest] = await checkOnly(ONE_SERIAL_TWO_ASSET_IDS);
   assert.equal(rest.length, 0);
   assert.equal(
     finding?.summary,
@@ -395,11 +549,7 @@ test('a shared asset id under two platform handles fires when no serial is prese
   // The ('aid','amid') direction (3m8r) — the reverse of the one above, and the
   // last of the six. AID is the COMPANION in neither of the two before it, so
   // without this pair a typo in either row would be silent.
-  const body = rtmPayload(
-    rtmReport({ AMID: 'fridge-a', AID: 'asset-7' }),
-    rtmReport({ AMID: 'fridge-b', AID: 'asset-7' }),
-  );
-  const [finding, ...rest] = await checkOnly(body);
+  const [finding, ...rest] = await checkOnly(ONE_ASSET_ID_TWO_HANDLES);
   assert.equal(rest.length, 0);
   assert.equal(
     finding?.summary,
@@ -418,28 +568,19 @@ test('when two comparisons hold on one pair, the earlier entry of the table name
   const boundaries = [
     {
       label: "('aser','amid') ahead of ('aser','aid')",
-      body: rtmPayload(
-        rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
-        rtmReport({ ASER: 'S-1', AMID: 'fridge-b', AID: 'asset-8' }),
-      ),
+      body: ONE_SERIAL_TWO_HANDLES_TWO_ASSET_IDS,
       summary:
         'Two reports carry appliance serial ASER S-1 beside appliance id AMID fridge-a and fridge-b.',
     },
     {
       label: "('amid','aser') ahead of ('amid','aid')",
-      body: rtmPayload(
-        rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
-        rtmReport({ ASER: 'S-2', AMID: 'fridge-a', AID: 'asset-8' }),
-      ),
+      body: ONE_HANDLE_TWO_SERIALS_TWO_ASSET_IDS,
       summary:
         'Two reports carry appliance id AMID fridge-a beside appliance serial ASER S-1 and S-2.',
     },
     {
       label: "('aid','aser') ahead of ('aid','amid')",
-      body: rtmPayload(
-        rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
-        rtmReport({ ASER: 'S-2', AMID: 'fridge-b', AID: 'asset-7' }),
-      ),
+      body: ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES,
       summary: 'Two reports carry asset id AID asset-7 beside appliance serial ASER S-1 and S-2.',
     },
   ];
@@ -451,10 +592,12 @@ test('when two comparisons hold on one pair, the earlier entry of the table name
 });
 
 test('a companion absent on either report is not compared', async () => {
-  // The second report names no handle, so the two reports disagree about nothing:
-  // absence is neither agreement nor disagreement.
-  const body = rtmPayload(rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }), rtmReport({ ASER: 'S-1' }));
-  assert.deepEqual(await checkOnly(body), []);
+  // The second report names no asset id, so the two reports disagree about
+  // nothing: absence is neither agreement nor disagreement. The absent companion
+  // is the asset id rather than the handle because `AMID` is required on
+  // `rtmd-report`, so a handle-less report is not traffic the service accepts
+  // and the silence would be pinned on a body the check never sees (mlr4).
+  assert.deepEqual(await checkOnly(ASSET_ID_ON_ONE_REPORT_ONLY), []);
 });
 
 test('two reports naming one appliance the same way raise nothing', async () => {
@@ -462,55 +605,39 @@ test('two reports naming one appliance the same way raise nothing', async () => 
 });
 
 test('two reports sharing no identifier at all raise nothing', async () => {
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
-    rtmReport({ ASER: 'S-2', AMID: 'fridge-b' }),
-  );
-  assert.deepEqual(await checkOnly(body), []);
+  assert.deepEqual(await checkOnly(TWO_APPLIANCES_NOTHING_SHARED), []);
 });
 
 test('a single-report body raises nothing, however it is identified', async () => {
-  assert.deepEqual(await checkOnly(rtmPayload(rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }))), []);
+  assert.deepEqual(await checkOnly(ONE_REPORT_ONLY), []);
 });
 
 test('a blank identifier joins no group', async () => {
   // `identifier` trims and yields null for a blank, so two reports whose serials
   // are whitespace are not two reports sharing a serial.
-  const body = rtmPayload(
-    rtmReport({ ASER: '  ', AMID: 'fridge-a' }),
-    rtmReport({ ASER: '', AMID: 'fridge-b' }),
-  );
-  assert.deepEqual(await checkOnly(body), []);
+  assert.deepEqual(await checkOnly(BLANK_SERIALS), []);
 });
 
 test('values are trimmed but never case-folded', async () => {
-  const trimmed = rtmPayload(
-    rtmReport({ ASER: ' S-1 ', AMID: 'fridge-a' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-b' }),
-  );
-  const [finding] = await checkOnly(trimmed);
+  const [finding] = await checkOnly(SERIAL_WITH_SURROUNDING_SPACE);
   assert.equal(
     finding?.summary,
     'Two reports carry appliance serial ASER S-1 beside appliance id AMID fridge-a and fridge-b.',
     'surrounding whitespace is not part of a serial',
   );
 
-  const cased = rtmPayload(
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
-    rtmReport({ ASER: 's-1', AMID: 'fridge-b' }),
+  assert.deepEqual(
+    await checkOnly(SERIALS_DIFFERING_ONLY_IN_CASE),
+    [],
+    '"S-1" and "s-1" are different serials',
   );
-  assert.deepEqual(await checkOnly(cased), [], '"S-1" and "s-1" are different serials');
 });
 
 test('the logger and monitoring-device identifiers are never compared', async () => {
   // LSER/ESER/LID/EID: one appliance re-instrumented, or one logger moved, is
   // ordinary operation — see unitKey's docblock.
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a', ESER: 'EMD-one' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a', ESER: 'EMD-two' }),
-  );
   assert.deepEqual(
-    await checkOnly(body),
+    await checkOnly(ONE_APPLIANCE_TWO_MONITORING_DEVICES),
     [],
     'a changed EMD serial beside identical appliance identifiers is silent',
   );
@@ -522,11 +649,7 @@ test('reports disagreeing under two comparisons are reported once, under the ser
   // Both reports carry the same ASER and the same AID and differ on AMID, so
   // (ASER, AMID) and (AID, AMID) both hold. The pair is named once, and the
   // appliance's own serial leads because COMPARISONS order is reporting priority.
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a', AID: 'asset-7' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-b', AID: 'asset-7' }),
-  );
-  const findings = await checkOnly(body);
+  const findings = await checkOnly(ONE_SERIAL_ONE_ASSET_ID_TWO_HANDLES);
   assert.equal(findings.length, 1, 'one finding per pair of reports, not one per comparison');
   assert.equal(
     findings[0]?.summary,
@@ -535,13 +658,7 @@ test('reports disagreeing under two comparisons are reported once, under the ser
 });
 
 test('two separate disagreements in one body raise one finding each', async () => {
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-b' }),
-    rtmReport({ ASER: 'S-2', AMID: 'fridge-c' }),
-    rtmReport({ ASER: 'S-2', AMID: 'fridge-d' }),
-  );
-  const findings = await checkOnly(body);
+  const findings = await checkOnly(TWO_SERIALS_EACH_UNDER_TWO_HANDLES);
   assert.deepEqual(
     findings.map((f) => f.summary),
     [
@@ -559,12 +676,7 @@ test('a third disagreeing report is not named — the advisory is not a census',
   // The first report carrying a companion anchors the observation and the first
   // later one that differs is named; a supplier holding that pair has what it
   // needs to go and look at the whole body.
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-b' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-c' }),
-  );
-  const findings = await checkOnly(body);
+  const findings = await checkOnly(ONE_SERIAL_THREE_HANDLES);
   assert.equal(findings.length, 1);
   assert.equal(
     findings[0]?.summary,
@@ -573,22 +685,23 @@ test('a third disagreeing report is not named — the advisory is not a census',
 });
 
 test('the anchor is the first report that carries the companion at all', async () => {
-  // The first report names no handle, so it anchors nothing; the observation is
-  // about the two reports that do, and the pointer follows the anchor.
-  const body = rtmPayload(
-    rtmReport({ ASER: 'S-1' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-b' }),
-    rtmReport({ ASER: 'S-1', AMID: 'fridge-c' }),
-  );
-  const [finding] = await checkOnly(body);
+  // The first report names no asset id, so it anchors nothing; the observation is
+  // about the two reports that do, and the pointer follows the anchor. The rule
+  // is pinned on an OPTIONAL companion because a required one cannot be absent in
+  // conformant traffic — `AMID` is required on `rtmd-report`, and the body checks
+  // run on schema-valid bodies only (mlr4).
+  const [finding] = await checkOnly(ASSET_ID_ABSENT_ON_THE_FIRST_OF_THREE);
   assert.equal(
     finding?.summary,
-    'Two reports carry appliance serial ASER S-1 beside appliance id AMID fridge-b and fridge-c.',
+    'Two reports carry appliance id AMID fridge-a beside asset id AID asset-7 and asset-8.',
   );
   assert.equal(finding?.pointer, '/data/1');
 });
 
 test('an entry of data[] that is not an object is not a report', async () => {
+  // The one body deliberately kept out of the conformance list above: a string in
+  // `data[]` is rejected by every contract version, which is the point of the
+  // test — the check has to be safe on an entry the schema stage already failed.
   const body = rtmPayload(rtmReport({ ASER: 'S-1', AMID: 'fridge-a' }));
   (body.data as unknown[]).push('not a report');
   assert.deepEqual(await checkOnly(body), []);
