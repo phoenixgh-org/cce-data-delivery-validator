@@ -340,10 +340,13 @@ const LIST_VISIBLE_ROWS = 9;
  *     var(--border-strong)'`, which the tast-era budget left out by choice
  *     rather than by absence ("the panel's own 1px top edge is part of the
  *     panel and not of this sum, the same way the 2px divider it replaces
- *     was"). Nothing in this repo sets `box-sizing: border-box`, so the detail
- *     card's 120px min-height is a CONTENT height and its own top border sits
- *     above that content — which is why it belongs in this sum and that
- *     tast-era note does not survive the split. So this term grew the written
+ *     was"). No `box-sizing: border-box` applies to these cards: styles.css
+ *     carries no ambient reset (its only universal selector is the
+ *     reduced-motion block at styles.css:116-125), and the inline `boxSizing`
+ *     uses elsewhere in the web tree sit on unrelated elements. The detail
+ *     card's 120px min-height is therefore a CONTENT height and its own top
+ *     border sits above that content — which is why it belongs in this sum and
+ *     that tast-era note does not survive the split. So this term grew the written
  *     budget by 3px (635 → 638) where it grew the rendered stack by 1px.
  *   - detail gap: {@link DETAIL_GAP_PX}, the gap on the column that holds the
  *     two cards (tast, revised mq8x). It is the only term here that paints page
