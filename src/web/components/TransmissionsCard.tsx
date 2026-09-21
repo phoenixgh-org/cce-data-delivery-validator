@@ -276,7 +276,10 @@ const ROW_ESTIMATE_PX = 34;
  * issue chip ten rows left the region under its own 120px min-height. Splitting
  * the pane into two cards (mq8x) added a further 3px of card edges to the same
  * budget and ~4px to the band, which narrows the margin nine rows leave but does
- * not close it. The arithmetic is on {@link LIST_MAX_HEIGHT_PX}.
+ * not close it. Only one of those three pixels is new on the page: the other two
+ * were already rendered before the split and are only now counted, so the split
+ * pushed the detail card down by 1px rather than by 3px (f88s). The arithmetic
+ * is on {@link LIST_MAX_HEIGHT_PX}.
  */
 const LIST_VISIBLE_ROWS = 9;
 
@@ -329,12 +332,19 @@ const LIST_VISIBLE_ROWS = 9;
  *     each label still fit on one line.
  *   - card edges (mq8x): three 1px borders, now that the list and the detail are
  *     two cards rather than two regions inside one — the list card's top and
- *     bottom borders and the detail card's top border. Two of the three are new
- *     pixels; the third, the top one, existed on the single card and was simply
- *     never counted here. Nothing in this repo sets `box-sizing: border-box`, so
- *     the detail card's 120px min-height is a CONTENT height and its own top
- *     border sits above that content — which is why it belongs in this sum and
- *     the tast-era note excluding it does not survive the split.
+ *     bottom borders and the detail card's top border. Only ONE of the three is
+ *     a new pixel, the list card's bottom border. The other two were already
+ *     rendered before the split and are counted here for the first time (f88s):
+ *     the top one was the single card's own top border, and the detail card's
+ *     top border was the detail region's `borderTop: '1px solid
+ *     var(--border-strong)'`, which the tast-era budget left out by choice
+ *     rather than by absence ("the panel's own 1px top edge is part of the
+ *     panel and not of this sum, the same way the 2px divider it replaces
+ *     was"). Nothing in this repo sets `box-sizing: border-box`, so the detail
+ *     card's 120px min-height is a CONTENT height and its own top border sits
+ *     above that content — which is why it belongs in this sum and that
+ *     tast-era note does not survive the split. So this term grew the written
+ *     budget by 3px (635 → 638) where it grew the rendered stack by 1px.
  *   - detail gap: {@link DETAIL_GAP_PX}, the gap on the column that holds the
  *     two cards (tast, revised mq8x). It is the only term here that paints page
  *     ground rather than card.
