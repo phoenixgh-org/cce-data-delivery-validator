@@ -678,8 +678,11 @@ test('the last two boundaries take three reports, and the two summaries come out
   // reach is still reachable across three reports, because the two comparisons
   // then hold on different pairs — and the check walks a whole body in
   // COMPARISONS order, so the table decides which finding is emitted first.
-  // Pinning the ARRAY rather than one summary is what makes a reordering of
-  // either row fail here instead of passing silently.
+  // Pinning the ARRAY rather than one summary buys the finding COUNT — two pairs,
+  // one finding each — and the text of the second sentence. It is not what catches
+  // a reordering (0mdh): each body raises exactly two findings whose text is fixed,
+  // so which one comes first settles the other, and asserting the first summary
+  // alone would fail on the same reorderings, as the pair test above does.
   const boundaries = [
     {
       label: "('aser','aid') ahead of ('amid','aser')",
