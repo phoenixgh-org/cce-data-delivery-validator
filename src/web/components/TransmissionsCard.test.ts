@@ -733,21 +733,27 @@ test('the reveal effect keys on the counter alone, so an unasked-for open does n
 });
 
 /**
- * THE DETAIL PANE IS ITS OWN PANEL (tast). The pane used to sit one 2px divider
- * below the list and open on a bare mono `t-` line, which let a reader take it
- * as describing the list's last row rather than the selected one. Three claims
- * fix that, all of them styling a component renders rather than a value it
- * returns — so, like the reveal wiring above, they are pinned against the source
- * text. Nothing here can be held by the compiler and nothing here has a DOM to
- * be held against.
+ * THE DETAIL PANE IS ITS OWN CARD (tast; mq8x). The pane used to sit one 2px
+ * divider below the list and open on a bare mono `t-` line, which let a reader
+ * take it as describing the list's last row rather than the selected one. tast
+ * put a gap there instead, but both regions still sat inside ONE card, so the
+ * gap could only show that card's own `--surface-tx` and the two went on reading
+ * as one surface. mq8x made them siblings. Four claims fix that, all of them
+ * styling a component renders rather than a value it returns — so, like the
+ * reveal wiring above, they are pinned against the source text. Nothing here can
+ * be held by the compiler and nothing here has a DOM to be held against.
  *
- *   1. THE GAP. A margin between the list region and the detail region, in place
- *      of the divider. Also a term in the height budget, hence the arithmetic
- *      pinned below.
- *   2. THE LABELLED, STICKY BAND. `Transmission detail` plus the identity line,
- *      sticking at `top: 0` so the identity survives a scroll deep into a long
- *      payload.
- *   3. ONE ACCENT, TWO SURFACES. The selected row's left bar and the band's left
+ *   1. TWO CARDS, AND PAGE GROUND BETWEEN THEM. Each card carries its own
+ *      border, radius and shadow, and both take the draft lens's border tint
+ *      from the same expression, so the lens cannot tint one and miss the other.
+ *      The gap is a `gap` on the column that holds them, over a `var(--bg)`
+ *      ground — not a margin inside a card over `--surface-tx`.
+ *   2. THE GAP IS ALSO A HEIGHT-BUDGET TERM, hence the arithmetic pinned below.
+ *   3. THE TITLED, STICKY BAND. `Transmission detail` at the list card's own
+ *      title size and weight, plus the identity line, sticking at `top: 0` so the
+ *      identity survives a scroll deep into a long payload. The `t-` id under it
+ *      is NOT bold: with a bold title above it, the title is what has to win.
+ *   4. ONE ACCENT, TWO SURFACES. The selected row's left bar and the band's left
  *      bar must be the same width and the same token, or the tie they exist to
  *      make is not a tie. The width comes from one constant; both read
  *      `var(--accent)`.
@@ -769,17 +775,38 @@ function functionBody(name: string): string {
   return componentSource.slice(start, end);
 }
 
-test('the detail region is separated by a gap, not by the divider it replaces', () => {
+test('the list and the detail are sibling cards with page ground between them', () => {
   assert.match(componentSource, /const DETAIL_GAP_PX = (1[2-6]);/);
-  assert.match(componentSource, /marginTop: DETAIL_GAP_PX,/);
-  // The 2px --border-strong divider is gone; what remains is the panel's edge.
+  // The gap is the column's own `gap`, over a --bg ground, and no longer a
+  // margin inside a card whose --surface-tx was all it could ever show.
+  assert.match(componentSource, /gap: DETAIL_GAP_PX,/);
+  assert.doesNotMatch(componentSource, /marginTop: DETAIL_GAP_PX,/);
+  assert.match(componentSource, /background: 'var\(--bg\)',/);
+  // Two cards: two borders, two radii, two shadows — and one expression for the
+  // draft lens's tint, used twice, so the lens cannot tint one and miss the
+  // other.
+  const tinted =
+    componentSource.match(
+      /border: `1px solid var\(\$\{draftLens \? '--draft-border' : '--border-strong'\}\)`,/g,
+    ) ?? [];
+  assert.equal(tinted.length, 2, tinted.join('\n'));
+  assert.equal((componentSource.match(/boxShadow: 'var\(--shadow\)',/g) ?? []).length, 2);
+  // The 2px --border-strong divider is long gone, and so is the single card's
+  // one-sided top edge on the detail region.
   assert.doesNotMatch(componentSource, /borderTop: '2px solid var\(--border-strong\)'/);
+  assert.doesNotMatch(componentSource, /borderTop: '1px solid var\(--border-strong\)'/);
 });
 
-test('the detail header band is sticky, labelled, and names the transmission', () => {
+test('the detail header band is sticky, titled, and names the transmission', () => {
   const header = functionBody('TxDetailHeader');
   assert.match(header, /position: 'sticky',\n\s*top: 0,/);
-  assert.match(header, />Transmission detail</);
+  // Sentence case, at the list card's own title size and weight — not the
+  // shared eyebrow style, which rendered it as faint small capitals.
+  assert.match(header, /style=\{\{ fontSize: 13, fontWeight: 700 \}\}>Transmission detail</);
+  assert.doesNotMatch(header, /style=\{eyebrow\}/);
+  // …and the id below it carries no competing weight.
+  assert.match(header, /style=\{\{ \.\.\.mono, fontSize: 13 \}\}>t-\{shortId\(tx\.id\)\}/);
+  assert.doesNotMatch(header, /fontWeight: 700 \}\}>t-/);
   // The identity line the pane already showed, lifted into the band whole.
   assert.match(header, /t-\{shortId\(tx\.id\)\}/);
   assert.match(header, /\{tx\.sourceLabel\} · HTTP \{tx\.http_status \?\? '—'\} · \{relativeAgo\(/);
@@ -816,6 +843,9 @@ test('the height-budget docblock does the arithmetic the constants actually make
   assert.ok(sum, 'the budget sum line is missing');
   assert.equal(Number(sum[1]), rows * rowPx);
   assert.equal(Number(sum[2]), gap);
-  // 214 above the pane + 16 body padding + 44 card header + 41 verdict header.
-  assert.equal(Number(sum[3]), 214 + 16 + 44 + 41 + rows * rowPx + gap);
+  // 214 above the pane + 16 body padding + 3 card edges + 44 card header
+  // + 41 verdict header. The card-edges term is the list card's top and bottom
+  // borders and the detail card's top border (mq8x) — one 1px border per card
+  // boundary the column now has above the detail card's content box.
+  assert.equal(Number(sum[3]), 214 + 16 + 3 + 44 + 41 + rows * rowPx + gap);
 });

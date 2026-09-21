@@ -236,17 +236,20 @@ const mono: CSSProperties = { fontFamily: 'var(--mono)' };
 const ACCENT_BAR_PX = 3;
 
 /**
- * Gap, in px, between the scrolling list region and the docked detail panel
- * (tast).
+ * Gap, in px, between the list card and the detail card (tast; revised mq8x).
  *
  * It is what makes the detail read as its own panel rather than as a
- * continuation of the list's last row. It replaces a 2px `--border-strong`
- * divider, so the separation now comes from empty pane ground (`--surface-tx`
- * shows through) plus the panel's own 1px top edge, not from a heavier line.
+ * continuation of the list's last row. It replaced a 2px `--border-strong`
+ * divider under tast, where both regions still sat inside one card and the gap
+ * could only show that card's own `--surface-tx` — which is why the two went on
+ * reading as one surface. The two are SIBLING CARDS now, each with its own
+ * border, radius and shadow, and this is the `gap` on the column that holds
+ * them, so what shows between them is page ground (`var(--bg)`, painted by that
+ * wrapper) and not pane ground.
  *
- * It is also a term in the height budget on {@link LIST_MAX_HEIGHT_PX}: the
- * margin sits outside the detail region's box and takes 14px from the column
- * before the region's 120px min-height is measured.
+ * It is also a term in the height budget on {@link LIST_MAX_HEIGHT_PX}: the gap
+ * sits outside both cards and takes 14px from the column before the detail
+ * card's 120px min-height is measured.
  */
 const DETAIL_GAP_PX = 14;
 
@@ -270,8 +273,10 @@ const ROW_ESTIMATE_PX = 34;
  *
  * Nine, not the ten it was until tast. The detail pane grew a 14px gap above it
  * and a sticky header band inside it, and at an 800px viewport with an active
- * issue chip ten rows left the region under its own 120px min-height. The
- * arithmetic is on {@link LIST_MAX_HEIGHT_PX}.
+ * issue chip ten rows left the region under its own 120px min-height. Splitting
+ * the pane into two cards (mq8x) added a further 3px of card edges to the same
+ * budget and ~4px to the band, which narrows the margin nine rows leave but does
+ * not close it. The arithmetic is on {@link LIST_MAX_HEIGHT_PX}.
  */
 const LIST_VISIBLE_ROWS = 9;
 
@@ -290,14 +295,14 @@ const LIST_VISIBLE_ROWS = 9;
  * number that would drift if the row chrome changes: 9 × 34 = 306px.
  *
  * Height budget above the detail pane, re-measured against the shell that ships
- * (tast; previously vamh.9). Three terms an earlier budget carried — a scorecard
- * strip, a filter bar and a readiness strip — no longer exist. What sits above
- * the detail region today is:
+ * (tast; previously vamh.9; card edges added at mq8x). Three terms an earlier
+ * budget carried — a scorecard strip, a filter bar and a readiness strip — no
+ * longer exist. What sits above the detail card's content box today is:
  *   header ~48 + setup bar ~35 + summary-card row ~131              ≈ 214
- *   + body padding 16 + card header ~44 + verdict column header ~41
- *   + list 306 + detail gap 14                                      = 635
- * so the docked detail starts at ~635px. Each term, measured off the styles that
- * produce it:
+ *   + body padding 16 + card edges 3 + card header ~44
+ *   + verdict column header ~41 + list 306 + detail gap 14          = 638
+ * so the detail card's content starts at ~638px. Each term, measured off the
+ * styles that produce it:
  *   - header: ReportHeader's 10px padding top and bottom + a 27px Seg control
  *     (11.5px label at line-height 1.5, 4px padding, 1px border) + a 1px bottom
  *     border. The title is shorter than the control, so the control sets it.
@@ -322,10 +327,17 @@ const LIST_VISIBLE_ROWS = 9;
  *     columns into the row's own content (tfnv.1, VerdictDot.tsx:39-51), and
  *     nothing in the strip sets `whiteSpace: nowrap`. The term was 26px while
  *     each label still fit on one line.
- *   - detail gap: {@link DETAIL_GAP_PX}, the margin that separates the list
- *     region from the detail panel (tast). The panel's own 1px top edge is part
- *     of the panel and not of this sum, the same way the 2px divider it replaces
- *     was.
+ *   - card edges (mq8x): three 1px borders, now that the list and the detail are
+ *     two cards rather than two regions inside one — the list card's top and
+ *     bottom borders and the detail card's top border. Two of the three are new
+ *     pixels; the third, the top one, existed on the single card and was simply
+ *     never counted here. Nothing in this repo sets `box-sizing: border-box`, so
+ *     the detail card's 120px min-height is a CONTENT height and its own top
+ *     border sits above that content — which is why it belongs in this sum and
+ *     the tast-era note excluding it does not survive the split.
+ *   - detail gap: {@link DETAIL_GAP_PX}, the gap on the column that holds the
+ *     two cards (tast, revised mq8x). It is the only term here that paints page
+ *     ground rather than card.
  *
  * One term sits outside the sum because it is conditional. The ACTIVE ISSUE CHIP,
  * rendered only while a cross-filter is set, is ~38px: 7px padding top and bottom
@@ -335,20 +347,22 @@ const LIST_VISIBLE_ROWS = 9;
  * this term as ~33px, which measured the 12px title span beside the button
  * (18px) rather than the button itself.
  *
- * At an 800px-tall viewport the sum leaves ~165px for the detail region, above
- * its own 120px min-height, and ~365px at 1000px. With the issue chip the budget
- * is 635 + 38 = 673 and the region gets ~127px — still above the min-height, but
- * with only ~7px of slack. That case is why LIST_VISIBLE_ROWS is 9 and not 10:
- * ten rows put the budget at 669 + 38 = 707 and left the region ~93px, under the
- * min-height, so the minHeight won and the page scrolled.
+ * At an 800px-tall viewport the sum leaves ~162px for the detail card's content,
+ * above its own 120px min-height, and ~362px at 1000px. With the issue chip the
+ * budget is 638 + 38 = 676 and the card gets ~124px — still above the
+ * min-height, but with only ~4px of slack. That case is why LIST_VISIBLE_ROWS is
+ * 9 and not 10: ten rows put the budget at 672 + 38 = 710 and left the card
+ * ~90px, under the min-height, so the minHeight won and the page scrolled.
  *
  * CLEARING THE MIN-HEIGHT IS NOT THE SAME AS SHOWING THE DETAIL BODY. The first
- * ~50px of the region is now the sticky header band ({@link TxDetailHeader}: 7px
- * padding top and bottom + a 10px eyebrow at the inherited line-height 1.5 (15px)
- * + a 13px identity line at the same multiplier (19.5px) + a 1px bottom border).
- * So in the chip case ~77px of body is visible — the first row of the meta grid
- * and little else, with the findings a scroll away. Thin enough, either way, that
- * anything added above the list has to be measured rather than assumed.
+ * ~54px of the card is the sticky header band ({@link TxDetailHeader}: 7px
+ * padding top and bottom + a 13px title at the inherited line-height 1.5
+ * (19.5px) + a 13px identity line at the same multiplier (19.5px) + a 1px bottom
+ * border). The band was ~50px until mq8x, when the label stopped being a 10px
+ * eyebrow and became a 13px card title. So in the chip case ~70px of body is
+ * visible — the first row of the meta grid and little else, with the findings a
+ * scroll away. Thin enough, either way, that anything added above the list has to
+ * be measured rather than assumed.
  *
  * Every number above is the CONTRACT-lens stack. Under the DS01.3 draft lens the
  * LensBanner adds a further ~32px between the setup bar and the summary cards
@@ -356,15 +370,15 @@ const LIST_VISIBLE_ROWS = 9;
  * border), which no term here counts.
  *
  * THAT TERM BREAKS THE CHIP CASE, and this is the one combination that fails.
- * Draft lens with the issue chip set puts the budget at 635 + 38 + 32 = 705 and
- * leaves the region ~95px at an 800px viewport, under its 120px min-height — so
+ * Draft lens with the issue chip set puts the budget at 638 + 38 + 32 = 708 and
+ * leaves the card ~92px at an 800px viewport, under its 120px min-height — so
  * the minHeight wins and the page scrolls, exactly as ten contract-lens rows did
  * above. Both states are shipped and independent: Dashboard.tsx renders the
  * banner whenever the selected lens is not the contract profile, and the chip
  * follows a cross-filter whatever the lens is.
  *
  * NINE ROWS IS STILL THE CALL (eid2). Sizing the list for the draft-lens chip
- * case would cost a row in every other state to buy back ~25px in one, and the
+ * case would cost a row in every other state to buy back ~28px in one, and the
  * failure it buys back is a scroll rather than a hidden control. What is owed
  * here is the plain statement, not a smaller constant.
  *
@@ -1904,7 +1918,19 @@ function RawPayload({
  * Two things carry the tie back to the list. The identity line is the one the
  * pane already showed (`t-` id, source, HTTP status, relative time), only lifted
  * into the band, so nothing new has to be read. And the left bar repeats the
- * selected row's accent at the same {@link ACCENT_BAR_PX} width.
+ * selected row's accent at the same {@link ACCENT_BAR_PX} width. Under the
+ * card's rounded top-left corner that bar is clipped into the corner's arc,
+ * which is what a stripe on a rounded card looks like anywhere else on the page
+ * (mq8x); it is not a stray fragment.
+ *
+ * THE LABEL IS A CARD TITLE, NOT AN EYEBROW (mq8x). "Transmission detail" is set
+ * at the list card's own title size and weight — 13px, 700, sentence case, no
+ * uppercase transform — because the two are now sibling cards and a reader
+ * comparing their headers is comparing two titles. It used to take the shared
+ * {@link eyebrow} style, which rendered it as small faint capitals and read as a
+ * field label for the line beneath it. The `t-` id below has correspondingly
+ * LOST its bold weight: with a bold title above it, two bold things in a 54px
+ * band compete, and the title is the one that has to win.
  *
  * STICKY within the detail's scroll region (`top: 0`, the same pattern the
  * compliance pane's group headers use). The pane scrolls a long payload past a
@@ -1934,9 +1960,9 @@ function TxDetailHeader({ tx }: { tx: TransmissionView }): ReactElement {
         padding: `7px 16px 7px ${16 - ACCENT_BAR_PX}px`,
       }}
     >
-      <div style={eyebrow}>Transmission detail</div>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>Transmission detail</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ ...mono, fontWeight: 700, fontSize: 13 }}>t-{shortId(tx.id)}</span>
+        <span style={{ ...mono, fontSize: 13 }}>t-{shortId(tx.id)}</span>
         <span style={{ ...mono, fontSize: 11.5, color: 'var(--text-muted)' }}>
           {tx.sourceLabel} · HTTP {tx.http_status ?? '—'} · {relativeAgo(tx.received_at)}
         </span>
@@ -2281,157 +2307,183 @@ export function TransmissionsCard({
   return (
     <div
       style={{
+        // The pane is a COLUMN OF TWO CARDS, not one card with a stripe in it
+        // (mq8x). This wrapper paints and positions nothing but the gap between
+        // them: `--bg` is the ground the decision names for it, and the radius
+        // is the cards' own 8, so the wrapper's corners sit under theirs and no
+        // lighter arc peeks out past them. The two children cover the rest of
+        // it — the list card grows to fill when the detail card is absent.
         flex: TRANSMISSIONS_PANE_FLEX,
-        background: 'var(--surface-tx)',
-        border: `1px solid var(${draftLens ? '--draft-border' : '--border-strong'})`,
+        background: 'var(--bg)',
         borderRadius: 8,
-        overflow: 'hidden',
-        boxShadow: 'var(--shadow)',
         display: 'flex',
         flexDirection: 'column',
+        gap: DETAIL_GAP_PX,
         minWidth: 0,
       }}
     >
+      {/* LIST CARD — the transmissions list and everything that filters it. */}
       <div
         style={{
-          padding: '12px 16px',
+          background: 'var(--surface-tx)',
+          border: `1px solid var(${draftLens ? '--draft-border' : '--border-strong'})`,
+          borderRadius: 8,
+          overflow: 'hidden',
+          boxShadow: 'var(--shadow)',
           display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-          borderBottom: '1px solid var(--border)',
+          flexDirection: 'column',
+          // Sized to its content while the detail card is below it; filling the
+          // pane when there is none, so an empty list still reads as a card that
+          // occupies its column rather than a header floating over page ground.
+          flex: selected === null ? '1 1 auto' : '0 1 auto',
+          minHeight: 0,
+          minWidth: 0,
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 700 }}>Transmissions</span>
-        <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>
-          · showing {visible} of {scoped}
-        </span>
-        <span style={{ flex: 1 }} />
-        <label
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 11.5,
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={failuresOnly ?? false}
-            onChange={() => onToggleFailuresOnly?.()}
-          />
-          Failures only
-        </label>
-      </div>
-
-      {activeSignature && (
         <div
           style={{
+            padding: '12px 16px',
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            padding: '7px 16px',
-            background: 'var(--accent-weak)',
+            flexWrap: 'wrap',
             borderBottom: '1px solid var(--border)',
           }}
         >
-          <span
-            style={{
-              fontSize: 10.5,
-              textTransform: 'uppercase',
-              letterSpacing: '.05em',
-              color: 'var(--accent-text)',
-              fontWeight: 700,
-            }}
-          >
-            {signatureEyebrow(activeSignature)}
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Transmissions</span>
+          <span style={{ fontSize: 11.5, color: 'var(--text-faint)' }}>
+            · showing {visible} of {scoped}
           </span>
-          <span
-            title={chipTitle(activeSignature)}
-            style={{
-              fontSize: 12,
-              color: 'var(--text)',
-              flex: 1,
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {chipTitle(activeSignature)}
-          </span>
-          <button
-            type="button"
-            onClick={() => onClearSignature?.()}
+          <span style={{ flex: 1 }} />
+          <label
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 4,
-              fontSize: 11,
+              gap: 6,
+              fontSize: 11.5,
               color: 'var(--text-muted)',
-              background: 'var(--surface)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: 6,
-              padding: '2px 7px',
               cursor: 'pointer',
             }}
           >
-            <Icon name="x" size={11} /> Clear
-          </button>
+            <input
+              type="checkbox"
+              checked={failuresOnly ?? false}
+              onChange={() => onToggleFailuresOnly?.()}
+            />
+            Failures only
+          </label>
         </div>
-      )}
 
-      {selected === null ? (
-        <div style={{ padding: '34px 24px', textAlign: 'center', color: 'var(--text-muted)' }}>
-          <div style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: 300, margin: '0 auto' }}>
-            No transmissions match the current filters. Widen the time window or clear a filter.
+        {activeSignature && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '7px 16px',
+              background: 'var(--accent-weak)',
+              borderBottom: '1px solid var(--border)',
+            }}
+          >
+            <span
+              style={{
+                fontSize: 10.5,
+                textTransform: 'uppercase',
+                letterSpacing: '.05em',
+                color: 'var(--accent-text)',
+                fontWeight: 700,
+              }}
+            >
+              {signatureEyebrow(activeSignature)}
+            </span>
+            <span
+              title={chipTitle(activeSignature)}
+              style={{
+                fontSize: 12,
+                color: 'var(--text)',
+                flex: 1,
+                minWidth: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {chipTitle(activeSignature)}
+            </span>
+            <button
+              type="button"
+              onClick={() => onClearSignature?.()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: 11,
+                color: 'var(--text-muted)',
+                background: 'var(--surface)',
+                border: '1px solid var(--border-strong)',
+                borderRadius: 6,
+                padding: '2px 7px',
+                cursor: 'pointer',
+              }}
+            >
+              <Icon name="x" size={11} /> Clear
+            </button>
           </div>
-        </div>
-      ) : (
-        <>
-          {/* Verdict column header (by1c.12) — the only column labels the list
+        )}
+
+        {/* The empty state stays in the LIST card (mq8x): what is empty is the
+          list, and the sentence tells the reader to change a filter that this
+          card's own header and chip carry. The detail card is not rendered at
+          all in this state. */}
+        {selected === null ? (
+          <div style={{ padding: '34px 24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 12.5, lineHeight: 1.6, maxWidth: 300, margin: '0 auto' }}>
+              No transmissions match the current filters. Widen the time window or clear a filter.
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Verdict column header (by1c.12) — the only column labels the list
               carries, sized and right-aligned to match the dot slot at the end of
               each row. The shadow lineage's column is absent when none is
               registered, which is the same condition that drops the second dot.
               Each label wraps to two lines at VERDICT_COL_PX, which is what keeps
               the full package names on screen without widening the columns into
               the row's own content (tfnv.1). */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              padding: '5px 16px',
-              borderBottom: '1px solid var(--border)',
-            }}
-          >
-            <span style={{ flex: 1 }} />
-            {verdictColumns(shadowProfile).map((profile) => {
-              // The selected package's label is the emphasised one (tfnv.7) — in
-              // the lens tint when that package is the draft — and the other is
-              // kept legible but quiet. The dots below follow the same tone.
-              const tone = verdictColumnTone(profile, lens, contractProfile);
-              return (
-                <span
-                  key={profile}
-                  style={{
-                    ...eyebrow,
-                    ...mono,
-                    width: VERDICT_COL_PX,
-                    textAlign: 'right',
-                    color: tone.color,
-                    fontWeight: tone.fontWeight,
-                    opacity: tone.opacity,
-                  }}
-                >
-                  {PROFILE_NAME[profile]}
-                </span>
-              );
-            })}
-          </div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                padding: '5px 16px',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <span style={{ flex: 1 }} />
+              {verdictColumns(shadowProfile).map((profile) => {
+                // The selected package's label is the emphasised one (tfnv.7) — in
+                // the lens tint when that package is the draft — and the other is
+                // kept legible but quiet. The dots below follow the same tone.
+                const tone = verdictColumnTone(profile, lens, contractProfile);
+                return (
+                  <span
+                    key={profile}
+                    style={{
+                      ...eyebrow,
+                      ...mono,
+                      width: VERDICT_COL_PX,
+                      textAlign: 'right',
+                      color: tone.color,
+                      fontWeight: tone.fontWeight,
+                      opacity: tone.opacity,
+                    }}
+                  >
+                    {PROFILE_NAME[profile]}
+                  </span>
+                );
+              })}
+            </div>
 
-          {/* Scrolling list region — API returns newest-first; no re-sort.
+            {/* Scrolling list region — API returns newest-first; no re-sort.
               Row-virtualized (4h4.13): only the visible window renders, each row
               absolutely positioned inside a full-height spacer so the region's
               size + scrollbar stay correct. measureElement keeps non-fixed row
@@ -2442,78 +2494,89 @@ export function TransmissionsCard({
               and may still shrink below that on a short card so the docked
               detail keeps its min-height. A short list no longer strands the
               detail pane at the bottom of a half-empty region. */}
-          <div
-            ref={listRef}
-            style={{
-              overflowY: 'auto',
-              flex: '0 1 auto',
-              maxHeight: LIST_MAX_HEIGHT_PX,
-              minHeight: 0,
-            }}
-          >
             <div
+              ref={listRef}
               style={{
-                height: rowVirtualizer.getTotalSize(),
-                position: 'relative',
-                width: '100%',
+                overflowY: 'auto',
+                flex: '0 1 auto',
+                maxHeight: LIST_MAX_HEIGHT_PX,
+                minHeight: 0,
               }}
             >
-              {virtualItems.map((vi) => {
-                const t = transmissions[vi.index];
-                if (!t) return null;
-                return (
-                  <div
-                    key={vi.key}
-                    data-index={vi.index}
-                    ref={rowVirtualizer.measureElement}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${vi.start}px)`,
-                    }}
-                  >
-                    <TxRow
-                      tx={t}
-                      selected={selected.id === t.id}
-                      onSelect={() => onSelectTx(t.id)}
-                      shadowProfile={shadowProfile}
-                      lens={lens}
-                      contractProfile={contractProfile}
-                    />
-                  </div>
-                );
-              })}
+              <div
+                style={{
+                  height: rowVirtualizer.getTotalSize(),
+                  position: 'relative',
+                  width: '100%',
+                }}
+              >
+                {virtualItems.map((vi) => {
+                  const t = transmissions[vi.index];
+                  if (!t) return null;
+                  return (
+                    <div
+                      key={vi.key}
+                      data-index={vi.index}
+                      ref={rowVirtualizer.measureElement}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        transform: `translateY(${vi.start}px)`,
+                      }}
+                    >
+                      <TxRow
+                        tx={t}
+                        selected={selected.id === t.id}
+                        onSelect={() => onSelectTx(t.id)}
+                        shadowProfile={shadowProfile}
+                        lens={lens}
+                        contractProfile={contractProfile}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          {/* Pinned detail region — selecting a row only swaps this; list never reflows.
-              It is its own panel now (tast): DETAIL_GAP_PX of pane ground above it
-              and a 1px top edge, in place of the 2px divider that made it read as a
-              continuation of the list's last row. TxDetailHeader is rendered here
-              rather than inside TxDetail so the band reaches the region's edges,
-              which is what lets it stick at `top: 0`. */}
-          <div
-            style={{
-              flex: TX_DETAIL_FLEX,
-              minHeight: 120,
-              overflowY: 'auto',
-              background: 'var(--detail)',
-              marginTop: DETAIL_GAP_PX,
-              borderTop: '1px solid var(--border-strong)',
-            }}
-          >
-            <TxDetailHeader tx={selected} />
-            <TxDetail
-              tx={selected}
-              onSelectReq={onSelectReq}
-              lens={lens}
-              contractProfile={contractProfile}
-              signatures={signatures}
-              onSelectSignature={onSelectSignature}
-            />
-          </div>
-        </>
+          </>
+        )}
+      </div>
+
+      {/* DETAIL CARD — a sibling of the list card, not a region inside it
+          (mq8x). Selecting a row only swaps its contents; the list never
+          reflows. It carries its own border, radius and shadow, so the
+          DETAIL_GAP_PX above it is page ground between two cards rather than a
+          stripe painted inside one. The card IS the scroll container, which is
+          what lets TxDetailHeader stick at `top: 0`; its rounded corners clip
+          that band, including the accent bar at its top-left.
+
+          Rendered only where a transmission is selected, which is every
+          non-empty list (gcfj) — so the "no transmissions match" state stays in
+          the list card and this one has no empty state of its own. */}
+      {selected !== null && (
+        <div
+          style={{
+            flex: TX_DETAIL_FLEX,
+            minHeight: 120,
+            minWidth: 0,
+            overflowY: 'auto',
+            background: 'var(--detail)',
+            border: `1px solid var(${draftLens ? '--draft-border' : '--border-strong'})`,
+            borderRadius: 8,
+            boxShadow: 'var(--shadow)',
+          }}
+        >
+          <TxDetailHeader tx={selected} />
+          <TxDetail
+            tx={selected}
+            onSelectReq={onSelectReq}
+            lens={lens}
+            contractProfile={contractProfile}
+            signatures={signatures}
+            onSelectSignature={onSelectSignature}
+          />
+        </div>
       )}
     </div>
   );

@@ -498,8 +498,10 @@ export function Dashboard() {
   const { session, expiresAt, schemas } = state.data;
   const ingestUrl = `/i/${session.uuid}`;
   const hasData = txCount > 0;
-  // A non-contract package is selected: the banner is on and the four cards take
-  // the lens tint. One derivation, passed down — no component reads the URL.
+  // A non-contract package is selected: the banner is on and every card on the
+  // page takes the lens tint — the two summary cards, the compliance pane, and
+  // the transmissions pane's list and detail cards (mq8x). One derivation,
+  // passed down — no component reads the URL.
   const draftLens = lens !== session.contractProfile;
 
   return (

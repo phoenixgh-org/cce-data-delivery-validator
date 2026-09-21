@@ -6,7 +6,8 @@
  * requirement packages: the obligations in force and the unpublished DS01.3
  * proposal. Every number below it changes meaning with that switch, and the only
  * other marks of it are a segmented control in the header and a plum hairline
- * round four cards — easy to miss on a page that otherwise looks the same, and
+ * round the page's five cards — easy to miss on a page that otherwise looks the
+ * same, and
  * costly to miss, because a supplier who reads draft failures as contract
  * failures will work on obligations nobody has placed on them yet. So the banner
  * states the package, dates the bytes it came from, and offers the way back.
