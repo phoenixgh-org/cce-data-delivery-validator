@@ -70,13 +70,13 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     // A conformant baseline is the one payload every advisory is obliged to say
     // nothing about, so this case names the whole registered set rather than a
     // chosen few.
-    // `fired 14` in the coverage report says each advisory is REACHABLE; this is
+    // `fired 15` in the coverage report says each advisory is REACHABLE; this is
     // the other half of the catalogue's contract — that none of them speaks on
     // traffic that breaks nothing. Before `absentFindings` existed neither case
     // nor runner could state it.
     //
     // Reading the list off `ADVISORY_IDS` keeps the table DATA while making the
-    // registry the author of it: a fifteenth check lands here automatically, so
+    // registry the author of it: a sixteenth check lands here automatically, so
     // a new advisory that fires on a conformant rtm payload fails this case
     // instead of arriving unnoticed. The ids are contract-profile by default,
     // which is the only lineage that grades advisories.
