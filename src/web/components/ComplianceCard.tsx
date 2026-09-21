@@ -228,26 +228,27 @@ const ROW_SLOT_COUNT: CSSProperties = {
 const ROW_SLOT_VERDICT: CSSProperties = { width: 88, textAlign: 'right', flexShrink: 0 };
 
 /**
- * The drill-down panel's left indent — MEASURED, not derived (3q17).
+ * The drill-down panel's left indent — CHOSEN, not derived (3q17, c117).
  *
- * The indent exists to start the panel's text under the row's title rather than
- * under its id, so in principle it is the grid above: the row's 16px left
- * padding, plus {@link ROW_SLOT_ID}'s width, plus the 13px gap. It no longer
- * equals that sum. The title column begins at 71px and this indent is 60, an
- * 11px difference a reader sees as the panel sitting slightly left of the title
- * it belongs to.
+ * The indent's job is to start the panel's text clear of the row's id slot, so
+ * an open panel reads as belonging to the row's title side rather than sitting
+ * under its id. It is NOT meant to land flush under the title. The id slot ends
+ * at 58px (the row's 16px left padding plus {@link ROW_SLOT_ID}'s 42px width)
+ * and the title column begins at 71px (the 13px gap more); 60 sits between the
+ * two, just past the slot's edge.
  *
- * The 60 was correct when it was written, against a 30px id slot (16 + 30 + 13
- * = 59). Widening that slot to 42 for a six-character DS01.3 clause id moved the
- * title column and left the indent behind — which is the drift this constant is
- * named to prevent, already realised once.
+ * It was never the grid's function. When the panel was first written the id slot
+ * was 30px and the title column began at 59, and the indent was already 60 — a
+ * round number chosen near the title, not computed from it. Widening the slot to
+ * 42 for a six-character DS01.3 clause id moved the title column to 71 and the
+ * indent stayed put. The owner looked at the result and kept it (c117): 60 is
+ * the intended look, and moving the panel under the title would be a restyling
+ * to decide on how it looks, not on what the arithmetic says.
  *
- * It is left at what it renders today on purpose: closing the gap is a visual
- * decision rather than a mechanical one, and this lift is a refactor that must
- * change nothing on screen (c117 carries the decision). So the coupling is
- * written down here instead of expressed in code — a change to ROW_SLOT_ID's
- * width, or to the row's horizontal padding, is a change to where this panel
- * ought to start.
+ * The coupling that remains is a bound rather than an equation: the indent has
+ * to stay at or past the id slot's right edge. A change to ROW_SLOT_ID's width,
+ * or to the row's horizontal padding, that pushes the slot past 60 breaks the
+ * intent, and the panel pin in ComplianceCard.test.ts fails when it does.
  */
 const DETAIL_PANEL_INDENT = 60;
 

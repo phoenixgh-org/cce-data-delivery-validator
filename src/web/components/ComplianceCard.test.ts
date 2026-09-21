@@ -339,12 +339,13 @@ test('an advisory row and a requirement row share the column grid', () => {
  * is the same claim one level down and it is asserted the same way — between
  * two rendered rows, not against a component.
  *
- * The indent is the part worth holding. It is meant to start the panel's text
- * under the row title, which makes it a function of the grid: the row's left
- * padding, the id slot and the gap. It is NOT written as that function, because
- * the two have already drifted apart — 60px against a title column that now
- * begins at 71 (c117 carries the decision, and DETAIL_PANEL_INDENT carries the
- * reasoning). Pinning it here is what makes the next such move visible.
+ * The indent is the part worth holding. It is a CHOSEN value, not a function of
+ * the grid: 60px starts the panel's text clear of the id slot, which ends at 58,
+ * and deliberately short of the title column, which begins at 71 (c117 is the
+ * owner's decision to keep it, and DETAIL_PANEL_INDENT carries the reasoning).
+ * So the pin holds two things: the value, so that moving the panel is a
+ * deliberate act, and the bound, so that widening the id slot past the indent
+ * fails here instead of quietly tucking the panel under the id.
  */
 test('an advisory row and a requirement row share the drill-down panel', () => {
   const clause = DS013_MATRIX.find((row) => row.classes[0] === 'verified')?.clause;
@@ -358,13 +359,25 @@ test('an advisory row and a requirement row share the drill-down panel', () => {
 
   assert.deepEqual(panelChrome(advisory), panelChrome(requirement));
 
-  // And the shared values, named once. The 60px is the indent: 16px of row
-  // padding plus a 42px id slot plus a 13px gap would be 71 (c117).
+  // And the shared values, named once. The 60px is the indent, chosen (c117).
   assert.deepEqual(panelChrome(requirement), [
     'background:var(--detail)',
     'border-bottom:1px solid var(--border)',
     'padding:12px 16px 15px 60px',
   ]);
+
+  // The bound the indent owes the grid, read off the rendered row rather than
+  // restated: at or past the id slot's right edge, and not past the title.
+  const { grid, slots } = rowGeometry(requirement);
+  const px = (decl: string | undefined): number => Number(/(\d+)px$/.exec(decl ?? '')?.[1]);
+  const rowPadding = px(grid.find((d) => d.startsWith('padding:')));
+  const gap = px(grid.find((d) => d.startsWith('gap:')));
+  const idSlotEnd = rowPadding + px(slots[0]);
+  const indent = px(panelChrome(requirement)[2]);
+  assert.ok(
+    indent >= idSlotEnd && indent <= idSlotEnd + gap,
+    `the ${indent}px indent clears the id slot (ends at ${idSlotEnd}) without passing the title (${idSlotEnd + gap})`,
+  );
 });
 
 test('no verdict reaches the row: no pill, no pass/fail tally, no status colour', () => {
