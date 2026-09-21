@@ -135,7 +135,7 @@ test('runAdvisories collects every registered check, in order', async () => {
 });
 
 test('the registry holds the catalogue, and says nothing about an empty payload', async () => {
-  // The catalogue as of 0rfk. Registration is the ONLY wiring a new advisory
+  // The catalogue as of 7yuv. Registration is the ONLY wiring a new advisory
   // needs — semantic.ts fans out through advisoriesCheck — so this list is the
   // one place that says out loud which checks the category is running.
   assert.deepEqual(
@@ -155,6 +155,7 @@ test('the registry holds the catalogue, and says nothing about an empty payload'
       'nullAccumulatorCheck',
       'abstWindowOverlapCheck',
       'identifierCollisionCheck',
+      'identifierDisagreementCheck',
     ],
   );
   // A payload with no reports gives every check nothing to observe, so the
@@ -195,6 +196,7 @@ test('ADVISORY_IDS names the catalogue, one id per registered check (axdd)', () 
     'adv.null_accumulator',
     'adv.abst_window_overlap',
     'adv.identifier_collision',
+    'adv.identifier_disagreement',
   ]);
 });
 

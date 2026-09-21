@@ -116,6 +116,11 @@ import {
   identifierCollisionCheck,
 } from './identifier-collision.js';
 import {
+  IDENTIFIER_DISAGREEMENT_ID,
+  IDENTIFIER_DISAGREEMENT_RATIONALE,
+  identifierDisagreementCheck,
+} from './identifier-disagreement.js';
+import {
   NULL_ACCUMULATOR_ID,
   NULL_ACCUMULATOR_RATIONALE,
   nullAccumulatorCheck,
@@ -166,8 +171,8 @@ export {
  * `adv.sample_gap` (agj.6), `adv.duplicate_records` (agj.8),
  * `adv.blank_admin` (agj.5), `adv.unexplained_null_temp` (agj.2),
  * `adv.short_identifier` (krh), `adv.null_accumulator` (agj.9),
- * `adv.abst_window_overlap` (agj.24) and `adv.identifier_collision` (0rfk); it
- * grows from here. Each is written in the ordinary
+ * `adv.abst_window_overlap` (agj.24), `adv.identifier_collision` (0rfk) and
+ * `adv.identifier_disagreement` (7yuv); it grows from here. Each is written in the ordinary
  * `export const …Check: SemanticCheck =` idiom the §7 checks use: the imports
  * run ONE WAY (checks ← advisory-finding.ts, this registry ← checks), so there
  * is no cycle and no load-order hazard to work around (igw). A new check needs
@@ -188,10 +193,11 @@ export const ADVISORY_CHECKS: readonly SemanticCheck[] = [
   nullAccumulatorCheck,
   abstWindowOverlapCheck,
   identifierCollisionCheck,
+  identifierDisagreementCheck,
 ];
 
 /**
- * THE CATALOGUE AS DATA — the same fourteen advisories as {@link ADVISORY_CHECKS},
+ * THE CATALOGUE AS DATA — the same fifteen advisories as {@link ADVISORY_CHECKS},
  * in the same order, named by id rather than by function (axdd).
  *
  * The checks are bare functions and carry no id metadata: an id is a string
@@ -225,6 +231,7 @@ export const ADVISORY_IDS: readonly AdvisoryId[] = [
   NULL_ACCUMULATOR_ID,
   ABST_WINDOW_OVERLAP_ID,
   IDENTIFIER_COLLISION_ID,
+  IDENTIFIER_DISAGREEMENT_ID,
 ];
 
 /**
@@ -293,6 +300,7 @@ export const ADVISORY_RATIONALES: ReadonlyMap<string, string> = new Map<string, 
   [NULL_ACCUMULATOR_ID, NULL_ACCUMULATOR_RATIONALE],
   [ABST_WINDOW_OVERLAP_ID, ABST_WINDOW_OVERLAP_RATIONALE],
   [IDENTIFIER_COLLISION_ID, IDENTIFIER_COLLISION_RATIONALE],
+  [IDENTIFIER_DISAGREEMENT_ID, IDENTIFIER_DISAGREEMENT_RATIONALE],
 ]);
 
 /**

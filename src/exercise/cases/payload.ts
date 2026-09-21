@@ -41,6 +41,8 @@ import {
   nullRuntimeDuringOutage,
   nullTemperatureWithErrorCode,
   repeatRecord,
+  setApplianceMonitoringId,
+  setApplianceSerial,
   setInvalidValue,
   setCompressorAboveSupply,
   setMinutesShapedCompressor,
@@ -1085,5 +1087,109 @@ export const PAYLOAD_CASES: readonly ExerciseCase[] = [
     posts: [{ transforms: [nullPaddedSeries(11)], expectedStatus: 200 }],
     expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
     absentFindings: [{ requirement: 'adv.null_padding' }],
+  },
+
+  // ── adv.identifier_disagreement (the intra-body identity shape, 7yuv) ──────
+  //
+  // THE ONLY ADVISORY IN THE CATALOGUE GRADED FROM HOW TWO REPORTS OF ONE BODY
+  // RELATE, so its cases live here rather than in ./sequence.ts: a single POST
+  // carries the whole observation, and the check needs no prior delivery and no
+  // lookup. Its cross-delivery sibling `adv.identifier_collision` is the one that
+  // needs two POSTs, and its cases stay in the sequence table.
+  //
+  // BOTH CASES PIN BOTH APPLIANCE IDENTIFIERS ON BOTH REPORTS, which is what
+  // makes each a statement about its own payload. The baseline stamps a distinct
+  // AMID per POST (../baseline.ts contract clause 4) and `appendSecondReport`
+  // suffixes the clone's, so leaving either to the generator would put a
+  // generated identity — which spells out the case id — into the advisory line
+  // the copy audit reads. The fire case pins two DIFFERENT handles beside one
+  // serial; the silence case pins the same handle on both reports, and that one
+  // value is the whole difference between them.
+  //
+  // MEASURED (2026-09-21, a live run): the fire case's summary reads
+  //
+  //     Two reports carry appliance serial ASER exercise-disagreement-serial
+  //     beside appliance id AMID exercise-disagreement-amid-a and
+  //     exercise-disagreement-amid-b.
+  //
+  // on one line, which the runner's copy audit flags as over the roughly-90-
+  // character figure. That is the exercise values being long enough to stay
+  // unique across the table, not the wording: at ordinary supplier values the
+  // sentence is 91 characters, which
+  // src/ingest/stages/semantic/identifier-disagreement.test.ts pins, so the id is
+  // deliberately NOT on `ADVISORY_IDS_CITING_A_PRIOR`.
+  {
+    id: 'adv.identifier_disagreement-fail-one-serial-under-two-monitoring-ids',
+    title: 'Two reports of one transmission reporting one appliance serial under different AMIDs',
+    // Empty by the advisory-case rule: an advisory is not a COMPLIANCE_MATRIX
+    // row, so the claim is the expectation below (../cases.test.ts, by1c.42).
+    requirements: [],
+    direction: 'fail',
+    fault: {
+      layer: 'payload',
+      note:
+        'a second rtm report is appended — the first deep-cloned and its window moved 24 h ' +
+        'earlier — and ASER is then pinned to one value on both reports while each carries its ' +
+        'own AMID, so one appliance serial arrives beside two different AMIDs in one body',
+    },
+    // Both reports key on the pinned ASER — `unitKey` prefers the manufacturer
+    // serial over the platform handle (src/identity/unit-key.ts) — so
+    // `computeUnitIdentities` keeps the first and drops the second, which is why
+    // the check reads the raw reports and why no cross-delivery lookup can see
+    // this shape at all.
+    posts: [
+      {
+        transforms: [
+          appendSecondReport(),
+          setApplianceSerial('exercise-disagreement-serial', 0),
+          setApplianceSerial('exercise-disagreement-serial', 1),
+          setApplianceMonitoringId('exercise-disagreement-amid-a', 0),
+          setApplianceMonitoringId('exercise-disagreement-amid-b', 1),
+        ],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [
+      { requirement: 'adv.identifier_disagreement', severity: 'info' },
+      { requirement: '3.2', severity: 'pass' },
+    ],
+    // THE NEIGHBOUR IN THE CATALOGUE, DECLARED SILENT. The two advisories read
+    // the same three identifiers, and a reader needs to know which one a single
+    // body draws: this is one POST, so there is no earlier delivery for
+    // `adv.identifier_collision` to compare against and it has nothing to say.
+    absentFindings: [{ requirement: 'adv.identifier_collision' }],
+  },
+
+  // THE SILENCE HALF (496w), and the half that keeps the case above honest. Two
+  // reports for one appliance in one body — the ordinary shape of a supplier
+  // sending two periods at once — name it the same way twice, and the advisory
+  // has to stay quiet on that. Only the companion value changes between the two
+  // cases, so a check that spoke on any repeated identifier rather than on a
+  // disagreeing one would pass the case above and fail this one.
+  //
+  // NAMED FOR THE REQUIREMENT, NOT THE ADVISORY: the `adv.<id>-` prefix is a
+  // claim that the case expects that advisory to FIRE (../cases.test.ts, axdd),
+  // so a silence case cannot carry it. The §3.2 pass every accepted POST earns is
+  // the positive evidence a pass-direction case owes; what the case is ABOUT is
+  // the absence declared under it.
+  {
+    id: '3.2-pass-two-reports-naming-one-appliance-the-same-way',
+    title: 'Two reports for one appliance named identically draw no identifier observation',
+    requirements: [],
+    direction: 'pass',
+    posts: [
+      {
+        transforms: [
+          appendSecondReport(),
+          setApplianceSerial('exercise-disagreement-quiet-serial', 0),
+          setApplianceSerial('exercise-disagreement-quiet-serial', 1),
+          setApplianceMonitoringId('exercise-disagreement-quiet-amid', 0),
+          setApplianceMonitoringId('exercise-disagreement-quiet-amid', 1),
+        ],
+        expectedStatus: 200,
+      },
+    ],
+    expectedFindings: [{ requirement: '3.2', severity: 'pass' }],
+    absentFindings: [{ requirement: 'adv.identifier_disagreement' }],
   },
 ];
