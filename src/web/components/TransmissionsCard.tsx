@@ -244,8 +244,8 @@ const ACCENT_BAR_PX = 3;
  * could only show that card's own `--surface-tx` — which is why the two went on
  * reading as one surface. The two are SIBLING CARDS now, each with its own
  * border, radius and shadow, and this is the `gap` on the column that holds
- * them, so what shows between them is page ground (`var(--bg)`, painted by that
- * wrapper) and not pane ground.
+ * them, so what shows between them is the ground behind the pane cards
+ * (`var(--canvas)`, painted by that wrapper) and not pane ground.
  *
  * It is also a term in the height budget on {@link LIST_MAX_HEIGHT_PX}: the gap
  * sits outside both cards and takes 14px from the column before the detail
@@ -2309,12 +2309,17 @@ export function TransmissionsCard({
       style={{
         // The pane is a COLUMN OF TWO CARDS, not one card with a stripe in it
         // (mq8x). This wrapper paints and positions nothing but the gap between
-        // them: `--bg` is the ground the decision names for it, and the radius
-        // is the cards' own 8, so the wrapper's corners sit under theirs and no
-        // lighter arc peeks out past them. The two children cover the rest of
-        // it — the list card grows to fill when the detail card is absent.
+        // them: `--canvas` is the ground behind the pane cards, so the gap shows
+        // that ground rather than a stripe of its own (l9jl; mq8x named `--bg`,
+        // one shade lighter, which read as a stripe). The Dashboard's two-pane
+        // body paints `--canvas` too, so this could be left unpainted today —
+        // it is painted anyway, to keep the gap on the pane's ground wherever
+        // the component is mounted. The radius is the cards' own 8, so the
+        // wrapper's corners sit under theirs and no arc peeks out past them.
+        // The two children cover the rest of it — the list card grows to fill
+        // when the detail card is absent.
         flex: TRANSMISSIONS_PANE_FLEX,
-        background: 'var(--bg)',
+        background: 'var(--canvas)',
         borderRadius: 8,
         display: 'flex',
         flexDirection: 'column',

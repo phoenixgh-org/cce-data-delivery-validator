@@ -746,8 +746,9 @@ test('the reveal effect keys on the counter alone, so an unasked-for open does n
  *   1. TWO CARDS, AND PAGE GROUND BETWEEN THEM. Each card carries its own
  *      border, radius and shadow, and both take the draft lens's border tint
  *      from the same expression, so the lens cannot tint one and miss the other.
- *      The gap is a `gap` on the column that holds them, over a `var(--bg)`
- *      ground — not a margin inside a card over `--surface-tx`.
+ *      The gap is a `gap` on the column that holds them, over a `var(--canvas)`
+ *      ground — the ground behind the pane cards (l9jl) — not a margin inside a
+ *      card over `--surface-tx`.
  *   2. THE GAP IS ALSO A HEIGHT-BUDGET TERM, hence the arithmetic pinned below.
  *   3. THE TITLED, STICKY BAND. `Transmission detail` at the list card's own
  *      title size and weight, plus the identity line, sticking at `top: 0` so the
@@ -777,11 +778,11 @@ function functionBody(name: string): string {
 
 test('the list and the detail are sibling cards with page ground between them', () => {
   assert.match(componentSource, /const DETAIL_GAP_PX = (1[2-6]);/);
-  // The gap is the column's own `gap`, over a --bg ground, and no longer a
+  // The gap is the column's own `gap`, over a --canvas ground, and no longer a
   // margin inside a card whose --surface-tx was all it could ever show.
   assert.match(componentSource, /gap: DETAIL_GAP_PX,/);
   assert.doesNotMatch(componentSource, /marginTop: DETAIL_GAP_PX,/);
-  assert.match(componentSource, /background: 'var\(--bg\)',/);
+  assert.match(componentSource, /background: 'var\(--canvas\)',/);
   // Two cards: two borders, two radii, two shadows — and one expression for the
   // draft lens's tint, used twice, so the lens cannot tint one and miss the
   // other.
