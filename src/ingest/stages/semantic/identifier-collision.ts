@@ -126,13 +126,19 @@ export const IDENTIFIER_COLLISION_ID = 'adv.identifier_collision' as const;
  * the receiving side.
  */
 export const IDENTIFIER_COLLISION_RATIONALE =
-  'An appliance identifier that arrives beside a different companion identifier than an ' +
-  'earlier delivery carried leaves the receiving country holding two deliveries it cannot ' +
-  'attribute to one appliance. From the receiving side an identifier that was corrected ' +
-  'between deliveries and two appliances that share one identifier look the same, so this ' +
-  'observation names neither: only the supplier can say which reading applies, and until it ' +
-  'does the country cannot place either delivery against a single unit in its inventory. ' +
-  'Exact retransmissions are excluded from this observation and are graded under §1.8.';
+  'A receiving country matches each delivery to an appliance in its inventory using ' +
+  'the identifiers the delivery carries, such as the serial number and the ' +
+  'appliance id. In this session, one of those identifiers arrived with a different ' +
+  'partner than it had in an earlier delivery. For example, the same serial number ' +
+  'appeared first with one appliance id and later with another. There are two ' +
+  'ordinary explanations. The supplier may have corrected an identifier between the ' +
+  'two deliveries, or two appliances may be reporting the same ' +
+  'identifier. The two look identical from the receiving side, so this advisory ' +
+  'does not choose between them. Until the supplier clarifies, the country cannot ' +
+  'tell whether these deliveries belong to one appliance or two. Review how these ' +
+  'identifiers are assigned, and keep each one stable and unique to a single ' +
+  'appliance. An exact repeat of an earlier delivery is not counted here, because ' +
+  'retransmissions are graded under §1.8.';
 
 /** The appliance-side identifier fields, the only three this check compares. */
 type IdentifierField = 'aser' | 'amid' | 'aid';

@@ -20,10 +20,20 @@
  * Each advisory carries ONE static rationale, served on a compliance row with no
  * payload in front of it, and the two cases owe different prose. Across two
  * deliveries, an identifier the supplier corrected between them and two appliances
- * sharing one identifier look the same, so that rationale names neither. Here both
- * reports arrived in one transmission, so nothing separates them in time and the
- * correction reading is not open. One rationale covering both would have to go
+ * sharing one identifier look the same, so that rationale chooses neither. Here
+ * both reports left the supplier's system in one transmission, so that system
+ * held both versions when it sent them. That is the one thing this case lets the
+ * receiving side state that the other does not, and it is a fact about the
+ * SENDING, not about the appliance. One rationale covering both would have to go
  * vague to do it, which is why the owner settled on a second id (7yuv).
+ *
+ * THE CORRECTION READING STAYS OPEN (a3iw). Arriving together does not make two
+ * reports two views of one instant: each carries its own `ABST` window, and a
+ * supplier who renamed an appliance between two periods and sent both in one POST
+ * produces exactly this shape. The rationale first said that reading was "not
+ * open here", which is a conclusion the receiving side cannot prove. It now
+ * offers "one appliance whose identifier changed during the period they cover"
+ * beside "two appliances that share an identifier", and chooses neither.
  *
  * ── WHAT DISAGREES ──────────────────────────────────────────────────────────
  * The same rule the sibling applies, read within one body: two reports share one
@@ -105,14 +115,18 @@ export const IDENTIFIER_DISAGREEMENT_ID = 'adv.identifier_disagreement' as const
  * distinguishes it from `adv.identifier_collision`'s rationale.
  */
 export const IDENTIFIER_DISAGREEMENT_RATIONALE =
-  'Two reports of one delivery that name the same appliance identifier beside different ' +
-  'companion identifiers leave the receiving country with no way to record which names ' +
-  'belong together. Across two separate deliveries, one reading is that the supplier ' +
-  'corrected an identifier between them. That reading is not open here, because both ' +
-  'reports arrived in the same transmission and nothing separates them in time. Only the ' +
-  'supplier can say whether the two reports describe one appliance under two names or two ' +
-  'appliances that share a name, and until it does the country cannot place the records ' +
-  'against a single unit in its inventory.';
+  'A receiving country matches each report to an appliance in its inventory using ' +
+  'the identifiers the report carries, such as the serial number and the appliance ' +
+  'id. In this transmission, two reports carry the same value for one of those ' +
+  'identifiers but different values for another. For example, both reports give the ' +
+  'same serial number, yet each gives a different appliance id. Both reports left ' +
+  "the supplier's system in a single transmission, so that system held both " +
+  'versions when it sent them. The receiving side cannot tell what lies behind ' +
+  'this. The reports may describe one appliance whose identifier changed during the ' +
+  'period they cover, or two appliances that share an identifier. Until the ' +
+  'supplier clarifies, the country cannot tell whether to file these records under ' +
+  'one appliance or two. Review how these identifiers are assigned, and check that ' +
+  'every report for one appliance carries one consistent set.';
 
 /** The appliance-side identifier fields, the only three this check compares. */
 type IdentifierField = 'aser' | 'amid' | 'aid';

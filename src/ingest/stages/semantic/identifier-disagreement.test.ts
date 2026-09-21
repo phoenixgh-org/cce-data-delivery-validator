@@ -254,14 +254,18 @@ test('one serial under two platform handles raises the approved copy verbatim', 
   assert.equal(finding.detail, IDENTIFIER_DISAGREEMENT_RATIONALE);
   assert.equal(
     finding.detail,
-    'Two reports of one delivery that name the same appliance identifier beside different ' +
-      'companion identifiers leave the receiving country with no way to record which names ' +
-      'belong together. Across two separate deliveries, one reading is that the supplier ' +
-      'corrected an identifier between them. That reading is not open here, because both ' +
-      'reports arrived in the same transmission and nothing separates them in time. Only the ' +
-      'supplier can say whether the two reports describe one appliance under two names or ' +
-      'two appliances that share a name, and until it does the country cannot place the ' +
-      'records against a single unit in its inventory.',
+    'A receiving country matches each report to an appliance in its inventory using ' +
+      'the identifiers the report carries, such as the serial number and the appliance ' +
+      'id. In this transmission, two reports carry the same value for one of those ' +
+      'identifiers but different values for another. For example, both reports give the ' +
+      'same serial number, yet each gives a different appliance id. Both reports left ' +
+      "the supplier's system in a single transmission, so that system held both " +
+      'versions when it sent them. The receiving side cannot tell what lies behind ' +
+      'this. The reports may describe one appliance whose identifier changed during the ' +
+      'period they cover, or two appliances that share an identifier. Until the ' +
+      'supplier clarifies, the country cannot tell whether to file these records under ' +
+      'one appliance or two. Review how these identifiers are assigned, and check that ' +
+      'every report for one appliance carries one consistent set.',
   );
 });
 
