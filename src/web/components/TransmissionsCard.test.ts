@@ -40,7 +40,8 @@ import { readFileSync } from 'node:fs';
 import * as React from 'react';
 
 import { CONTRACT_PROFILE } from '../api';
-import type { FindingView, Severity } from '../api';
+import type { FindingView, Severity, Signature } from '../api';
+import type { ClauseRow } from '../detailGroups';
 import { PROFILE_NAME } from '../profiles.js';
 
 (globalThis as unknown as { React: typeof React }).React = React;
@@ -65,7 +66,14 @@ const {
   AdvisoryItem,
   translatedIdTitle,
   tightenedHint,
+  ClauseFindingRow,
 } = await import('./TransmissionsCard.js');
+// The two badges the detail rows lead with, and the compliance column's advisory
+// row — the far side of the one-badge claim below. Dynamic for the same reason
+// the line above is: these modules build elements under the classic transform.
+const { StatusPill } = await import('./ui/StatusPill.js');
+const { AdvisoryBadge } = await import('./ui/AdvisoryBadge.js');
+const { AdvisoryRow } = await import('./ComplianceCard.js');
 
 /** The meta-grid inputs, defaulted so each test states only what it varies. */
 function tx(over: Partial<Parameters<typeof metaCells>[0]> = {}): Parameters<typeof metaCells>[0] {
@@ -650,6 +658,129 @@ test('the advisory title opens that advisory in the compliance column', () => {
   assert.equal(controls.length, 1, 'the title is the only control (the "why" expander is gone)');
   (controls[0]?.props as { onClick: () => void }).onClick();
   assert.deepEqual(opened, ['adv.blank_admin']);
+});
+
+/** The marks and controls of a row, in render order — the leading slot first. */
+function leadingMarks(node: unknown): unknown[] {
+  const out: unknown[] = [];
+  const walk = (n: unknown): void => {
+    if (Array.isArray(n)) {
+      n.forEach(walk);
+      return;
+    }
+    if (!React.isValidElement(n)) return;
+    // The shells: a div or span is layout here, never a mark or a control.
+    if (n.type !== 'div' && n.type !== 'span') out.push(n.type);
+    walk((n.props as { children?: unknown }).children);
+  };
+  walk(node);
+  return out;
+}
+
+/** An advisory as the server rolls one into a signature, for the compliance column's row. */
+function advisorySignature(id: string): Signature {
+  return {
+    key: `adv|${id}`,
+    req: '',
+    profile: null,
+    title: id,
+    kind: 'advisory',
+    sev: 'info',
+    count: 3,
+    txCount: 2,
+    sourceCount: 1,
+    first: '2026-08-19T12:00:00Z',
+    last: '2026-08-20T12:00:00Z',
+    examplePointer: null,
+  };
+}
+
+/** A schema-failure row of the docked detail, with no signature to cross-filter to. */
+function clauseRow(over: Partial<ClauseRow> = {}): ClauseRow {
+  return {
+    kind: 'clause',
+    id: '5.3.2',
+    tightened: false,
+    key: 'ds013|5.3.2|required|/data/*|LSER',
+    title: 'schema',
+    detail: 'LSER, LPQS, LMOD required',
+    dash: true,
+    pointer: '/data/*',
+    locate: '/data/0',
+    sig: null,
+    ...over,
+  };
+}
+
+/**
+ * EVERY ROW OF THE DETAIL LIST OPENS WITH A MARK (398e).
+ *
+ * A graded row leads with its StatusPill, and for a while two row kinds led with
+ * nothing: the schema-failure row, on the reasoning that every one of them fails
+ * so the pill added no information, and the advisory row, which has no verdict to
+ * state. Reading the list settled it the other way. The leading slot is a column
+ * before it is a per-row label, so a row that leaves it empty does not read as a
+ * row with nothing to say — it reads as a different, unexplained kind of thing,
+ * and in the schema row's case as a neutral note between failures.
+ *
+ * Three claims, none of them derivable from either component:
+ *
+ *   1. THE SCHEMA ROW'S PILL IS `fail`, AND CONSTANT. Nothing about the row
+ *      carries a severity — `detailRows()` admits only failures to it — so a pill
+ *      that started reading a value would be reading one that is not there.
+ *   2. THE ADVISORY ROW'S MARK IS NOT A StatusPill. The shape is shared, the
+ *      verdict is not: an advisory is raised against a payload that broke no rule
+ *      (DESIGN §7.1), so no pass/fail/untested pill may appear on it.
+ *   3. IT IS THE SHARED BADGE, by component identity rather than by colour. The
+ *      compliance column carries the same component (pinned from the other side in
+ *      ComplianceCard.test.ts), which is what keeps ONE mark for the category
+ *      across the two cards — two badges that merely agreed on two CSS variables
+ *      today would be free to disagree tomorrow.
+ *
+ * Both components are hook-free, so both are CALLED as plain functions and their
+ * trees walked, the AdvisoryItem pattern above.
+ */
+test('the schema-failure row leads with a fail pill', () => {
+  const tree = ClauseFindingRow({
+    row: clauseRow(),
+    tightenedTitle: '',
+    onSelectReq: () => {},
+    onSelectSignature: () => {},
+  });
+
+  const pills = elementsOfType(tree, StatusPill);
+  assert.equal(pills.length, 1, 'one pill, not one per folded finding');
+  assert.equal((pills[0]?.props as { status: string }).status, 'fail');
+  assert.equal(leadingMarks(tree)[0], StatusPill, 'the pill leads the row');
+});
+
+test('the advisory row leads with the advisory badge, never a status pill', () => {
+  const tree = AdvisoryItem({
+    finding: advisoryFinding('adv.blank_admin'),
+    onSelectReq: () => {},
+  });
+
+  assert.equal(leadingMarks(tree)[0], AdvisoryBadge, 'the badge leads the row');
+  assert.deepEqual(elementsOfType(tree, StatusPill), [], 'an advisory states no verdict');
+});
+
+test('both cards mark an advisory with the one badge component', () => {
+  // Asserted across the two cards rather than inside either, because the claim is
+  // a relation between them: each card on its own is free to render any badge it
+  // likes, and what must hold is that the two render the SAME one.
+  const detailRow = AdvisoryItem({
+    finding: advisoryFinding('adv.blank_admin'),
+    onSelectReq: () => {},
+  });
+  const columnRow = AdvisoryRow({
+    sig: advisorySignature('adv.blank_admin'),
+    expanded: false,
+    onToggle: () => {},
+    active: false,
+  });
+
+  assert.equal(elementsOfType(detailRow, AdvisoryBadge).length, 1, 'the transmission detail');
+  assert.equal(elementsOfType(columnRow, AdvisoryBadge).length, 1, 'the compliance column');
 });
 
 /**

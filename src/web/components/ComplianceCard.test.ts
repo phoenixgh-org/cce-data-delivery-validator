@@ -285,13 +285,13 @@ test('the active row is the one whose key matches the cross-filter', () => {
  * advisory is a clause of nothing and has no id to print), and that borrowing
  * the shape brought none of the verdict with it.
  */
-test('the collapsed row carries the label, the tx count and a neutral advisory tag', () => {
+test('the collapsed row carries the label, the tx count and the advisory badge', () => {
   const markup = advisoryRowMarkup(adv('adv.blank_admin', { txCount: 4 }), { expanded: false });
 
   assert.ok(markup.includes('data-req="adv.blank_admin"'), 'keyed by the advisory id');
   assert.ok(markup.includes('Blank admin'), 'the derived label, not the raw id');
   assert.ok(markup.includes('4 tx'), 'the transmission count');
-  assert.ok(markup.includes('advisory'), 'the neutral tag');
+  assert.ok(markup.includes('advisory'), 'the pill-shaped advisory badge (398e)');
   assert.ok(markup.includes('width:42px'), 'the empty id slot keeps the column width');
 });
 

@@ -35,6 +35,7 @@ import { detailGroupCopy, detailRows, type ClauseRow, type FindingRow } from '..
 import { TRANSMISSIONS_PANE_FLEX, TX_DETAIL_FLEX } from '../layout';
 import { PROFILE_NAME } from '../profiles';
 import { Icon } from './ui/Icon';
+import { AdvisoryBadge } from './ui/AdvisoryBadge';
 import { StatusPill } from './ui/StatusPill';
 import { Tag } from './ui/Tag';
 import { VERDICT_COL_PX, VerdictPair, verdictColumnTone, verdictColumns } from './ui/VerdictDot';
@@ -743,8 +744,15 @@ function PointerLine({
  * FindingItem renders every finding as `§{requirement}` and cross-links it to a
  * row of the §7 matrix. An advisory's `requirement` is its own `adv.*` id, which
  * is not a clause of anything and has no matrix row to open, so rendering one
- * through FindingItem would print `§adv.null_padding` and link nowhere. It also
- * carries no verdict, so there is no StatusPill here either.
+ * through FindingItem would print `§adv.null_padding` and link nowhere.
+ *
+ * NO StatusPill, BUT NOT AN EMPTY SLOT (398e). An advisory carries no verdict, so
+ * a pass/fail/untested pill would state one it has not earned. The row leads with
+ * the shared {@link AdvisoryBadge} instead: the pill's shape, so the leading edge
+ * of the list is one column rather than a pill on some rows and nothing on others,
+ * and the accent tone, so the shape brings no verdict with it. It is the same
+ * component the advisory rows in the compliance column carry, which is what keeps
+ * one mark for the category across the two cards.
  *
  * The tone is the accent, never a status colour and never the --mixed amber that
  * means warning/outdated elsewhere on this dashboard — `sigTone()` in
@@ -797,6 +805,7 @@ export function AdvisoryItem({
           marginBottom: line ? 3 : 0,
         }}
       >
+        <AdvisoryBadge />
         <button
           type="button"
           title="Open this advisory in the compliance summary"
@@ -963,11 +972,23 @@ function FindingItem({
  *   - the `pointer:` line, which opens the raw-payload inspector where the defect
  *     is (by1c.40).
  *
- * The row is quieter than a FindingItem on purpose: several findings collapse
- * into one of these, so it carries no severity pill — every one of them is a
- * failure — and no detail of its own beyond what the signature titles.
+ * IT OPENS WITH A `fail` PILL, in the same leading slot a {@link FindingItem}'s
+ * pill sits in (398e). The row used to omit it, reasoning that every one of these
+ * is a failure and the pill therefore says nothing new. The reading is what
+ * refuted that: the pill is not how a supplier learns the row's severity one row
+ * at a time, it is how the list reads as one list. Without it the row is the only
+ * thing in a column of pass/fail/untested pills with an empty leading slot, so it
+ * scans as neutral — a note between the graded rows rather than the failure it is.
+ * The status is a constant rather than a lookup because `fail` is what admits a
+ * finding to one of these rows in the first place: `detailRows()` routes only
+ * `severity === 'fail'` findings of the lens's own lineage here, so the row has no
+ * severity of its own to read.
+ *
+ * The row is still quieter than a FindingItem in what follows the pill: several
+ * findings collapse into one of these, so it carries no detail of its own beyond
+ * what the signature titles.
  */
-function ClauseFindingRow({
+export function ClauseFindingRow({
   row,
   tightenedTitle,
   onSelectReq,
@@ -1014,6 +1035,7 @@ function ClauseFindingRow({
   return (
     <div style={shell}>
       <div style={line}>
+        <StatusPill status="fail" />
         <button
           type="button"
           onClick={() => onSelectReq(row.id)}

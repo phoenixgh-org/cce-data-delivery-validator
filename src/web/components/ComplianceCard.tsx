@@ -32,7 +32,7 @@ import { ADVISORY_PREFIX, CONTRACT_PROFILE } from '../api';
 import { PROFILE_NAME } from '../profiles';
 import { StatusPill } from './ui/StatusPill';
 import { Icon } from './ui/Icon';
-import { Tag } from './ui/Tag';
+import { AdvisoryBadge } from './ui/AdvisoryBadge';
 import { inlineCode } from './ui/inlineCode';
 import { CLASS_META } from './ui/statusMaps';
 import { DS013_REFERENCE, DS013_REFERENCE_SOURCE } from './ds013Reference';
@@ -224,7 +224,11 @@ const ROW_SLOT_COUNT: CSSProperties = {
   flexShrink: 0,
 };
 
-/** Slot 4, the verdict: a status pill on a requirement, a neutral tag on an advisory. */
+/**
+ * Slot 4, the verdict: a status pill on a requirement, the pill-shaped advisory
+ * badge on an advisory (398e). The width holds the longer of the two labels, and
+ * `advisory` is shorter than the pill labels it sits under.
+ */
 const ROW_SLOT_VERDICT: CSSProperties = { width: 88, textAlign: 'right', flexShrink: 0 };
 
 /**
@@ -957,11 +961,14 @@ function ReqRow({
  * WHAT THE SHAPE DOES NOT BRING WITH IT. No StatusPill, no pass/fail tally and
  * no status colour: an advisory is raised against a payload that broke no rule
  * (DESIGN §7.1), so there is no verdict to render and `sigTone`'s accent rule
- * governs every coloured thing here. The verdict slot carries a neutral
- * "advisory" tag in the accent rather than a pill, which says what the row is
- * without saying how it did. The count is transmissions observed, and it feeds
- * nothing — not the conformance rollup, not the scorecard, not the
- * distinct-issues headline.
+ * governs every coloured thing here. What the verdict slot carries instead is the
+ * shared {@link AdvisoryBadge} (398e): the pill's shape, so the leading edge of
+ * the column is one column, in the accent rather than a status colour, so it says
+ * what the row IS without saying how it did. The same badge marks the advisory
+ * rows in the transmission detail, which is what keeps one mark for the category
+ * across the two cards. The count is transmissions observed, and it feeds nothing
+ * — not the conformance rollup, not the scorecard, not the distinct-issues
+ * headline.
  *
  * THE EXPANDED BLOCK is the rationale, then ONE control. "Matching
  * transmissions", never "Distinct issues": the label on a requirement's block
@@ -1013,7 +1020,7 @@ export function AdvisoryRow({
         <span style={ROW_SLOT_TITLE}>{advisoryLabel(id)}</span>
         <span style={{ ...ROW_SLOT_COUNT, color: tone }}>{sig.txCount} tx</span>
         <span style={ROW_SLOT_VERDICT}>
-          <Tag label="advisory" color={tone} background="var(--accent-weak)" />
+          <AdvisoryBadge />
         </span>
       </div>
       {expanded && (
@@ -1091,9 +1098,9 @@ export function AdvisoryRow({
  * an advisory-only transmission has zero failures and would vanish from the
  * cross-filter the click just set.
  *
- * WHAT IT DOES NOT DO: no StatusPill, no `§` cross-link (an advisory belongs to
- * no requirement), no pass/fail tally, and no status colour — see
- * {@link sigTone}. Its count is the number of distinct advisories and feeds
+ * WHAT IT DOES NOT DO: no StatusPill (the {@link AdvisoryBadge} takes the pill's
+ * shape and none of its verdict), no `§` cross-link (an advisory belongs to no
+ * requirement), no pass/fail tally, and no status colour — see {@link sigTone}. Its count is the number of distinct advisories and feeds
  * nothing: the conformance rollup, the scorecard and the distinct-issues
  * headline all read server numbers that exclude advisories by construction.
  *

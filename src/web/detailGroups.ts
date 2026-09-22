@@ -29,7 +29,9 @@
  * pointer, the title off the matching signature, the bespoke `transferredAt`
  * line — because that phrasing exists to make a schema run readable and it is
  * still a schema run. Everything else is a {@link FindingRow}: the finding as the
- * pane has always rendered it, with its severity pill and its own detail.
+ * pane has always rendered it, with a pill for its OWN severity and its own
+ * detail. Both shapes lead with a pill (398e); only a FindingRow's says something
+ * other than `fail`, since a clause row is a failure by definition.
  *
  * Every package name comes from {@link PROFILE_NAME}; nothing here writes
  * "UNICEF Q1 2025" or "DS01.3 DRAFT" as a literal, so the day the contract moves
