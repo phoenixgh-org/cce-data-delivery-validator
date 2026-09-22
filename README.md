@@ -5,17 +5,20 @@ Clause 5 – Data Delivery to External Systems**. It is informed by the cold cha
 equipment (CCE) data delivery requirements that UNICEF published after the industry
 consultation of Q1 2025 (see [this page](https://docs.2to8.cc/cce-data-interop/requirements/)).
 
-A CCE supplier points a stream of data transmissions at a test endpoint and gets back
-an independent evaluation of what conforms and what does not.
+It was developed to enable CCE suppliers to point a stream of data transmissions at a
+test endpoint and get back an independent evaluation of what conforms to the UNICEF
+data delivery requirements -- and what does not.
 
 > [!IMPORTANT]
 > Following the UNICEF CCE Data Delivery industry consultation, the WHO Performance,
 > Quality and Safety programme (PQS) took responsibility for incorporating these
 > requirements into the EMS Data Standard (E006/DS01.x). The PQS review process is
-> expected to conclude in Q3 or Q4 2026. The current DS01.3 draft is already graded
-> here as a shadow and can be read through the dashboard's grading lens (see
-> [Shadow grading and the grading lens](#shadow-grading-and-the-grading-lens)). This
-> project will be updated as soon as the new requirements are published.
+> expected to conclude in or around Q4 2026. In the meantime, this project grades
+> transmissions against both the UNICEF Q1 2025 requirements and the latest DS01.3
+> draft schema (September 8, 2026). The default view shows UNICEF Q1 2025 grading, with
+> an alternative DS01.3 grading lens (see
+> [Shadow grading and the grading lens](#shadow-grading-and-the-grading-lens)).
+> This project will be updated as the DS01.3 requirements are revised.
 
 ## What this is
 
