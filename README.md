@@ -22,22 +22,23 @@ data delivery requirements -- and what does not.
 
 ## What this is
 
-Clause 5 obliges CCE data suppliers, the manufacturers and resellers of remote
-temperature monitoring devices (RTMDs) and equipment monitoring systems (EMS), to
-deliver performance data over HTTPS to the countries that own the equipment. This
-project is a public service that plays the employer, or country, side of that
+DS01 Clause 5 requires suppliers of CCE monitoring services to deliver CCE temperature
+and performance data over HTTP to the countries that own the equipment. This
+project is a public service that plays the "employer" (e.g., a country) side of that
 interface. It provides a web dashboard where a supplier gets an independent read on
-their conformance, "to the extent possible" from the receiving vantage point.
+their conformance, to the extent possible from the receiver's vantage point.
 
-A supplier creates a test endpoint in one click, with no signup and no account. They
-then POST real transmissions from their own data platform and read the findings, per
-transmission and rolled up per requirement.
+This software is packaged as a Docker Compose project, making it easy for suppliers
+to run the project independently. Suppliers create a test endpoint in a simple
+one-click process (no signup, no account), then configure their data platform
+to transmit CCE data to the test endpoint. The dashboard provides an interface for
+suppliers to review the findings, per transmission and rolled up per requirement.
 
 ## Why it exists
 
-PQS test labs prequalify the equipment. Nobody tests the data delivery
-implementation. Suppliers therefore self-grade today against a prose requirements
-document and a JSON Schema, and implementation gaps go unnoticed until a country
+PQS test labs prequalify EMS equipment, but this process does not test data delivery
+implementation. Suppliers therefore are forced to self-grade against a requirements
+document and a JSON Schema. Implementation gaps are likely to go unnoticed until a country
 receives the data.
 
 This service gives suppliers a second opinion before that happens, from something
@@ -56,7 +57,7 @@ The service is written for three audiences:
 
 ## What the system can and cannot prove
 
-Every requirement is classified by what a passive receiver can establish. A
+Every requirement is classified according to what a passive receiver can establish. A
 requirement that cannot be graded is labelled as such rather than quietly counted as
 a pass. The classes are:
 
@@ -68,10 +69,8 @@ a pass. The classes are:
 | Self-attestation       | Not provable from the receiving side at all                            | 9    |
 | Enforced by us         | Guaranteed by the endpoint, so not a test of the supplier's choice     | 1    |
 
-There are 27 requirements in total. Two carry a split classification: §1.1 is both
-passively verified and enforced by us, and §4.4 is both active-only and
-self-attestation. §1.7 has nothing to grade. A gradeable requirement with no findings
-yet shows "untested", never a false pass.
+There are 27 requirements in total.  A gradeable requirement with no findings yet shows "untested",
+never a false pass.
 
 The full row-by-row matrix, with every requirement, its class, and how it is
 checked, is [`DESIGN.md` §7](DESIGN.md#7-compliance-engine--verifiability-matrix).
@@ -79,48 +78,48 @@ It is mirrored in `src/api/compliance-matrix.ts` and rendered live in the dashbo
 
 ## Shadow grading and the grading lens
 
-The DS01.3 rewrite of the requirements is an unpublished draft. Its Annex 4 delivery
-schema is registered here beside the published `cce-interop` schemas as a second
-_lineage_. A lineage is a schema family: `cce-interop` for the UNICEF Q1 2025
-requirements, Annex 4 for DS01.3. The set of requirements that a lineage's findings
-are numbered under is called a _package_ on the dashboard and in the API. The two
-packages are named UNICEF Q1 2025 and DS01.3 DRAFT.
+WHO PQS is currently working to incorporate the data delivery requirements from the
+UNICEF Q1 2025 consultation into the upcoming revision of DS01 (DS01.3).  This work
+is ongoing (Sept 2026) in an unpublished draft, which will be shared with suppliers
+for feedback in the near future. The JSON data delivery schema from the UNICEF
+consultation is slated to become DS01.3 Annex 4, which is registered in this validator
+as a second validation _lineage_ (in addition to the UNICEF Q1 2025 schema). A lineage
+is a schema family: `cce-interop` for the UNICEF Q1 2025 requirements, Annex 4 for
+DS01.3.  The set of requirements that a lineage's findings are numbered under is called
+a _package_ on the dashboard and in the API. The two packages are named UNICEF Q1 2025
+and DS01.3 DRAFT.
 
 A transmission whose declared `schemaVersion` resolves to a registered lineage is
-graded twice. The lineage it declares is the primary run and sets the HTTP response
-code. The current schema of the other lineage runs as the shadow: its findings are
-recorded under its own clause numbers, and it never changes the status, even when
-the primary run rejects the transmission.
+graded twice. The lineage it declares is the primary grading and sets the HTTP response
+code. The current schema of the *other* lineage runs as a "shadow" grading: its findings
+are recorded under its own, distinct clause numbers, and it never changes the status,
+even when the primary run rejects the transmission.
 
-A transmission that never gets that far carries no shadow result at all. An
-unrecognized `schemaVersion`, a body that does not parse, and a transport rejection
-before either are each answered under the 2025 requirements alone. The matrix above
-stays contract-only: its rows grade the 2025 requirements, which are the contract in
-force, and a shadow verdict never moves a row.
+A transmission that never gets that is never graded by the primary lineage carries
+no shadow result at all. An unrecognized `schemaVersion`, a body that does not
+parse, and a transport rejection are each answered under the 2025 requirements alone.
 
-The dashboard reads under one package at a time, through a _grading lens_. A toggle
-in the header swaps the whole view between UNICEF Q1 2025, the default, and DS01.3
-DRAFT. The lens is a read-time projection: it changes which package the page reports
-under, never what was graded, what was stored, or what status code a transmission
-received. Lens state lives in the URL query, so a copied link opens on the view it
-was copied from.
+The dashboard reports results under one package at a time, through a _grading lens_.
+A toggle in the header swaps the whole view between UNICEF Q1 2025, the default, and
+DS01.3 DRAFT. The lens is a read-time projection: it changes which package the page
+reports under; it doesn't change what was graded, what was stored, or what HTTP status
+code a transmission received. This allows a supplier to switch back-and-forth between
+these two lenses to understand how a transmission would be graded under the UNICEF
+requirements, and how that same transmission would be graded under the proposed DS01.3
+requirements. Lens state is reflected in the URL query, so a copied link opens on the
+view it was copied from.
 
 Under the draft lens the compliance matrix, the counts, the filters and the
-transmission detail are all reported under DS01.3 clause numbers. A banner says the
-draft is not yet published and gives the date of the bytes behind it. The
-transmissions summary card carries one readiness figure: of the in-scope traffic
-that passes UNICEF Q1 2025, how much also passes the draft. Each transmission keeps
-a verdict dot per package, the selected one bold and the other dimmed, with a dashed
-"not graded here" dot where the draft never ran.
-
-The two packages are kept apart on purpose. A supplier under a 2025 agreement should
-be able to see what is coming without being told that the version their contract
-requires is stale. For that reason a lineage is never called old, new, current, or
-latest.
+transmission detail are all reported under DS01.3 clause numbers, which are different
+from the standalone clause numbers in the UNICEF Q1 2025 output. The transmissions
+summary card carries one readiness figure: of the in-scope traffic that passes UNICEF
+Q1 2025, how much also passes the draft. Each transmission includes a verdict "dot"
+per package, the selected one bold and the other dimmed, with a dashed "not graded
+here" dot where the draft never ran.
 
 ## Quick start
 
-Bring up Postgres 16 and the app, which serves on port 3000:
+Bring up Postgres 16 and the validator app, which serves on port 3000:
 
 ```bash
 docker compose up -d
