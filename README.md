@@ -10,9 +10,12 @@ at a test endpoint and get back an independent evaluation on what conforms, what
 
 > [!IMPORTANT]
 > Following the **UNICEF CCE Data Delivery industry consultation**, WHO PQS took
-> responsibilty for incorporating these requirements within the EMS Data Standard
+> responsibility for incorporating these requirements within the EMS Data Standard
 > (E006/DS01.x). The PQS review process is anticipated to conclude in **Q3 or Q4 2026**.
-> This project will be updated as soon as new requirements are published.
+> The current DS01.3 draft is already graded here as a shadow and can be read through
+> the dashboard's grading lens (see
+> [Shadow grading and the grading lens](#shadow-grading-and-the-grading-lens)). This
+> project will be updated as soon as the new requirements are published.
 
 ## What this is
 
@@ -67,29 +70,42 @@ The full row-by-row matrix — every requirement, its class, and how it is check
 is [`DESIGN.md` §7](DESIGN.md#7-compliance-engine--verifiability-matrix). It is
 mirrored in `src/api/compliance-matrix.ts` and rendered live in the dashboard.
 
-### Shadow grading
+## Shadow grading and the grading lens
+
+The DS01.3 rewrite of the requirements is an unpublished draft, and its Annex 4
+delivery schema is registered here beside the published `cce-interop` schemas as a
+second _lineage_. A lineage is a schema family: `cce-interop` for the UNICEF Q1 2025
+requirements, Annex 4 for DS01.3. The set of requirements that a lineage's findings
+are numbered under is called a _package_ on the dashboard and in the API. The two
+packages are named UNICEF Q1 2025 and DS01.3 DRAFT.
 
 A transmission whose declared `schemaVersion` resolves to a registered lineage is
-graded a second time, against the DS01.3 Annex 4 delivery-schema proposal — an
-unpublished draft, registered here as a _shadow_ lineage. Resolving the version is
-what selects the shadow, so a transmission that never gets that far carries no
-shadow result at all: an unrecognized `schemaVersion`, a body that does not parse,
-and a transport rejection before either are each answered under the 2025
-requirements alone. The shadow run never changes the HTTP response code and never touches the
-matrix above: those rows grade the 2025 requirements, which are the contract in
-force. What it produces instead is a preview: the transmissions list carries a
-verdict per transmission under each lineage, and the ingest response names the
-lineage on every finding.
+graded twice. The lineage it declares is the primary run and sets the HTTP response
+code. The current schema of the other lineage runs as the shadow: its findings are
+recorded under its own clause numbers, and it never changes the status, even when
+the primary run rejects the transmission. A transmission that never gets that far
+carries no shadow result at all. An unrecognized `schemaVersion`, a body that does
+not parse, and a transport rejection before either are each answered under the 2025
+requirements alone. The matrix above stays contract-only: the rows grade the 2025
+requirements, which are the contract in force, and a shadow verdict never moves a
+row.
 
-The dashboard reads under one package at a time. A toggle in the header swaps the
-whole view between UNICEF Q1 2025 and DS01.3 DRAFT, and under the draft lens the
-compliance matrix, the counts, the filters and the transmission detail are all
-reported under DS01.3 clause numbers, with a banner saying the draft is not yet
-published. The transmissions summary card there carries the readiness figure the
-session read serves — of the traffic that passes UNICEF Q1 2025, how much also
-passes the draft. Keeping the two lineages apart is the point — a supplier under
-a 2025 agreement should be able to see what is coming without being told that the
-version their contract requires is stale.
+The dashboard reads under one package at a time, through a _grading lens_. A toggle
+in the header swaps the whole view between UNICEF Q1 2025, the default, and DS01.3
+DRAFT. The lens is a read-time projection: it changes which package the page reports
+under, never what was graded, what was stored, or what status code a transmission
+received. Under the draft lens the compliance matrix, the counts, the filters and
+the transmission detail are all reported under DS01.3 clause numbers. A banner says
+the draft is not yet published and gives the date of the bytes behind it. The
+transmissions summary card carries one readiness figure: of the in-scope traffic
+that passes UNICEF Q1 2025, how much also passes the draft. Lens state lives in the
+URL query, so a copied link opens on the view it was copied from. Each transmission
+keeps a verdict dot per package, the selected one bold and the other dimmed, with a
+dashed "not graded here" dot where the draft never ran.
+
+The two packages are kept apart on purpose. A supplier under a 2025 agreement should
+be able to see what is coming without being told that the version their contract
+requires is stale, so a lineage is never called old, new, current, or latest.
 
 ## Quick start
 
@@ -176,9 +192,11 @@ A rejection has the same shape, so a 4xx is just as self-explanatory as a 2xx.
 The `findings` count and the leading tally in `message` are the contract
 lineage alone, while `findingDetails` carries both: the `profile` on each entry
 says which lineage graded it, and the shadow sentence at the end of `message`
-reports what the DS01.3 run found without it ever changing the status. The draft
-date and hash shown there come from the registry entry for those bytes, so they
-move when the proposal is re-pinned.
+reports what the DS01.3 run found without it ever changing the status. The shadow
+runs even when the primary run rejects the transmission, which is why a `ds013`
+failure can sit on a `200` and a `ds013` pass on a `422`. The draft date and hash
+shown there come from the registry entry for those bytes, so they move when the
+proposal is re-pinned.
 
 Useful things to know while testing:
 
@@ -199,12 +217,13 @@ Bearer` (RFC 6750) — and then enforces it so §1.3 becomes gradeable.
   byte-identical to the copies published upstream: **0.8.1** (sha256
   `290290fd…`) is **current**, and the older **0.8.0** (sha256 `e6614cc7…`) is
   still accepted but graded _outdated_ — a `200` with a §3.2 note telling you to
-  upgrade, not a rejection. Outdated is judged within a lineage only. The DS01.3
-  Annex 4 draft is registered beside them as the shadow lineage; its
+  upgrade, not a rejection. Outdated is judged within a lineage only.
+- The DS01.3 Annex 4 draft is registered beside them as the shadow lineage. Its
   `schemaVersion` is the integer-valued string `"1"`, because that annex versions
   by revision rather than by semver. Any other declared `schemaVersion` gets a
-  `422` listing what is supported, never a silent fallback. The schema is never fetched at runtime and the `$id` URL inside it is
-  an _identifier_, not a download location: that host does not currently resolve,
+  `422` listing what is supported, never a silent fallback.
+- The schema is never fetched at runtime, and the `$id` URL inside it is an
+  _identifier_, not a download location: that host does not currently resolve,
   and the published artifact lives elsewhere. `DESIGN.md` §9 has the full version
   and publication picture.
 - An endpoint and all its data are **purged after 7 days without a POST**. The clock
@@ -262,8 +281,8 @@ inactivity, so the data a flip discards is at most one week of test traffic.
 ## Status and v1 scope
 
 **Pre-release.** The service runs end to end — ingest pipeline, dashboard, semantic
-checks, the §1.3 auth opt-in, the retention worker, and DS01.3 shadow grading have
-all landed. There is no public instance, and self-hosting is the intended way to
+checks, the §1.3 auth opt-in, the retention worker, DS01.3 shadow grading and the
+grading lens have all landed. There is no public instance, and self-hosting is the intended way to
 use it. Interfaces may still change.
 
 Source: <https://github.com/phoenixgh-org/cce-data-delivery-validator>.
@@ -313,12 +332,12 @@ proxies `/api`, `/i` and `/health` through to the API.
 
 ### Tests need a database — `npm test` alone does not tell you so
 
-`npm test` **without a database is not a full run.** Eight suites — the repository
-layer, the ingest route, the ingest stages, and the sessions API — probe Postgres
-once and skip themselves entirely when it is unreachable. The run is green with
-the eight DB-gated suites reported as `# skipped`, and the whole persistence
-and ingest-integration layer never executed. Treat a bare `npm test` as the
-pure-logic subset only.
+`npm test` **without a database is not a full run.** The suites that touch
+Postgres — the repository layer, the contract-profile guard, the ingest route and
+stages, the ingest fixtures, and the sessions API — probe it once and skip
+themselves entirely when it is unreachable. The run is green with those suites
+reported as `# skipped`, and the whole persistence and ingest-integration layer
+never executed. Treat a bare `npm test` as the pure-logic subset only.
 
 To run everything, bring up Postgres and point the suite at it:
 
@@ -344,14 +363,21 @@ database gating broke rather than that a database was unavailable.
 ### Exercising a running instance — `npm run exercise`
 
 `npm test` checks the graders in isolation. `npm run exercise` checks the **whole
-service** by driving a live instance the way a supplier would. It plays every
-gradeable requirement in the §7 matrix in both directions — once with a transmission
-that should pass it and once with one that should fail it — and asserts the HTTP
-statuses and the findings that came back. It also fires every registered advisory and
-asserts that conformant traffic draws none, grades every transmission a second time
-under the unpublished DS01.3 Annex 4 shadow lineage, and audits the advisory copy the
-instance actually served. Any of the four can fail the run. Synthetic payloads only,
-built from the suite's own baselines.
+service** by driving a live instance the way a supplier would, with synthetic
+payloads built from the suite's own baselines. It checks five things, and any of
+them can fail the run:
+
+- **Requirements, both directions.** Every gradeable requirement in the §7 matrix is
+  played once with a transmission that should pass it and once with one that should
+  fail it, asserting the HTTP statuses and the findings that came back.
+- **Advisories, both halves.** Every registered advisory is fired by a case built to
+  provoke it, and conformant traffic is asserted to draw none.
+- **The DS01.3 shadow run.** Cases declare what the unpublished Annex 4 draft would
+  make of a payload the contract in force accepts.
+- **The advisory copy.** The prose the instance actually served is audited run-wide
+  for shape and vocabulary.
+- **The grading lens.** The DS01.3 summary rows the instance serves are checked
+  against the findings and verdicts it serves beside them.
 
 It needs a server and a database, which is why it is deliberately outside `npm
 test`:
