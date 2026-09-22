@@ -339,52 +339,39 @@ test('the fixtures really are schema-conformant on both registered contract vers
   // omission is the malformed-entry body of the last test, which pushes a string
   // into `data[]` and so cannot be conformant by design — it pins what the check
   // does with an entry no contract version accepts.
-  const fixtures = [
-    { label: 'ONE_SERIAL_TWO_HANDLES', payload: ONE_SERIAL_TWO_HANDLES },
-    { label: 'NO_SERIAL_TWO_ASSET_IDS', payload: NO_SERIAL_TWO_ASSET_IDS },
-    { label: 'ONE_APPLIANCE_TWICE', payload: ONE_APPLIANCE_TWICE },
-    { label: 'ONE_HANDLE_TWO_SERIALS', payload: ONE_HANDLE_TWO_SERIALS },
-    { label: 'ONE_SERIAL_TWO_ASSET_IDS', payload: ONE_SERIAL_TWO_ASSET_IDS },
-    { label: 'ONE_ASSET_ID_TWO_HANDLES', payload: ONE_ASSET_ID_TWO_HANDLES },
-    {
-      label: 'ONE_SERIAL_TWO_HANDLES_TWO_ASSET_IDS',
-      payload: ONE_SERIAL_TWO_HANDLES_TWO_ASSET_IDS,
-    },
-    {
-      label: 'ONE_HANDLE_TWO_SERIALS_TWO_ASSET_IDS',
-      payload: ONE_HANDLE_TWO_SERIALS_TWO_ASSET_IDS,
-    },
-    {
-      label: 'ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES',
-      payload: ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES,
-    },
-    { label: 'TWO_PAIRS_UNDER_SERIAL_AND_HANDLE', payload: TWO_PAIRS_UNDER_SERIAL_AND_HANDLE },
-    {
-      label: 'TWO_PAIRS_UNDER_HANDLE_AND_ASSET_ID',
-      payload: TWO_PAIRS_UNDER_HANDLE_AND_ASSET_ID,
-    },
-    { label: 'ASSET_ID_ON_ONE_REPORT_ONLY', payload: ASSET_ID_ON_ONE_REPORT_ONLY },
-    { label: 'TWO_APPLIANCES_NOTHING_SHARED', payload: TWO_APPLIANCES_NOTHING_SHARED },
-    { label: 'ONE_REPORT_ONLY', payload: ONE_REPORT_ONLY },
-    { label: 'BLANK_SERIALS', payload: BLANK_SERIALS },
-    { label: 'SERIAL_WITH_SURROUNDING_SPACE', payload: SERIAL_WITH_SURROUNDING_SPACE },
-    { label: 'SERIALS_DIFFERING_ONLY_IN_CASE', payload: SERIALS_DIFFERING_ONLY_IN_CASE },
-    {
-      label: 'ONE_APPLIANCE_TWO_MONITORING_DEVICES',
-      payload: ONE_APPLIANCE_TWO_MONITORING_DEVICES,
-    },
-    { label: 'ONE_SERIAL_ONE_ASSET_ID_TWO_HANDLES', payload: ONE_SERIAL_ONE_ASSET_ID_TWO_HANDLES },
-    { label: 'TWO_SERIALS_EACH_UNDER_TWO_HANDLES', payload: TWO_SERIALS_EACH_UNDER_TWO_HANDLES },
-    { label: 'ONE_SERIAL_THREE_HANDLES', payload: ONE_SERIAL_THREE_HANDLES },
-    {
-      label: 'ASSET_ID_ABSENT_ON_THE_FIRST_OF_THREE',
-      payload: ASSET_ID_ABSENT_ON_THE_FIRST_OF_THREE,
-    },
-  ];
+  //
+  // The list is an object literal with shorthand properties, so an entry's name IS
+  // the const it points at. A copy-paste slip cannot aim one entry at the wrong
+  // body, which would leave that body's fixture unvalidated and another validated
+  // twice while this test stayed green (fa6q).
+  const fixtures = Object.entries({
+    ONE_SERIAL_TWO_HANDLES,
+    NO_SERIAL_TWO_ASSET_IDS,
+    ONE_APPLIANCE_TWICE,
+    ONE_HANDLE_TWO_SERIALS,
+    ONE_SERIAL_TWO_ASSET_IDS,
+    ONE_ASSET_ID_TWO_HANDLES,
+    ONE_SERIAL_TWO_HANDLES_TWO_ASSET_IDS,
+    ONE_HANDLE_TWO_SERIALS_TWO_ASSET_IDS,
+    ONE_ASSET_ID_TWO_SERIALS_TWO_HANDLES,
+    TWO_PAIRS_UNDER_SERIAL_AND_HANDLE,
+    TWO_PAIRS_UNDER_HANDLE_AND_ASSET_ID,
+    ASSET_ID_ON_ONE_REPORT_ONLY,
+    TWO_APPLIANCES_NOTHING_SHARED,
+    ONE_REPORT_ONLY,
+    BLANK_SERIALS,
+    SERIAL_WITH_SURROUNDING_SPACE,
+    SERIALS_DIFFERING_ONLY_IN_CASE,
+    ONE_APPLIANCE_TWO_MONITORING_DEVICES,
+    ONE_SERIAL_ONE_ASSET_ID_TWO_HANDLES,
+    TWO_SERIALS_EACH_UNDER_TWO_HANDLES,
+    ONE_SERIAL_THREE_HANDLES,
+    ASSET_ID_ABSENT_ON_THE_FIRST_OF_THREE,
+  });
   for (const version of ['0.8.0', '0.8.1']) {
     const entry = registry.get(version);
     assert.ok(entry, `${version} is registered`);
-    for (const { label, payload } of fixtures) {
+    for (const [label, payload] of fixtures) {
       assert.equal(
         entry.validate(payload),
         true,
@@ -395,10 +382,10 @@ test('the fixtures really are schema-conformant on both registered contract vers
 
   // What keeps the exhaustiveness claim above true rather than merely true today
   // (qmdh): this file reads its own source and holds the list to it. A fixture
-  // added without its label, or a body built inline inside a test, fails here
-  // instead of going unvalidated for months, which is the failure mlr4 was filed
-  // for. The precedent is TransmissionsCard.test.ts, which reads its component's
-  // source the same way, and Setup.test.ts, which reads the README's.
+  // declared but left out of the object, or a body built inline inside a test,
+  // fails here instead of going unvalidated for months, which is the failure mlr4
+  // was filed for. The precedent is TransmissionsCard.test.ts, which reads its
+  // component's source the same way, and Setup.test.ts, which reads the README's.
   //
   // Every pattern below writes the builder's opening parenthesis ESCAPED, so none
   // of them counts its own source text: the unescaped token occurs only at a real
@@ -413,9 +400,10 @@ test('the fixtures really are schema-conformant on both registered contract vers
   );
   assert.deepEqual(
     [...declared].sort(),
-    fixtures.map((f) => f.label).sort(),
-    'the named payload fixtures and the list above have diverged — add the new fixture to' +
-      ' `fixtures`, or make its label match the name of the const it points at',
+    fixtures.map(([label]) => label).sort(),
+    'the module-scope payload fixtures and the keys of `fixtures` above have diverged — add' +
+      ' the newly declared fixture to `fixtures` as a shorthand property, or drop the key that' +
+      ' no longer names a declared fixture',
   );
 
   const builders = (source.match(/^function rtmPayload\(/gm) ?? []).length;
