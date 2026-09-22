@@ -382,7 +382,7 @@ the script asserts that reality rather than the absence of a row.
   build that adopts DS01.3 as the contract is therefore an operator action, not a
   restart: stop the service, `docker compose down -v` to discard the volume, and
   start again. There is no migration, and no way to keep the stored findings —
-  see [Adopting DS01.3 discards stored data](../README.md#adopting-ds013-discards-stored-data)
+  see [Adopting DS01.3](../README.md#adopting-ds013)
   for why. The refusal prints the stored profile, the profile the build runs, and
   the same instruction. The guard reads `service_marker`, so on a volume created
   before `db/initdb/80-contract-profile-marker.sql` the service refuses to start

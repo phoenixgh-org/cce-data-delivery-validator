@@ -25,7 +25,7 @@ every run; the table held 73 cases when this was written.
 
 This document is its internals: the case model, the transform vocabulary, how
 coverage is computed, and how to add a case. The how-to-run lives in the
-[README](../README.md#exercising-a-running-instance--npm-run-exercise).
+[README](../README.md#exercise-suite).
 
 > ### ⚠ Synthetic test data only
 >
